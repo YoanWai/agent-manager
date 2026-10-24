@@ -10,15 +10,6 @@ func (m *Model) previewFeeds() bool {
 	if m.focused() {
 		return true
 	}
-	_, renaming := m.renaming()
+	_, renaming := surfaceOf[*uidialogs.RenameSurface](m)
 	return m.listClear() || renaming
-}
-
-func newRenameSurface(m *Model, rename uidialogs.Rename, base string) *uidialogs.RenameSurface {
-	return uidialogs.NewRenameSurface(renameRoot{m}, rename, base)
-}
-
-// renaming is the open rename, if one is on the stack.
-func (m *Model) renaming() (*uidialogs.RenameSurface, bool) {
-	return surfaceOf[*uidialogs.RenameSurface](m)
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -215,7 +216,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 		foot[i].Text = line
 	}
 	rename := uirail.Rename{}
-	if s, ok := m.renaming(); ok {
+	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
 		if s.IsGroup() {
 			rename.Target = uirail.Selection{Kind: uirail.GroupRow, Group: s.Path()}
 		} else {

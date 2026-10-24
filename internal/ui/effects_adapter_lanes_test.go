@@ -99,7 +99,7 @@ func TestStopEffectsGivesUpOnStuckWork(t *testing.T) {
 func TestInputToAPaneWaitsForTheJobRestartingIt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.queueLifecycle(confirmTarget{action: actionRestart, sessions: []store.Session{{ID: "s"}}}, false, "")
+	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmRestart, sessions: []store.Session{{ID: "s"}}}, false, "")
 	m.nextEffectCmd()
 	if m.effects.Main.Active == nil {
 		t.Fatal("restart did not start")
@@ -125,7 +125,7 @@ func TestAKillWaitsForTheInputInFlightToItsPane(t *testing.T) {
 	m := buildModel(t)
 	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: store.Session{ID: "s"}, Text: "typed"})
 	m.nextEffectCmd()
-	m.queueLifecycle(confirmTarget{action: actionKill, sessions: []store.Session{{ID: "s"}}}, false, "")
+	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmKill, sessions: []store.Session{{ID: "s"}}}, false, "")
 	m.nextEffectCmd()
 	if m.effects.Main.Active != nil {
 		t.Fatal("kill started while its pane's paste was in flight")
@@ -150,7 +150,7 @@ func TestAnAfterTurnEndHoldsTheSessionAndItsTerminals(t *testing.T) {
 
 func TestEffectNameSaysWhichLifecycleActionRuns(t *testing.T) {
 	t.Parallel()
-	for action, want := range map[uidialogs.ConfirmAction]string{actionDelete: "session delete", actionArchive: "session archive", actionRestart: "session restart"} {
+	for action, want := range map[uidialogs.ConfirmAction]string{uidialogs.ConfirmDelete: "session delete", uidialogs.ConfirmArchive: "session archive", uidialogs.ConfirmRestart: "session restart"} {
 		if got := effectName(lifecycleRequest{target: confirmTarget{action: action}}); got != want {
 			t.Errorf("effectName(%q) = %q, want %q", action, got, want)
 		}
@@ -162,7 +162,7 @@ func TestEffectNameSaysWhichLifecycleActionRuns(t *testing.T) {
 func TestQuitNamesTheWorkItWaitsFor(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.queueLifecycle(confirmTarget{action: actionArchive, sessions: []store.Session{{ID: "s"}}}, false, "")
+	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmArchive, sessions: []store.Session{{ID: "s"}}}, false, "")
 	m.nextEffectCmd()
 	m.requestQuit()
 	if !strings.Contains(m.errBar.text, "finishing session archive") || !strings.Contains(m.errBar.text, "again") {

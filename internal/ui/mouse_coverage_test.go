@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/remote"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -22,10 +23,15 @@ import (
 // a selected session. A surface type missing here fails, so a new surface
 // is driven by the mouse on purpose.
 var mouseOpeners = map[string]func(t *testing.T, m *Model){
-	"dialogs.ConfirmSurface": func(t *testing.T, m *Model) { m.openConfirm(confirmTarget{action: actionKill, label: "kill alpha?"}) },
-	"dialogs.MoveSurface":    func(t *testing.T, m *Model) { m.openMove() },
-	"dialogs.RenameSurface":  func(t *testing.T, m *Model) { m.openRename() },
-	"dialogs.ForkSurface":    func(t *testing.T, m *Model) { m.push(newForkSurface(m, railSelectedSession(m), 1)) },
+	"dialogs.ConfirmSurface": func(t *testing.T, m *Model) {
+		m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha?"})
+	},
+	"dialogs.MoveSurface":   func(t *testing.T, m *Model) { m.openMove() },
+	"dialogs.RenameSurface": func(t *testing.T, m *Model) { m.openRename() },
+	"dialogs.ForkSurface": func(t *testing.T, m *Model) {
+		source := railSelectedSession(m)
+		m.push(uidialogs.NewForkSurface(forkRoot{m, source}, source.Name, source.Group, 1))
+	},
 	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Binary: "tool"})
 	},

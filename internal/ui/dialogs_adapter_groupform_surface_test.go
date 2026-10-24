@@ -12,7 +12,7 @@ import (
 // groupSurface is the open New Group card; a test that reads it without one
 // open is wrong, so it panics rather than returning a half-built one.
 func (m *Model) groupSurface() *uidialogs.GroupFormSurface {
-	s, ok := m.groupFormSurface()
+	s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
 	if !ok {
 		panic("the New Group card is not open")
 	}
@@ -20,7 +20,7 @@ func (m *Model) groupSurface() *uidialogs.GroupFormSurface {
 }
 
 func (m *Model) groupFormOpen() bool {
-	_, ok := m.groupFormSurface()
+	_, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
 	return ok
 }
 

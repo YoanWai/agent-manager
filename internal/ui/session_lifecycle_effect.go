@@ -26,7 +26,7 @@ type lifecycleRequest struct {
 func (lifecycleRequest) EffectRequest() {}
 
 func (request lifecycleRequest) effectName() string {
-	if request.target.action == actionDelete {
+	if request.target.action == uidialogs.ConfirmDelete {
 		return "session delete"
 	}
 	return "session " + string(request.target.action)
@@ -142,7 +142,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			}
 		}
 	}
-	if target.action == actionKill {
+	if target.action == uidialogs.ConfirmKill {
 		for _, sess := range result.Changed {
 			m.forgetLaunch(sess.ID)
 			delete(m.workspace.panes, sess.ID)
@@ -153,22 +153,22 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 		group = result.Archive.GroupPath
 	}
 	switch target.action {
-	case actionArchive, actionRestore:
+	case uidialogs.ConfirmArchive, uidialogs.ConfirmRestore:
 		var durable []store.Session
 		for _, sess := range result.Archive.Sessions {
-			if sess.Archived == (target.action == actionArchive) {
+			if sess.Archived == (target.action == uidialogs.ConfirmArchive) {
 				durable = append(durable, sess)
 				if sess.Archived {
 					m.forgetLaunch(sess.ID)
 				}
 			}
 		}
-		if target.action == actionArchive {
+		if target.action == uidialogs.ConfirmArchive {
 			m.markArchivedLocally(durable, group)
 		} else {
 			m.markRestoredLocally(durable, group)
 		}
-	case actionDelete:
+	case uidialogs.ConfirmDelete:
 		for _, sess := range result.Deleted.Deleted {
 			m.ledger.lifecycle.ForgetSession(sess.ID)
 			m.removeSessionLocally(sess.ID)
@@ -181,7 +181,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 	for _, each := range result.Launches {
 		m.markFreshPane(each.ID)
 		m.ledger.lifecycle.RecordLaunch(each.ID, time.Now())
-		if target.action == actionRestart {
+		if target.action == uidialogs.ConfirmRestart {
 			m.bindRestartLocally(each.ID, each.Result.Conversation, each.Result.LaunchedAt)
 		} else {
 			m.bindReviveLocally(each.ID, each.Result.LaunchedAt)
@@ -206,12 +206,12 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			}
 			return nil
 		}
-		if target.action == actionRestart || target.action == actionRevive || target.action == actionRestore {
+		if target.action == uidialogs.ConfirmRestart || target.action == uidialogs.ConfirmRevive || target.action == uidialogs.ConfirmRestore {
 			retry := request
 			if len(result.Failed) > 0 {
 				retry.target.sessions = append([]store.Session(nil), result.Failed...)
 			}
-			if target.action == actionRestore {
+			if target.action == uidialogs.ConfirmRestore {
 				done := map[string]bool{}
 				for _, sess := range result.Archive.Sessions {
 					if !sess.Archived {

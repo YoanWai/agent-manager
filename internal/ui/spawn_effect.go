@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -325,7 +326,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	// screen; a newer one keeps the foreground. The reveal's collapse
 	// snapshot queues after the row exists, the order the synchronous submit
 	// kept.
-	if s, ok := m.groupFormSurface(); ok && s.Gen() == request.gen && s.Name() == request.draftName && s.Dir() == request.draftDir {
+	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && s.Gen() == request.gen && s.Name() == request.draftName && s.Dir() == request.draftDir {
 		m.clearErr()
 		m.Pop()
 		m.applyRailStateDecision(m.rail.RevealGroup(result.Path))

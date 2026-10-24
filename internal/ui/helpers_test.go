@@ -21,6 +21,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
@@ -405,7 +406,7 @@ func listSessionIDs(t *testing.T, st *store.Store) []string {
 
 func pickGroup(t *testing.T, m *Model, path string) {
 	t.Helper()
-	if s, ok := m.groupFormSurface(); ok {
+	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok {
 		for i, opt := range s.Parents() {
 			if opt.Path == path && opt.SessionID == "" {
 				s.SelectParent(i)

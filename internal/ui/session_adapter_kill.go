@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -24,7 +25,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 		target = confirmTarget{
 			isGroup:  true,
 			path:     entry.group,
-			action:   actionKill,
+			action:   uidialogs.ConfirmKill,
 			sessions: live,
 			label: fmt.Sprintf("kill group %s (%d live sessions)? frees their RAM, v revives them.",
 				entry.group, len(live)),
@@ -43,7 +44,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		target = confirmTarget{
-			action:   actionKill,
+			action:   uidialogs.ConfirmKill,
 			sessions: sessions,
 			label: followConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
 				"frees its RAM, v revives it.",
@@ -64,7 +65,7 @@ func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.openConfirm(confirmTarget{
-		action:   actionKill,
+		action:   uidialogs.ConfirmKill,
 		sessions: live,
 		label:    fmt.Sprintf("kill every live session (%d)? frees their RAM, v revives them.", len(live)),
 	})

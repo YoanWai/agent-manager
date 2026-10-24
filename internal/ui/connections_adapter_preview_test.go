@@ -96,7 +96,7 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	fake.screen = "build" + hostile + "ing\x1bc\x0e\x0fdone\n$ "
 	raw := fake.snapshot
 	fake.mu.Unlock()
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 	// internal/remote already cleans what a host answers; the UI escapes on
 	// its own too, so this test hands it the host's raw rows.
 	setHost(m, "box", uilink.Facts(remote.HostState{OK: true, Snapshot: raw}))
@@ -148,7 +148,7 @@ func TestHostTextCannotDriveTheTerminal(t *testing.T) {
 	m.applyTestMsg(t, m.syncRemotePreview()())
 	frame("a failed read")
 
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 	setHost(m, "box", uilink.Facts(remote.HostState{Snapshot: raw, Failures: 1, Err: errors.New("box: denied" + hostile)}))
 	m.rail.Focus(boxRow)
 	frame("an offline host")
