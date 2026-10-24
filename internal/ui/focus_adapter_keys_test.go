@@ -16,6 +16,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -106,7 +107,7 @@ func TestPreviewLinePreservesBackgroundColumns(t *testing.T) {
 
 	raw := "\x1b[38;5;239m\x1b[48;5;237m❯\x1b[39m \x1b[38;5;231mhello there\x1b[39m"
 	width := 40
-	got := previewLine(raw, width)
+	got := uipreview.Line(raw, width)
 
 	rawCells := bgRun(raw, width)
 	gotCells := bgRun(got, width)
@@ -141,7 +142,7 @@ func TestCaretKeepsRowColours(t *testing.T) {
 	m := paneAt(t, raw)
 	setFocusCursor(m, paneCursor{x: 3, y: 0, ok: true})
 
-	plainRow := previewLine(raw, width)
+	plainRow := uipreview.Line(raw, width)
 	withCaret := prepareFocusFrame(m, raw+"\n", width, 1, 0, 0, 0).Rows[0]
 
 	if ansi.Strip(withCaret) != ansi.Strip(plainRow) {

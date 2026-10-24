@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -138,7 +139,7 @@ func (m *Model) remoteContentLines(width, height int) ([]contentLine, bool) {
 		body = []string{mutedStyle().Render("press " + m.listGlyph(keybind.Prompt) + " to start an agent here")}
 	default:
 		head = m.remoteSessionDetail(row, inner)
-		body = m.ssh.Preview.Screen(inner, height-len(head)-1, uiconnections.ScreenView{Err: errStyle(), Muted: mutedStyle(), ExpandTabs: expandPaneTabs})
+		body = m.ssh.Preview.Screen(inner, height-len(head)-1, uiconnections.ScreenView{Err: errStyle(), Muted: mutedStyle(), ExpandTabs: uipreview.ExpandTabs})
 	}
 	var lines []contentLine
 	for _, line := range head {
@@ -168,23 +169,23 @@ func (m *Model) connectionDetail(host string, width int) []string {
 		reading = errStyle().Render(fmt.Sprintf("%s · %d failed", uiconnections.TroubleLabel(state.Trouble), state.Failures))
 	}
 	lines := []string{
-		fitColumns([]string{title}, []string{reading}, width),
-		factRow("ssh to", trimmedValue(conn.Destination), "", width),
+		uipreview.FitColumns([]string{title}, []string{reading}, width),
+		factRow("ssh to", uipreview.TrimmedValue(conn.Destination), "", width),
 	}
 	if conn.Binary != "" {
-		lines = append(lines, factRow("binary", trimmedValue(conn.Binary), "", width))
+		lines = append(lines, factRow("binary", uipreview.TrimmedValue(conn.Binary), "", width))
 	}
 	if seen && state.OK {
 		manager := "manager awake"
 		if !state.ManagerAwake {
 			manager = "no manager running"
 		}
-		lines = append(lines, factRow("host", plainValue(mutedStyle().Render(countNoun(len(state.Sessions), "session")+" · "+
+		lines = append(lines, factRow("host", uipreview.PlainValue(mutedStyle().Render(countNoun(len(state.Sessions), "session")+" · "+
 			countNoun(len(state.Terminals), "terminal")+" · "+manager)), "", width))
 	}
 	if seen && state.Err != "" {
-		for _, line := range strings.Split(ansi.Wordwrap(escapeControls(state.Err), max(width-detailLabelWidth, 8), " "), "\n") {
-			lines = append(lines, labelStyle().Render(padRight("error", detailLabelWidth))+errStyle().Render(line))
+		for _, line := range strings.Split(ansi.Wordwrap(escapeControls(state.Err), max(width-uipreview.DetailLabelWidth, 8), " "), "\n") {
+			lines = append(lines, labelStyle().Render(padRight("error", uipreview.DetailLabelWidth))+errStyle().Render(line))
 		}
 	}
 	return lines
@@ -200,8 +201,8 @@ func (m *Model) remoteSessionDetail(row uiconnections.Row, width int) []string {
 	host := lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)
 	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(escapeControlsInline(displayGroup(row.Group)))
 	return []string{
-		fitColumns([]string{name + subtleStyle().Render("  on ") + host, name}, []string{state}, width),
-		factRow("group", plainValue(group), "", width),
+		uipreview.FitColumns([]string{name + subtleStyle().Render("  on ") + host, name}, []string{state}, width),
+		factRow("group", uipreview.PlainValue(group), "", width),
 	}
 }
 

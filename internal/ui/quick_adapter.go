@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -328,7 +329,7 @@ const (
 )
 
 func (m *Model) viewQuickBar(width, maxRows int) string {
-	facts := uiquick.Facts{WorktreeOn: m.quickWorktreeOn(), LabelWidth: detailLabelWidth, Styles: m.spawnStyles()}
+	facts := uiquick.Facts{WorktreeOn: m.quickWorktreeOn(), LabelWidth: uipreview.DetailLabelWidth, Styles: m.spawnStyles()}
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.quickTargetDir())
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {
@@ -344,11 +345,11 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 // quickAnswerRow names the session an answer goes to, with its state and
 // tool where the width has room.
 func (m *Model) quickAnswerRow(entry treeRow, name string, width int) string {
-	label := labelStyle().Render(padRight("answer", detailLabelWidth)) + subtleStyle().Render("│ ")
+	label := labelStyle().Render(padRight("answer", uipreview.DetailLabelWidth)) + subtleStyle().Render("│ ")
 	sess := entry.sess
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(m.glyphs().StatusGlyph(sess.Status) + " " + statusLabel(sess.Status))
-	return fitColumns(
+	return uipreview.FitColumns(
 		[]string{label + lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(name)},
 		[]string{state + " " + chipStyle().Render(sess.Tool), state, ""}, width)
 }

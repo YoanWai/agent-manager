@@ -3,11 +3,9 @@ package ui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	"github.com/charmbracelet/lipgloss"
@@ -158,21 +156,10 @@ func (m *Model) focusPaneOriginX() int {
 	return leftWidth + 2
 }
 
-// detailLabelWidth is the label column every fact in a detail head pads to.
-const detailLabelWidth = uipreview.DetailLabelWidth
-
 // factRow is one line of a detail head, with its label painted in the
 // manager's quiet label tone inside the head's label column.
 func factRow(label string, value func(room int) string, right string, width int) string {
 	return uipreview.FactRow(labelStyle().Render(uipreview.FactLabel(label)), value, right, width)
-}
-
-func plainValue(value string) func(int) string { return uipreview.PlainValue(value) }
-
-func trimmedValue(value string) func(int) string { return uipreview.TrimmedValue(value) }
-
-func fitColumns(lefts, rights []string, width int) string {
-	return uipreview.FitColumns(lefts, rights, width)
 }
 
 // viewDetail heads the content column: the selected session's name, its
@@ -194,7 +181,7 @@ func (m *Model) viewDetail(width int) string {
 
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(m.glyphs().StatusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
-		subtleStyle().Render(" · "+relSince(lastActivity(sess))+m.elsewhereNote(sess))
+		subtleStyle().Render(" · "+relSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))+m.elsewhereNote(sess))
 	if sess.AfterTurn != "" {
 		state += subtleStyle().Render(" · ") + m.afterTurnBadge(sess.AfterTurn) + subtleStyle().Render(" "+afterTurnNote[sess.AfterTurn])
 	}
@@ -202,7 +189,7 @@ func (m *Model) viewDetail(width int) string {
 	// from its siblings, so it rides beside the tool while the row has room,
 	// and the tool chip goes before the name does.
 	name := lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(m.displayName(sess))
-	// Ahead of the name because fitColumns trims the head from its tail: the
+	// Ahead of the name because FitColumns trims the head from its tail: the
 	// rail still shows the name, while a trimmed badge leaves no trace that
 	// anything is waiting.
 	if queued := m.workspace.queuedMessages[sess.ID]; queued > 0 {
@@ -224,8 +211,8 @@ func (m *Model) viewDetail(width int) string {
 	started := subtleStyle().Render("started " + relSince(sess.CreatedAt))
 	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(displayGroup(sess.Group))
 	dir := func(room int) string { return mutedStyle().Render(truncateTail(m.sessionDir(sess), room)) }
-	return fitColumns(heads, []string{state}, width) + "\n" +
-		factRow("group", plainValue(group), started, width) + "\n" +
+	return uipreview.FitColumns(heads, []string{state}, width) + "\n" +
+		factRow("group", uipreview.PlainValue(group), started, width) + "\n" +
 		factRow("dir", dir, usage, width)
 }
 
@@ -238,7 +225,7 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		countLabel = "1 agent"
 	}
 	title := lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(displayGroup(group))
-	head := fitColumns([]string{title + "  " + chipStyle().Render(countLabel), title}, []string{""}, width)
+	head := uipreview.FitColumns([]string{title + "  " + chipStyle().Render(countLabel), title}, []string{""}, width)
 
 	if s, ok := m.renaming(); ok && s.IsGroup() && s.Path() == group {
 		return head + "\n" + m.viewRenameGroupFields(s, group, width)
@@ -257,10 +244,10 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		// same key answers a session, so the group says what it does here.
 		// The breakdown is the reading, so a column too tight for both keeps it.
 		hint := m.listHint(keybind.Prompt, "new agent")
-		if detailLabelWidth+ansi.StringWidth(breakdown)+ansi.StringWidth(hint)+2 > width {
+		if uipreview.DetailLabelWidth+ansi.StringWidth(breakdown)+ansi.StringWidth(hint)+2 > width {
 			hint = ""
 		}
-		lines = append(lines, factRow("state", trimmedValue(breakdown), hint, width))
+		lines = append(lines, factRow("state", uipreview.TrimmedValue(breakdown), hint, width))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -302,7 +289,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		rows = append(rows, rosterRow{
 			name:  tint.Render(m.glyphs().StatusGlyph(sess.Status)) + " " + valueStyle().Render(m.displayName(sess)),
 			tool:  subtleStyle().Render(sess.Tool),
-			state: tint.Render(statusLabel(sess.Status)) + subtleStyle().Render(" · "+relSince(lastActivity(sess))),
+			state: tint.Render(statusLabel(sess.Status)) + subtleStyle().Render(" · "+relSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))),
 		})
 		shown++
 	}
@@ -361,8 +348,4 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		lines = append(lines, overflow)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func lastActivity(sess store.Session) time.Time {
-	return uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt)
 }

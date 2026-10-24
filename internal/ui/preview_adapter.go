@@ -64,8 +64,6 @@ func (m *Model) previewInterval() time.Duration {
 	return m.workspace.capture.Interval(previewCaptures{m})
 }
 
-func (m *Model) previewTick() tea.Cmd { return m.workspace.capture.Tick(previewCaptures{m}) }
-
 func (m *Model) schedulePreview() tea.Cmd {
 	return m.workspace.capture.Schedule(m.focus.pane.PreviewGeneration())
 }

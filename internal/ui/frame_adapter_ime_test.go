@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -84,7 +85,7 @@ func TestFocusCursorAnchorAccountsForDroppedCaptureRows(t *testing.T) {
 }
 
 func TestPreviewLineStripsCapturedCursorMarker(t *testing.T) {
-	got := previewLine("pane"+cursorAnchorMarker+"output", 40)
+	got := uipreview.Line(strings.ReplaceAll("pane"+cursorAnchorMarker+"output", cursorAnchorMarker, ""), 40)
 	if strings.Contains(got, cursorAnchorMarker) {
 		t.Fatal("captured pane retained the private cursor marker")
 	}
