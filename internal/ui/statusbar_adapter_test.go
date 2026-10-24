@@ -2,6 +2,7 @@ package ui
 
 import (
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	uistatusbar "github.com/YoanWai/agent-manager/internal/ui/statusbar"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -205,5 +206,58 @@ func TestSearchFieldSitsInTheRail(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no search field on the frame:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+// Only a run that matched when it was written keeps reading as what it was:
+// text written on its own is a failure, and the report that follows must not
+// inherit an earlier outcome or warning.
+func TestErrBarKindFollowsTheRunThatNamedIt(t *testing.T) {
+	m := &Model{}
+	m.reportErr("git not found in PATH")
+	if m.errBar.kind() != uistatusbar.Failure {
+		t.Fatal("lone text should read as a failure")
+	}
+	m.reportDone("opened /tmp/a in code")
+	if !m.errBar.worked() {
+		t.Fatal("an action that went through should read as one")
+	}
+	m.reportWarn("copied the whole pane")
+	if !m.errBar.warned() {
+		t.Fatal("a caveat should read as a warning")
+	}
+	m.errBar = errBar{text: "something else", done: "opened", shown: "opened"}
+	if m.errBar.kind() != uistatusbar.Failure {
+		t.Fatal("text replaced after an outcome should read as a failure")
+	}
+}
+
+// A message's first poll records it, and it clears two polls later, so a
+// transient error needs no timer of its own.
+func TestErrBarClearsAfterTwoPolls(t *testing.T) {
+	m := &Model{}
+	m.ageError()
+	if m.errBar != (errBar{}) {
+		t.Fatalf("an empty bar grew %+v", m.errBar)
+	}
+	m.reportErr("boom")
+	m.ageError()
+	if m.errBar.text != "boom" || m.errBar.shown != "boom" || m.errBar.age != 0 {
+		t.Fatalf("the first poll should only record the baseline: %+v", m.errBar)
+	}
+	m.ageError()
+	if m.errBar.text != "boom" || m.errBar.age != 1 {
+		t.Fatalf("the second poll should age the bar: %+v", m.errBar)
+	}
+	m.ageError()
+	if m.errBar.text != "" {
+		t.Fatalf("the third poll should clear the bar, kept %q", m.errBar.text)
+	}
+	m.reportErr("boom")
+	m.ageError()
+	m.reportErr("newer")
+	m.ageError()
+	if m.errBar.text != "newer" || m.errBar.age != 0 {
+		t.Fatalf("new text should restart the count: %+v", m.errBar)
 	}
 }

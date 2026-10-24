@@ -277,14 +277,14 @@ func (m *Model) listMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case tea.MouseActionPress:
 		return m.listPress(msg, ctx)
 	case tea.MouseActionMotion:
-		if split.dragging {
-			split.moved = true
+		if split.Dragging {
+			split.Moved = true
 			m.setSplitFromX(msg.X)
 			return m, nil
 		}
 	case tea.MouseActionRelease:
-		if split.dragging {
-			if !split.moved {
+		if split.Dragging {
+			if !split.Moved {
 				m.endDrag()
 				return m, nil
 			}
@@ -299,7 +299,7 @@ func (m *Model) listMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 // prompt, which owns the wheel the way it owns ↑↓. A resize keeps both
 // still.
 func (m *Model) listWheel(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model, tea.Cmd) {
-	if m.layout.split.resizeMode || m.layout.split.dragging {
+	if m.layout.split.ResizeMode || m.layout.split.Dragging {
 		return m, nil
 	}
 	if !m.quickPicking() {
@@ -316,21 +316,21 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 		return m, nil
 	}
 	split := &m.layout.split
-	if split.dragging && !split.resizeMode {
-		m.exitResizeMode(split.moved)
+	if split.Dragging && !split.ResizeMode {
+		m.exitResizeMode(split.Moved)
 	}
 	y0, y1 := m.bodyYRange()
 	onDivider := msg.Button == tea.MouseButtonLeft && !m.prefs.fullLayout && !m.rail.Searching() &&
 		msg.Y >= y0 && msg.Y < y1 && uigeometry.OnDivider(msg.X, m.dividerX())
 	if onDivider {
-		split.dragging, split.moved = true, false
-		if !split.resizeMode {
-			split.ratioBefore = split.ratio
+		split.Dragging, split.Moved = true, false
+		if !split.ResizeMode {
+			split.RatioBefore = split.Ratio
 			m.push(newResizeSurface(m))
 		}
 		return m, nil
 	}
-	if split.resizeMode {
+	if split.ResizeMode {
 		return m, nil
 	}
 	if hit, ok := m.quickHitAt(msg.X, msg.Y); ok {

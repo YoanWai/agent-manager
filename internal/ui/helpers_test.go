@@ -770,7 +770,7 @@ func shotModel() *Model {
 		layout: layoutState{
 			width:  120,
 			height: 34,
-			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
+			split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{
 			keys:     keybind.DefaultSession(),

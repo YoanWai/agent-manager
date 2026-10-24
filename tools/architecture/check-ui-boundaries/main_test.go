@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os/exec"
+	"strings"
+	"testing"
+)
 
 func TestHelpDependencyGraph(t *testing.T) {
 	if err := checkBoundary(helpBoundary); err != nil {
@@ -126,5 +130,23 @@ func TestFeatureBoundaryRefusesRuntimeEvenWhenListed(t *testing.T) {
 func TestBoundaryNamesMatchTheList(t *testing.T) {
 	if len(boundaryNames) != len(boundaries) {
 		t.Fatalf("%d names for %d boundaries", len(boundaryNames), len(boundaries))
+	}
+}
+
+// Every package under internal/ui has a boundary, so a new one cannot land
+// unchecked.
+func TestEveryUIPackageHasABoundary(t *testing.T) {
+	output, err := exec.Command("go", "list", module+"/internal/ui/...").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list: %v\n%s", err, output)
+	}
+	covered := map[string]bool{module + "/internal/ui": true}
+	for _, feature := range boundaries {
+		covered[module+feature.path] = true
+	}
+	for _, path := range strings.Fields(string(output)) {
+		if !covered[path] {
+			t.Errorf("%s has no boundary; add it to boundaries.go and run -write", path)
+		}
 	}
 }

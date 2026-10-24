@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"maps"
 	"slices"
 
@@ -73,7 +74,7 @@ type layoutState struct {
 	frame         string
 	width         int
 	height        int
-	split         splitState
+	split         uigeometry.Gesture
 	panes         uigeometrypanes.Panes
 	displayedRail uirail.Frame
 	// card places the last card painted and its body, for clicks.
@@ -173,7 +174,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	model := &Model{
 		effects: effectState{Queue: uieffects.Queue{Lifetime: &uieffects.Lifetime{}}},
 		poller:  &poller{runner: deps.Execution},
-		layout:  layoutState{split: splitState{ratio: uigeometrypanes.Load(st)}},
+		layout:  layoutState{split: uigeometry.Gesture{Ratio: uigeometrypanes.Load(st)}},
 		env: environment{
 			workDir: uilaunch.InitialWorkingDir(),
 			homeDir: uilaunch.InitialHomeDir(),

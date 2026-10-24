@@ -83,7 +83,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
+			split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{listKeys: keybind.DefaultList(),
 			store: st},
@@ -99,7 +99,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.layout.split.dragging {
+	if !m.layout.split.Dragging {
 		t.Fatal("press on divider should start drag")
 	}
 
@@ -117,7 +117,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.dragging || m.layout.split.resizeMode {
+	if m.layout.split.Dragging || m.layout.split.ResizeMode {
 		t.Fatal("release should end drag and exit resize mode")
 	}
 	if cmd != nil {
@@ -143,7 +143,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "split-drag", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
-	m.layout.split.ratio = uigeometry.DefaultSplitRatio
+	m.layout.split.Ratio = uigeometry.DefaultSplitRatio
 	m.applyCmd(t, m.refreshCmd())
 	m.drainEffects(t)
 	before := windowWidth(t, id)
@@ -198,7 +198,7 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: 0.34, resizeMode: true},
+			split:  uigeometry.Gesture{Ratio: 0.34, ResizeMode: true},
 		},
 		services: services{listKeys: keybind.DefaultList()},
 	}
@@ -208,7 +208,7 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.dragging {
+	if m.layout.split.Dragging {
 		t.Fatal("press on header row must not start drag")
 	}
 	y0, y1 := m.bodyYRange()
@@ -220,7 +220,7 @@ func TestPressOutsideBodyDoesNotDrag(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.dragging {
+	if m.layout.split.Dragging {
 		t.Fatal("press on exclusive body end must not start drag")
 	}
 }
@@ -230,7 +230,7 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: 0.34},
+			split:  uigeometry.Gesture{Ratio: 0.34},
 		},
 		services: services{listKeys: keybind.DefaultList()},
 	}
@@ -255,7 +255,7 @@ func TestDragCancelRestoresRatio(t *testing.T) {
 	updated, _ = m.exitResizeMode(false)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.resizeMode || m.layout.split.dragging {
+	if m.layout.split.ResizeMode || m.layout.split.Dragging {
 		t.Fatal("cancel should clear resize state")
 	}
 	if left, _ := m.splitWidths(); left != 34 {
@@ -268,7 +268,7 @@ func TestPressOffDividerDoesNotDrag(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: 0.34, resizeMode: true},
+			split:  uigeometry.Gesture{Ratio: 0.34, ResizeMode: true},
 		},
 		services: services{listKeys: keybind.DefaultList()},
 	}
@@ -277,7 +277,7 @@ func TestPressOffDividerDoesNotDrag(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.dragging {
+	if m.layout.split.Dragging {
 		t.Fatal("press far from divider should not start drag")
 	}
 }
@@ -725,7 +725,7 @@ func TestClickOnRailLastColumnSelectsRow(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.dragging || m.layout.split.resizeMode {
+	if m.layout.split.Dragging || m.layout.split.ResizeMode {
 		t.Fatal("the rail's own last column must not grab the divider")
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
@@ -766,11 +766,11 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
+			split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{listKeys: keybind.DefaultList()},
 	}
-	if m.layout.split.resizeMode {
+	if m.layout.split.ResizeMode {
 		t.Fatal("test setup: resize mode should start off")
 	}
 	div := m.dividerX()
@@ -780,10 +780,10 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.layout.split.dragging {
+	if !m.layout.split.Dragging {
 		t.Fatal("a press on the divider should arm the drag on its own")
 	}
-	if m.layout.split.resizeMode {
+	if m.layout.split.ResizeMode {
 		t.Fatal("a mouse drag must not take the keyboard with it")
 	}
 	if left, _ := m.splitWidths(); left != div {
@@ -802,7 +802,7 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.dragging || m.layout.split.resizeMode {
+	if m.layout.split.Dragging || m.layout.split.ResizeMode {
 		t.Fatal("release should end the drag it started without the keyboard")
 	}
 }
@@ -821,7 +821,7 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
+			split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{listKeys: keybind.DefaultList(),
 			store: st},
@@ -835,11 +835,11 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 		m = updated.(*Model)
 		m.drainEffects(t)
 	}
-	if m.layout.split.dragging || m.layout.split.resizeMode {
+	if m.layout.split.Dragging || m.layout.split.ResizeMode {
 		t.Fatal("the click should have ended the drag it armed")
 	}
-	if m.layout.split.ratio != uigeometry.DefaultSplitRatio {
-		t.Fatalf("ratio = %v want it untouched at %v", m.layout.split.ratio, uigeometry.DefaultSplitRatio)
+	if m.layout.split.Ratio != uigeometry.DefaultSplitRatio {
+		t.Fatalf("ratio = %v want it untouched at %v", m.layout.split.Ratio, uigeometry.DefaultSplitRatio)
 	}
 	if raw, err := st.Setting(uigeometry.SplitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("a click with no drag persisted %q (err %v)", raw, err)
@@ -861,14 +861,14 @@ func TestKeyEndsADragWhoseReleaseNeverLands(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.layout.split.dragging {
+	if !m.layout.split.Dragging {
 		t.Fatal("test setup: the press should have armed the drag")
 	}
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyDown})
 	m.drainEffects(t)
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.dragging || m.layout.split.resizeMode {
+	if m.layout.split.Dragging || m.layout.split.ResizeMode {
 		t.Fatal("a key should end a drag left open by a lost release")
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
@@ -898,10 +898,10 @@ func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if !m.layout.split.dragging || !m.layout.split.moved {
+	if !m.layout.split.Dragging || !m.layout.split.Moved {
 		t.Fatal("test setup: the press and motion should have armed a live drag")
 	}
-	dragged := m.layout.split.ratio
+	dragged := m.layout.split.Ratio
 
 	// The release never arrives. The next thing the mouse does is an
 	// ordinary click on a row, well left of the divider.
@@ -917,11 +917,11 @@ func TestRowClickAfterALostReleaseLeavesTheDividerAlone(t *testing.T) {
 	m = updated.(*Model)
 	m.drainEffects(t)
 
-	if m.layout.split.dragging || m.layout.split.moved {
+	if m.layout.split.Dragging || m.layout.split.Moved {
 		t.Fatal("the press should have ended the drag the lost release left open")
 	}
-	if m.layout.split.ratio != dragged {
-		t.Fatalf("ratio = %v, the click moved the divider off %v", m.layout.split.ratio, dragged)
+	if m.layout.split.Ratio != dragged {
+		t.Fatalf("ratio = %v, the click moved the divider off %v", m.layout.split.Ratio, dragged)
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "beta" {
 		t.Fatalf("the click should have selected the row under it, got %q ok=%v", sess.Name, ok)
@@ -952,7 +952,7 @@ func TestPressOffDividerWhileArmedDoesNotSelectRow(t *testing.T) {
 	if m.rail.Cursor() != before {
 		t.Fatal("a miss while resize mode is armed should not select a row")
 	}
-	if !m.layout.split.resizeMode {
+	if !m.layout.split.ResizeMode {
 		t.Fatal("resize mode should stay armed, waiting for the divider")
 	}
 }
@@ -1002,7 +1002,7 @@ func TestClickAtDividerXInFullLayoutSelectsRow(t *testing.T) {
 	})
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.layout.split.resizeMode || m.layout.split.dragging {
+	if m.layout.split.ResizeMode || m.layout.split.Dragging {
 		t.Fatal("full layout has no divider to drag")
 	}
 	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
@@ -1350,8 +1350,8 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		m    *Model
 		drag bool
 	}{
-		"searching": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: uigeometry.DefaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
-		"quick bar": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: uigeometry.DefaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
+		"searching": {&Model{layout: layoutState{width: 100, height: 40, split: uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
+		"quick bar": {&Model{layout: layoutState{width: 100, height: 40, split: uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if name == "quick bar" {
@@ -1361,7 +1361,7 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 			updated, _ := tc.m.handleMouse(tea.MouseMsg{
 				X: tc.m.dividerX(), Y: y0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft,
 			})
-			if got := updated.(*Model).layout.split.dragging; got != tc.drag {
+			if got := updated.(*Model).layout.split.Dragging; got != tc.drag {
 				t.Fatalf("divider dragging = %v, want %v", got, tc.drag)
 			}
 		})
@@ -1404,7 +1404,7 @@ func TestWheelClampsAtBothEnds(t *testing.T) {
 func TestWheelSwallowedInResizeMode(t *testing.T) {
 	m := &Model{
 		layout: layoutState{
-			split:  splitState{resizeMode: true},
+			split:  uigeometry.Gesture{ResizeMode: true},
 			width:  80,
 			height: 24,
 		},
@@ -1598,7 +1598,7 @@ func TestMessagesLegendClickOnlyOpensFromTheList(t *testing.T) {
 	}{
 		{"search", func(m *Model) { m.rail.SetSearch(m.rail.Search(), true) }, func(m *Model) bool { return m.rail.Searching() }},
 		{"quick prompt", func(m *Model) { m.openQuickMode() }, func(m *Model) bool { return (m.quick() != nil) }},
-		{"resize", func(m *Model) { m.enterResizeMode() }, func(m *Model) bool { return m.layout.split.resizeMode }},
+		{"resize", func(m *Model) { m.enterResizeMode() }, func(m *Model) bool { return m.layout.split.ResizeMode }},
 		{"messages key off", func(m *Model) { m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t)) }, func(*Model) bool { return true }},
 		{"settings", func(m *Model) { m.openSettings() }, func(m *Model) bool { return m.settingsOpen() }},
 		{"short terminal", func(m *Model) { m.layout.height = 2 }, func(*Model) bool { return true }},

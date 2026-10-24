@@ -47,67 +47,6 @@ func TonesFor(t theme.Theme) Tones {
 	}
 }
 
-// Outcome is what the manager last put on the bar: the text, the run of text
-// that named it an outcome or a warning, and the poll baseline that ages it
-// out. Only Succeeded and Warned set those runs; any later text alone leaves
-// them behind, so a message says it worked or reads as a failure.
-type Outcome struct {
-	text, done, warn, shown string
-	age                     int
-}
-
-// Failed is an outcome whose text reads as a failure until it says it worked.
-func Failed(text string) Outcome { return Outcome{text: text} }
-
-func Succeeded(text string) Outcome { return Outcome{text: text, done: text} }
-
-func Warned(text string) Outcome { return Outcome{text: text, warn: text} }
-
-// Told is an outcome held as four strings and a poll count, for a host that
-// keeps those fields itself so the features that read them keep working.
-func Told(text, done, warn, shown string, age int) Outcome {
-	return Outcome{text: text, done: done, warn: warn, shown: shown, age: age}
-}
-
-func (o Outcome) Text() string { return o.text }
-
-// Done, Warn and Shown are the stored runs and the baseline the next poll
-// compares against.
-func (o Outcome) Done() string  { return o.done }
-func (o Outcome) Warn() string  { return o.warn }
-func (o Outcome) Shown() string { return o.shown }
-
-func (o Outcome) Age() int { return o.age }
-
-// KindOf is how the text reads, which is the tone the bar paints it in.
-func (o Outcome) KindOf() Kind {
-	switch {
-	case o.text != "" && o.text == o.done:
-		return Success
-	case o.text != "" && o.text == o.warn:
-		return Warning
-	}
-	return Failure
-}
-
-// Ticked counts one poll against the outcome. Text that just changed starts
-// over, and text that survived two ticks clears, so a transient message
-// self-dismisses without a timer per callsite.
-func (o Outcome) Ticked() Outcome {
-	if o.text == "" {
-		return Outcome{}
-	}
-	if o.text != o.shown {
-		o.shown, o.age = o.text, 0
-		return o
-	}
-	o.age++
-	if o.age >= 2 {
-		return Outcome{}
-	}
-	return o
-}
-
 type Marks struct {
 	Fail string
 	Done string

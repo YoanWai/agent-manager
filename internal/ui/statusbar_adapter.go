@@ -9,52 +9,58 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// errBar is what the manager last put on the status bar: the text, the run
+// that named it an outcome or a warning, and the poll baseline that ages it
+// out. Only reportDone and reportWarn set those runs; any later text alone
+// leaves them behind, so a message says it worked or reads as a failure.
 type errBar struct {
-	text  string
-	done  string
-	warn  string
-	shown string
-	age   int
+	text, done, warn, shown string
+	age                     int
 }
 
-// outcome is the bar as the statusbar package reads it: what it says, the run
-// that named it, and the poll count that ages it out.
-func (e errBar) outcome() uistatusbar.Outcome {
-	return uistatusbar.Told(e.text, e.done, e.warn, e.shown, e.age)
+func (e errBar) kind() uistatusbar.Kind {
+	switch {
+	case e.text != "" && e.text == e.done:
+		return uistatusbar.Success
+	case e.text != "" && e.text == e.warn:
+		return uistatusbar.Warning
+	}
+	return uistatusbar.Failure
 }
 
-// kind is how the message reads, which is the tone the bar paints it in.
-func (e errBar) kind() uistatusbar.Kind { return e.outcome().KindOf() }
-
-// worked and warned are that kind as the yes/no question a caller asks when it
-// only needs one branch.
 func (e errBar) worked() bool { return e.kind() == uistatusbar.Success }
 func (e errBar) warned() bool { return e.kind() == uistatusbar.Warning }
 
-// fromOutcome is the bar a package outcome paints as.
-func fromOutcome(out uistatusbar.Outcome) errBar {
-	return errBar{text: out.Text(), done: out.Done(), warn: out.Warn(), shown: out.Shown(), age: out.Age()}
-}
-
 // reportErr puts a failure on the status bar; the poll ages it out.
-func (m *Model) reportErr(text string) { m.errBar = fromOutcome(uistatusbar.Failed(text)) }
+func (m *Model) reportErr(text string) { m.errBar = errBar{text: text} }
 
 // clearErr takes whatever message is on the status bar down.
 func (m *Model) clearErr() { m.errBar = errBar{} }
 
 // reportDone puts an action that went through on the status bar.
-func (m *Model) reportDone(text string) { m.errBar = fromOutcome(uistatusbar.Succeeded(text)) }
+func (m *Model) reportDone(text string) { m.errBar = errBar{text: text, done: text} }
 
 // reportWarn puts an action that went through with a caveat on the status
 // bar.
-func (m *Model) reportWarn(text string) { m.errBar = fromOutcome(uistatusbar.Warned(text)) }
+func (m *Model) reportWarn(text string) { m.errBar = errBar{text: text, warn: text} }
 
 type errMsg struct{ err error }
 
-// ageError clears a status message after it has survived a couple of poll
-// ticks, so transient errors self-dismiss without any per-callsite timers.
+// ageError counts one poll against the message. Text that just changed
+// starts over, and text that survived two ticks clears, so a transient
+// message self-dismisses without a timer per callsite.
 func (m *Model) ageError() {
-	m.errBar = fromOutcome(m.errBar.outcome().Ticked())
+	e := &m.errBar
+	switch {
+	case e.text == "":
+		*e = errBar{}
+	case e.text != e.shown:
+		e.shown, e.age = e.text, 0
+	default:
+		if e.age++; e.age >= 2 {
+			*e = errBar{}
+		}
+	}
 }
 
 func (m *Model) routeStatusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
@@ -82,8 +88,8 @@ func (m *Model) statusLine() string {
 		ScrollOffset:    focusStatus.ScrollOffset,
 		PagesScrollback: pagesScrollback,
 		Copied:          focusStatus.CopiedChars,
-		ResizeMode:      m.layout.split.resizeMode,
-		Dragging:        m.layout.split.dragging,
+		ResizeMode:      m.layout.split.ResizeMode,
+		Dragging:        m.layout.split.Dragging,
 		Notice:          m.review.Snapshot().Notice,
 	}, m.glyphs(), uistatusbar.TonesFor(uitheme.Current()))
 }

@@ -118,9 +118,9 @@ func (m *Model) focusBottomRule(paneWidth, width int) string {
 // reads as the content's separator running into the sessions list.
 func (m *Model) seamCell(railRule bool) string {
 	// While the divider is being moved the seam becomes the grip.
-	if m.layout.split.dragging || m.layout.split.resizeMode {
+	if m.layout.split.Dragging || m.layout.split.ResizeMode {
 		color := uitheme.ColorAccent()
-		if m.layout.split.dragging {
+		if m.layout.split.Dragging {
 			color = uitheme.ColorAccent2()
 		}
 		return uitheme.Paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, uitheme.PanelHex())

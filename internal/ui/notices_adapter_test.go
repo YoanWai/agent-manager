@@ -848,8 +848,8 @@ func TestNewFeedWaitsForResize(t *testing.T) {
 	m.clearSurfaces()
 	m.enterResizeMode()
 	m.Update(uirelease.FeedMsg{Messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if !m.onList() || !m.layout.split.resizeMode {
-		t.Fatalf("resize should keep the modal closed, screen = %v resize=%v", m.screenID(), m.layout.split.resizeMode)
+	if !m.onList() || !m.layout.split.ResizeMode {
+		t.Fatalf("resize should keep the modal closed, screen = %v resize=%v", m.screenID(), m.layout.split.ResizeMode)
 	}
 
 	m.exitResizeMode(false)

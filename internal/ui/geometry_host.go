@@ -35,25 +35,9 @@ func (h geometryHost) quickFooterRows() int {
 	return lipgloss.Height(h.m.listFooter())
 }
 
-func (h geometryHost) Gesture() uigeometry.Gesture {
-	split := h.m.layout.split
-	return uigeometry.Gesture{
-		Ratio:       split.ratio,
-		RatioBefore: split.ratioBefore,
-		ResizeMode:  split.resizeMode,
-		Dragging:    split.dragging,
-		Moved:       split.moved,
-	}
-}
+func (h geometryHost) Gesture() uigeometry.Gesture { return h.m.layout.split }
 
-func (h geometryHost) SetGesture(gesture uigeometry.Gesture) {
-	split := &h.m.layout.split
-	split.ratio = gesture.Ratio
-	split.ratioBefore = gesture.RatioBefore
-	split.resizeMode = gesture.ResizeMode
-	split.dragging = gesture.Dragging
-	split.moved = gesture.Moved
-}
+func (h geometryHost) SetGesture(gesture uigeometry.Gesture) { h.m.layout.split = gesture }
 
 func (h geometryHost) Exit(commit bool) { h.m.exitResizeMode(commit) }
 

@@ -5,6 +5,7 @@ package workspace
 
 import (
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"time"
 )
 
@@ -38,37 +39,8 @@ func (n *Net) Update(sent, recv uint64, ok bool, now time.Time) {
 	n.prevOK = ok
 }
 
-// Readings is one machine snapshot flattened off the OS probe, so the foot's
-// layout can be checked with plain values.
-type Readings struct {
-	CPUPercent float64
-	CPUOK      bool
-
-	MemPercent float64
-	MemOK      bool
-	MemUsed    uint64
-	MemTotal   uint64
-
-	SwapOK      bool
-	SwapPercent float64
-	SwapUsed    uint64
-	SwapTotal   uint64
-
-	DiskOK        bool
-	DiskPercent   float64
-	DiskAvailable uint64
-
-	BatteryOK       bool
-	BatteryPercent  float64
-	BatteryCharging bool
-
-	CPUTempOK bool
-	CPUTemp   float64
-	GPUTempOK bool
-	GPUTemp   float64
-	SoCTempOK bool
-	SoCTemp   float64
-}
+// Readings is the OS snapshot the foot lays out.
+type Readings = sysstat.Snapshot
 
 // Temperatures lists the sensor readings in display order, each as bare text
 // the foot styles.

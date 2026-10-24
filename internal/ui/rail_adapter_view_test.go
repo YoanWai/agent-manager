@@ -285,7 +285,7 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 				layout: layoutState{
 					width:  size.w,
 					height: size.h,
-					split:  splitState{ratio: uigeometry.DefaultSplitRatio},
+					split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 				},
 				workspace: workspace{sessions: sessions},
 				rail:      railModelFromRows(rows, cursor),
@@ -1031,7 +1031,7 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 				layout: layoutState{
 					width:  120,
 					height: 40,
-					split:  splitState{ratio: uigeometry.DefaultSplitRatio},
+					split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 				},
 				workspace: workspace{sessions: []store.Session{sess},
 
@@ -1058,7 +1058,7 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 		layout: layoutState{
 			width:  120,
 			height: 40,
-			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
+			split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 		},
 		workspace: workspace{sessions: []store.Session{sess}},
 		rail:      railModelFromRows([]treeRow{{sess: sess}}, 0),

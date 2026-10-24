@@ -9,26 +9,18 @@ import (
 
 // splitState is the horizontal sessions/sidebar split as the mouse, the
 // resize surface and the status line read it.
-type splitState struct {
-	ratio       float64
-	ratioBefore float64
-	resizeMode  bool
-	dragging    bool
-	moved       bool
-}
-
 func (m *Model) geometryLayout() uigeometry.Layout { return geometryHost{m}.Layout() }
 
 func (m *Model) splitWidths() (int, int) {
-	return m.geometryLayout().SplitWidths(m.layout.split.ratio)
+	return m.geometryLayout().SplitWidths(m.layout.split.Ratio)
 }
 
 func (m *Model) previewPaneWidth() int {
-	return m.geometryLayout().PreviewWidth(m.layout.split.ratio)
+	return m.geometryLayout().PreviewWidth(m.layout.split.Ratio)
 }
 
 func (m *Model) paneTargetSize() (int, int) {
-	return m.geometryLayout().PaneSize(m.layout.split.ratio)
+	return m.geometryLayout().PaneSize(m.layout.split.Ratio)
 }
 
 func (m *Model) listChromeRows() int { return m.geometryLayout().ChromeRows() }
@@ -36,7 +28,7 @@ func (m *Model) listChromeRows() int { return m.geometryLayout().ChromeRows() }
 func (m *Model) listBodyHeight() int { return m.geometryLayout().BodyHeight() }
 
 func (m *Model) previewPaneHeight() int {
-	return m.geometryLayout().PreviewHeight(m.layout.split.ratio)
+	return m.geometryLayout().PreviewHeight(m.layout.split.Ratio)
 }
 
 func (m *Model) bodyYRange() (int, int) { return m.geometryLayout().BodyRange() }
@@ -49,17 +41,17 @@ func (m *Model) fullFocus() bool {
 
 // focusPaneRows is the rows of pane content the focused view paints.
 func (m *Model) focusPaneRows() int {
-	return uigeometry.FocusPaneRows(m.geometryLayout(), m.layout.split.ratio)
+	return uigeometry.FocusPaneRows(m.geometryLayout(), m.layout.split.Ratio)
 }
 
 // dividerX is the column index of the sessions/sidebar junction.
 func (m *Model) dividerX() int {
-	return geometryHost{m}.Gesture().Divider(m.layout.width)
+	return m.layout.split.Divider(m.layout.width)
 }
 
 // setSplitFromX pins the left panel's right edge to terminal column x.
 func (m *Model) setSplitFromX(x int) {
-	m.applyGesture(geometryHost{m}.Gesture().Drag(x, m.layout.width))
+	m.applyGesture(m.layout.split.Drag(x, m.layout.width))
 }
 
 // enterResizeMode arms divider dragging, which the arrow keys drive.
@@ -67,7 +59,7 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	if !m.listClear() || m.rail.Busy() || m.quick() != nil {
 		return m, nil
 	}
-	gesture := geometryHost{m}.Gesture()
+	gesture := m.layout.split
 	gesture.ResizeMode = true
 	gesture.Dragging = false
 	gesture.RatioBefore = gesture.Ratio
@@ -79,8 +71,8 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 
 // endDrag drops a press on the divider that moved nothing.
 func (m *Model) endDrag() {
-	m.applyGesture(geometryHost{m}.Gesture().Released(0, 0))
-	if !m.layout.split.resizeMode {
+	m.applyGesture(m.layout.split.Released(0, 0))
+	if !m.layout.split.ResizeMode {
 		m.dropResize()
 	}
 }
@@ -97,10 +89,10 @@ func (m *Model) dropResize() {
 // exitResizeMode leaves divider-drag mode: commit persists the ratio, cancel
 // puts back the one it started from.
 func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
-	if !m.layout.split.resizeMode && !m.layout.split.dragging {
+	if !m.layout.split.ResizeMode && !m.layout.split.Dragging {
 		return m, nil
 	}
-	m.applyGesture(geometryHost{m}.Gesture().Ended(commit))
+	m.applyGesture(m.layout.split.Ended(commit))
 	if commit {
 		m.persistSplitRatio()
 	}
@@ -110,21 +102,21 @@ func (m *Model) exitResizeMode(commit bool) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) nudgeSplit(delta int) {
-	m.applyGesture(geometryHost{m}.Gesture().Nudged(delta, m.layout.width))
+	m.applyGesture(m.layout.split.Nudged(delta, m.layout.width))
 }
 
 // prepareSplitForQuit accepts the live preview as the user's final ratio. It
 // runs only after requestQuit has passed the installer refusal gates.
 func (m *Model) prepareSplitForQuit() {
-	if !m.layout.split.resizeMode && !m.layout.split.dragging {
+	if !m.layout.split.ResizeMode && !m.layout.split.Dragging {
 		return
 	}
 	m.persistSplitRatio()
-	m.applyGesture(uigeometry.Gesture{Ratio: m.layout.split.ratio})
+	m.applyGesture(uigeometry.Gesture{Ratio: m.layout.split.Ratio})
 	m.dropResize()
 }
 
-func (m *Model) applyGesture(gesture uigeometry.Gesture) { geometryHost{m}.SetGesture(gesture) }
+func (m *Model) applyGesture(gesture uigeometry.Gesture) { m.layout.split = gesture }
 
 func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	size, ok := msg.(tea.WindowSizeMsg)
@@ -165,7 +157,7 @@ func (m *Model) persistSplitRatio() {
 	if m.services.store == nil {
 		return
 	}
-	m.layout.panes.Persist(paneSizing{m}, m.layout.split.ratio)
+	m.layout.panes.Persist(paneSizing{m}, m.layout.split.Ratio)
 }
 
 // queueGeometry queues a resize, dropping what the lane already carries and
