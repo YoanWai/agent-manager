@@ -150,7 +150,7 @@ func (m *Model) wheelFocus(up bool, x, y int) tea.Cmd {
 		X: x, Y: y, Action: tea.MouseActionPress,
 		Button: map[bool]tea.MouseButton{true: tea.MouseButtonWheelUp, false: tea.MouseButtonWheelDown}[up],
 	}, uifocus.MouseContext{
-		SessionID: sess.ID, Rows: m.focusPaneRows(), RuntimeReady: m.focus.runtime.watch != nil,
+		SessionID: sess.ID, Rows: m.focusPaneRows(), RuntimeReady: m.focus.runtime.Watch != nil,
 	})
 	_, cmd := m.applyFocusMouse(result)
 	return cmd

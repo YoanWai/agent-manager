@@ -253,7 +253,7 @@ func TestFullLayoutRightOpensFullWidthFocus(t *testing.T) {
 	}
 	sess := railSelectedSession(m)
 	want := [2]int{m.layout.width, m.listBodyHeight()}
-	if got := m.focus.runtime.lastPaneSizes[sess.ID]; got != want {
+	if got := m.focus.runtime.Sizes[sess.ID]; got != want {
 		t.Fatalf("focused pane pinned to %v, want %v", got, want)
 	}
 	panes, err := m.services.tmux.Panes()
@@ -307,7 +307,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 		t.Fatalf("right did not focus, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	sess := railSelectedSession(m)
-	pinned := m.focus.runtime.lastPaneSizes[sess.ID]
+	pinned := m.focus.runtime.Sizes[sess.ID]
 	setRailSessionTool(m, sess.ID, "claude-hooked")
 	setFocusPaneID(m, sess.ID)
 	setFocusCursor(m, paneCursor{x: 4, y: 0, ok: true})
@@ -330,7 +330,7 @@ func TestFullFocusLeftReturnsAtPromptHead(t *testing.T) {
 	if !m.fullRows() {
 		t.Fatal("returning should land on the full screen list")
 	}
-	if got := m.focus.runtime.lastPaneSizes[sess.ID]; got != pinned {
+	if got := m.focus.runtime.Sizes[sess.ID]; got != pinned {
 		t.Fatalf("returning resized the pane to %v, want %v kept", got, pinned)
 	}
 }
@@ -414,7 +414,7 @@ func TestSplitRepinKeepsTallerPaneHeight(t *testing.T) {
 
 	m.prefs.fullLayout = true
 	m.startup.sessionsSized = false
-	m.focus.runtime.lastPaneSizes = nil
+	m.focus.runtime.Sizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	fullW, fullH := m.paneTargetSize()
 	if w, h := windowSize(t, id); w != fullW || h < fullH {

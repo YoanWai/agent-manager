@@ -97,9 +97,7 @@ func (m *Model) sessionWindowProjectedLive(id string) bool {
 // unwatch stops the focus watcher before a session is killed on purpose:
 // the client going away then is the plan, not a loss to report.
 func (m *Model) unwatch(id string) {
-	if m.focus.runtime.watch != nil {
-		m.focus.runtime.watch.Unwatch(id)
-	}
+	m.focus.runtime.Unwatch(id)
 }
 
 // killSession ends one session's tmux window, freeing everything its agent
@@ -108,8 +106,5 @@ func (m *Model) unwatch(id string) {
 // shows the agent's last output once the window is gone.
 
 func (m *Model) watchedSession() string {
-	if m.focus.runtime.watch == nil {
-		return ""
-	}
-	return m.focus.runtime.watch.Watching()
+	return m.focus.runtime.Watching()
 }

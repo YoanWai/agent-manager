@@ -1,16 +1,20 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 
-	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// focusProber is the store and tmux server the entry and exit probes read.
+func (s effectServices) focusProber() focusruntime.Prober {
+	return focusruntime.Prober{Store: s.store, Driver: s.driver}
+}
 
 type focusRequest struct {
 	generation uint64
@@ -24,37 +28,18 @@ func (request focusRequest) copied() effectRequest { return request }
 func (focusRequest) effectName() string { return "focus or attach" }
 
 func (request focusRequest) run(services effectServices) (uieffects.Result, error) {
-	return services.runFocus(request)
+	return focusEffectResult{}, services.focusProber().Probe(request.sessionID)
 }
 
-type focusEffectResult struct {
-	fatal error
-}
+type focusEffectResult struct{}
 
 func (focusEffectResult) EffectResult() {}
 
 func (result focusEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
-	return m.applyFocusEffect(job.Request.(focusRequest), result, err)
+	return m.applyFocusEffect(job.Request.(focusRequest), err)
 }
 
-func (s effectServices) runFocus(request focusRequest) (uieffects.Result, error) {
-	result := focusEffectResult{}
-	if !s.driver.Exists(request.sessionID) {
-		return result, errors.New(deadSessionHint)
-	}
-	sess, err := s.store.Get(request.sessionID)
-	if err != nil {
-		return result, err
-	}
-	if sess.Status == status.Finished {
-		if ackErr := s.store.AcknowledgeFinished(request.sessionID); ackErr != nil {
-			return result, ackErr
-		}
-	}
-	return result, nil
-}
-
-func (m *Model) applyFocusEffect(request focusRequest, result focusEffectResult, err error) tea.Cmd {
+func (m *Model) applyFocusEffect(request focusRequest, err error) tea.Cmd {
 	if err != nil {
 		m.reportErr(err.Error())
 		return nil
@@ -78,13 +63,9 @@ func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 	if m.prefs.fullLayout {
 		m.pinFullFocusPane(sess.ID)
 	}
-	if m.focus.runtime.watch != nil {
-		m.focus.runtime.watch.RetryNow()
-	}
+	m.focus.runtime.Retry()
 	m.watchSelection()
-	pane := m.focus.pane.Pane()
-	keepPaneFacts := m.focus.runtime.watch != nil &&
-		m.focus.runtime.watch.Serving(sess.ID) && pane.SessionID == sess.ID
+	keepPaneFacts := m.focus.runtime.KeepsPaneFacts(&m.focus.pane, sess.ID)
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID, KeepPaneFacts: keepPaneFacts})
 	return tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
 }
@@ -100,7 +81,7 @@ func (request ackRequest) copied() effectRequest { return request }
 func (ackRequest) effectName() string { return "focus or attach" }
 
 func (request ackRequest) run(services effectServices) (uieffects.Result, error) {
-	return services.runAck(request)
+	return ackEffectResult{}, services.focusProber().Ack(request.sessionID)
 }
 
 type ackEffectResult struct{}
@@ -108,18 +89,11 @@ type ackEffectResult struct{}
 func (ackEffectResult) EffectResult() {}
 
 func (result ackEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
-	m.applyAckEffect(job, result, err)
+	m.applyAckEffect(result, err)
 	return nil
 }
 
-func (s effectServices) runAck(request ackRequest) (uieffects.Result, error) {
-	if err := s.store.AcknowledgeFinished(request.sessionID); err != nil {
-		return ackEffectResult{}, err
-	}
-	return ackEffectResult{}, nil
-}
-
-func (m *Model) applyAckEffect(job *uieffects.Job, result ackEffectResult, err error) tea.Cmd {
+func (m *Model) applyAckEffect(_ ackEffectResult, err error) tea.Cmd {
 	if err != nil {
 		m.reportErr(err.Error())
 		return nil
@@ -139,7 +113,8 @@ func (request detachRequest) copied() effectRequest { return request }
 func (detachRequest) effectName() string { return "focus or attach" }
 
 func (request detachRequest) run(services effectServices) (uieffects.Result, error) {
-	return services.runDetach(request)
+	detached, err := services.focusProber().Detached(request.sessionID)
+	return detachEffectResult{request: detached.Request, clearErr: detached.ClearErr}, err
 }
 
 type detachEffectResult struct {
@@ -151,20 +126,6 @@ func (detachEffectResult) EffectResult() {}
 
 func (result detachEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
 	return m.applyDetachEffect(job.Request.(detachRequest), result, err)
-}
-
-func (s effectServices) runDetach(request detachRequest) (uieffects.Result, error) {
-	result := detachEffectResult{}
-	marker, err := s.driver.PendingRequest(request.sessionID)
-	if err != nil {
-		return result, err
-	}
-	if marker == "" {
-		return result, nil
-	}
-	result.request = marker
-	result.clearErr = s.driver.ClearRequest(request.sessionID)
-	return result, nil
 }
 
 func (m *Model) applyDetachEffect(request detachRequest, result detachEffectResult, err error) tea.Cmd {

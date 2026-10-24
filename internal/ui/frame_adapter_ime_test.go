@@ -19,21 +19,21 @@ func TestFocusCursorAnchorTracksMirroredCaret(t *testing.T) {
 			sessions: []store.Session{{ID: "focused"}},
 		},
 		rail:  railModelFromRows([]treeRow{{sess: store.Session{ID: "focused"}}}, 0),
-		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
+		focus: focusState{imeCursor: &cursorAnchor{}},
 	}
 	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "focused"})
 	setFocusCursor(m, paneCursor{x: 7, y: 1, ok: true})
 	prepareFocusFrame(m, m.workspace.preview, 30, 3, 40, 8, 1)
 	m.syncCursorAnchor("frame")
-	col, row, ok := m.focus.runtime.imeCursor.get()
+	col, row, ok := m.focus.imeCursor.get()
 	if !ok || col != 48 || row != 10 {
 		t.Fatalf("cursor anchor = (%d, %d, %v), want (48, 10, true)", col, row, ok)
 	}
 
 	setFocusScrollOffset(t, m, "focused", 1, 3)
 	m.syncCursorAnchor("frame")
-	if _, _, ok := m.focus.runtime.imeCursor.get(); ok {
+	if _, _, ok := m.focus.imeCursor.get(); ok {
 		t.Fatal("scrolled pane kept a live IME cursor anchor")
 	}
 }
@@ -46,7 +46,7 @@ func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 			sessions: []store.Session{{ID: "focused"}},
 		},
 		rail:  railModelSearching([]treeRow{{sess: store.Session{ID: "focused", Name: "active"}}}, 0, "active"),
-		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
+		focus: focusState{imeCursor: &cursorAnchor{}},
 	}
 	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "focused"})
@@ -56,7 +56,7 @@ func TestFocusCursorAnchorRemovesListSearchMarker(t *testing.T) {
 	if strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("private list search marker leaked from the focused frame")
 	}
-	col, row, ok := m.focus.runtime.imeCursor.get()
+	col, row, ok := m.focus.imeCursor.get()
 	if !ok || col != 48 || row != 10 {
 		t.Fatalf("cursor anchor = (%d, %d, %v), want (48, 10, true)", col, row, ok)
 	}
@@ -70,14 +70,14 @@ func TestFocusCursorAnchorAccountsForDroppedCaptureRows(t *testing.T) {
 			sessions: []store.Session{{ID: "focused"}},
 		},
 		rail:  railModelFromRows([]treeRow{{sess: store.Session{ID: "focused"}}}, 0),
-		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
+		focus: focusState{imeCursor: &cursorAnchor{}},
 	}
 	m.push(newFocusSurface(m))
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: "focused"})
 	setFocusCursor(m, paneCursor{x: 4, y: 3, ok: true})
 	prepareFocusFrame(m, m.workspace.preview, 12, 2, 20, 5, 3)
 	m.syncCursorAnchor("frame")
-	col, row, ok := m.focus.runtime.imeCursor.get()
+	col, row, ok := m.focus.imeCursor.get()
 	if !ok || col != 25 || row != 7 {
 		t.Fatalf("cropped cursor anchor = (%d, %d, %v), want (25, 7, true)", col, row, ok)
 	}
@@ -129,13 +129,13 @@ func TestCustomSearchCursorsEmitMarkersOnlyWhileTyping(t *testing.T) {
 
 func TestNoActiveInputClearsCursorAnchor(t *testing.T) {
 	m := &Model{
-		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
+		focus: focusState{imeCursor: &cursorAnchor{}},
 	}
-	m.focus.runtime.imeCursor.set(9, 7, true)
+	m.focus.imeCursor.set(9, 7, true)
 	if got := m.syncCursorAnchor("plain frame"); got != "plain frame" {
 		t.Fatalf("frame changed to %q", got)
 	}
-	if _, _, ok := m.focus.runtime.imeCursor.get(); ok {
+	if _, _, ok := m.focus.imeCursor.get(); ok {
 		t.Fatal("inactive frame kept the previous cursor anchor")
 	}
 }
@@ -150,7 +150,7 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
 		},
-		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
+		focus: focusState{imeCursor: &cursorAnchor{}},
 	}
 	m.openHelp()
 	m.handleKey(runeKey("/"))
@@ -161,7 +161,7 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 	if strings.Contains(frame, cursorAnchorMarker) {
 		t.Fatal("private cursor marker leaked from the final frame")
 	}
-	col, row, ok := m.focus.runtime.imeCursor.get()
+	col, row, ok := m.focus.imeCursor.get()
 	if !ok || col < 1 || col > m.layout.width || row < 1 || row > m.layout.height {
 		t.Fatalf("final cursor anchor = (%d, %d, %v), frame is %dx%d", col, row, ok, m.layout.width, m.layout.height)
 	}

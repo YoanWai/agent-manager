@@ -602,7 +602,7 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	}
 	services := effectServices{
 		store: m.services.store, driver: m.services.tmux, gitDrv: m.services.gitDrv, cfg: m.services.cfg,
-		watch: m.focus.runtime.watch,
+		watch: m.focus.runtime.Watch,
 	}
 	if m.poller != nil {
 		services.runner = m.poller.runner

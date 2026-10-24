@@ -17,6 +17,7 @@ import (
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
@@ -76,7 +77,10 @@ type layoutState struct {
 
 type focusState struct {
 	pane    uifocus.Model
-	runtime focusRuntimeState
+	runtime focusruntime.State
+	// imeCursor is the cell the input method opens beside, owned here
+	// because the frame writer publishes into it.
+	imeCursor *cursorAnchor
 }
 
 type reviewNavState struct {
@@ -202,9 +206,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		rail:     uirailpersist.Load(st),
 		ssh:      uilink.New(remote.New(deps.ProfileDir), connections),
 		settings: uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
-		focus: focusState{runtime: focusRuntimeState{
-			imeCursor: &cursorAnchor{},
-		}},
+		focus:    focusState{runtime: focusruntime.State{}, imeCursor: &cursorAnchor{}},
 		startup: startupState{
 			booting: true,
 		},

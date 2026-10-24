@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -335,8 +336,8 @@ func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
 	if job := m.effects.Input.Active; job != nil {
 		request, ok = job.Request.(inputRequest)
 	}
-	if !ok || request.kind != inputKeys || request.command != want {
-		t.Fatalf("ctrl+c command = %q, want %q", request.command, want)
+	if !ok || request.request.Kind != focusruntime.Keys || request.request.Command != want {
+		t.Fatalf("ctrl+c command = %q, want %q", request.request.Command, want)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
@@ -359,8 +360,8 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	m.selectSessionRow(t, "focus-arrows")
 	sess := railSelectedSession(m)
 	quitAgent(t, m, sess.ID)
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focus.runtime.watch.Close)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.runtime.Watch.Close)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
@@ -372,7 +373,7 @@ func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	// they take the forked send-keys path.
 	if runtime.GOOS != "windows" {
 		deadline := time.Now().Add(5 * time.Second)
-		for !m.focus.runtime.watch.Serving(sess.ID) {
+		for !m.focus.runtime.Watch.Serving(sess.ID) {
 			if time.Now().After(deadline) {
 				t.Fatal("focus control client never became ready")
 			}
@@ -457,8 +458,8 @@ func TestFocusPageKeysReachOtherAgents(t *testing.T) {
 			m.selectSessionRow(t, "page-key-pass-through")
 			sess := railSelectedSession(m)
 			waitForPaneChild(t, m, sess.ID, "cat")
-			m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-			t.Cleanup(m.focus.runtime.watch.Close)
+			m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+			t.Cleanup(m.focus.runtime.Watch.Close)
 			updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 			m = updated.(*Model)
 			m.drainEffects(t)
@@ -1179,7 +1180,7 @@ func TestCaretAtInputStartNeedsCurrentPane(t *testing.T) {
 // the counting itself is the watcher's and is tested there.
 func TestCaretAtInputStartWaitsForQueuedKeys(t *testing.T) {
 	m := caretModel(t, paneCursor{x: 2, y: 0, ok: true}, "❯")
-	m.focus.runtime.watch = newFocusWatch(nil, func(tea.Msg) {})
+	m.focus.runtime.Watch = newFocusWatch(nil, func(tea.Msg) {})
 	if !m.caretAtInputStart("s1", "claude") {
 		t.Fatal("test setup: the empty prompt's caret is not at its head")
 	}
@@ -1366,8 +1367,8 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 	setRailSessionTool(m, railSelectedSession(m).ID, "pi-tool")
 	setHiddenPane := func(x int, preview string) {
 		updated, _ := m.Update(focusPreviewMsg{
-			sessID: sess.ID, preview: preview,
-			cursorX: x, cursorY: 1, paneStateOK: true,
+			SessionID: sess.ID, Preview: preview,
+			CursorX: x, CursorY: 1, PaneStateOK: true,
 		})
 		*m = *updated.(*Model)
 		cursor := m.focus.pane.Pane().Cursor
@@ -1556,9 +1557,9 @@ func TestFocusLeftUnfocusesOnCommandCodesParkedCaret(t *testing.T) {
 	sess := railSelectedSession(m)
 	setRailSessionTool(m, railSelectedSession(m).ID, "command-code")
 	hidden := focusPreviewMsg{
-		sessID:  sess.ID,
-		preview: "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
-		cursorX: 0, cursorY: 6, paneStateOK: true,
+		SessionID: sess.ID,
+		Preview:   "✻ Thought for 2 seconds [ctrl+o to expand]\n\n────────────\n❯ Ask your question...\n────────────\n  ? for shortcuts\n\n\n\n",
+		CursorX:   0, CursorY: 6, PaneStateOK: true,
 	}
 	updated, _ = m.Update(hidden)
 	m.drainEffects(t)
@@ -1739,11 +1740,11 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	}
 	sess := railSelectedSession(m)
 
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focus.runtime.watch.Close)
-	m.focus.runtime.watch.SetFocus(sess.ID)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.runtime.Watch.Close)
+	m.focus.runtime.Watch.SetFocus(sess.ID)
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.runtime.watch.Serving(sess.ID) {
+	for !m.focus.runtime.Watch.Serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Fatal("control client never served the session")
 		}
@@ -1754,14 +1755,14 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	if out, err := tmuxCmd(t, "detach-client", "-s", "am_"+sess.ID).CombinedOutput(); err != nil {
 		t.Fatalf("detach-client: %v: %s", err, out)
 	}
-	for m.focus.runtime.watch.Watching() == sess.ID {
+	for m.focus.runtime.Watch.Watching() == sess.ID {
 		if time.Now().After(deadline) {
 			t.Fatal("the dead client never released its claim")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	m.focus.runtime.watch.SetFocus(sess.ID)
-	if m.focus.runtime.watch.Watching() != "" {
+	m.focus.runtime.Watch.SetFocus(sess.ID)
+	if m.focus.runtime.Watch.Watching() != "" {
 		t.Fatal("backoff did not hold before the keystroke")
 	}
 
@@ -1771,8 +1772,8 @@ func TestFocusKeyRetriesADeadWatcher(t *testing.T) {
 	if m.errBar.text != "" {
 		t.Fatalf("forwarding set err: %q", m.errBar.text)
 	}
-	if m.focus.runtime.watch.Watching() != sess.ID {
-		t.Fatalf("keystroke left the watcher on %q, want %q", m.focus.runtime.watch.Watching(), sess.ID)
+	if m.focus.runtime.Watch.Watching() != sess.ID {
+		t.Fatalf("keystroke left the watcher on %q, want %q", m.focus.runtime.Watch.Watching(), sess.ID)
 	}
 }
 
@@ -1787,8 +1788,8 @@ func TestKillingTheFocusedSessionReportsNoLoss(t *testing.T) {
 	sess := railSelectedSession(m)
 
 	msgs := make(chan tea.Msg, 64)
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
-	t.Cleanup(m.focus.runtime.watch.Close)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(m.focus.runtime.Watch.Close)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)

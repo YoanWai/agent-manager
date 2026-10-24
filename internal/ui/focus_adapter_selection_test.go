@@ -154,11 +154,11 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	m.selectSessionRow(t, "typing")
 	sess := railSelectedSession(m)
 
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	m.focus.runtime.watch.SetFocus(sess.ID)
-	t.Cleanup(m.focus.runtime.watch.Close)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focus.runtime.Watch.SetFocus(sess.ID)
+	t.Cleanup(m.focus.runtime.Watch.Close)
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.runtime.watch.Serving(sess.ID) {
+	for !m.focus.runtime.Watch.Serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
@@ -166,7 +166,7 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	}
 
 	fresh := "typed-just-now"
-	updated, _ := m.Update(focusPreviewMsg{sessID: sess.ID, preview: fresh})
+	updated, _ := m.Update(focusPreviewMsg{SessionID: sess.ID, Preview: fresh})
 	*m = *updated.(*Model)
 	updated, _ = m.Update(previewMsg{sessID: sess.ID, preview: "stale-capture"})
 	*m = *updated.(*Model)
@@ -186,9 +186,9 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 	createSession(t, m, "released", t.TempDir(), "")
 	m.selectSessionRow(t, "released")
 	sess := railSelectedSession(m)
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	m.focus.runtime.watch.SetFocus(sess.ID)
-	m.focus.runtime.watch.Close()
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focus.runtime.Watch.SetFocus(sess.ID)
+	m.focus.runtime.Watch.Close()
 
 	updated, _ := m.Update(previewMsg{sessID: sess.ID, preview: "polled"})
 	*m = *updated.(*Model)

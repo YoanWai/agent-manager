@@ -38,9 +38,9 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	sess := railSelectedSession(m)
 
 	// The watcher is normally created by StartPoller, which tests skip.
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	t.Cleanup(m.focus.runtime.watch.Close)
-	m.focus.runtime.watch.SetFocus(sess.ID)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	t.Cleanup(m.focus.runtime.Watch.Close)
+	m.focus.runtime.Watch.SetFocus(sess.ID)
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
@@ -50,7 +50,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 	}
 	// Wait for the control client, which every scroll query rides.
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.runtime.watch.Serving(sess.ID) {
+	for !m.focus.runtime.Watch.Serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
@@ -91,7 +91,7 @@ func focusedWithHistory(t *testing.T, name string) (*Model, string) {
 // pipe, standing in for the pushed capture that normally caches it.
 func paneHistorySize(t *testing.T, m *Model, sessID string) int {
 	t.Helper()
-	out, ok := m.focus.runtime.watch.Query(`display-message -p -t ` + tmux.PaneTarget(sessID) + ` "#{history_size}"`)
+	out, ok := m.focus.runtime.Watch.Query(`display-message -p -t ` + tmux.PaneTarget(sessID) + ` "#{history_size}"`)
 	if !ok {
 		t.Fatal("history query failed over the control pipe")
 	}
@@ -154,7 +154,7 @@ func TestFocusWheelScrollsHistory(t *testing.T) {
 	}
 
 	// A live push must not yank the view back to the bottom.
-	updated, _ := m.Update(focusPreviewMsg{sessID: sessID, preview: "LIVE-FRAME\n"})
+	updated, _ := m.Update(focusPreviewMsg{SessionID: sessID, Preview: "LIVE-FRAME\n"})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if m.workspace.preview != scrolled {
@@ -345,13 +345,13 @@ func TestWheelBurstKeepsOneCaptureInFlight(t *testing.T) {
 		t.Fatalf("offset = %d after 6 notches, want %d", moved, 6*focusScrollStep)
 	}
 	// The reply for the stale first target fetches the final viewport once.
-	updated, cmd := m.Update(focusScrollMsg{sessID: sessID, offset: focusScrollStep, rows: m.focusPaneRows(), ok: true})
+	updated, cmd := m.Update(focusScrollMsg{SessionID: sessID, Offset: focusScrollStep, Rows: m.focusPaneRows(), OK: true})
 	*m = *updated.(*Model)
 	if cmd == nil {
 		t.Fatal("the stale reply should issue the catch-up fetch")
 	}
 	// The catch-up's own reply lands on the live target and frees the pipe.
-	updated, _ = m.Update(focusScrollMsg{sessID: sessID, offset: m.focus.pane.Status().ScrollOffset, rows: m.focusPaneRows(), preview: "frame\n", ok: true})
+	updated, _ = m.Update(focusScrollMsg{SessionID: sessID, Offset: m.focus.pane.Status().ScrollOffset, Rows: m.focusPaneRows(), Preview: "frame\n", OK: true})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if cmd := m.scrollFocus(-1); cmd == nil && m.focus.pane.Status().ScrollOffset < m.focus.pane.Pane().History {
@@ -455,7 +455,7 @@ func TestAdoptedTallerPaneIsNotShrunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resize-window: %v: %s", err, out)
 	}
-	m.focus.runtime.lastPaneSizes = nil
+	m.focus.runtime.Sizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	if got := windowHeight(t, sess.ID); got != taller {
 		t.Fatalf("adopted pane height = %d, want it kept at %d", got, taller)
@@ -598,16 +598,16 @@ func focusedMouseApp(t *testing.T, tool, name string) (*Model, store.Session) {
 	sess := railSelectedSession(m)
 
 	msgs := make(chan tea.Msg, 64)
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
-	t.Cleanup(m.focus.runtime.watch.Close)
-	m.focus.runtime.watch.SetFocus(sess.ID)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(msg tea.Msg) { msgs <- msg })
+	t.Cleanup(m.focus.runtime.Watch.Close)
+	m.focus.runtime.Watch.SetFocus(sess.ID)
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 	preparedView(m)
 
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.runtime.watch.Serving(sess.ID) {
+	for !m.focus.runtime.Watch.Serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
@@ -798,9 +798,9 @@ func TestAppMouseClearsScrollback(t *testing.T) {
 	}
 
 	updated, _ := m.Update(focusPreviewMsg{
-		sessID:    sess.ID,
-		preview:   "LIVE-FRAME\n",
-		paneMouse: true,
+		SessionID: sess.ID,
+		Preview:   "LIVE-FRAME\n",
+		Mouse:     true,
 	})
 	m = updated.(*Model)
 	if got := m.focus.pane.Status().ScrollOffset; got != 0 {
@@ -829,10 +829,10 @@ func TestStaleMouseClaimDoesNotClearHistoryScroll(t *testing.T) {
 	updateFocusPane(m, sess.ID, func(update *uifocus.PaneUpdate) { update.History = 80 })
 
 	updated, _ := m.Update(focusPreviewMsg{
-		sessID:      sess.ID,
-		preview:     "LIVE-FRAME\n",
-		paneMouse:   true,
-		historySize: 80,
+		SessionID: sess.ID,
+		Preview:   "LIVE-FRAME\n",
+		Mouse:     true,
+		History:   80,
 	})
 	m = updated.(*Model)
 	if got := m.focus.pane.Status().ScrollOffset; got != 9 {

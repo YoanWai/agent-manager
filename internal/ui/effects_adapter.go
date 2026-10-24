@@ -5,6 +5,7 @@ import (
 	"time"
 
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -96,7 +97,7 @@ func inputTarget(job *uieffects.Job) (string, bool) {
 		return "", false
 	}
 	request, ok := job.Request.(inputRequest)
-	return request.session.ID, ok
+	return request.request.Session.ID, ok
 }
 
 // heldBy reports whether the main-lane job kills or relaunches the pane the
@@ -146,7 +147,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 	}
 	// Keys, paste and mouse change no stored row, so they neither fence a
 	// listing nor ask for a poll; a typed prompt records LastPrompt and does.
-	if request, ok := job.Request.(inputRequest); ok && request.kind != inputPrompt {
+	if request, ok := job.Request.(inputRequest); ok && request.request.Kind != focusruntime.Prompt {
 		result, _ := msg.Result.(inputEffectResult)
 		m.applyInputEffect(result, msg.Err)
 		return m, m.nextEffectCmd()

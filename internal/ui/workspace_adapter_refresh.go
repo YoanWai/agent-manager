@@ -63,13 +63,13 @@ type refreshMsg struct {
 // bubbletea event loop so statuses keep updating while the TUI is
 // suspended inside a tmux attach.
 func (m *Model) StartPoller(ctx context.Context, send func(tea.Msg)) <-chan struct{} {
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, send)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, send)
 	m.syncPollInput()
 	results := m.poller.results(ctx)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer m.focus.runtime.watch.Close()
+		defer m.focus.runtime.Watch.Close()
 		for result := range results {
 			send(pollMessage(result))
 		}
@@ -95,23 +95,18 @@ func (m *Model) syncPollInput() {
 	// pay that twenty times; the client is opened once the cursor settles
 	// instead. The watcher only exists once StartPoller has a send
 	// function; tests drive Update without one.
-	if m.focus.runtime.watch != nil && m.focus.runtime.watch.Watching() != focusID {
-		m.focus.runtime.watch.SetFocus("")
-	}
+	m.focus.runtime.Settle(focusID)
 }
 
 // watchSelection points the control client at the current selection. Call
 // it where the selection has come to rest, never on every cursor move.
 func (m *Model) watchSelection() {
-	if m.focus.runtime.watch == nil {
-		return
-	}
 	sess, ok := m.selected()
 	if !ok || sess.Archived {
-		m.focus.runtime.watch.SetFocus("")
+		m.focus.runtime.ClearFocus()
 		return
 	}
-	m.focus.runtime.watch.SetFocus(sess.ID)
+	m.focus.runtime.SetFocus(sess.ID)
 }
 
 // requestRefresh publishes the current UI state to the poller and asks

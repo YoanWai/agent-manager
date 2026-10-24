@@ -120,7 +120,7 @@ func (m *Model) commitTypedPrompt() {
 		if m.workspace.sessions[i].Status != status.Working {
 			continue
 		}
-		m.dispatchInput(inputRequest{kind: inputPrompt, session: cand.session, text: cand.text})
+		m.dispatchInput(focusruntime.Request{Kind: focusruntime.Prompt, Session: cand.session, Text: cand.text})
 		delete(m.startup.pendingTyped, id)
 	}
 }
@@ -183,7 +183,7 @@ func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
 // different times, and a capture taken a second ago repainting over a
 // pushed one is what makes typed characters blink in and out.
 func (m *Model) setPreview(sessID, preview string) {
-	if sessID != "" && m.focus.runtime.watch != nil && m.focus.runtime.watch.Serving(sessID) {
+	if sessID != "" && m.focus.runtime.Serving(sessID) {
 		return
 	}
 	// A scrolled-back pane holds still on this path too: without a control
@@ -218,7 +218,7 @@ func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		// A session with a control client already pushes every frame; a
 		// tick capture on top of that is work whose result is discarded.
-		if m.focus.runtime.watch != nil && m.focus.runtime.watch.Serving(sess.ID) {
+		if m.focus.runtime.Serving(sess.ID) {
 			return routed(m, m.previewTick())
 		}
 		return routed(m, tea.Batch(m.previewCmd(sess, m.focus.pane.PreviewGeneration()), m.previewTick()))

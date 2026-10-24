@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -20,7 +21,7 @@ func TestInputDoesNotWaitBehindTheMainLane(t *testing.T) {
 	if m.nextEffectCmd() == nil || m.effects.Main.Active == nil {
 		t.Fatal("main lane did not start")
 	}
-	m.dispatchInput(inputRequest{kind: inputKeys, session: store.Session{ID: "s"}, command: "x"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Keys, Session: store.Session{ID: "s"}, Command: "x"})
 	if m.nextEffectCmd() == nil {
 		t.Fatal("input waited for the busy main lane")
 	}
@@ -32,14 +33,14 @@ func TestInputDoesNotWaitBehindTheMainLane(t *testing.T) {
 func TestKeysNeitherFenceListingsNorAskForAPoll(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.dispatchInput(inputRequest{kind: inputKeys, session: store.Session{ID: "s"}, command: "x"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Keys, Session: store.Session{ID: "s"}, Command: "x"})
 	m.nextEffectCmd()
 	id := m.effects.Input.Active.ID
 	m.handleEffectCompleted(uieffects.Completed{ID: id, Result: inputEffectResult{}, FinishedAt: time.Now()})
 	if !m.effects.latestObservation.IsZero() {
 		t.Fatal("a keystroke fenced later listings")
 	}
-	m.dispatchInput(inputRequest{kind: inputPrompt, session: store.Session{ID: "s"}, text: "p"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Prompt, Session: store.Session{ID: "s"}, Text: "p"})
 	m.nextEffectCmd()
 	id = m.effects.Input.Active.ID
 	m.handleEffectCompleted(uieffects.Completed{ID: id, Result: inputEffectResult{}, FinishedAt: time.Now()})
@@ -103,8 +104,8 @@ func TestInputToAPaneWaitsForTheJobRestartingIt(t *testing.T) {
 	if m.effects.Main.Active == nil {
 		t.Fatal("restart did not start")
 	}
-	m.dispatchInput(inputRequest{kind: inputPaste, session: store.Session{ID: "s"}, text: "late"})
-	m.dispatchInput(inputRequest{kind: inputKeys, session: store.Session{ID: "other"}, command: "x"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: store.Session{ID: "s"}, Text: "late"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Keys, Session: store.Session{ID: "other"}, Command: "x"})
 	m.nextEffectCmd()
 	if id, _ := inputTarget(m.effects.Input.Active); id != "other" {
 		t.Fatalf("input lane started %q, want the other pane's keys", id)
@@ -122,7 +123,7 @@ func TestInputToAPaneWaitsForTheJobRestartingIt(t *testing.T) {
 func TestAKillWaitsForTheInputInFlightToItsPane(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.dispatchInput(inputRequest{kind: inputPaste, session: store.Session{ID: "s"}, text: "typed"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: store.Session{ID: "s"}, Text: "typed"})
 	m.nextEffectCmd()
 	m.queueLifecycle(confirmTarget{action: actionKill, sessions: []store.Session{{ID: "s"}}}, false, "")
 	m.nextEffectCmd()

@@ -88,12 +88,12 @@ func TestLeavingFocusClearsItsSurfaces(t *testing.T) {
 // it is up, not the pane's caret behind it.
 func TestIMEAnchorFollowsTheInputOwner(t *testing.T) {
 	m := focusWithSavedList(t)
-	m.focus.runtime.imeCursor = &cursorAnchor{}
+	m.focus.imeCursor = &cursorAnchor{}
 	frame := "ab" + cursorAnchorMarker + "c"
 	if got := m.syncCursorAnchor(frame); got != "abc" {
 		t.Fatalf("frame = %q", got)
 	}
-	col, row, ok := m.focus.runtime.imeCursor.get()
+	col, row, ok := m.focus.imeCursor.get()
 	if !ok || col != 3 || row != 1 {
 		t.Fatalf("anchor = (%d, %d, %t), want the filter's caret at (3, 1)", col, row, ok)
 	}

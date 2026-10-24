@@ -129,14 +129,11 @@ func (s effectServices) runGeometry(request geometryRequest) (uieffects.Result, 
 	return result, err
 }
 func (m *Model) applyGeometryEffect(result geometryEffectResult, err error) {
-	if m.focus.runtime.lastPaneSizes == nil {
-		m.focus.runtime.lastPaneSizes = map[string][2]int{}
-	}
 	for _, target := range result.resized {
-		m.focus.runtime.lastPaneSizes[target.id] = target.size
+		m.focus.runtime.SetSize(target.id, target.size)
 	}
 	if result.publish != [2]int{} {
-		m.focus.runtime.lastPublishedSize = result.publish
+		m.focus.runtime.MarkPublished(result.publish)
 	}
 	if err != nil {
 		m.reportErr(err.Error())

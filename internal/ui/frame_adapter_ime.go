@@ -27,16 +27,16 @@ func (a *cursorAnchor) get() (col, row int, ok bool) { return a.cell.Get() }
 // uses its recorded pane box as a fallback because its caret is painted over
 // captured terminal output rather than by a Bubbles input widget.
 func (m *Model) syncCursorAnchor(frame string) string {
-	if m.focus.runtime.imeCursor == nil {
+	if m.focus.imeCursor == nil {
 		return uiframe.StripCursorMarker(frame)
 	}
 	if m.agentOwnsKeyboard() {
 		col, row, ok := m.focusCursorAnchor()
-		m.focus.runtime.imeCursor.set(col, row, ok)
+		m.focus.imeCursor.set(col, row, ok)
 		return uiframe.StripCursorMarker(frame)
 	}
 	frame, col, row, ok := uiframe.CursorMarkerPosition(frame)
-	m.focus.runtime.imeCursor.set(col, row, ok)
+	m.focus.imeCursor.set(col, row, ok)
 	return frame
 }
 
@@ -58,8 +58,8 @@ func textAreaView(input textarea.Model) string { return uiframe.TextAreaView(inp
 // CursorOutput keeps native TTY detection and terminal sizing while placing
 // the host cursor at the active input caret after each rendered frame.
 func (m *Model) CursorOutput(output *os.File) io.Writer {
-	if m.focus.runtime.imeCursor == nil {
-		m.focus.runtime.imeCursor = &cursorAnchor{}
+	if m.focus.imeCursor == nil {
+		m.focus.imeCursor = &cursorAnchor{}
 	}
-	return uiframe.NewCursorTTYOutput(output, &m.focus.runtime.imeCursor.cell)
+	return uiframe.NewCursorTTYOutput(output, &m.focus.imeCursor.cell)
 }

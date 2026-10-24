@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -57,7 +58,7 @@ func TestInputKeysUseServingControlWithoutDriverFallback(t *testing.T) {
 		t.Fatal("test key was not representable")
 	}
 	services := effectServices{store: m.services.store, driver: driver, watch: watch}
-	if _, err := services.runInput(inputRequest{kind: inputKeys, session: sess, command: command}); err != nil {
+	if _, err := services.inputWriter().Run(focusruntime.Request{Kind: focusruntime.Keys, Session: sess, Command: command}); err != nil {
 		t.Fatalf("runInput: %v", err)
 	}
 	invocations, err := os.ReadFile(log)
@@ -154,9 +155,9 @@ exit 0
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err := services.runInput(inputRequest{kind: inputKeys, session: sess, command: key})
+		_, err := services.inputWriter().Run(focusruntime.Request{Kind: focusruntime.Keys, Session: sess, Command: key})
 		if err == nil {
-			_, err = services.runInput(inputRequest{kind: inputPaste, session: sess, text: "after-paste"})
+			_, err = services.inputWriter().Run(focusruntime.Request{Kind: focusruntime.Paste, Session: sess, Text: "after-paste"})
 		}
 		done <- err
 	}()
@@ -230,8 +231,8 @@ func TestInputPasteCannotBeOvertakenByEnter(t *testing.T) {
 	original := pasteFocused
 	pasteFocused = func(*tmux.Driver, string, string) error { return os.WriteFile(log, []byte("paste\n"), 0600) }
 	t.Cleanup(func() { pasteFocused = original })
-	m.dispatchInput(inputRequest{kind: inputPaste, session: sess, text: "draft"})
-	m.dispatchInput(inputRequest{kind: inputKeys, session: sess, command: "send-keys -t " + tmux.PaneTarget(sess.ID) + " Enter"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: sess, Text: "draft"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Keys, Session: sess, Command: "send-keys -t " + tmux.PaneTarget(sess.ID) + " Enter"})
 	m.drainEffects(t)
 	data, err := os.ReadFile(log)
 	if err != nil {
@@ -251,7 +252,7 @@ func TestInputRefusesRelaunchedTarget(t *testing.T) {
 	stale.AgentLaunchedAt = stale.LaunchTime().Add(-time.Second)
 	called := false
 	services := effectServices{store: m.services.store, driver: m.services.tmux, pasteInput: func(*tmux.Driver, string, string) error { called = true; return nil }}
-	_, err := services.runInput(inputRequest{kind: inputPaste, session: stale, text: "draft"})
+	_, err := services.inputWriter().Run(focusruntime.Request{Kind: focusruntime.Paste, Session: stale, Text: "draft"})
 	if err == nil || called {
 		t.Fatalf("relaunched target received stale input: called=%v err=%v", called, err)
 	}
@@ -265,7 +266,7 @@ func TestBlockedInputWorkerKeepsUpdateResponsiveAndDrainsOnQuit(t *testing.T) {
 	original := pasteFocused
 	pasteFocused = func(*tmux.Driver, string, string) error { close(started); <-release; return nil }
 	t.Cleanup(func() { pasteFocused = original })
-	m.dispatchInput(inputRequest{kind: inputPaste, session: session, text: "draft"})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: session, Text: "draft"})
 	command := m.nextEffectCmd()
 	completed := make(chan tea.Msg, 1)
 	go func() { completed <- command() }()
@@ -305,7 +306,7 @@ func TestTypedPromptReceiptRefusesRelaunchedTarget(t *testing.T) {
 	stale := m.sessionRows()[0]
 	stale.AgentLaunchedAt = stale.LaunchTime().Add(-time.Second)
 	services := effectServices{store: m.services.store, driver: m.services.tmux}
-	_, err := services.runInput(inputRequest{kind: inputPrompt, session: stale, text: "old incarnation draft"})
+	_, err := services.inputWriter().Run(focusruntime.Request{Kind: focusruntime.Prompt, Session: stale, Text: "old incarnation draft"})
 	if err == nil {
 		t.Fatal("stale prompt receipt accepted")
 	}
@@ -326,7 +327,7 @@ func TestInputRefusesMovedSocket(t *testing.T) {
 	stale.TmuxSocket = "another-owner-socket"
 	called := false
 	services := effectServices{store: m.services.store, driver: m.services.tmux, pasteInput: func(*tmux.Driver, string, string) error { called = true; return nil }}
-	_, err := services.runInput(inputRequest{kind: inputPaste, session: stale, text: "draft"})
+	_, err := services.inputWriter().Run(focusruntime.Request{Kind: focusruntime.Paste, Session: stale, Text: "draft"})
 	if err == nil || called {
 		t.Fatalf("moved target received stale input: called=%v err=%v", called, err)
 	}
@@ -341,7 +342,7 @@ func TestInputRefusesChangedCreationEvenWithSameLaunch(t *testing.T) {
 	stale.CreatedAt = stale.CreatedAt.Add(-time.Second)
 	called := false
 	services := effectServices{store: m.services.store, driver: m.services.tmux, pasteInput: func(*tmux.Driver, string, string) error { called = true; return nil }}
-	_, err := services.runInput(inputRequest{kind: inputPaste, session: stale, text: "old row"})
+	_, err := services.inputWriter().Run(focusruntime.Request{Kind: focusruntime.Paste, Session: stale, Text: "old row"})
 	if err == nil || called {
 		t.Fatalf("changed creation received input: called=%v err=%v", called, err)
 	}

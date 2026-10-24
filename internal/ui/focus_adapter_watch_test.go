@@ -65,10 +65,10 @@ func waitFocusPreview(t *testing.T, msgs <-chan tea.Msg, id, contains string) {
 		select {
 		case msg := <-msgs:
 			preview, ok := msg.(focusPreviewMsg)
-			if !ok || preview.sessID != id {
+			if !ok || preview.SessionID != id {
 				continue
 			}
-			if strings.Contains(preview.preview, contains) {
+			if strings.Contains(preview.Preview, contains) {
 				return
 			}
 		case <-deadline:

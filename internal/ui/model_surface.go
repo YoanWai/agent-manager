@@ -59,7 +59,7 @@ type mouseTaker interface {
 func (m *Model) keys() keybind.Table { return m.services.keys }
 
 func (m *Model) pasteFocused(sess store.Session, text string) tea.Cmd {
-	m.dispatchInput(inputRequest{kind: inputPaste, session: sess, text: text, echo: true})
+	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: sess, Text: text, Echo: true})
 	return m.nextEffectCmd()
 }
 
