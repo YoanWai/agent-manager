@@ -7,6 +7,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -153,7 +154,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case inputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
+	case inputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, uirailpersist.Request, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}

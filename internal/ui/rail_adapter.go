@@ -10,8 +10,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -359,6 +361,21 @@ func (m *Model) applyRailDecision(decision uirail.Decision) (tea.Model, tea.Cmd)
 	return m, tea.Batch(commands...)
 }
 
+// handleRailKey runs a list key through the Rail and then the root: the
+// package consumes the keys that change only the Rail's own state.
+func (m *Model) handleRailKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	return m.applyRailKey(m.rail.Update(msg, m.layout.displayedRail, m.railKeyContext()))
+}
+
+// applyRailKey runs a decision the Rail already made, from either of the
+// Rail's key readers.
+func (m *Model) applyRailKey(decision uirail.Decision, consumed bool) (tea.Model, tea.Cmd) {
+	if consumed {
+		m.gens.foreground++
+	}
+	return m.applyRailDecision(decision)
+}
+
 func (m *Model) moveCursor(delta int) tea.Cmd {
 	_, command := m.applyRailDecision(m.rail.Move(delta, true))
 	return command
@@ -455,4 +472,106 @@ func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 		return m, m.openDiff()
 	}
 	return m, nil
+}
+
+func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool) {
+	if len(mutations) == 0 {
+		return
+	}
+	if first {
+		// Prioritized snapshots describe current UI state. Older pending saves
+		// must not overwrite them after their reveal, rename or move completes.
+		for _, mutation := range mutations {
+			if mutation.Kind != uirail.SaveCollapsed {
+				continue
+			}
+			pending := m.effects.Main.Pending[:0]
+			for _, job := range m.effects.Main.Pending {
+				if request, ok := job.Request.(uirailpersist.Request); ok && request.Mutation.Kind == uirail.SaveCollapsed {
+					continue
+				}
+				pending = append(pending, job)
+			}
+			m.effects.Main.Pending = pending
+			break
+		}
+	}
+	if chain == 0 {
+		m.effects.NextChain++
+		chain = m.effects.NextChain
+	}
+	for i := 0; i < len(mutations); i++ {
+		index := i
+		if first {
+			index = len(mutations) - 1 - i
+		}
+		mutation := mutations[index]
+		mutation.Collapsed = append([]string(nil), mutation.Collapsed...)
+		mutation.HostCollapsed = append([]uirail.HostFold(nil), mutation.HostCollapsed...)
+		mutation.GroupSiblings = append([]string(nil), mutation.GroupSiblings...)
+		m.enqueueEffect(uirailpersist.Request{
+			Mutation: mutation,
+			Dir:      m.workspace.groupPaths[mutation.Path],
+			Worktree: m.workspace.groupWorktrees[mutation.Path],
+			Base:     m.workspace.groupBases[mutation.Path],
+		}, chain, first)
+	}
+}
+func (m *Model) applyRailEffect(change uirailpersist.ChangeResult, request uirailpersist.Request, chain uint64, err error) tea.Cmd {
+	result := change.Result
+	mutation := request.Mutation
+	if err == nil {
+		switch mutation.Kind {
+		case uirail.SwapSession:
+			m.swapSessionInventory(mutation.SessionID, mutation.TargetID)
+		case uirail.SwapGroup:
+			m.materializeGroupsLocal(mutation.GroupSiblings)
+			m.swapGroupInventory(mutation.Path, mutation.TargetPath)
+		case uirail.MoveGroup:
+			m.renameGroupLocally(mutation.Path, result.NewPath, request.Dir, request.Worktree, request.Base)
+		}
+		for _, sess := range result.Sessions {
+			for i := range m.workspace.sessions {
+				if m.workspace.sessions[i].ID == sess.ID {
+					m.workspace.sessions[i].Group = sess.Group
+					m.workspace.sessions[i].ParentID = sess.ParentID
+				}
+			}
+		}
+	} else {
+		pending := m.effects.Main.Pending[:0]
+		for _, each := range m.effects.Main.Pending {
+			if each.Chain != chain {
+				pending = append(pending, each)
+			}
+		}
+		m.effects.Main.Pending = pending
+	}
+	follow := m.rail.ApplyMutation(mutation, err)
+	m.queueRail(follow.Mutations, chain, true)
+	follow.Mutations = nil
+	_, cmd := m.applyRailDecision(follow)
+	if result.Warning != nil {
+		m.reportErr(result.Warning.Error())
+	}
+	m.rebuildRows()
+	return cmd
+}
+
+func (m *Model) railMutationPending() bool {
+	jobs := append([]*uieffects.Job(nil), m.effects.Main.Pending...)
+	if m.effects.Main.Active != nil {
+		jobs = append(jobs, m.effects.Main.Active)
+	}
+	for _, job := range jobs {
+		if request, ok := job.Request.(uirailpersist.Request); ok && request.Mutation.Kind != uirail.SaveCollapsed {
+			return true
+		}
+	}
+	return false
+}
+
+// railServices hands a Rail change the store and pane labels it writes.
+func (s effectServices) railServices() uirailpersist.Services {
+	return uirailpersist.Services{Store: s.store, Labels: s.driver}
 }

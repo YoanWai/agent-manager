@@ -26,7 +26,6 @@ var effectPairs = []effectPair{
 	{choiceSaveRequest{}, choiceSaveResult{}},
 	{lifecycleRequest{}, lifecycleEffectResult{}},
 	{afterTurnRequest{}, afterTurnResult{}},
-	{railRequest{}, railEffectResult{}},
 	{forkRequest{}, forkEffectResult{}},
 	{geometryRequest{}, geometryEffectResult{}},
 	{spawnRequest{}, spawnEffectResult{}},

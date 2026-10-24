@@ -1,13 +1,18 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/store"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -145,6 +150,112 @@ func TestPaneSoftEdges(t *testing.T) {
 		// seam appearing here mean a stale seam renderer shipped again.
 		if cell := row[leftWidth]; cell != ' ' && cell != '─' {
 			t.Fatalf("row %d: seam column is %q, want pane fill:\n%s", i, string(cell), string(row))
+		}
+	}
+}
+
+func TestViewDoesNotPublishCursorState(t *testing.T) {
+	m := &Model{}
+	m.focus.imeCursor = &uiframe.CursorAnchor{}
+	m.focus.imeCursor.Set(8, 4, true)
+	if got := m.View(); got != "loading..." {
+		t.Fatalf("initial view = %q", got)
+	}
+	col, row, ok := m.focus.imeCursor.Get()
+	if col != 8 || row != 4 || !ok {
+		t.Fatalf("View changed published cursor to (%d, %d, %t)", col, row, ok)
+	}
+}
+
+func TestUpdatePublishesPreparedFrame(t *testing.T) {
+	m := shotModel()
+	m.prepareFrame()
+	before := m.View()
+	m.openHelp()
+	if got := m.View(); got != before {
+		t.Fatal("View rendered state that had not been prepared")
+	}
+	updated, _ := m.Update(struct{}{})
+	if updated != m {
+		t.Fatal("Update replaced the root model")
+	}
+	if got := m.View(); got == before || got == "loading..." {
+		t.Fatal("Update did not publish the changed frame")
+	}
+}
+
+func preparedView(m *Model) string {
+	m.prepareFrame()
+	return m.View()
+}
+
+func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
+	m := &Model{
+		layout:  layoutState{width: 120},
+		release: uirelease.State{Latest: "v0.9.0"},
+	}
+	header := ansi.Strip(m.viewHeaderRows()[0])
+	if !strings.Contains(header, "v0.9.0") || !strings.Contains(header, "available") {
+		t.Errorf("header missing update badge: %q", header)
+	}
+	if strings.Index(header, "available") > strings.Index(header, "agents") {
+		t.Errorf("badge should sit left, by the wordmark: %q", header)
+	}
+	m.release.Latest = ""
+	if header := ansi.Strip(m.viewHeaderRows()[0]); strings.Contains(header, "available") {
+		t.Errorf("header should have no badge when up to date: %q", header)
+	}
+}
+
+func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	waiting := &Model{
+		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
+		release:  uirelease.State{Latest: "v0.41.0", Version: "0.40.0"},
+	}
+	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160).text
+	if !strings.Contains(bar, uitheme.LegendAlertStyle().Render("M unread")) {
+		t.Fatalf("waiting messages should use the working color:\n%s", bar)
+	}
+	idle := &Model{
+		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
+		release:  uirelease.State{Version: "0.40.0"},
+		notices:  noticesPanel{Panel: uinotices.NewPanel(map[string]bool{uinotices.Welcome: true, uinotices.ArrowStep: true})},
+	}
+	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160).text)
+	if strings.Contains(idleBar, "unread") {
+		t.Fatalf("an empty panel should leave the messages key off:\n%s", idleBar)
+	}
+}
+
+// The root's tier literals reach the painter: every field the row and view
+// legends set survives the copy into ui/frame.
+func TestRootLegendKeepsItsTiersAndHits(t *testing.T) {
+	sections := []legendSection{{
+		title:  "Session",
+		leads:  [][2]string{{"p", "quick prompt mode"}},
+		alerts: [][2]string{{"M", "unread"}},
+		hint:   "a hint",
+		pairs:  [][2]string{{"r", "rename"}},
+	}}
+	painted := paintLegend(sections, 200)
+	plain := ansi.Strip(painted.text)
+	for _, want := range []string{"Session", "p quick prompt mode", "M unread", "a hint", "r rename"} {
+		if !strings.Contains(plain, want) {
+			t.Fatalf("root legend lost %q:\n%s", want, plain)
+		}
+	}
+	if len(painted.hits) != 3 {
+		t.Fatalf("hits = %+v, want one per pressable pair", painted.hits)
+	}
+	lines := strings.Split(plain, "\n")
+	for _, hit := range painted.hits {
+		if hit.y < 0 || hit.y >= len(lines) {
+			t.Fatalf("hit %+v lands on no painted row", hit)
 		}
 	}
 }

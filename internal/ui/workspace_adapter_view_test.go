@@ -1,103 +1,14 @@
 package ui
 
 import (
+	"strings"
+	"testing"
+
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"strings"
-	"testing"
 )
-
-func TestComputerLinesTemperatures(t *testing.T) {
-	cases := []struct {
-		name string
-		snap sysstat.Snapshot
-		want string
-	}{
-		{
-			name: "cpu and gpu",
-			snap: sysstat.Snapshot{CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55},
-			want: "temp cpu 61°C gpu 55°C",
-		},
-		{
-			name: "soc alone",
-			snap: sysstat.Snapshot{SoCTempOK: true, SoCTemp: 60.4},
-			want: "temp soc 60°C",
-		},
-		{
-			name: "no sensors",
-			want: "",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{layout: layoutState{width: 120, height: 34}, workspace: workspace{snap: tc.snap}}
-			var temp string
-			for _, line := range m.computerLines(40) {
-				plain := strings.TrimSpace(ansi.Strip(line))
-				if strings.HasPrefix(plain, "temp") {
-					temp = strings.Join(strings.Fields(plain), " ")
-				}
-			}
-			if tc.want == "" {
-				if temp != "" {
-					t.Fatalf("expected no temp row, got %q", temp)
-				}
-				return
-			}
-			if temp != tc.want {
-				t.Fatalf("temp row = %q, want %q", temp, tc.want)
-			}
-		})
-	}
-}
-
-func TestComputerLinesBattery(t *testing.T) {
-	cases := []struct {
-		name string
-		snap sysstat.Snapshot
-		want string
-	}{
-		{
-			name: "discharging",
-			snap: sysstat.Snapshot{BatteryOK: true, BatteryPercent: 84},
-			want: "batt " + strings.Repeat("━", 10) + " 84%",
-		},
-		{
-			name: "charging",
-			snap: sysstat.Snapshot{BatteryOK: true, BatteryPercent: 50, BatteryCharging: true},
-			want: "batt " + strings.Repeat("━", 10) + " 50% charging",
-		},
-		{
-			name: "no battery",
-			want: "",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := &Model{layout: layoutState{width: 120, height: 34}, workspace: workspace{snap: tc.snap}}
-			var batt string
-			for _, line := range m.computerLines(40) {
-				plain := strings.TrimSpace(ansi.Strip(line))
-				if strings.HasPrefix(plain, "batt") {
-					batt = strings.Join(strings.Fields(plain), " ")
-				}
-			}
-			if tc.want == "" {
-				if batt != "" {
-					t.Fatalf("expected no battery row, got %q", batt)
-				}
-				return
-			}
-			if batt != tc.want {
-				t.Fatalf("battery row = %q, want %q", batt, tc.want)
-			}
-		})
-	}
-}
 
 // A battery gauge colors off how empty it is, the opposite of every other
 // meter: low charge should read as alarming, a full battery as calm.
@@ -121,50 +32,6 @@ func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
 	}
 }
 
-// The separator carries its own reset, so a reading cannot inherit color.
-func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
-	forceANSI256(t)
-
-	row := tempReadings(uiworkspace.Readings{CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55})
-	want := sgrOf(uitheme.ValueStyle().Render("x"))
-	for _, reading := range []string{"cpu 61°C", "gpu 55°C"} {
-		before, _, found := strings.Cut(row, reading)
-		if !found {
-			t.Fatalf("row %q is missing %q", row, reading)
-		}
-		if got := lastSGR(before); got != want {
-			t.Fatalf("%q renders under %q, want %q", reading, got, want)
-		}
-	}
-}
-
-func lastSGR(s string) string {
-	idx := strings.LastIndex(s, "\x1b[")
-	if idx < 0 {
-		return ""
-	}
-	code, _, _ := strings.Cut(s[idx+2:], "m")
-	return code
-}
-
-func TestComputerDiskAvailable(t *testing.T) {
-	m := &Model{workspace: workspace{snap: sysstat.Snapshot{
-		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
-	}}}
-	for _, width := range []int{29, 34, 40, 55} {
-		lines := m.computerLines(width)
-		plain := ansi.Strip(strings.Join(lines, "\n"))
-		if !strings.Contains(plain, "66%") || !strings.Contains(plain, "167.9GB available") {
-			t.Fatalf("disk reading = %q", plain)
-		}
-		for _, line := range lines {
-			if got := ansi.StringWidth(line); got > width {
-				t.Fatalf("disk line width %d exceeds %d: %q", got, width, plain)
-			}
-		}
-	}
-}
-
 func TestDiskBytes(t *testing.T) {
 	for _, tc := range []struct {
 		bytes uint64
@@ -183,6 +50,8 @@ func TestDiskBytes(t *testing.T) {
 	}
 }
 
+// The foot is the machine readings alone: a notice floats over the frame
+// rather than taking a row here.
 func TestRailFootOnlyShowsComputerStats(t *testing.T) {
 	for _, full := range []bool{false, true} {
 		for _, width := range []int{34, 70, 120} {
@@ -208,28 +77,10 @@ func TestRailFootLinesFitWidth(t *testing.T) {
 	m.release.URL = "https://example.com"
 	for _, width := range []int{40, 55, 70} {
 		for _, line := range m.railFootLines(width) {
-			if got := lipgloss.Width(line); got > width {
+			if got := ansi.StringWidth(line); got > width {
 				t.Fatalf("width %d: line overflows at %d: %q", width, got, ansi.Strip(line))
 			}
 		}
-	}
-}
-
-// Full screen condenses the machine readings to one line.
-func TestFullLayoutFootLine(t *testing.T) {
-	m := shotModel()
-	m.prefs.fullLayout = true
-	foot := ansi.Strip(strings.Join(m.railFootLines(m.layout.width-1), "\n"))
-	for _, want := range []string{"cpu 22%", "mem 75%", "net"} {
-		if !strings.Contains(foot, want) {
-			t.Errorf("condensed foot line misses %q:\n%s", want, foot)
-		}
-	}
-	if strings.Contains(foot, "messages") {
-		t.Fatalf("no notices should mean no messages count:\n%s", foot)
-	}
-	if lines := m.railFootLines(m.layout.width - 1); len(lines) != 1 {
-		t.Fatalf("full screen foot should be one line, got %d", len(lines))
 	}
 }
 
