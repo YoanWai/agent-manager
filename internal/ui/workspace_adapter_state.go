@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
+	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 )
 
 type workspace struct {
@@ -41,7 +42,7 @@ type workspace struct {
 	// panes is the last pass's agent pane geometry, which the poller reads
 	// off the UI loop alongside its liveness listing.
 	panes map[string]tmux.Pane
-	net   netStats
+	net   uiworkspace.Net
 	// lastListedAt is the newest listing applied; an older one still carries
 	// focus, turn ends and pane facts, but not the rows it saw.
 	lastListedAt time.Time
