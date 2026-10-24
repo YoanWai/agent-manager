@@ -54,27 +54,10 @@ func (m *Model) groupBase(group string) string {
 	return ""
 }
 
-// groupBaseTarget names the base picker a branch read answers.
-type groupBaseTarget = uilaunch.BaseTarget
-
-const (
-	groupBaseForm   = uilaunch.BaseForm
-	groupBaseRename = uilaunch.BaseRename
-)
-
-// baseRefsTTL bounds how long a repo's branch list steps a base picker
-// without a fresh read, so a held arrow steps at key speed.
-const baseRefsTTL = uilaunch.BaseRefsTTL
-
-// groupBaseStepMsg is a base picker's step, answered off the update path with
-// the branches of dir. It lands only on the picker that asked, while it still
-// shows from.
-type groupBaseStepMsg = uilaunch.BaseStepMsg
-
 // stepGroupBase moves a group's base choice through auto and the branches of
-// the repo at dir. Branches read within baseRefsTTL step at once; otherwise
-// the read runs as a command and the step lands with it.
-func (m *Model) stepGroupBase(target groupBaseTarget, gen uint64, dir, current string, delta int) (string, tea.Cmd) {
+// the repo at dir. Branches read within uilaunch.BaseRefsTTL step at once;
+// otherwise the read runs as a command and the step lands with it.
+func (m *Model) stepGroupBase(target uilaunch.BaseTarget, gen uint64, dir, current string, delta int) (string, tea.Cmd) {
 	next, cmd, err := m.ledger.spawner.StepGroupBase(m.services.gitDrv, target, gen, dir, current, delta, time.Now())
 	if err != nil {
 		m.reportErr(err.Error())
@@ -86,20 +69,16 @@ func (m *Model) stepGroupBase(target groupBaseTarget, gen uint64, dir, current s
 	return next, cmd
 }
 
-func stepBaseChoice(refs []string, current string, delta int) string {
-	return uilaunch.StepBaseChoice(refs, current, delta)
-}
-
-func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
+func (m *Model) handleGroupBaseStep(msg uilaunch.BaseStepMsg) {
 	var base *string
 	switch msg.Target {
-	case groupBaseForm:
+	case uilaunch.BaseForm:
 		s, ok := m.groupFormSurface()
 		if !ok || uint64(s.Gen()) != msg.Gen || m.groupFormDir(s) != msg.Dir {
 			return
 		}
 		base = s.BaseRef()
-	case groupBaseRename:
+	case uilaunch.BaseRename:
 		s, ok := m.renaming()
 		if !ok || m.gens.dialog != msg.Gen || m.renameGroupDir(s) != msg.Dir {
 			return
@@ -120,13 +99,6 @@ func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 	*base = uilaunch.StepBaseChoice(msg.Refs, msg.From, msg.Delta)
 }
 
-// baseFetchInterval keeps a burst of spawns into one repo to one fetch.
-const baseFetchInterval = uilaunch.BaseFetchInterval
-
-type baseFetchKey = uilaunch.BaseFetchKey
-
-type baseFetchedMsg = uilaunch.BaseFetchedMsg
-
 // refreshSpawnBase resolves the base of the worktree spawn the form or the
 // quick bar is set to make, for the form to show, then fetches it unless
 // Settings turned that off. A spawn that beats the fetch branches from the
@@ -136,7 +108,7 @@ func (m *Model) refreshSpawnBase() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	key := baseFetchKey{Dir: dir, Override: m.groupBase(group)}
+	key := uilaunch.BaseFetchKey{Dir: dir, Override: m.groupBase(group)}
 	if !m.ledger.spawner.ReserveBaseFetch(key, time.Now()) {
 		return nil
 	}
@@ -145,7 +117,7 @@ func (m *Model) refreshSpawnBase() tea.Cmd {
 
 // recordBaseFetch keeps what a step of a base refresh found, and starts the
 // fetch once the resolving step is in.
-func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
+func (m *Model) recordBaseFetch(msg uilaunch.BaseFetchedMsg) tea.Cmd {
 	return m.ledger.spawner.RecordBaseFetch(msg, m.services.gitDrv, m.prefs.baseFetchOff)
 }
 

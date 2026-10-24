@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,7 +23,7 @@ func (m *Model) helpContext(width int) uihelp.Context {
 			AfterTurnArchive: m.afterTurnGlyph(store.AfterTurnArchive),
 			AfterTurnKill:    m.afterTurnGlyph(store.AfterTurnKill),
 		},
-		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey},
+		QuickKeys:    uihelp.QuickKeys{Model: uiquick.ModelKey, Effort: uiquick.EffortKey, Profile: uiquick.ProfileKey},
 		CursorMarker: cursorAnchorMarker,
 		ReviewRows:   uireview.HelpRows(),
 		Styles: uihelp.Styles{

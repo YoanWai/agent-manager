@@ -13,6 +13,7 @@ import (
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -357,7 +358,7 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case settingsLoadedMsg:
 		return routed(m.handleSettingsLoaded(msg))
 
-	case baseFetchedMsg:
+	case uilaunch.BaseFetchedMsg:
 		return routed(m, m.recordBaseFetch(msg))
 
 	case editorsProbedMsg:
@@ -368,11 +369,11 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.handleSavedPromptsLoaded(msg)
 		return routed(m, nil)
 
-	case groupBaseStepMsg:
+	case uilaunch.BaseStepMsg:
 		m.handleGroupBaseStep(msg)
 		return routed(m, nil)
 
-	case catalogMsg:
+	case uilaunch.CatalogMsg:
 		return routed(m, m.handleCatalog(msg))
 	}
 	return nil, nil, false

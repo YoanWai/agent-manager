@@ -373,9 +373,9 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	tool := m.services.cfg.Tools["claude-hooked"]
 	tool.Command = "cat"
 
-	command, _, err := m.buildLaunch("claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01", t.TempDir(), time.Time{})
+	command, _, err := launch.Environment(m.services.hooks, "claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01", t.TempDir(), time.Time{})
 	if err != nil {
-		t.Fatalf("buildLaunch: %v", err)
+		t.Fatalf("launch.Environment: %v", err)
 	}
 	// A Windows launch runs the agent straight from the pane's PowerShell;
 	// elsewhere a shell of its own records the agent's pid and execs it.
@@ -871,18 +871,18 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	plain := m.services.cfg.Tools["claude"]
-	_, env, err := m.buildLaunch("plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{})
+	_, env, err := launch.Environment(m.services.hooks, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
-		t.Fatalf("buildLaunch: %v", err)
+		t.Fatalf("launch.Environment: %v", err)
 	}
 	if env[hooks.EnvSessionID] != "abcd1234" {
 		t.Fatalf("plain tool env = %v, want session id", env)
 	}
 
 	hooked := m.services.cfg.Tools["claude-hooked"]
-	_, env, err = m.buildLaunch("hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{})
+	_, env, err = launch.Environment(m.services.hooks, "hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{})
 	if err != nil {
-		t.Fatalf("buildLaunch hooked: %v", err)
+		t.Fatalf("launch.Environment hooked: %v", err)
 	}
 	if env[hooks.EnvSessionID] != "abcd1234" || env[hooks.EnvStatusFile] == "" {
 		t.Fatalf("hooked tool env = %v, want session id and status file", env)

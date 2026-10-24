@@ -24,6 +24,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -588,7 +589,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool, choice config.Choice) error {
 	paneW, paneH := m.paneTargetSize()
 	request := spawnRequest{
-		kind:         spawnForm,
+		kind:         uilaunch.Form,
 		toolName:     toolName,
 		name:         name,
 		dir:          dir,

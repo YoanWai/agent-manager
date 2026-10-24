@@ -36,9 +36,9 @@ func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
 	return m.ledger.spawner.CachedWorktree(dir, time.Now())
 }
 
-func (m *Model) requestWorktreeProbe(target worktreeProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
+func (m *Model) requestWorktreeProbe(target uilaunch.ProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
 	m.gens.worktreeProbe++
-	request := worktreeProbeRequest{
+	request := uilaunch.ProbeRequest{
 		Target: target, Generation: generation, Sequence: m.gens.worktreeProbe,
 		Dir: dir, Toggle: toggle, From: from,
 	}
@@ -50,7 +50,7 @@ func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	if f.Remote.On() {
 		return nil
 	}
-	return m.requestWorktreeProbe(worktreeProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
+	return m.requestWorktreeProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
 }
 
 func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
@@ -58,35 +58,20 @@ func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 		return nil
 	}
 	q := m.quick()
-	return m.requestWorktreeProbe(worktreeProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
+	return m.requestWorktreeProbe(uilaunch.ProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
 }
 
-// worktreeProbeTarget names the surface a probe answers.
-type worktreeProbeTarget = uilaunch.ProbeTarget
-
-const (
-	worktreeProbeForm  = uilaunch.ProbeForm
-	worktreeProbeQuick = uilaunch.ProbeQuick
-)
-
-// worktreeProbeRequest names one directory's probe, with the sequence that
-// retires an older one.
-type worktreeProbeRequest = uilaunch.ProbeRequest
-
-// worktreeProbeMsg carries a directory's git-repo verdict.
-type worktreeProbeMsg = uilaunch.ProbeMsg
-
-func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) {
 	request := msg.Request
 	if request.Sequence != m.gens.worktreeProbe {
 		return m, nil
 	}
 	switch request.Target {
-	case worktreeProbeForm:
+	case uilaunch.ProbeForm:
 		if _, ok := m.formFor(request.Generation); !ok || m.formSpawnDir() != request.Dir {
 			return m, nil
 		}
-	case worktreeProbeQuick:
+	case uilaunch.ProbeQuick:
 		if _, ok := m.quickFor(request.Generation); !ok || m.quickTargetDir() != request.Dir {
 			return m, nil
 		}
@@ -102,7 +87,7 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.clearErr()
-	if request.Target == worktreeProbeForm {
+	if request.Target == uilaunch.ProbeForm {
 		if m.form().Worktree() != request.From {
 			return m, nil
 		}
@@ -115,10 +100,6 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
-
-// worktreeUnavailable is what the worktree toggle reads when the target
-// directory cannot host one.
-const worktreeUnavailable = uilaunch.WorktreeUnavailable
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.
 // Opening the form or the quick bar calls it.

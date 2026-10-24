@@ -43,7 +43,7 @@ func TestFormWorktreeGatedInNonRepoDir(t *testing.T) {
 	if m.formWorktreeOn() {
 		t.Fatal("a non-repo dir cannot host a worktree, even with the setting on")
 	}
-	if view := m.viewForm(); !strings.Contains(view, worktreeUnavailable) {
+	if view := m.viewForm(); !strings.Contains(view, uilaunch.WorktreeUnavailable) {
 		t.Fatalf("form should mark worktree unavailable, got %q", view)
 	}
 	m.form().FocusField(m.spawnHost(), spawn.FieldWorktree)
@@ -133,8 +133,8 @@ func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
 		started: make(chan struct{}), release: make(chan struct{}), capable: true,
 	}
 	m.gens.worktreeProbe++
-	request := worktreeProbeRequest{
-		Target: worktreeProbeForm, Generation: m.formPromptFor().Gen,
+	request := uilaunch.ProbeRequest{
+		Target: uilaunch.ProbeForm, Generation: m.formPromptFor().Gen,
 		Sequence: m.gens.worktreeProbe, Dir: m.formSpawnDir(), Toggle: true, From: m.form().Worktree(),
 	}
 	cmd := uilaunch.ProbeCmd(request, reader)
@@ -143,8 +143,8 @@ func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
 		t.Fatal("repo probe ran on the update path")
 	default:
 	}
-	completed := make(chan worktreeProbeMsg, 1)
-	go func() { completed <- cmd().(worktreeProbeMsg) }()
+	completed := make(chan uilaunch.ProbeMsg, 1)
+	go func() { completed <- cmd().(uilaunch.ProbeMsg) }()
 	<-reader.started
 	m.openForm()
 	close(reader.release)

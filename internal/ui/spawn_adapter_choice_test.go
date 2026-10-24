@@ -240,7 +240,7 @@ func TestQuickPromptSpawnsOnItsChoice(t *testing.T) {
 	}
 	ctrl(tea.KeyCtrlX)
 	ctrl(tea.KeyCtrlX)
-	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
+	if target := strings.Split(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · medium") {
 		t.Fatalf("target row: %s", target)
 	}
 	m.quick().Input.SetValue("do the work")
@@ -312,7 +312,7 @@ func TestQuickChoiceKeysNeedAGroupTarget(t *testing.T) {
 	if m.quick().Picking() != uiquick.PickNone || m.errBar.text != uiquick.ChoiceHint {
 		t.Fatalf("picking %d err %q", m.quick().Picking(), m.errBar.text)
 	}
-	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) {
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, uiquick.ModelKey) {
 		t.Fatalf("footer names a key that does nothing here: %s", footer)
 	}
 }
@@ -329,7 +329,7 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 		for range 3 {
 			m.handleFormKey(down)
 		}
-		m.handleCatalog(catalogMsg{Tool: "claude", Cat: catalog.Catalog{Models: claudeAnswer.Models[:1]}})
+		m.handleCatalog(uilaunch.CatalogMsg{Tool: "claude", Cat: catalog.Catalog{Models: claudeAnswer.Models[:1]}})
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
 		if m.form().Choice().Model() != "default" {
 			t.Fatalf("picked %q", m.form().Choice().Model())
@@ -436,7 +436,7 @@ func TestQuickModelSheetFitsTheColumn(t *testing.T) {
 	if strings.Contains(view, "type and press enter") {
 		t.Fatalf("the sheet should stand in for the prompt:\n%s", view)
 	}
-	var last quickHit
+	var last uiquick.Hit
 	for _, hit := range m.quick().Hits() {
 		if hit.Action == uiquick.ClickEntry {
 			last = hit
@@ -519,7 +519,7 @@ func TestQuickChoiceKeysOverlapNothing(t *testing.T) {
 			taken[name] = owner
 		}
 	}
-	for _, choiceKey := range []string{quickModelKey, quickEffortKey, quickProfileKey} {
+	for _, choiceKey := range []string{uiquick.ModelKey, uiquick.EffortKey, uiquick.ProfileKey} {
 		if !strings.HasPrefix(choiceKey, "ctrl+") {
 			t.Errorf("%s is not a control key", choiceKey)
 		}
@@ -578,7 +578,7 @@ func TestQuickFooterKeepsShiftTabBesideTab(t *testing.T) {
 		keys = append(keys, pair[0])
 	}
 	tab := slices.Index(keys, "tab")
-	if tab < 0 || tab+1 >= len(keys) || keys[tab+1] != "shift+tab" || slices.Index(keys, quickModelKey) < tab+1 {
+	if tab < 0 || tab+1 >= len(keys) || keys[tab+1] != "shift+tab" || slices.Index(keys, uiquick.ModelKey) < tab+1 {
 		t.Fatalf("footer keys = %v", keys)
 	}
 }
@@ -604,7 +604,7 @@ func TestQuickSheetStepsEffortAndHandsThePromptBack(t *testing.T) {
 		t.Fatalf("sheet:\n%s", sheet)
 	}
 	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.quick().Picking() != uiquick.PickNone || !strings.Contains(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "type and press enter") {
+	if m.quick().Picking() != uiquick.PickNone || !strings.Contains(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "type and press enter") {
 		t.Fatal("esc should hand the prompt back")
 	}
 }
@@ -656,7 +656,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		m.openQuickMode()
 		setQuickTool(m, slices.Index(quickTools(m), "claude"))
 		m.quick().RestartChoice(m.spawnHost())
-		if target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · low") {
+		if target := strings.Split(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "\n")[0]; !strings.Contains(target, "claude · opus · low") {
 			t.Fatalf("reopened bar: %s", target)
 		}
 	})
@@ -669,7 +669,7 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 		if m.form().Choice().Model() != "" {
 			t.Fatal("placed a model before the CLI answered")
 		}
-		m.handleCatalog(catalogMsg{Tool: "claude", Cat: claudeAnswer})
+		m.handleCatalog(uilaunch.CatalogMsg{Tool: "claude", Cat: claudeAnswer})
 		if got := m.form().Choice().Current(m.spawnHost(), "claude"); config.Choice(got) != (config.Choice{Model: "opus", Effort: "medium"}) {
 			t.Fatalf("choice once answered = %+v", got)
 		}
@@ -689,11 +689,11 @@ func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
 	m.openQuickMode()
 	setQuickTool(m, slices.Index(quickTools(m), "quietchat"))
 	m.quick().RestartChoice(m.spawnHost())
-	target := strings.Split(ansi.Strip(m.viewQuickBar(120, quickBarMaxRows)), "\n")[0]
+	target := strings.Split(ansi.Strip(m.viewQuickBar(120, uiquick.BarMaxRows)), "\n")[0]
 	if !strings.HasSuffix(strings.TrimRight(target, " "), "quietchat · ⎇ no repo") || strings.Contains(target, "not supported") {
 		t.Fatalf("target row: %s", target)
 	}
-	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) || strings.Contains(footer, quickEffortKey) {
+	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, uiquick.ModelKey) || strings.Contains(footer, uiquick.EffortKey) {
 		t.Fatalf("footer offers a choice the CLI does not have: %s", footer)
 	}
 }

@@ -18,15 +18,6 @@ import (
 
 func (m *Model) quickBarHost() quickBarHost { return quickBarHost{spawnHost{m: m}} }
 
-type quickHit = uiquick.Hit
-
-const (
-	quickBarMaxRows = uiquick.BarMaxRows
-	quickModelKey   = uiquick.ModelKey
-	quickEffortKey  = uiquick.EffortKey
-	quickProfileKey = uiquick.ProfileKey
-)
-
 // quickBarHost is the root as the quick bar sees it.
 type quickBarHost struct{ spawnHost }
 
@@ -72,7 +63,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	m.forgetWorktreeCapability()
 	aim, _ := m.rail.Selected()
 	q := newQuickSurface(m)
-	q.Composer = composer.Composer{Input: input, MaxRows: quickBarMaxRows, Gen: m.nextComposerGen()}
+	q.Composer = composer.Composer{Input: input, MaxRows: uiquick.BarMaxRows, Gen: m.nextComposerGen()}
 	q.CloseAfterSend = m.settings.Cache.Value(uisettings.QuickCloseSetting) == "close"
 	q.Aim = quickAim(aim)
 	// The bar is on the stack before its choice starts, so a bar aimed at
@@ -281,15 +272,15 @@ func (m *Model) quickPicking() bool {
 	return q != nil && q.Picking() != uiquick.PickNone
 }
 
-func (m *Model) quickHitAt(x, y int) (quickHit, bool) {
+func (m *Model) quickHitAt(x, y int) (uiquick.Hit, bool) {
 	q := m.quick()
 	if q == nil {
-		return quickHit{}, false
+		return uiquick.Hit{}, false
 	}
 	return q.HitAt(x-q.OriginX, y-q.OriginY)
 }
 
-func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
+func (m *Model) handleQuickClick(hit uiquick.Hit) tea.Cmd {
 	return m.runQuickRequest(m.quick().Bar.Click(m.quickBarHost(), hit))
 }
 
@@ -300,7 +291,7 @@ func (m *Model) quickFooter(q *uiquick.Surface) legend {
 	gutter := strings.Repeat(" ", quickGutter-1)
 	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
 	keys := splitLines(painted.text)
-	rows := quickBarMaxRows + 1
+	rows := uiquick.BarMaxRows + 1
 	if q.Picking() != uiquick.PickNone {
 		rows = max(m.layout.height/2, rows)
 	}

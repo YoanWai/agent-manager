@@ -246,7 +246,7 @@ func TestOutdatedCatalogDoesNotReplaceAnotherInteraction(t *testing.T) {
 		}
 		before := len(m.surfaces)
 		m.ledger.spawner.Catalogs = map[string]*uilaunch.CatalogState{"pi": {Loading: true}}
-		m.handleCatalog(catalogMsg{Tool: "pi", Err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
+		m.handleCatalog(uilaunch.CatalogMsg{Tool: "pi", Err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
 		if len(m.surfaces) != before || hintOpen(m) || m.ledger.spawner.Catalogs["pi"].Err == nil {
 			t.Fatalf("form %v: the stack changed or the catalog error was lost", form)
 		}
@@ -260,7 +260,7 @@ func TestClosingTheUpdateDialogReturnsToTheFormDraft(t *testing.T) {
 	m.form().SetName("draft-name")
 	m.formPromptFor().Attachments = []composer.Attachment{{ID: 7}}
 	m.ledger.spawner.Catalogs = map[string]*uilaunch.CatalogState{"pi-tool": {Loading: true}}
-	m.handleCatalog(catalogMsg{Tool: "pi-tool", Err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
+	m.handleCatalog(uilaunch.CatalogMsg{Tool: "pi-tool", Err: config.OutdatedToolError{Binary: "pi", Installed: "0.84.2", Minimum: "0.84.3"}})
 	if !hintOpen(m) {
 		t.Fatalf("screen = %v, want the update dialog", m.screenID())
 	}

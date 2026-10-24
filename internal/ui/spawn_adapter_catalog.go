@@ -11,9 +11,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// catalogMsg is a CLI's answer on its way through the model's message router.
-type catalogMsg = uilaunch.CatalogMsg
-
 // ensureCatalog reads the kept answer or asks the CLI off the update path,
 // since an answer takes up to seconds.
 func (m *Model) ensureCatalog(toolName string) tea.Cmd {
@@ -21,7 +18,7 @@ func (m *Model) ensureCatalog(toolName string) tea.Cmd {
 	return cmd
 }
 
-func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
+func (m *Model) handleCatalog(msg uilaunch.CatalogMsg) tea.Cmd {
 	outdated, cmd := m.ledger.spawner.Apply(msg, m.services.cfg, m.services.configDir, time.Now())
 	m.fitChoices()
 	if outdated != nil && m.catalogToolActive(msg.Tool) {

@@ -54,17 +54,3 @@ func (p systemDirectoryPreflight) resolve(raw string, fallbacks []string) (strin
 func (p systemDirectoryPreflight) repoCapable(dir string) bool {
 	return uilaunch.SystemDirectoryPreflight{Git: p.git}.RepoCapable(dir)
 }
-
-// resolveExistingDir turns raw field input into a usable directory: expand ~,
-// fall back when empty, absolutize, and require it to exist.
-func resolveExistingDir(raw, fallback string) (string, bool) {
-	return uilaunch.ResolveExistingDir(raw, fallback)
-}
-
-func isDir(path string) bool { return uilaunch.IsDir(path) }
-
-// initialWorkingDir and initialHomeDir capture where the manager started,
-// before the event loop reads them.
-func initialWorkingDir() string { return uilaunch.InitialWorkingDir() }
-
-func initialHomeDir() string { return uilaunch.InitialHomeDir() }

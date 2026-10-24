@@ -11,6 +11,7 @@ import (
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -222,7 +223,7 @@ func (m *Model) viewFork(form *uidialogs.Fork) string {
 // stepRenameBase steps the group base choice, probing the default path the
 // open group edit would save.
 func (m *Model) stepRenameBase(s *uidialogs.RenameSurface, delta int) (string, tea.Cmd) {
-	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(s), s.Base, delta)
+	return m.stepGroupBase(uilaunch.BaseRename, m.gens.dialog, m.renameGroupDir(s), s.Base, delta)
 }
 
 // openRename reads the selected row, the workspace's group choices and the
