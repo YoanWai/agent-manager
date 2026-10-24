@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 )
@@ -38,13 +37,14 @@ func (m *Model) enterFocuses() bool {
 // mirrorPreference copies one stored setting into the running manager; a
 // key the frame never reads stays in the cache alone.
 func (m *Model) mirrorPreference(key, value string) {
-	switch key {
-	case uisettings.GlyphModeSetting:
-		m.prefs.glyphMode = presentation.GlyphMode(value)
-	case uisettings.EditorSetting:
-		m.services.editor = value
+	mirrored := uisettings.Mirror(key, value)
+	switch {
+	case mirrored.Flag != nil:
+		m.mirrorFlag(key, *mirrored.Flag)
+	case mirrored.Editor != "":
+		m.services.editor = mirrored.Editor
 	default:
-		m.mirrorFlag(key, uisettings.FlagOn(key, value))
+		m.prefs.glyphMode = mirrored.GlyphMode
 	}
 }
 

@@ -1,0 +1,80 @@
+package notices
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestBugReportURLPrefillsVersion(t *testing.T) {
+	got := BugReportURL("v0.2.0")
+	if !strings.HasPrefix(got, "https://github.com/YoanWai/agent-manager/issues/new") {
+		t.Fatalf("bug report should open the new-issue page, got %q", got)
+	}
+	if !strings.Contains(got, "template=bug_report.yml") {
+		t.Fatalf("bug report should use the bug form, got %q", got)
+	}
+	if !strings.Contains(got, "version=v0.2.0") {
+		t.Fatalf("issue URL should carry the version, got %q", got)
+	}
+}
+
+func TestFeatureRequestURLUsesFeatureTemplate(t *testing.T) {
+	got := FeatureRequestURL()
+	if !strings.Contains(got, "template=feature_request.yml") {
+		t.Fatalf("feature request should use the feature form, got %q", got)
+	}
+	if strings.Contains(got, "template=bug_report.yml") {
+		t.Fatalf("feature request opened the bug form: %q", got)
+	}
+}
+
+func TestSupportRequestURLPrefillsTheCLIFields(t *testing.T) {
+	got := SupportRequestURL()
+	if !strings.HasPrefix(got, RepoURL+"/issues/new?body=") {
+		t.Fatalf("support request should open a prefilled issue, got %q", got)
+	}
+	for _, want := range []string{"CLI%20name", "How%20to%20launch%20it", "Config%20and%20tool%20support"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("support request is missing %q: %q", want, got)
+		}
+	}
+}
+
+func TestStagedOpensOnAClearList(t *testing.T) {
+	var log Log
+	if got := log.Staged("feed-new", false, true); got.Open != "feed-new" || got.Hold != "" {
+		t.Fatalf("a clear list should open the notice, got %+v", got)
+	}
+}
+
+func TestStagedHoldsWhileTheListIsBusy(t *testing.T) {
+	var log Log
+	got := log.Staged("feed-new", false, false)
+	if got.Open != "" || got.Hold != "feed-new" {
+		t.Fatalf("a busy list should hold the notice, got %+v", got)
+	}
+}
+
+func TestStagedLeavesAnOpenPanelToTheCaller(t *testing.T) {
+	var log Log
+	if got := log.Staged("feed-new", true, true); got != (Stage{}) {
+		t.Fatalf("an open panel stages nothing, got %+v", got)
+	}
+}
+
+func TestStagedIgnoresAChangeThatAddedNothing(t *testing.T) {
+	var log Log
+	if got := log.Staged("", false, true); got != (Stage{}) {
+		t.Fatalf("no added notice stages nothing, got %+v", got)
+	}
+}
+
+func TestTakeClearsTheHeldNotice(t *testing.T) {
+	log := Log{Held: "feed-new"}
+	if got := log.Take(); got != "feed-new" {
+		t.Fatalf("Take = %q, want the held notice", got)
+	}
+	if log.Held != "" {
+		t.Fatalf("Take left %q held", log.Held)
+	}
+}
