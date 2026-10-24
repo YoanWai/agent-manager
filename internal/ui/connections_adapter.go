@@ -34,9 +34,9 @@ func (r linkRoot) SyncPreview() tea.Cmd { return r.syncRemotePreview() }
 func (r linkRoot) RailConnection(change uilink.RailChange) {
 	switch {
 	case change.Rename != "":
-		r.queueRail(r.rail.RenameHost(change.Rename, change.To), 0, true)
+		r.queueRail(r.rail.RenameHost(change.Rename, change.To).Mutations, 0, true)
 	case change.Forget != "":
-		r.queueRail(r.rail.ForgetHost(change.Forget), 0, true)
+		r.queueRail(r.rail.ForgetHost(change.Forget).Mutations, 0, true)
 	}
 	if change.Focus != "" {
 		r.rail.Focus(uirail.Selection{Kind: uirail.ConnectionRow, Host: change.Focus})

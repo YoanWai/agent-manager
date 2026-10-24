@@ -159,7 +159,7 @@ func (m *Model) mirrorGroupRenamePartial(request renameRequest, dir string, resu
 	if result.WorktreeSet {
 		m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, newPath, request.Worktree)
 	}
-	m.queueRail(m.rail.RenameGroup(old, newPath), 0, true)
+	m.queueRail(m.rail.RenameGroup(old, newPath).Mutations, 0, true)
 }
 
 // enqueueMove sends a move dialog's decision through the existing effect
@@ -229,7 +229,7 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base string) {
 	m.workspace.groupPaths[newPath] = dir
 	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, newPath, worktree)
 	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, newPath, base)
-	m.queueRail(m.rail.RenameGroup(old, newPath), 0, true)
+	m.queueRail(m.rail.RenameGroup(old, newPath).Mutations, 0, true)
 }
 
 // renameGroupInventory moves the in-memory groups and sessions under a

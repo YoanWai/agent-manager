@@ -42,7 +42,7 @@ func (h *hintHost) StartInstall() bool {
 		h.reportErr("an install is already running in " + install.Name)
 		return false
 	}
-	h.installs = append(h.installs, h.launchInstall().request)
+	h.installs = append(h.installs, h.launchInstall())
 	if !h.admit {
 		return false
 	}

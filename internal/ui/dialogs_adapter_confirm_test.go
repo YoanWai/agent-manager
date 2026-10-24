@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -226,7 +227,7 @@ func TestConfirmAcceptPopsOnceAndRunsTheRequest(t *testing.T) {
 	}
 }
 
-func mustTop(t *testing.T, m *Model) surface {
+func mustTop(t *testing.T, m *Model) uisurface.Surface {
 	t.Helper()
 	top, ok := m.top()
 	if !ok {
