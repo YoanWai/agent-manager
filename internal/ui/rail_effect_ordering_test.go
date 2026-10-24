@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 )
 
 func TestRailStateDecisionPreservesLatestCollapseSnapshot(t *testing.T) {
@@ -25,7 +26,7 @@ func TestRailStateDecisionPreservesLatestCollapseSnapshot(t *testing.T) {
 				m.applyRailStateDecision(m.rail.RevealGroup("parent/child"))
 			}
 			m.drainEffects(t)
-			raw, err := m.services.store.Setting(collapsedSetting)
+			raw, err := m.services.store.Setting(uirailpersist.CollapsedSetting)
 			if err != nil {
 				t.Fatal(err)
 			}

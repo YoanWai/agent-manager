@@ -2,8 +2,8 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/store"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	tea "github.com/charmbracelet/bubbletea"
-	"slices"
 	"testing"
 )
 
@@ -55,22 +55,20 @@ func TestCollapsedStatePersistsAcrossReload(t *testing.T) {
 	if err := m.persistCollapsed(m.rail.Collapsed()); err != nil {
 		t.Fatalf("persist collapsed: %v", err)
 	}
-
-	restored := loadCollapsed(m.services.store)
-	if !slices.Contains(restored, "backend") || !slices.Contains(restored, "backend/api") {
-		t.Fatalf("collapsed groups not restored: %v", restored)
+	if restored := uirailpersist.Load(m.services.store); !restored.IsCollapsed("backend/api") {
+		t.Fatal("a reload lost the saved folds")
 	}
 
 	m.rail.SetCollapsed("backend", false)
 	if err := m.persistCollapsed(m.rail.Collapsed()); err != nil {
 		t.Fatalf("persist expanded state: %v", err)
 	}
-	restored = loadCollapsed(m.services.store)
-	if slices.Contains(restored, "backend") {
-		t.Fatalf("expanded group leaked back as collapsed: %v", restored)
+	restored := uirailpersist.Load(m.services.store)
+	if restored.IsCollapsed("backend") {
+		t.Fatal("expanded group leaked back as collapsed")
 	}
-	if !slices.Contains(restored, "backend/api") {
-		t.Fatalf("still-folded group dropped: %v", restored)
+	if !restored.IsCollapsed("backend/api") {
+		t.Fatal("still-folded group dropped")
 	}
 }
 
@@ -89,7 +87,7 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 			t.Fatalf("group %q not collapsed after fold-all", group)
 		}
 	}
-	if restored := loadCollapsed(m.services.store); len(restored) != 3 {
+	if restored := uirailpersist.Collapsed(m.services.store); len(restored) != 3 {
 		t.Fatalf("fold-all not persisted: %v", restored)
 	}
 
@@ -101,7 +99,7 @@ func TestToggleCollapseAllFlipsEveryGroup(t *testing.T) {
 			t.Fatalf("group %q still collapsed after unfold-all", group)
 		}
 	}
-	if restored := loadCollapsed(m.services.store); len(restored) != 0 {
+	if restored := uirailpersist.Collapsed(m.services.store); len(restored) != 0 {
 		t.Fatalf("unfold-all not persisted: %v", restored)
 	}
 }

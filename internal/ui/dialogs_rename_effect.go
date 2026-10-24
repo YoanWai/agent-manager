@@ -8,6 +8,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	tea "github.com/charmbracelet/bubbletea"
 	"maps"
 	"slices"
@@ -312,15 +313,15 @@ func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd 
 	return m.nextEffectCmd()
 }
 
-func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placementPrecondition {
-	precondition := placementPrecondition{verify: true, targetID: mutation.ParentID, targetGroup: mutation.Group}
+func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) uirailpersist.Precondition {
+	precondition := uirailpersist.Precondition{Verify: true, TargetID: mutation.ParentID, TargetGroup: mutation.Group}
 	for _, session := range m.workspace.sessions {
 		switch session.ID {
 		case mutation.SessionID:
-			precondition.sourceGroup = session.Group
-			precondition.sourceParentID = session.ParentID
+			precondition.SourceGroup = session.Group
+			precondition.SourceParentID = session.ParentID
 		case mutation.ParentID:
-			precondition.targetGroup = session.Group
+			precondition.TargetGroup = session.Group
 		}
 	}
 	// A newer move can be accepted while an earlier placement for the same
@@ -335,8 +336,8 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) placement
 		if !ok || request.mutation.Kind != uirail.PlaceSession || request.mutation.SessionID != mutation.SessionID {
 			continue
 		}
-		precondition.sourceGroup = request.mutation.Group
-		precondition.sourceParentID = request.mutation.ParentID
+		precondition.SourceGroup = request.mutation.Group
+		precondition.SourceParentID = request.mutation.ParentID
 	}
 	return precondition
 }

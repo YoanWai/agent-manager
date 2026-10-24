@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -40,7 +41,7 @@ func TestRailDefersPersistenceAndCopiesCollapsedPaths(t *testing.T) {
 	m := buildModel(t)
 	paths := []string{"alpha"}
 	_, cmd := m.applyRailDecision(uirail.Decision{Mutations: []uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: paths}}})
-	raw, err := m.services.store.Setting(collapsedSetting)
+	raw, err := m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +50,7 @@ func TestRailDefersPersistenceAndCopiesCollapsedPaths(t *testing.T) {
 	}
 	paths[0] = "beta"
 	m.applyCmd(t, cmd)
-	raw, err = m.services.store.Setting(collapsedSetting)
+	raw, err = m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +72,7 @@ func TestEffectQueueDrainsAcceptedWritesOnQuit(t *testing.T) {
 		t.Fatal("quit discarded accepted writes")
 	}
 	m.drainEffects(t)
-	raw, err := m.services.store.Setting(collapsedSetting)
+	raw, err := m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,11 +94,11 @@ func TestEffectCommandExecutesOnceAndCompletionIsIdempotent(t *testing.T) {
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"first"}}}, 0, false)
 	command := m.nextEffectCmd()
 	msg := command()
-	if err := m.services.store.SetSetting(collapsedSetting, "external"); err != nil {
+	if err := m.services.store.SetSetting(uirailpersist.CollapsedSetting, "external"); err != nil {
 		t.Fatal(err)
 	}
 	command()
-	raw, _ := m.services.store.Setting(collapsedSetting)
+	raw, _ := m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if raw != "external" {
 		t.Fatal("duplicate command wrote again")
 	}
@@ -119,7 +120,7 @@ func TestStopEffectsRefusesUnstartedCommand(t *testing.T) {
 	if msg.Err != uieffects.ErrStopped {
 		t.Fatalf("late command error=%v", msg.Err)
 	}
-	raw, _ := m.services.store.Setting(collapsedSetting)
+	raw, _ := m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if raw != "" {
 		t.Fatal("late command touched the store")
 	}
@@ -131,7 +132,7 @@ func TestDrainAdmitsCausalRailFollowup(t *testing.T) {
 	m.effects.Quitting = true
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"followup"}}}, 7, true)
 	m.drainEffects(t)
-	raw, _ := m.services.store.Setting(collapsedSetting)
+	raw, _ := m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if raw != "[\"followup\"]" {
 		t.Fatalf("causal followup discarded: %s", raw)
 	}
@@ -205,7 +206,7 @@ func TestCollapseSaveQueuesWhileMoveIsPending(t *testing.T) {
 	m.queueRail([]uirail.Mutation{{Kind: uirail.SwapSession, SessionID: "one", TargetID: "two"}}, 0, false)
 	_, command := m.applyRailDecision(uirail.Decision{Mutations: []uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"saved"}}}})
 	m.applyCmd(t, command)
-	raw, err := m.services.store.Setting(collapsedSetting)
+	raw, err := m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +230,7 @@ func TestMoveFollowupKeepsLaterCollapsePreference(t *testing.T) {
 	m.rail.SetCollapsed("beta", true)
 	_, command := m.applyRailDecision(uirail.Decision{Mutations: []uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: m.rail.Collapsed()}}})
 	m.applyCmd(t, command)
-	raw, err := m.services.store.Setting(collapsedSetting)
+	raw, err := m.services.store.Setting(uirailpersist.CollapsedSetting)
 	if err != nil {
 		t.Fatal(err)
 	}
