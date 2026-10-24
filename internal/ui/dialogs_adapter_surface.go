@@ -167,8 +167,8 @@ func (m *Model) releaseLaunchHint() { m.ledger.install.Release() }
 func (m *Model) launchInstall() uiinstall.StartRequest {
 	fix := m.ledger.install.Launch
 	retry := fix.Retry
-	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
-		spawn.images = append([]composer.Attachment(nil), fix.Images...)
+	if spawn, ok := retry.(uilaunch.Request); ok && len(spawn.Images) == 0 {
+		spawn.Images = append([]composer.Attachment(nil), fix.Images...)
 		retry = spawn
 	}
 	return uiinstall.StartRequest{

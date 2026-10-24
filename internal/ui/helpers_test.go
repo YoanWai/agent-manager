@@ -590,19 +590,19 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 // reconciled.
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool, choice config.Choice) error {
 	paneW, paneH := m.paneTargetSize()
-	request := spawnRequest{
-		kind:         uilaunch.Form,
-		toolName:     toolName,
-		name:         name,
-		dir:          dir,
-		group:        group,
-		prompt:       prompt,
-		autoNamed:    autoNamed,
-		worktree:     worktree,
-		pickWorktree: worktree,
-		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
-		choice:       choice,
-		base:         m.groupBase(group),
+	request := uilaunch.Request{
+		Kind:         uilaunch.Form,
+		ToolName:     toolName,
+		Name:         name,
+		Dir:          dir,
+		Group:        group,
+		Prompt:       prompt,
+		AutoNamed:    autoNamed,
+		Worktree:     worktree,
+		PickWorktree: worktree,
+		Pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
+		Choice:       choice,
+		Base:         m.groupBase(group),
 	}
 	services := effectServices{
 		store: m.services.store, driver: m.services.tmux, gitDrv: m.services.gitDrv, cfg: m.services.cfg,
@@ -614,8 +614,8 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	if m.services.lifecycle != nil {
 		services.lifecycle = m.services.lifecycle.Capture(m.services.cfg, m.services.setSnapshot)
 	}
-	result, err := services.runSpawn(request)
-	m.applySpawnEffect(request, result.(spawnEffectResult), err)
+	result, err := uilaunch.Run(services.launchServices(), request)
+	m.applySpawn(request, result, err)
 	return err
 }
 

@@ -20,17 +20,13 @@ type effectPair struct {
 
 var effectPairs = []effectPair{
 	{inputRequest{}, inputEffectResult{}},
-	{quickSendRequest{}, quickSendResult{}},
 	{noticeDismissRequest{}, noticeDismissResult{}},
 	{splitSaveRequest{}, splitSaveResult{}},
-	{choiceSaveRequest{}, choiceSaveResult{}},
 	{lifecycleRequest{}, lifecycleEffectResult{}},
 	{afterTurnRequest{}, afterTurnResult{}},
 	{railRequest{}, railEffectResult{}},
 	{forkRequest{}, forkEffectResult{}},
 	{geometryRequest{}, geometryEffectResult{}},
-	{spawnRequest{}, spawnEffectResult{}},
-	{groupRequest{}, groupEffectResult{}},
 	{renameRequest{}, renameEffectResult{}},
 	{moveDialogClose{}, moveDialogCloseResult{}},
 	{settingsRequest{}, settingsEffectResult{}},
@@ -45,9 +41,9 @@ var effectPairs = []effectPair{
 	{remoteRequest{}, remoteEffectResult{}},
 }
 
-// A choice save carries nothing back to the model, so only its error is
-// reported, by handleEffectCompleted itself.
-var resultsAppliedByDefault = []string{"choiceSaveResult"}
+// A root result with no apply of its own: only its error is reported, by
+// handleEffectCompleted itself.
+var resultsAppliedByDefault []string
 
 func TestEveryEffectRequestIsPairedWithAResultThatAppliesIt(t *testing.T) {
 	declared := parseEffectDeclarations(t)

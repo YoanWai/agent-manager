@@ -102,23 +102,23 @@ func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Mode
 	}
 	toolName, _ := m.shellTool()
 	w, h := m.paneTargetSize()
-	spawn := spawnRequest{
-		kind: uilaunch.Shell, toolName: toolName,
-		pane:         sessioncmd.PaneSize{Width: w, Height: h},
-		terminalDir:  request,
-		terminalRead: reader,
+	spawn := uilaunch.Request{
+		Kind: uilaunch.Shell, ToolName: toolName,
+		Pane:         sessioncmd.PaneSize{Width: w, Height: h},
+		TerminalDir:  uilaunch.TerminalDirectoryRequest{PaneID: request.paneID, RawDir: request.rawDir, Fallbacks: request.fallbacks},
+		TerminalRead: terminalReader{reader: reader},
 	}
 	entry, _ := m.selectedRow()
-	spawn.group = entry.group
+	spawn.Group = entry.group
 	if !entry.isGroup {
-		spawn.group = entry.sess.Group
+		spawn.Group = entry.sess.Group
 		if m.isShell(entry.sess.Tool) {
-			spawn.parentID = entry.sess.ParentID
+			spawn.ParentID = entry.sess.ParentID
 		} else {
-			spawn.parentID = entry.sess.ID
+			spawn.ParentID = entry.sess.ID
 		}
 	}
-	spawn.name = sessioncmd.ShellName(toolName, spawn.parentID, newID()[:4], m.workspace.sessions)
+	spawn.Name = sessioncmd.ShellName(toolName, spawn.ParentID, newID()[:4], m.workspace.sessions)
 	m.dispatchSpawn(spawn)
 	return m, m.nextEffectCmd()
 }

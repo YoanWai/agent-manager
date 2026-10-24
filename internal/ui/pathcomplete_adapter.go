@@ -1,8 +1,6 @@
 package ui
 
 import (
-	"path/filepath"
-
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -54,18 +52,17 @@ func (m *Model) topPathCompleting() (pathcomplete.Field, bool) {
 	return s, ok
 }
 
+// pathRoot is the root as the completer reaches it.
+type pathRoot struct{ *Model }
+
+func (r pathRoot) PathCompleting() (pathcomplete.Field, bool) {
+	return r.m.topPathCompleting()
+}
+
+func (r pathRoot) FormPathChanged() tea.Cmd { return r.m.formWorktreeProbeCmd(false) }
+
 func (m *Model) applyPathSuggestion() tea.Cmd {
-	s, ok := m.topPathCompleting()
-	if !ok {
-		return nil
-	}
-	path := s.Paths().Selected() + string(filepath.Separator)
-	s.TakePath(path)
-	completion := m.requestPathSuggestions(s.PathTarget(), path)
-	if s.PathTarget() == pathcomplete.Form {
-		return tea.Batch(completion, m.formWorktreeProbeCmd(false))
-	}
-	return completion
+	return pathcomplete.Apply(pathRoot{m}, pathcomplete.SystemReader{})
 }
 
 var _ pathcomplete.Host = pathCompleter{}

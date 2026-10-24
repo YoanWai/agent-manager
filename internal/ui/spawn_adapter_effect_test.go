@@ -1,7 +1,6 @@
 package ui
 
 import (
-	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"os"
 	"strings"
 	"sync"
@@ -11,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -61,8 +61,8 @@ func TestSpawnWorkerDefersFilesystemReadAndCapturesDraft(t *testing.T) {
 	}
 	close(reader.release)
 	msg := <-completed
-	request := m.effects.Main.Active.Request.(spawnRequest)
-	if request.draftName != "captured" || request.rawDir != "/captured/raw" {
+	request := m.effects.Main.Active.Request.(uilaunch.Request)
+	if request.DraftName != "captured" || request.RawDir != "/captured/raw" {
 		t.Fatalf("worker did not capture the draft: %+v", request)
 	}
 	m.applyTestMsg(t, msg)
@@ -575,7 +575,7 @@ func TestSpawnFailurePreservesNewAttachments(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	request := spawnRequest{kind: uilaunch.Form, composerGen: m.formPromptFor().Gen, images: []composer.Attachment{{Path: "old"}}}
+	request := uilaunch.Request{Kind: uilaunch.Form, ComposerGen: m.formPromptFor().Gen, Images: []composer.Attachment{{Path: "old"}}}
 	m.formPromptFor().Attachments = []composer.Attachment{{Path: "new"}}
 	m.returnSpawnImages(request)
 	if len(m.formPromptFor().Attachments) != 2 {
@@ -588,11 +588,11 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
 	m.quick().Input.SetValue("first task")
-	request := spawnRequest{kind: uilaunch.Quick, composerGen: m.quick().Gen}
+	request := uilaunch.Request{Kind: uilaunch.Quick, ComposerGen: m.quick().Gen}
 	m.dispatchSpawn(request)
-	request = m.effects.Main.Pending[0].Request.(spawnRequest)
+	request = m.effects.Main.Pending[0].Request.(uilaunch.Request)
 	m.quick().Input.SetValue("next task")
-	m.applySpawnEffect(request, spawnEffectResult{Result: uilaunch.Result{Session: store.Session{ID: "child", Name: "child"}}}, nil)
+	m.applySpawn(request, uilaunch.Result{Session: store.Session{ID: "child", Name: "child"}}, nil)
 	if m.quick().Input.Value() != "next task" {
 		t.Fatal("completion cleared a newer draft")
 	}
@@ -623,17 +623,17 @@ func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	tool.SessionIDFlag = "--session-id"
 	m.services.cfg.Tools["claude"] = tool
 	command := submitFormSpawn(t, m, "agent", t.TempDir())
-	first := m.effects.Main.Active.Request.(spawnRequest)
+	first := m.effects.Main.Active.Request.(uilaunch.Request)
 	msg := command().(uieffects.Completed)
 	m.applyTestMsg(t, msg)
-	retry, ok := hintFix(m).Retry.(spawnRequest)
-	if !ok || retry.id != first.id || retry.plan == nil || retry.plan.AgentSessionID == "" {
+	retry, ok := hintFix(m).Retry.(uilaunch.Request)
+	if !ok || retry.ID != first.ID || retry.Plan == nil || retry.Plan.AgentSessionID == "" {
 		t.Fatalf("retry lost its captured identity: %+v", retry)
 	}
 	m.enqueueEffect(retry, 0, false)
 	msg = m.nextEffectCmd()().(uieffects.Completed)
-	result := msg.Result.(spawnEffectResult)
-	if result.Plan == nil || result.Plan.AgentSessionID != retry.plan.AgentSessionID {
+	result := msg.Result.(uilaunch.Result)
+	if result.Plan == nil || result.Plan.AgentSessionID != retry.Plan.AgentSessionID {
 		t.Fatal("retry regenerated the conversation identity")
 	}
 }
@@ -643,10 +643,10 @@ func TestGroupCompletionPreservesEditedForm(t *testing.T) {
 	m := buildModel(t)
 	m.openGroupForm()
 	m.groupSurface().SetName("first")
-	m.enqueueEffect(groupRequest{path: "first", gen: m.groupSurface().Gen(), draftName: m.groupSurface().Name(), draftDir: m.groupSurface().Dir()}, 0, false)
-	request := m.effects.Main.Pending[0].Request.(groupRequest)
+	m.enqueueEffect(uilaunch.GroupRequest{Path: "first", Gen: m.groupSurface().Gen(), DraftName: m.groupSurface().Name(), DraftDir: m.groupSurface().Dir()}, 0, false)
+	request := m.effects.Main.Pending[0].Request.(uilaunch.GroupRequest)
 	m.groupSurface().SetName("next")
-	m.applyGroupEffect(request, groupEffectResult{GroupResult: uilaunch.GroupResult{Path: "first"}}, nil)
+	m.applyGroupEffect(request, uilaunch.GroupResult{Path: "first"}, nil)
 	if !m.groupFormOpen() || m.groupSurface().Name() != "next" {
 		t.Fatal("completion closed the edited group form")
 	}
@@ -654,3 +654,41 @@ func TestGroupCompletionPreservesEditedForm(t *testing.T) {
 		t.Fatal("completion lost the committed group")
 	}
 }
+
+// Picking a model keeps it in the cache at once and writes the store only
+// from the effect lane.
+func TestChoicePickDefersTheStoreWrite(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	_, _ = m.form().Choice().Launch(m.spawnHost(), "claude", "opus")
+	if got := m.settings.Cache.Value("choice.claude"); !strings.Contains(got, `"Model":"opus"`) {
+		t.Fatalf("cached choice = %s, want opus", got)
+	}
+	if raw, err := m.services.store.Setting("choice.claude"); err != nil || raw != "" {
+		t.Fatalf("the pick wrote the store on the update path: %q %v", raw, err)
+	}
+	m.drainEffects(t)
+	raw, err := m.services.store.Setting("choice.claude")
+	if err != nil || raw == "" {
+		t.Fatalf("the effect lane did not persist the pick: %q %v", raw, err)
+	}
+}
+
+// formTools are the CLIs the open form steps through.
+func formTools(m *Model) []string {
+	names, _ := m.form().Tools()
+	return names
+}
+
+// setFormTool picks the form's CLI by index, leaving its choice rows be.
+func setFormTool(m *Model, index int) { m.form().SetTools(formTools(m), index) }
+
+// quickTools are the CLIs the open quick bar steps through.
+func quickTools(m *Model) []string {
+	names, _ := m.quick().Tools()
+	return names
+}
+
+// setQuickTool picks the quick bar's CLI by index, leaving its choice be.
+func setQuickTool(m *Model, index int) { m.quick().SetTools(quickTools(m), index) }

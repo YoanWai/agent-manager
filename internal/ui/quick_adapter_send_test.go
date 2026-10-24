@@ -9,103 +9,9 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-func quickSendTestServices(m *Model) effectServices {
-	return effectServices{
-		cfg:    m.services.cfg,
-		store:  m.services.store,
-		driver: m.services.tmux,
-		quickSessionExists: func(*tmux.Driver, string) (bool, error) {
-			return true, nil
-		},
-	}
-}
-
-func TestQuickSendWorkerRejectsChangedIncarnationBeforeTransport(t *testing.T) {
-	t.Parallel()
-	for _, change := range []struct {
-		name string
-		run  func(*Model, string) error
-	}{
-		{name: "relaunched", run: func(m *Model, id string) error {
-			return m.services.store.SetAgentLaunchedAt(id, time.Now().Add(time.Minute))
-		}},
-		{name: "moved socket", run: func(m *Model, id string) error {
-			return m.services.store.SetTmuxSocket(id, "replacement-owner")
-		}},
-		{name: "changed tool", run: func(m *Model, id string) error {
-			return m.services.store.UpdateTool(id, "ready-tool")
-		}},
-	} {
-		t.Run(change.name, func(t *testing.T) {
-			m := buildModel(t)
-			createSession(t, m, "target", t.TempDir(), "")
-			captured := m.sessionRows()[0]
-			if err := change.run(m, captured.ID); err != nil {
-				t.Fatal(err)
-			}
-			called := false
-			services := quickSendTestServices(m)
-			services.quickSendText = func(*tmux.Driver, string, string) (tmux.SendResult, error) {
-				called = true
-				return tmux.SendResult{}, nil
-			}
-			_, err := services.runQuickSend(quickSendRequest{session: captured, text: "stale"})
-			if err == nil || called {
-				t.Fatalf("changed target received prompt: called=%t err=%v", called, err)
-			}
-		})
-	}
-}
-
-func TestQuickSendWorkerClassifiesTransportAndRecordsOnlyConfirmed(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		result  tmux.SendResult
-		sendErr error
-		want    quickSendOutcome
-	}{
-		{name: "refused", result: tmux.SendResult{Phase: tmux.SendPhaseLoaded}, sendErr: errors.New("submit refused"), want: quickSendRefused},
-		{name: "uncertain", result: tmux.SendResult{Phase: tmux.SendPhasePasteStarted}, sendErr: errors.New("reply lost"), want: quickSendUncertain},
-		{name: "confirmed", result: tmux.SendResult{Phase: tmux.SendPhaseSubmitted}, want: quickSendConfirmed},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			m := buildModel(t)
-			createSession(t, m, "target", t.TempDir(), "")
-			captured := m.sessionRows()[0]
-			if err := m.services.store.SetAcked(captured.ID, true); err != nil {
-				t.Fatal(err)
-			}
-			services := quickSendTestServices(m)
-			services.quickSendText = func(*tmux.Driver, string, string) (tmux.SendResult, error) {
-				return test.result, test.sendErr
-			}
-			value, err := services.runQuickSend(quickSendRequest{session: captured, text: "captured prompt"})
-			if err != nil {
-				t.Fatalf("run: %v", err)
-			}
-			result := value.(quickSendResult)
-			if result.outcome != test.want {
-				t.Fatalf("outcome = %v, want %v", result.outcome, test.want)
-			}
-			stored, err := m.services.store.Get(captured.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if test.want == quickSendConfirmed {
-				if stored.Acked || stored.LastPrompt != "captured prompt" {
-					t.Fatalf("confirmed metadata = acked %t prompt %q", stored.Acked, stored.LastPrompt)
-				}
-			} else if !stored.Acked || stored.LastPrompt != "" {
-				t.Fatalf("unconfirmed send changed metadata: acked %t prompt %q", stored.Acked, stored.LastPrompt)
-			}
-		})
-	}
-}
 
 func TestQuickSendRefusalRestoresAcceptedImages(t *testing.T) {
 	t.Parallel()
@@ -223,9 +129,9 @@ func TestQuickSendStaleRefusalDefersImageCleanup(t *testing.T) {
 	m := buildModel(t)
 	path := tempImage(t, "stale-refusal.png")
 	q := pushQuick(m)
-	request := quickSendRequest{
-		composerGen: q.Gen + 1,
-		images:      []composer.Attachment{{ID: 1, Path: path}},
+	request := uiquick.SendRequest{
+		ComposerGen: q.Gen + 1,
+		Images:      []composer.Attachment{{ID: 1, Path: path}},
 	}
 	cleanup := m.returnQuickSendImages(request)
 	if cleanup == nil {

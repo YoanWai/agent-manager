@@ -14,6 +14,8 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -42,6 +44,12 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
 		return work
 	}
+	if work, ok := uieffects.Bind(request, func() uilaunch.Services { return capture().launchServices() }); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind(request, func() uiquick.Services { return capture().quickServices() }); ok {
+		return work
+	}
 	services := capture()
 	return func() (uieffects.Result, error) { return request.(effectRequest).run(services) }
 }
@@ -54,6 +62,18 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.ledger.install.Started(installRoot{m}, job.Request.(uiinstall.StartRequest), result, err)
 	case uiinstall.SettleResult:
 		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
+	case uilaunch.Result:
+		return m.applySpawn(job.Request.(uilaunch.Request), result, err)
+	case uilaunch.GroupResult:
+		return m.applyGroupEffect(job.Request.(uilaunch.GroupRequest), result, err)
+	case uiquick.SendResult:
+		return uiquick.Apply(quickSendRoot{m}, job.Request.(uiquick.SendRequest), result, err)
+	case uilaunch.ChoiceSaveResult:
+		// A kept choice carries nothing back: the cache already holds it.
+		if err != nil {
+			m.reportErr(err.Error())
+		}
+		return nil
 	case effectResult:
 		return result.apply(m, job, err)
 	}

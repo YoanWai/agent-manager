@@ -56,30 +56,21 @@ func (m *Model) composerOpen(target composer.ID) bool {
 	return m.quick() != nil
 }
 
-func (m *Model) handlePasteImageMsg(msg composer.PasteImageMsg) (tea.Model, tea.Cmd) {
-	return m, m.composerFor(msg.Target).AcceptImage(m, msg, m.composerOpen(msg.Target))
-}
+// pasteRoot is the root as the prompt boxes reach it.
+type pasteRoot struct{ *Model }
 
-func (m *Model) handlePasteTextMsg(msg composer.PasteTextMsg) (tea.Model, tea.Cmd) {
-	return m, m.composerFor(msg.Target).AcceptText(msg, m.composerOpen(msg.Target))
-}
+func (r pasteRoot) ComposerFor(target composer.ID) *composer.Composer { return r.m.composerFor(target) }
+
+func (r pasteRoot) ComposerOpen(target composer.ID) bool { return r.m.composerOpen(target) }
+
+func (r pasteRoot) ReportErr(text string) { r.m.reportErr(text) }
+
+func (r pasteRoot) ClearErr() { r.m.clearErr() }
 
 func (m *Model) routePasteMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case pasteSweepMsg:
-		if msg.err != nil {
-			m.reportErr("clearing old pasted images: " + msg.err.Error())
-		}
-		return routed(m, nil)
-
-	case pasteSweepTickMsg:
-		return routed(m, tea.Batch(m.sweepPastes, m.pasteSweepTick()))
-
-	case composer.PasteImageMsg:
-		return routed(m.handlePasteImageMsg(msg))
-
-	case composer.PasteTextMsg:
-		return routed(m.handlePasteTextMsg(msg))
+	cmd, handled := composer.Update(pasteRoot{m}, msg)
+	if !handled {
+		return nil, nil, false
 	}
-	return nil, nil, false
+	return routed(m, cmd)
 }

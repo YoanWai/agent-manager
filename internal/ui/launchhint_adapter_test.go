@@ -673,14 +673,14 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 	image = tempImage(t, "mock.png")
 	m.services.cfg.Tools[installRetryTool] = config.Tool{Command: "am-fake-cli", DefaultStatus: status.Idle}
 	w, h := m.paneTargetSize()
-	retry := spawnRequest{
-		id:       newID(),
-		kind:     uilaunch.Form,
-		toolName: installRetryTool,
-		name:     retryName,
-		dir:      t.TempDir(),
-		pane:     sessioncmd.PaneSize{Width: w, Height: h},
-		images:   []composer.Attachment{{ID: 1, Path: image}},
+	retry := uilaunch.Request{
+		ID:       newID(),
+		Kind:     uilaunch.Form,
+		ToolName: installRetryTool,
+		Name:     retryName,
+		Dir:      t.TempDir(),
+		Pane:     sessioncmd.PaneSize{Width: w, Height: h},
+		Images:   []composer.Attachment{{ID: 1, Path: image}},
 	}
 	m.openLaunchHint(uiinstall.Fix{
 		Text:    "am-fake-cli is not installed.\n\ninstall it with: " + command,

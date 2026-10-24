@@ -1,15 +1,147 @@
 package ui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
+	"path/filepath"
 )
+
+func formOpen(m *Model) bool { return m.form() != nil }
+
+// picker is the group picker on screen: the move card's, or the form's.
+func picker(m *Model) *spawn.Picker {
+	if s, ok := surfaceOf[*uidialogs.MoveSurface](m); ok {
+		return s.Picker()
+	}
+	return &m.form().Picker
+}
+
+// pushForm puts a bare New Session form on the stack, for a test that needs
+// one open without the reads openForm starts.
+func pushForm(m *Model) *spawn.Surface {
+	prompt := promptField()
+	f := m.newSpawnSurface(&prompt, pathcomplete.State{}, spawn.Form{}, spawn.Picker{})
+	m.push(f)
+	return f
+}
+
+// The form opens by its key, keeps its draft through a stray click and
+// closes on esc, letting go of its images.
+func TestSpawnFormIsASurface(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.Update(key("n"))
+	if !formOpen(m) {
+		t.Fatalf("n did not open the form, err %q", m.errBar.text)
+	}
+	if mustTop(t, m).Dismissible() {
+		t.Fatal("the form holds a draft and must not close on a click")
+	}
+	m.form().SetName("draft")
+	clickBackdrop(t, m)
+	if !formOpen(m) || m.form().Name() != "draft" {
+		t.Fatal("a stray click closed the form")
+	}
+	image := tempImage(t, "draft.png")
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1, Path: image}}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if formOpen(m) || len(m.surfaces) != 0 {
+		t.Fatal("esc did not close the form")
+	}
+	if imageExists(t, image) {
+		t.Fatal("closing the form kept its image")
+	}
+}
+
+// A settings read that lands after its form closed, or on a newer form, is
+// dropped.
+func TestStaleFormCompletionIsDropped(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openForm())
+	gen := m.formPromptFor().Gen
+	m.closeForm()
+	if _, ok := m.formFor(gen); ok {
+		t.Fatal("a closed form still answers its generation")
+	}
+	m.applyCmd(t, m.openForm())
+	if _, ok := m.formFor(gen); ok {
+		t.Fatal("a newer form answered an older generation")
+	}
+}
+
+func TestClickOnAPathSuggestionCompletesIt(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	m.form().FocusField(m.spawnHost(), spawn.FieldDir)
+	m.form().Complete.Suggestions = []string{"/work/alpha", "/work/beta"}
+	x, y := paintedCell(t, m, "/work/beta")
+	m, cmd := leftClickCmd(m, x, y)
+	if m.form().Dir() != "/work/beta"+string(filepath.Separator) || cmd == nil {
+		t.Fatalf("a click on beta should complete it and read its children, dir %q", m.form().Dir())
+	}
+}
+
+func TestWheelScrollsTheFormsModelList(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	x, y := paintedCell(t, m, "model ")
+	m = leftClick(m, x, y)
+	m = leftClick(m, x, y)
+	if !m.form().Choice().ListOpen() {
+		t.Fatal("test setup: two clicks on the model row open its list")
+	}
+	m = wheel(m, tea.MouseButtonWheelDown, x, y)
+	m = wheel(m, tea.MouseButtonWheelDown, x, y)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.form().Choice().Model(); got != "opus" {
+		t.Fatalf("two notches down then enter picked %q, want the second model", got)
+	}
+}
+
+// The quick bar's model sheet takes the wheel the way it takes ↑↓; the
+// session cursor behind the sheet holds still.
+func TestWheelScrollsTheQuickModelSheet(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	answered(m, claudeLike, claudeAnswer)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("work", dir); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick().RestartChoice(m.spawnHost())
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if m.quick().Picking() != uiquick.PickModel {
+		t.Fatal("test setup: ctrl+l opens the model sheet")
+	}
+	preparedView(m)
+	m = wheel(m, tea.MouseButtonWheelDown, 10, 10)
+	m = wheel(m, tea.MouseButtonWheelDown, 10, 10)
+	if row, ok := m.selectedRow(); !ok || !row.isGroup || row.group != "work" {
+		t.Fatalf("the wheel moved the session cursor behind the sheet to %+v", row)
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.quick().Choice().Model(); got != "haiku" {
+		t.Fatalf("two notches down from the first model then enter picked %q, want the third", got)
+	}
+}
 
 func focusSavedRow(t *testing.T, m *Model) {
 	t.Helper()
