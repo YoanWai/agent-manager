@@ -332,7 +332,7 @@ func (m *Model) formSpawnRequest(request spawn.Request) uilaunch.Request {
 	f := m.form()
 	prompt := m.formPromptFor()
 	defaults := m.spawnDefaults(f.GroupPath())
-	return uilaunch.FormRequest(request, f.Name(), f.GroupPath(), prompt, launchDefaults(defaults))
+	return uilaunch.FormRequest(request, f.Name(), f.GroupPath(), prompt, defaults)
 }
 
 // quickSpawnRequest names the session and captures the group's launch
@@ -345,18 +345,7 @@ func (m *Model) quickSpawnRequest(request spawn.Request) uilaunch.Request {
 		worktree = m.cachedSpawnWorktreeDefault(request.Group)
 	}
 	request.Worktree = worktree
-	return uilaunch.QuickRequest(request, &q.Composer, launchDefaults(m.spawnDefaults(request.Group)))
-}
-
-// launchDefaults crosses the root's captured launch inputs to the package's.
-func launchDefaults(defaults spawnDefaults) uilaunch.Defaults {
-	return uilaunch.Defaults{
-		Base:      defaults.base,
-		Pane:      defaults.pane,
-		GroupDir:  defaults.groupDir,
-		Fallbacks: defaults.fallbacks,
-		Worktree:  defaults.worktree,
-	}
+	return uilaunch.QuickRequest(request, &q.Composer, m.spawnDefaults(request.Group))
 }
 
 // formSpawnDir is the directory the form would launch in, resolved the

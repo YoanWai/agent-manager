@@ -154,27 +154,16 @@ func promptField() composer.Composer {
 	return composer.Composer{Input: in, MaxRows: formPromptMaxRows}
 }
 
-// spawnDefaults are the root's launch inputs for a spawn into a group,
-// read when the form or the quick bar builds its request.
-type spawnDefaults struct {
-	// base is the ref a worktree branches from, or "" to detect it.
-	base string
-	pane sessioncmd.PaneSize
-	// groupDir is the group's own default path, and fallbacks the nearest
-	// ancestor's and then the startup directory.
-	groupDir  string
-	fallbacks []string
-	worktree  bool
-}
-
-func (m *Model) spawnDefaults(group string) spawnDefaults {
+// spawnDefaults are the root's launch inputs for a spawn into a group, read
+// when the form or the quick bar builds its request.
+func (m *Model) spawnDefaults(group string) uilaunch.Defaults {
 	paneW, paneH := m.paneTargetSize()
-	return spawnDefaults{
-		base:      m.groupBase(group),
-		pane:      sessioncmd.PaneSize{Width: paneW, Height: paneH},
-		groupDir:  m.workspace.groupPaths[group],
-		fallbacks: m.groupDirCandidates(group),
-		worktree:  m.cachedSpawnWorktreeDefault(group),
+	return uilaunch.Defaults{
+		Base:      m.groupBase(group),
+		Pane:      sessioncmd.PaneSize{Width: paneW, Height: paneH},
+		GroupDir:  m.workspace.groupPaths[group],
+		Fallbacks: m.groupDirCandidates(group),
+		Worktree:  m.cachedSpawnWorktreeDefault(group),
 	}
 }
 
