@@ -107,7 +107,7 @@ func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	if contains(noticeIDs(m.activeNotices()), uinotices.ConfigNotImported) {
 		t.Fatal("an import that went through has nothing to report")
 	}
-	m.notices.configImportError = "config.toml: keybindings.session.detach needs at least one key"
+	m.notices.ImportError = "config.toml: keybindings.session.detach needs at least one key"
 	var refused uinotices.Notice
 	for _, n := range m.activeNotices() {
 		if n.ID == uinotices.ConfigNotImported {
@@ -117,12 +117,12 @@ func TestConfigNotImportedNoticeCarriesTheReason(t *testing.T) {
 	if refused.ID == "" {
 		t.Fatalf("want %s among %v", uinotices.ConfigNotImported, noticeIDs(m.activeNotices()))
 	}
-	if !contains(refused.Body, m.notices.configImportError) {
+	if !contains(refused.Body, m.notices.ImportError) {
 		t.Fatalf("the notice should carry the reason: %q", refused.Body)
 	}
 	persistNoticeDismissal(t, m, uinotices.ConfigNotImported)
 	reopened := noticeModel(st, "v0.2.0")
-	reopened.notices.configImportError = m.notices.configImportError
+	reopened.notices.ImportError = m.notices.ImportError
 	if contains(noticeIDs(reopened.activeNotices()), uinotices.ConfigNotImported) {
 		t.Fatal("dismissal did not survive restart")
 	}
@@ -719,8 +719,8 @@ func TestPendingFeedDoesNotOpenDuringQuit(t *testing.T) {
 	m := footModel(t)
 	m.push(newFocusSurface(m))
 	m.Update(uirelease.FeedMsg{Messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if m.notices.pendingNotice != "feed-new" {
-		t.Fatalf("pending notice = %q, want feed-new", m.notices.pendingNotice)
+	if m.notices.Held != "feed-new" {
+		t.Fatalf("pending notice = %q, want feed-new", m.notices.Held)
 	}
 
 	m.base = baseList

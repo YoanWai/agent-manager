@@ -65,3 +65,13 @@ func (h helpHost) StatusShown() bool { return h.errBar.text != "" }
 func (h helpHost) TakeForeground() { h.takeForeground() }
 
 func (h helpHost) OpenDocs() tea.Cmd { return openLink(docsURL) }
+
+// openHelp scopes the key map to Review when Review is underneath. The base
+// is read here, to open, and never again.
+func (m *Model) openHelp() {
+	scope := uihelp.Global
+	if m.base == baseReview {
+		scope = uihelp.Review
+	}
+	m.push(uihelp.NewSurface(helpHost{m}, scope))
+}

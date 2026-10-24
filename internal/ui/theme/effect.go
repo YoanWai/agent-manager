@@ -40,9 +40,14 @@ func PaneTheme() tmux.PaneTheme {
 	return tmux.PaneTheme{Foreground: current.Text, Background: current.Bg, ColorFgBg: fgbg}
 }
 
-// Publish hands the tmux server the colors agent panes render on, so a
-// session created right after the publish still opens on the theme.
-func Publish(publisher PanePublisher) { publisher.PublishPaneTheme(PaneTheme()) }
+// PaneRecorder takes the colors agent panes render on, synchronously: a
+// session created right after still opens on the chosen theme.
+type PaneRecorder interface {
+	PublishPaneTheme(tmux.PaneTheme)
+}
+
+// Publish records the colors agent panes render on.
+func Publish(rec PaneRecorder) { rec.PublishPaneTheme(PaneTheme()) }
 
 // PaneRequest pushes the pane colors the manager drew to a running tmux
 // server. Sessions that are already up keep whatever they resolved at

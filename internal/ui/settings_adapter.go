@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"net/url"
 	"slices"
 	"strings"
 
