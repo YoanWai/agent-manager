@@ -60,12 +60,7 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.gens.foreground++
 		return m.handleDiffKey(msg)
 	}
-	busy := m.rail.Busy()
-	decision := m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext())
-	if decision.Consumed || busy {
-		m.gens.foreground++
-	}
-	return m.applyRailDecision(decision)
+	return m.handleRailKey(msg)
 }
 
 func (m *Model) railKeyContext() uirail.KeyContext {

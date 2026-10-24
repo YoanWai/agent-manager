@@ -267,7 +267,7 @@ func (m *Model) reorderSelected(delta int) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.applyRailDecision(m.rail.Key(msg, m.layout.displayedRail, m.railKeyContext()))
+	return m.applyRailKey(m.rail.Update(msg, m.layout.displayedRail, m.railKeyContext()))
 }
 
 func setRailSessionTool(m *Model, id, tool string) {

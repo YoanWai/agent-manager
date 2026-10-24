@@ -170,14 +170,14 @@ func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd 
 	close.gen = m.gens.dialog
 	m.effects.NextChain++
 	chain := m.effects.NextChain
-	request := railRequest{
-		mutation: mut,
-		dir:      m.workspace.groupPaths[mut.Path],
-		worktree: m.workspace.groupWorktrees[mut.Path],
-		base:     m.workspace.groupBases[mut.Path],
+	request := uirailpersist.Request{
+		Mutation: mut,
+		Dir:      m.workspace.groupPaths[mut.Path],
+		Worktree: m.workspace.groupWorktrees[mut.Path],
+		Base:     m.workspace.groupBases[mut.Path],
 	}
 	if mut.Kind == uirail.PlaceSession {
-		request.placement = m.capturePlacementPrecondition(mut)
+		request.Placement = m.capturePlacementPrecondition(mut)
 	}
 	m.enqueueEffect(request, chain, false)
 	m.enqueueEffect(close, chain, false)
@@ -203,12 +203,12 @@ func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) uirailper
 		if job == nil {
 			continue
 		}
-		request, ok := job.Request.(railRequest)
-		if !ok || request.mutation.Kind != uirail.PlaceSession || request.mutation.SessionID != mutation.SessionID {
+		request, ok := job.Request.(uirailpersist.Request)
+		if !ok || request.Mutation.Kind != uirail.PlaceSession || request.Mutation.SessionID != mutation.SessionID {
 			continue
 		}
-		precondition.SourceGroup = request.mutation.Group
-		precondition.SourceParentID = request.mutation.ParentID
+		precondition.SourceGroup = request.Mutation.Group
+		precondition.SourceParentID = request.Mutation.ParentID
 	}
 	return precondition
 }

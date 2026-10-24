@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 )
 
 // Legacy fixture entry points drive the same captured executor and reconciliation
@@ -51,6 +52,6 @@ func (m *Model) reviveSession(sess store.Session) error {
 }
 
 func (m *Model) persistCollapsed(paths []string) error {
-	_, err := m.bindEffect(railRequest{mutation: uirail.Mutation{Kind: uirail.SaveCollapsed, Collapsed: append([]string(nil), paths...)}})()
+	_, err := m.bindEffect(uirailpersist.Request{Mutation: uirail.Mutation{Kind: uirail.SaveCollapsed, Collapsed: append([]string(nil), paths...)}})()
 	return err
 }
