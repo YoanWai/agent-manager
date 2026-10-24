@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -239,6 +240,7 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	m.layout.width = 120
 	m.layout.height = 40
 	m.startup.Booting = false
+	m.Update(uirelease.FeedMsg{Startup: true})
 	t.Cleanup(func() {
 		for _, s := range m.workspace.sessions {
 			driver.Kill(s.ID)
@@ -675,6 +677,7 @@ func reloadModel(t *testing.T, m *Model) *Model {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	loaded.Update(uirelease.FeedMsg{Startup: true})
 	return loaded
 }
 

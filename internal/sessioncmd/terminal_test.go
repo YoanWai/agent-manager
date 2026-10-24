@@ -86,18 +86,22 @@ func tearDownHarness(t *testing.T, driver *tmux.Driver, st *store.Store) {
 
 func waitForTerminalOutput(t *testing.T, terminals *Terminals, callerID, terminalID, marker string) TerminalScreen {
 	t.Helper()
-	// A PowerShell pane on a loaded runner can take seconds to echo and run
-	// a line; the marker ends the wait as soon as it shows.
+	outputLine := regexp.MustCompile(`(?m)^` + regexp.QuoteMeta(marker) + `\r?$`)
+	return waitForTerminalScreen(t, terminals, callerID, terminalID, marker, outputLine.MatchString)
+}
+
+func waitForTerminalScreen(t *testing.T, terminals *Terminals, callerID, terminalID, want string, ready func(string) bool) TerminalScreen {
+	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		screen, err := terminals.Read(callerID, terminalID)
-		if err == nil && strings.Contains(screen.Output, marker) {
+		if err == nil && ready(screen.Output) {
 			return screen
 		}
 		time.Sleep(25 * time.Millisecond)
 	}
 	screen, err := terminals.Read(callerID, terminalID)
-	t.Fatalf("terminal never showed %q: output=%q err=%v", marker, screen.Output, err)
+	t.Fatalf("terminal never showed %q: output=%q err=%v", want, screen.Output, err)
 	return TerminalScreen{}
 }
 
@@ -149,12 +153,19 @@ func TestTerminalsCreateListSendAndReadWithRealTmux(t *testing.T) {
 	}
 
 	const keyMarker = "terminal-keys-marker"
-	keyed, err := h.terminals.Send(h.caller.ID, created.ID, "", []string{"printf '" + keyMarker + "\\n'", "Enter"})
+	const keyCommand = "printf '" + keyMarker + "\\n'"
+	keyed, err := h.terminals.Send(h.caller.ID, created.ID, "", []string{keyCommand})
 	if err != nil {
 		t.Fatalf("Send keys: %v", err)
 	}
 	if keyed.Sent != "keys" || keyed.TerminalID != created.ID {
 		t.Fatalf("send keys result = %+v", keyed)
+	}
+	waitForTerminalScreen(t, h.terminals, h.caller.ID, created.ID, keyCommand, func(output string) bool {
+		return strings.Contains(strings.ReplaceAll(output, "\n", ""), keyCommand)
+	})
+	if _, err := h.terminals.Send(h.caller.ID, created.ID, "", []string{"Enter"}); err != nil {
+		t.Fatalf("Send Enter: %v", err)
 	}
 	waitForTerminalOutput(t, h.terminals, h.caller.ID, created.ID, keyMarker)
 

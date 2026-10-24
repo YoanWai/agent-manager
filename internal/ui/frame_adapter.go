@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"io"
 	"os"
 	"strings"
@@ -468,11 +469,14 @@ func (m *Model) listGlyph(actions ...string) string {
 }
 
 func (m *Model) messagesAlert() (glyph, label string) {
-	if len(m.activeNotices()) == 0 {
-		return "", ""
-	}
 	glyph = m.listGlyph(keybind.Messages)
 	if glyph == "" {
+		return "", ""
+	}
+	if m.release.FeedPending {
+		return glyph, uinotices.FeedPendingText
+	}
+	if len(m.activeNotices()) == 0 {
 		return "", ""
 	}
 	return glyph, "unread"

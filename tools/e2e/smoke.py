@@ -156,70 +156,25 @@ class Sandbox:
         return errors
 
 
-# Longer than requestBudget in internal/feed, so a missing cache means the check finished.
-request_budget_wait = 6
+feed_pending_text = 'checking messages\u2026'
 
 
-def feed_cache(sandbox):
-    return Path(sandbox.env['XDG_CONFIG_HOME']) / 'agent-manager' / 'feed-messages.json'
-
-
-def notice_rows(frame):
-    rows = []
-    started = False
-    for line in frame.splitlines():
-        if '╭─ messages' in line:
-            started = True
-            continue
-        if not started:
-            continue
-        if '┄' in line or '╰' in line:
-            break
-        rows.append(line)
-    return tuple(rows)
+def feed_settled(frame):
+    if feed_pending_text in frame:
+        return False
+    return '╭─ messages' in frame or 'A G E N T' in frame
 
 
 def settle_messages(sandbox, target):
-    cache = feed_cache(sandbox)
-    deadline = time.monotonic() + request_budget_wait
-
     def capture():
         return sandbox.tmux('capture-pane', '-p', '-t', target).stdout
 
-    before = ''
-    while True:
-        frame = capture()
-        drawn = 'A G E N T' in frame or '╭─ messages' in frame
-        if cache.is_file() and drawn:
-            before = frame
-            break
-        if time.monotonic() >= deadline:
-            return
-        time.sleep(0.05)
-
-    # Printable keys in one write become one KeyMsg. j moves a notice and e badges
-    # the list, and neither key is visible on both screens.
-    prior = notice_rows(before)
-    if '╭─ messages' in before:
-        sandbox.tmux('send-keys', '-t', target, 'j')
-
-        def acknowledged(frame):
-            return notice_rows(frame) != prior
-    else:
-        sandbox.tmux('send-keys', '-t', target, 'e')
-
-        def acknowledged(frame):
-            return 'HIDE EMPTY' in frame or '╭─ messages' in frame
-
-    frame = sandbox.wait('messages-settled', capture, acknowledged)
-    if '╭─ messages' in frame:
-        sandbox.tmux('send-keys', '-t', target, 'Escape')
-        frame = sandbox.wait('messages-closed', capture,
-                             lambda current: 'A G E N T' in current and '╭─ messages' not in current)
-    if 'HIDE EMPTY' in frame:
-        sandbox.tmux('send-keys', '-t', target, 'e')
-        sandbox.wait('messages-restored', capture,
-                     lambda current: 'HIDE EMPTY' not in current and '╭─ messages' not in current)
+    frame = sandbox.wait('messages-settled', capture, feed_settled, timeout=45)
+    if '╭─ messages' not in frame:
+        return
+    sandbox.tmux('send-keys', '-t', target, 'Escape')
+    sandbox.wait('messages-closed', capture,
+                 lambda current: feed_settled(current) and '╭─ messages' not in current)
 
 
 def smoke(sandbox, binary):
