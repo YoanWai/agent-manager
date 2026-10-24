@@ -19,11 +19,9 @@ type connectionRequest struct {
 	gen  uint64
 }
 
-func (connectionRequest) EffectRequest() {}
+func (request connectionRequest) EffectCopy() uieffects.Request { return request }
 
-func (request connectionRequest) copied() effectRequest { return request }
-
-func (connectionRequest) effectName() string { return "SSH connection save" }
+func (connectionRequest) EffectName() string { return "SSH connection save" }
 
 func (request connectionRequest) run(services effectServices) (uieffects.Result, error) {
 	return services.runConnection(request)
@@ -76,11 +74,9 @@ type remoteRequest struct {
 	dead bool
 }
 
-func (remoteRequest) EffectRequest() {}
+func (request remoteRequest) EffectCopy() uieffects.Request { return request }
 
-func (request remoteRequest) copied() effectRequest { return request }
-
-func (remoteRequest) effectName() string { return "call to an SSH connection" }
+func (remoteRequest) EffectName() string { return "call to an SSH connection" }
 
 func (request remoteRequest) run(services effectServices) (uieffects.Result, error) {
 	return services.runRemote(request)

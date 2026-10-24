@@ -16,11 +16,9 @@ type railRequest struct {
 	placement uirailpersist.Precondition
 }
 
-func (railRequest) EffectRequest() {}
+func (railRequest) EffectName() string { return "rail change" }
 
-func (railRequest) effectName() string { return "rail change" }
-
-func (value railRequest) copied() effectRequest {
+func (value railRequest) EffectCopy() uieffects.Request {
 	value.mutation.Collapsed = slices.Clone(value.mutation.Collapsed)
 	value.mutation.HostCollapsed = slices.Clone(value.mutation.HostCollapsed)
 	value.mutation.GroupSiblings = slices.Clone(value.mutation.GroupSiblings)

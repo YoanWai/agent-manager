@@ -15,11 +15,9 @@ import (
 // the values and the package worker runs them.
 type renameRequest struct{ uiapply.Request }
 
-func (request renameRequest) EffectRequest() {}
+func (request renameRequest) EffectName() string { return "rename" }
 
-func (request renameRequest) effectName() string { return "rename" }
-
-func (value renameRequest) copied() effectRequest {
+func (value renameRequest) EffectCopy() uieffects.Request {
 	value.Request = value.Copy()
 	return value
 }
@@ -50,11 +48,9 @@ type moveDialogClose struct {
 	optSessID string
 }
 
-func (moveDialogClose) EffectRequest() {}
+func (request moveDialogClose) EffectCopy() uieffects.Request { return request }
 
-func (request moveDialogClose) copied() effectRequest { return request }
-
-func (moveDialogClose) effectName() string { return "move" }
+func (moveDialogClose) EffectName() string { return "move" }
 
 func (moveDialogClose) run(effectServices) (uieffects.Result, error) {
 	return moveDialogCloseResult{}, nil

@@ -22,11 +22,9 @@ type focusRequest struct {
 	sessionID  string
 }
 
-func (focusRequest) EffectRequest() {}
+func (request focusRequest) EffectCopy() uieffects.Request { return request }
 
-func (request focusRequest) copied() effectRequest { return request }
-
-func (focusRequest) effectName() string { return "focus or attach" }
+func (focusRequest) EffectName() string { return "focus or attach" }
 
 func (request focusRequest) run(services effectServices) (uieffects.Result, error) {
 	return focusEffectResult{}, services.focusProber().Probe(request.sessionID)
@@ -75,11 +73,9 @@ type ackRequest struct {
 	sessionID string
 }
 
-func (ackRequest) EffectRequest() {}
+func (request ackRequest) EffectCopy() uieffects.Request { return request }
 
-func (request ackRequest) copied() effectRequest { return request }
-
-func (ackRequest) effectName() string { return "focus or attach" }
+func (ackRequest) EffectName() string { return "focus or attach" }
 
 func (request ackRequest) run(services effectServices) (uieffects.Result, error) {
 	return ackEffectResult{}, services.focusProber().Ack(request.sessionID)
@@ -107,11 +103,9 @@ type detachRequest struct {
 	sessionID string
 }
 
-func (detachRequest) EffectRequest() {}
+func (request detachRequest) EffectCopy() uieffects.Request { return request }
 
-func (request detachRequest) copied() effectRequest { return request }
-
-func (detachRequest) effectName() string { return "focus or attach" }
+func (detachRequest) EffectName() string { return "focus or attach" }
 
 func (request detachRequest) run(services effectServices) (uieffects.Result, error) {
 	detached, err := services.focusProber().Detached(request.sessionID)

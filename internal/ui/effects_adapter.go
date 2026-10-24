@@ -6,22 +6,21 @@ import (
 
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// effectRequest is a request the root queues: it names itself for a quit
-// notice, copies what the caller still holds, and runs off Update with the
-// services captured when it was queued.
+// effectRequest is a request still declared at the root: it runs against the
+// root's own services. A request a feature package declares runs against that
+// package's services instead, through bindEffect.
 type effectRequest interface {
 	uieffects.Request
-	effectName() string
-	copied() effectRequest
 	run(effectServices) (uieffects.Result, error)
 }
 
-// effectResult is what a job returns, applied on Update to the model that
-// queued it.
+// effectResult is a result still declared at the root, which applies itself.
+// A package result is applied by applyEffect.
 type effectResult interface {
 	uieffects.Result
 	apply(m *Model, job *uieffects.Job, err error) tea.Cmd
@@ -57,12 +56,12 @@ func (m *Model) StopEffects() { m.effects.Stop(effectStopWait, effectName) }
 // before it exited.
 func (m *Model) AbandonedEffects() []string { return slices.Clone(m.effects.Abandoned) }
 
-func (m *Model) enqueueEffect(request effectRequest, chain uint64, first bool) {
+func (m *Model) enqueueEffect(request uieffects.Request, chain uint64, first bool) {
 	if m.effects.Quitting && !first {
 		return
 	}
-	request = request.copied()
-	m.effects.Push(m.laneFor(request), request, chain, first, m.captureEffect(request))
+	request = request.EffectCopy()
+	m.effects.Push(m.laneFor(request), request, chain, first, m.bindEffect(request))
 }
 
 func (m *Model) nextEffectCmd() tea.Cmd { return m.effects.Next(m.heldBy) }
@@ -113,20 +112,20 @@ func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
 		m.reportErr("install may still be running in " + install.Name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting")
 		return m, nil
 	}
-	starting := func(job *uieffects.Job) (installStartRequest, bool) {
+	starting := func(job *uieffects.Job) (uiinstall.StartRequest, bool) {
 		if job == nil {
-			return installStartRequest{}, false
+			return uiinstall.StartRequest{}, false
 		}
-		request, ok := job.Request.(installStartRequest)
+		request, ok := job.Request.(uiinstall.StartRequest)
 		return request, ok
 	}
 	if request, ok := starting(m.effects.Main.Active); ok {
-		m.reportErr("install for " + request.request.Binary + " is still starting; wait for its installer shell before quitting")
+		m.reportErr("install for " + request.Binary + " is still starting; wait for its installer shell before quitting")
 		return m, nil
 	}
 	for _, job := range m.effects.Main.Pending {
 		if request, ok := starting(job); ok {
-			m.reportErr("install for " + request.request.Binary + " is still queued; wait for its installer shell before quitting")
+			m.reportErr("install for " + request.Binary + " is still queued; wait for its installer shell before quitting")
 			return m, nil
 		}
 	}
@@ -154,7 +153,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case inputRequest, quickSendRequest, installStartRequest, lifecycleRequest, afterTurnRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
+	case inputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, railRequest, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}
@@ -165,26 +164,16 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 			m.effects.latestObservation = msg.FinishedAt
 		}
 	}
-	var command tea.Cmd
-	if result, ok := msg.Result.(effectResult); ok {
-		command = result.apply(m, job, msg.Err)
-	} else if msg.Err != nil {
-		m.reportErr(msg.Err.Error())
-	}
+	command := m.applyEffect(job, msg.Result, msg.Err)
 	// A settle check runs once per poll; asking for a poll after it would
 	// spin the poller for as long as the installer runs.
-	if _, settling := job.Request.(installSettleRequest); m.poller != nil && !settling {
+	if _, settling := job.Request.(uiinstall.SettleRequest); m.poller != nil && !settling {
 		m.requestRefresh()
 	}
 	return m, tea.Batch(command, m.nextEffectCmd())
 }
 
-func effectName(request uieffects.Request) string {
-	if request, ok := request.(effectRequest); ok {
-		return request.effectName()
-	}
-	return "effect"
-}
+func effectName(request uieffects.Request) string { return request.EffectName() }
 
 func (m *Model) routeEffectMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {

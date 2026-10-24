@@ -10,11 +10,9 @@ type splitSaveRequest struct {
 	value string
 }
 
-func (splitSaveRequest) EffectRequest() {}
+func (request splitSaveRequest) EffectCopy() uieffects.Request { return request }
 
-func (request splitSaveRequest) copied() effectRequest { return request }
-
-func (splitSaveRequest) effectName() string { return "split ratio save" }
+func (splitSaveRequest) EffectName() string { return "split ratio save" }
 
 func (request splitSaveRequest) run(services effectServices) (uieffects.Result, error) {
 	return services.runSplitSave(request)

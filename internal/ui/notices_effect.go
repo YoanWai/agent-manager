@@ -15,11 +15,9 @@ type noticeDismissRequest struct {
 	modal         bool
 }
 
-func (noticeDismissRequest) EffectRequest() {}
+func (request noticeDismissRequest) EffectCopy() uieffects.Request { return request }
 
-func (request noticeDismissRequest) copied() effectRequest { return request }
-
-func (noticeDismissRequest) effectName() string { return "notice dismissal" }
+func (noticeDismissRequest) EffectName() string { return "notice dismissal" }
 
 func (request noticeDismissRequest) run(services effectServices) (uieffects.Result, error) {
 	return services.runNoticeDismiss(request)

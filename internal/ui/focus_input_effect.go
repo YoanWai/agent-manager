@@ -11,11 +11,9 @@ type inputRequest struct {
 	request focusruntime.Request
 }
 
-func (inputRequest) EffectRequest() {}
+func (inputRequest) EffectName() string { return "input to a session" }
 
-func (inputRequest) effectName() string { return "input to a session" }
-
-func (value inputRequest) copied() effectRequest {
+func (value inputRequest) EffectCopy() uieffects.Request {
 	value.request = value.request.Copied()
 	return value
 }

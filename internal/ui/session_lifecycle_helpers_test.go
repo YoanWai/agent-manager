@@ -14,7 +14,7 @@ func (m *Model) lifecycleFixture(target confirmTarget) (lifecycleEffectResult, e
 	w, h := m.paneTargetSize()
 	request := lifecycleRequest{target: target, pane: sessioncmd.PaneSize{Width: w, Height: h}, watched: m.focus.runtime.Watching()}
 	request.target.sessions = append([]store.Session(nil), target.sessions...)
-	completed, err := m.captureEffect(request)()
+	completed, err := m.bindEffect(request)()
 	result := completed.(lifecycleEffectResult)
 	m.applyLifecycleEffect(request, result, err)
 	if err == nil {
@@ -51,6 +51,6 @@ func (m *Model) reviveSession(sess store.Session) error {
 }
 
 func (m *Model) persistCollapsed(paths []string) error {
-	_, err := m.captureEffect(railRequest{mutation: uirail.Mutation{Kind: uirail.SaveCollapsed, Collapsed: append([]string(nil), paths...)}})()
+	_, err := m.bindEffect(railRequest{mutation: uirail.Mutation{Kind: uirail.SaveCollapsed, Collapsed: append([]string(nil), paths...)}})()
 	return err
 }

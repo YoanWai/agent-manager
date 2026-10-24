@@ -23,16 +23,14 @@ type lifecycleRequest struct {
 	emptyNotice string
 }
 
-func (lifecycleRequest) EffectRequest() {}
-
-func (request lifecycleRequest) effectName() string {
+func (request lifecycleRequest) EffectName() string {
 	if request.target.action == uidialogs.ConfirmDelete {
 		return "session delete"
 	}
 	return "session " + string(request.target.action)
 }
 
-func (value lifecycleRequest) copied() effectRequest {
+func (value lifecycleRequest) EffectCopy() uieffects.Request {
 	value.target.sessions = slices.Clone(value.target.sessions)
 	for i := range value.target.sessions {
 		value.target.sessions[i].PendingInputs = slices.Clone(value.target.sessions[i].PendingInputs)

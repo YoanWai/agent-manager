@@ -12,11 +12,9 @@ type geometryRequest struct {
 	uigeometrypanes.Resize
 }
 
-func (geometryRequest) EffectRequest() {}
+func (geometryRequest) EffectName() string { return "pane resize" }
 
-func (geometryRequest) effectName() string { return "pane resize" }
-
-func (value geometryRequest) copied() effectRequest {
+func (value geometryRequest) EffectCopy() uieffects.Request {
 	value.Resize = uigeometrypanes.Resize{Publish: value.Publish, Targets: append([]uigeometrypanes.PaneResize(nil), value.Targets...)}
 	return value
 }

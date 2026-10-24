@@ -18,11 +18,9 @@ type afterTurnRequest struct {
 	watched string
 }
 
-func (afterTurnRequest) EffectRequest() {}
+func (request afterTurnRequest) EffectCopy() uieffects.Request { return request }
 
-func (request afterTurnRequest) copied() effectRequest { return request }
-
-func (afterTurnRequest) effectName() string { return "after-turn archive or kill" }
+func (afterTurnRequest) EffectName() string { return "after-turn archive or kill" }
 
 func (request afterTurnRequest) run(services effectServices) (uieffects.Result, error) {
 	return services.runAfterTurn(request)

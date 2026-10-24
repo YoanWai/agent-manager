@@ -70,11 +70,9 @@ type attachRequest struct {
 	screen        screenID
 }
 
-func (attachRequest) EffectRequest() {}
+func (request attachRequest) EffectCopy() uieffects.Request { return request }
 
-func (request attachRequest) copied() effectRequest { return request }
-
-func (attachRequest) effectName() string { return "focus or attach" }
+func (attachRequest) EffectName() string { return "focus or attach" }
 
 func (request attachRequest) run(services effectServices) (uieffects.Result, error) {
 	return services.runAttach(request)

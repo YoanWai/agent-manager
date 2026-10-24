@@ -34,11 +34,9 @@ type reviewEffectRequest struct {
 	sendTarget    uireviewsource.SendTarget
 }
 
-func (reviewEffectRequest) EffectRequest() {}
+func (reviewEffectRequest) EffectName() string { return "review change" }
 
-func (reviewEffectRequest) effectName() string { return "review change" }
-
-func (value reviewEffectRequest) copied() effectRequest {
+func (value reviewEffectRequest) EffectCopy() uieffects.Request {
 	value.state.Reviewed = maps.Clone(value.state.Reviewed)
 	value.state.Comments = slices.Clone(value.state.Comments)
 	value.previousState.Reviewed = maps.Clone(value.previousState.Reviewed)

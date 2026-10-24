@@ -163,19 +163,19 @@ func (m *Model) releaseLaunchHint() { m.ledger.install.Release() }
 
 // launchInstall is the install the card's fix asks for, carrying the launch to
 // retry and the images that launch's prompt named.
-func (m *Model) launchInstall() installStartRequest {
+func (m *Model) launchInstall() uiinstall.StartRequest {
 	fix := m.ledger.install.Launch
 	retry := fix.Retry
 	if spawn, ok := retry.(spawnRequest); ok && len(spawn.images) == 0 {
 		spawn.images = append([]composer.Attachment(nil), fix.Images...)
 		retry = spawn
 	}
-	return installStartRequest{request: uiinstall.StartRequest{
+	return uiinstall.StartRequest{
 		Command: fix.Script,
 		Binary:  fix.Binary,
 		Retry:   retry,
 		Images:  fix.Images,
-	}}
+	}
 }
 
 var _ uidialogs.LaunchHintRoot = launchHintRoot{}

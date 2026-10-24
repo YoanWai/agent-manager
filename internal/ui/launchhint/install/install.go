@@ -135,12 +135,22 @@ func (r StartRequest) Copied() StartRequest {
 	return r
 }
 
+func (StartRequest) EffectName() string { return "CLI install" }
+
+func (r StartRequest) EffectCopy() uieffects.Request { return r.Copied() }
+
+func (r StartRequest) Run(services Services) (uieffects.Result, error) {
+	return RunStart(services, r)
+}
+
 // StartResult carries a committed shell row even when a later label or send
 // step fails. Pending is set only after the command was typed.
 type StartResult struct {
 	Session store.Session
 	Pending *Pending
 }
+
+func (StartResult) EffectResult() {}
 
 // SettleRequest is the install one captured status check reads.
 type SettleRequest struct {
@@ -153,12 +163,22 @@ func (r SettleRequest) Copied() SettleRequest {
 	return r
 }
 
+func (SettleRequest) EffectName() string { return "CLI install" }
+
+func (r SettleRequest) EffectCopy() uieffects.Request { return r.Copied() }
+
+func (r SettleRequest) Run(services Services) (uieffects.Result, error) {
+	return RunSettle(services, r)
+}
+
 // SettleResult is what one status check found.
 type SettleResult struct {
 	SessionID string
 	State     uilaunchhint.SettleState
 	Code      string
 }
+
+func (SettleResult) EffectResult() {}
 
 // Started applies the admit result: the shell row joins the workspace, the
 // card hands the screen over, and images the install did not take go back to

@@ -34,8 +34,8 @@ func TestInstallStartDefersWorkOffUpdate(t *testing.T) {
 	if m.effects.Main.Active == nil {
 		t.Fatal("install press queued no effect")
 	}
-	if _, ok := m.effects.Main.Active.Request.(installStartRequest); !ok {
-		t.Fatalf("active effect = %T, want installStartRequest", m.effects.Main.Active.Request)
+	if _, ok := m.effects.Main.Active.Request.(uiinstall.StartRequest); !ok {
+		t.Fatalf("active effect = %T, want uiinstall.StartRequest", m.effects.Main.Active.Request)
 	}
 	if m.ledger.install.Pending != nil || storeRows(t, m) != 0 {
 		t.Fatalf("install ran on Update: pending=%+v rows=%d", m.ledger.install.Pending, storeRows(t, m))

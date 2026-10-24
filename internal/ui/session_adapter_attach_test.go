@@ -79,7 +79,7 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 	if got.Status != status.Finished {
 		t.Fatalf("the update path acknowledged the session: %q", got.Status)
 	}
-	if _, err := m.captureEffect(attachRequest{id: sess.ID})(); err != nil {
+	if _, err := m.bindEffect(attachRequest{id: sess.ID})(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
 	got, err = m.services.store.Get(sess.ID)
@@ -186,7 +186,7 @@ func TestAttachKeepsWorking(t *testing.T) {
 	if _, cmd := m.attachSelected(); cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
-	if _, err := m.captureEffect(attachRequest{id: sess.ID})(); err != nil {
+	if _, err := m.bindEffect(attachRequest{id: sess.ID})(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
 	got, err := m.services.store.Get(sess.ID)
@@ -237,7 +237,7 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 	if _, cmd := m.attachSelected(); cmd == nil {
 		t.Fatalf("attach did not start, err = %q", m.errBar.text)
 	}
-	if _, err := m.captureEffect(attachRequest{id: sess.ID})(); err != nil {
+	if _, err := m.bindEffect(attachRequest{id: sess.ID})(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())

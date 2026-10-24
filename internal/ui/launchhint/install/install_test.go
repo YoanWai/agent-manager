@@ -8,13 +8,16 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 type fakeRetry struct{}
 
-func (fakeRetry) EffectRequest() {}
+func (fakeRetry) EffectName() string { return "retry" }
+
+func (r fakeRetry) EffectCopy() uieffects.Request { return r }
 
 // fakeRoot is the manager as the runtime reaches it, recording what it asked
 // for instead of doing it.

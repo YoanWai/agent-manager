@@ -33,11 +33,9 @@ type quickSendRequest struct {
 	images         []composer.Attachment
 }
 
-func (quickSendRequest) EffectRequest() {}
+func (quickSendRequest) EffectName() string { return "quick send" }
 
-func (quickSendRequest) effectName() string { return "quick send" }
-
-func (value quickSendRequest) copied() effectRequest {
+func (value quickSendRequest) EffectCopy() uieffects.Request {
 	value.session.PendingInputs = slices.Clone(value.session.PendingInputs)
 	value.session.RelaunchSnapshot = maps.Clone(value.session.RelaunchSnapshot)
 	value.images = slices.Clone(value.images)

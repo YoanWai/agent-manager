@@ -10,11 +10,9 @@ import (
 // keysRequest is the key picker's tables at dispatch.
 type keysRequest uipersist.KeysRequest
 
-func (request keysRequest) EffectRequest() {}
+func (request keysRequest) EffectCopy() uieffects.Request { return request }
 
-func (request keysRequest) copied() effectRequest { return request }
-
-func (keysRequest) effectName() string { return "key binding save" }
+func (keysRequest) EffectName() string { return "key binding save" }
 
 func (request keysRequest) saved() uipersist.KeysRequest { return uipersist.KeysRequest(request) }
 

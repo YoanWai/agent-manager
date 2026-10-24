@@ -139,7 +139,7 @@ func TestAckIgnoresGoneSession(t *testing.T) {
 	if err := m.services.store.Delete(sess.ID); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
-	result, err := m.captureEffect(ackRequest{sessionID: sess.ID})()
+	result, err := m.bindEffect(ackRequest{sessionID: sess.ID})()
 	if err == nil {
 		t.Fatal("acknowledging a gone session should report the missing row")
 	}
@@ -190,7 +190,7 @@ func TestAttachWorkerAcknowledgesFinished(t *testing.T) {
 	if got.Status != status.Finished {
 		t.Fatalf("the update path acknowledged the session: %q", got.Status)
 	}
-	work := m.captureEffect(attachRequest{id: sess.ID})
+	work := m.bindEffect(attachRequest{id: sess.ID})
 	if _, err := work(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestAttachWorkerKeepsWorking(t *testing.T) {
 		t.Fatalf("set working: %v", err)
 	}
 	m.selectSessionRow(t, "busy-one")
-	work := m.captureEffect(attachRequest{id: sess.ID})
+	work := m.bindEffect(attachRequest{id: sess.ID})
 	if _, err := work(); err != nil {
 		t.Fatalf("attach worker: %v", err)
 	}

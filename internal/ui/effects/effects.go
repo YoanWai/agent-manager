@@ -17,8 +17,29 @@ import (
 // queue stopped admitting work.
 var ErrStopped = errors.New("UI effects have stopped")
 
-// Request is the work a job carries. The root's request types implement it.
-type Request interface{ EffectRequest() }
+// Request is the work a job carries. It names itself for a quit notice and
+// copies what its caller still holds before it is queued.
+type Request interface {
+	EffectName() string
+	EffectCopy() Request
+}
+
+// Runner is a request that runs against S, the services its package declares.
+// The package never sees the manager that captures them.
+type Runner[S any] interface {
+	Request
+	Run(S) (Result, error)
+}
+
+// Bind captures services for request when it runs against S.
+func Bind[S any](request Request, services func() S) (func() (Result, error), bool) {
+	runner, ok := request.(Runner[S])
+	if !ok {
+		return nil, false
+	}
+	captured := services()
+	return func() (Result, error) { return runner.Run(captured) }, true
+}
 
 // Result is what a job's work returns.
 type Result interface{ EffectResult() }

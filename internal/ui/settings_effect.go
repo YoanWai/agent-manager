@@ -62,11 +62,9 @@ type settingsRequest struct {
 	generation   uint64
 }
 
-func (settingsRequest) EffectRequest() {}
+func (settingsRequest) EffectName() string { return "settings save" }
 
-func (settingsRequest) effectName() string { return "settings save" }
-
-func (value settingsRequest) copied() effectRequest {
+func (value settingsRequest) EffectCopy() uieffects.Request {
 	copied := value.saved().Clone()
 	return settingsRequest{values: copied.Values, hidden: copied.Hidden, followUpdate: value.followUpdate, generation: value.generation}
 }

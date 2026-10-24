@@ -13,6 +13,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type effectServices struct {
@@ -32,7 +34,36 @@ type effectServices struct {
 	remote             *remote.Client
 }
 
-func (m *Model) captureEffect(request effectRequest) func() (uieffects.Result, error) {
+// bindEffect captures the services request runs against: those of the
+// feature package that declares it, or the root's own for a request still
+// declared here.
+func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, error) {
+	capture := m.captureServices
+	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
+		return work
+	}
+	services := capture()
+	return func() (uieffects.Result, error) { return request.(effectRequest).run(services) }
+}
+
+// applyEffect applies a finished job's result on Update: a package result
+// through its feature's host, a root result through its own apply.
+func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err error) tea.Cmd {
+	switch result := result.(type) {
+	case uiinstall.StartResult:
+		return m.ledger.install.Started(installRoot{m}, job.Request.(uiinstall.StartRequest), result, err)
+	case uiinstall.SettleResult:
+		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
+	case effectResult:
+		return result.apply(m, job, err)
+	}
+	if err != nil {
+		m.reportErr(err.Error())
+	}
+	return nil
+}
+
+func (m *Model) captureServices() effectServices {
 	cfg := m.services.cfg
 	cfg.Tools = make(map[string]config.Tool, len(m.services.cfg.Tools))
 	for name, tool := range m.services.cfg.Tools {
@@ -63,7 +94,7 @@ func (m *Model) captureEffect(request effectRequest) func() (uieffects.Result, e
 	if m.services.lifecycle != nil {
 		services.lifecycle = m.services.lifecycle.Capture(cfg, m.services.setSnapshot)
 	}
-	return func() (uieffects.Result, error) { return request.run(services) }
+	return services
 }
 
 func (s effectServices) reflow(ids []string, work func()) error {

@@ -25,11 +25,9 @@ const (
 	savedForFocus    = uipersist.SavedForFocus
 )
 
-func (request savedPromptRequest) EffectRequest() {}
+func (request savedPromptRequest) EffectCopy() uieffects.Request { return request }
 
-func (request savedPromptRequest) copied() effectRequest { return request }
-
-func (savedPromptRequest) effectName() string { return "saved prompt change" }
+func (savedPromptRequest) EffectName() string { return "saved prompt change" }
 
 func (request savedPromptRequest) run(services effectServices) (uieffects.Result, error) {
 	outcome, err := uipersist.RunPrompt(uipersist.PromptRequest(request), services.store)

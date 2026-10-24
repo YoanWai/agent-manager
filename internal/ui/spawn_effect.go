@@ -47,11 +47,9 @@ type spawnRequest struct {
 	base         string
 }
 
-func (spawnRequest) EffectRequest() {}
+func (spawnRequest) EffectName() string { return "spawn" }
 
-func (spawnRequest) effectName() string { return "spawn" }
-
-func (value spawnRequest) copied() effectRequest {
+func (value spawnRequest) EffectCopy() uieffects.Request {
 	value.dirFallbacks = slices.Clone(value.dirFallbacks)
 	value.terminalDir.fallbacks = slices.Clone(value.terminalDir.fallbacks)
 	if value.plan != nil {
@@ -126,11 +124,9 @@ type groupRequest struct {
 	dirReader directoryPreflight
 }
 
-func (groupRequest) EffectRequest() {}
+func (groupRequest) EffectName() string { return "group creation" }
 
-func (groupRequest) effectName() string { return "group creation" }
-
-func (value groupRequest) copied() effectRequest {
+func (value groupRequest) EffectCopy() uieffects.Request {
 	value.fallbacks = slices.Clone(value.fallbacks)
 	return value
 }
@@ -342,11 +338,9 @@ type choiceSaveRequest struct {
 	value string
 }
 
-func (choiceSaveRequest) EffectRequest() {}
+func (request choiceSaveRequest) EffectCopy() uieffects.Request { return request }
 
-func (request choiceSaveRequest) copied() effectRequest { return request }
-
-func (choiceSaveRequest) effectName() string { return "model choice save" }
+func (choiceSaveRequest) EffectName() string { return "model choice save" }
 
 func (request choiceSaveRequest) run(services effectServices) (uieffects.Result, error) {
 	return services.runChoiceSave(request)

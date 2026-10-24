@@ -14,11 +14,9 @@ import (
 // it and the package worker runs it.
 type forkRequest struct{ uiapply.ForkRequest }
 
-func (request forkRequest) EffectRequest() {}
+func (request forkRequest) EffectName() string { return "fork" }
 
-func (request forkRequest) effectName() string { return "fork" }
-
-func (value forkRequest) copied() effectRequest {
+func (value forkRequest) EffectCopy() uieffects.Request {
 	value.ForkRequest = value.Copy()
 	return value
 }

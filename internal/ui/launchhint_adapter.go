@@ -51,33 +51,32 @@ func (r installRoot) ShowInstall(sessionID string) tea.Cmd {
 
 func (r installRoot) Refresh() tea.Cmd { return r.refreshCmd() }
 
-// QueueRetry queues the launch the fix held. Every request a refused launch
-// carries is a root effect request.
+// QueueRetry queues the launch the fix held.
 func (r installRoot) QueueRetry(retry uiinstall.Retry) {
-	r.enqueueEffect(retry.(effectRequest), 0, false)
+	r.enqueueEffect(retry, 0, false)
 }
 
 // startInstall admits the setup dialog's install onto the effect lane,
 // stamped with the dialog generation, a new shell row id, the shell tool, the
 // placement group and the pane geometry. It refuses while another install is
 // still starting.
-func (m *Model) startInstall(request installStartRequest) bool {
+func (m *Model) startInstall(request uiinstall.StartRequest) bool {
 	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if starting, ok := job.Request.(installStartRequest); ok {
-			m.reportErr("an install is already starting for " + starting.request.Binary)
+		if starting, ok := job.Request.(uiinstall.StartRequest); ok {
+			m.reportErr("an install is already starting for " + starting.Binary)
 			return false
 		}
 	}
 	toolName, _ := m.shellTool()
 	w, h := m.paneTargetSize()
-	request.request.Gen = m.gens.dialog
-	request.request.ID = newID()
-	request.request.ToolName = toolName
-	request.request.Group = m.contextGroup()
-	request.request.Pane = sessioncmd.PaneSize{Width: w, Height: h}
+	request.Gen = m.gens.dialog
+	request.ID = newID()
+	request.ToolName = toolName
+	request.Group = m.contextGroup()
+	request.Pane = sessioncmd.PaneSize{Width: w, Height: h}
 	m.enqueueEffect(request, 0, false)
 	return true
 }
@@ -233,9 +232,9 @@ func (m *Model) settleInstall() {
 		if job == nil {
 			continue
 		}
-		if request, ok := job.Request.(installSettleRequest); ok && request.install.Pending.SessionID == install.SessionID {
+		if request, ok := job.Request.(uiinstall.SettleRequest); ok && request.Pending.SessionID == install.SessionID {
 			return
 		}
 	}
-	m.enqueueEffect(installSettleRequest{install: uiinstall.SettleRequest{Pending: *install}}, 0, false)
+	m.enqueueEffect(uiinstall.SettleRequest{Pending: *install}, 0, false)
 }
