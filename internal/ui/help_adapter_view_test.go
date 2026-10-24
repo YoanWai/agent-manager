@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -215,7 +216,7 @@ func TestHelpOpensDocs(t *testing.T) {
 		opened = url
 		return nil
 	}
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	frame := preparedView(m)
 	if !strings.Contains(frame, hintCap("o", "docs")) {

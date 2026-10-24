@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 )
 
 // overSSH puts the test on a terminal at the far end of an SSH session, and
@@ -27,7 +28,7 @@ func TestOpenLinkOverSSHShowsThePage(t *testing.T) {
 		opened = url
 		return nil
 	}
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	target := "https://example.com/issues/new?template=bug_report.yml"
 	msg := openLink(target)()
@@ -48,7 +49,7 @@ func TestOpenBrowserFailureCopiesURL(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() {
-		openBrowser = defaultOpenBrowser
+		openBrowser = uiterminal.DefaultOpenBrowser
 		copyBrowserURL = clipboard.WriteText
 	})
 
@@ -67,7 +68,7 @@ func TestOpenBrowserAndCopyFailureNamesURL(t *testing.T) {
 	openBrowser = func(string) error { return errors.New("no browser available") }
 	copyBrowserURL = func(string) error { return errors.New("no clipboard available") }
 	t.Cleanup(func() {
-		openBrowser = defaultOpenBrowser
+		openBrowser = uiterminal.DefaultOpenBrowser
 		copyBrowserURL = clipboard.WriteText
 	})
 

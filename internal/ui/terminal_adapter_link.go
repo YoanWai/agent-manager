@@ -40,8 +40,6 @@ func linkSeams() uiterminal.Seams {
 	}
 }
 
-func defaultOpenBrowser(target string) error { return uiterminal.DefaultOpenBrowser(target) }
-
 func openLink(target string) tea.Cmd { return terminalMsgCmd(uiterminal.OpenLink(target, linkSeams())) }
 
 func openLinkCmd(url string) tea.Cmd { return terminalMsgCmd(uiterminal.OpenLinkCmd(url, linkSeams())) }

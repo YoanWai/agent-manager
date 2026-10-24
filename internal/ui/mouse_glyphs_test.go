@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -35,7 +36,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			}
 			var opened string
 			openBrowser = func(url string) error { opened = url; return nil }
-			t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+			t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 			m, docs := clickBody(t, m, "docs")
 			m.runBatch(t, docs)
 			if opened != docsURL {

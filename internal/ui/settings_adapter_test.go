@@ -12,6 +12,7 @@ import (
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -201,7 +202,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 		opened = url
 		return nil
 	}
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	m.settingsCard().State().Field = uisettings.FieldDocs
 	_, cmd := m.handleSettingsKey(key("enter"))
@@ -239,7 +240,7 @@ func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 		opened = url
 		return nil
 	}
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	m.settingsCard().State().Field = uisettings.FieldBugReport
 	_, cmd := m.handleSettingsKey(key("enter"))
@@ -273,7 +274,7 @@ func TestSettingsFeatureRequestRowOpensForm(t *testing.T) {
 		opened = url
 		return nil
 	}
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	m.settingsCard().State().Field = uisettings.FieldFeatureRequest
 	_, cmd := m.handleSettingsKey(key("enter"))
@@ -403,7 +404,7 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 		opened = url
 		return nil
 	}
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	m.openSettings()
 	m.openSettingsCLIPicker(t)

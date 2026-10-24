@@ -7,6 +7,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/store"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -192,7 +193,7 @@ func TestSavedPromptsPanelByMouseInASmallTerminal(t *testing.T) {
 func TestSettingsClickAboveTheBodyLeavesSavedPromptsClosed(t *testing.T) {
 	m := buildModel(t)
 	openBrowser = func(url string) error { t.Fatalf("opened %s", url); return nil }
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 	m.runBatch(t, m.openSettings())
 	d := m.settingsCard().State()
 	d.Field = uisettings.FieldCount - 1

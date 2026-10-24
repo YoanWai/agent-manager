@@ -6,6 +6,7 @@ import (
 
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -46,7 +47,7 @@ func (t editorReturnTarget) resumes(foregroundGen uint64, current screenID, quit
 
 type editorFileCheckedMsg struct {
 	result        uireview.FileCheckResult
-	editor        editorLaunch
+	editor        uisession.Launch
 	foregroundGen uint64
 }
 
@@ -55,10 +56,6 @@ func (m *Model) openEditor() (tea.Model, tea.Cmd) {
 		tmux: m.services.tmux,
 		dirs: systemDirectoryPreflight{git: m.services.gitDrv},
 	}, "")
-}
-
-func (m *Model) openEditorWithReader(reader terminalDirectoryReader) (tea.Model, tea.Cmd) {
-	return m.openEditorWithReaderForReturn(reader, "")
 }
 
 func (m *Model) openEditorWithReaderForReturn(reader terminalDirectoryReader, returnID string) (tea.Model, tea.Cmd) {
@@ -94,14 +91,14 @@ func (m *Model) handleDiffFileChecked(msg editorFileCheckedMsg) (tea.Model, tea.
 	return m.launchEditor(msg.editor, editorReturnTarget{})
 }
 
-func (m *Model) launchEditor(editor editorLaunch, returnTo editorReturnTarget) (tea.Model, tea.Cmd) {
+func (m *Model) launchEditor(editor uisession.Launch, returnTo editorReturnTarget) (tea.Model, tea.Cmd) {
 	if editor.Command == nil {
 		m.reportErr("no editor found: pick one in Settings > editor")
 		return m, nil
 	}
 	m.clearErr()
 	if editor.TakesScreen() {
-		return m, execTerminalProcess(editor.Command, func(err error) tea.Msg {
+		return m, uiterminal.ExecProcess(editor.Command, func(err error) tea.Msg {
 			return editorDoneMsg{err: err, tookScreen: true, returnTo: returnTo}
 		})
 	}
@@ -158,9 +155,9 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	return nil, nil, false
 }
 
-// The root keeps the resolution and the launch names the rest of the package
-// reads: terminal.go, review_adapter.go and settings_adapter.go are wired to
-// them, and their call sites belong to other prefixes.
+// The root keeps the resolution's type here: terminal.go, review_adapter.go
+// and settings_adapter.go are wired to it, and their call sites belong to
+// other prefixes.
 
 type editorResolution struct {
 	configured string
@@ -170,8 +167,6 @@ type editorResolution struct {
 	gui        []string
 	lookup     func(string) (string, error)
 }
-
-type editorLaunch = uisession.Launch
 
 // detectedEditors captures what an unset Settings row falls back to.
 func detectedEditors() editorResolution {
@@ -184,16 +179,16 @@ func detectedEditors() editorResolution {
 	}
 }
 
-func (r editorResolution) resolve() string {
+// editorLine is the editor the manager launches with: the configured one,
+// else the environment's.
+func (r editorResolution) editorLine() string {
 	return uisession.Resolve(r.configured, r.manager, r.visual, r.editor, r.gui, r.lookup)
 }
 
-func (r editorResolution) prepare(path string) editorLaunch {
-	line := r.resolve()
+func (r editorResolution) prepare(path string) uisession.Launch {
+	line := r.editorLine()
 	if command, ok := uisession.Command(line, path); ok {
 		return uisession.Launch{Command: command, Name: uisession.Name(line), Path: path}
 	}
 	return uisession.Launch{}
 }
-
-func splitEditorLine(line string) []string { return uisession.SplitLine(line) }
