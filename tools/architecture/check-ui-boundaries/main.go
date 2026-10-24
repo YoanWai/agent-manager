@@ -40,9 +40,9 @@ var (
 	presentBoundary         = boundary{"Presentation", "/internal/ui/presentation", []string{"/internal/ui/presentation"}}
 	connectionsBoundary     = boundary{"Connections", "/internal/ui/connections", []string{"/internal/catalog/value", "/internal/remote/value", "/internal/ui/connections", "/internal/ui/dialogs", "/internal/ui/pathcomplete", "/internal/ui/presentation", "/internal/ui/spawn", "/internal/ui/surface"}}
 	effectsBoundary         = boundary{"Effects", "/internal/ui/effects", []string{"/internal/ui/effects"}}
-	frameBoundary           = boundary{"Frame", "/internal/ui/frame", []string{"/internal/keybind", "/internal/ui/frame", "/internal/ui/presentation"}}
+	frameBoundary           = boundary{"Frame", "/internal/ui/frame", []string{"/internal/keybind", "/internal/systheme", "/internal/ui/effects", "/internal/ui/frame", "/internal/ui/presentation", "/internal/ui/theme"}}
 	launchhintBoundary      = boundary{"Launch hint", "/internal/ui/launchhint", []string{"/internal/ui/launchhint"}}
-	previewBoundary         = boundary{"Preview", "/internal/ui/preview", []string{"/internal/keybind", "/internal/ui/frame", "/internal/ui/presentation", "/internal/ui/preview"}}
+	previewBoundary         = boundary{"Preview", "/internal/ui/preview", []string{"/internal/keybind", "/internal/systheme", "/internal/ui/effects", "/internal/ui/frame", "/internal/ui/presentation", "/internal/ui/preview", "/internal/ui/theme"}}
 	sessionBoundary         = boundary{"Session", "/internal/ui/session", []string{"/internal/atomicfile", "/internal/deps", "/internal/keybind", "/internal/ui/session", "/internal/update", "/internal/wsl"}}
 	startupBoundary         = boundary{"Startup", "/internal/ui/startup", []string{"/internal/pwsh", "/internal/systheme", "/internal/ui/effects", "/internal/ui/presentation", "/internal/ui/startup", "/internal/ui/theme"}}
 	statusbarBoundary       = boundary{"Status bar", "/internal/ui/statusbar", []string{"/internal/systheme", "/internal/ui/effects", "/internal/ui/presentation", "/internal/ui/statusbar", "/internal/ui/theme"}}

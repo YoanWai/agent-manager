@@ -45,7 +45,7 @@ func (h helpHost) InnerWidth(width int) int { return uiframe.CardInnerWidth(widt
 func (h helpHost) HintRows(hints [][2]string, width int) int {
 	// One untitled run, for the foot of a modal card where the tier's
 	// subject is the card's own title.
-	return lipgloss.Height(uiframe.LegendInline(hints, width, frameCap()))
+	return lipgloss.Height(uiframe.LegendInline(hints, width, uiframe.LiveCap()))
 }
 
 func (h helpHost) StatusShown() bool { return h.errBar.text != "" }

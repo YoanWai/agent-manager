@@ -2,14 +2,149 @@ package ui
 
 import (
 	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/execution"
+	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	tea "github.com/charmbracelet/bubbletea"
-	"time"
+	"github.com/charmbracelet/x/ansi"
 )
+
+type workspace struct {
+	sessions []store.Session
+	// tmuxSocket is the server the last poll read panes from; rows stamped
+	// with another server belong to a manager running against it, and rows
+	// stamped by none belong to whichever manager holds the store.
+	tmuxSocket     string
+	leadingManager bool
+	groups         []string
+	groupPaths     map[string]string
+	groupWorktrees map[string]string
+	groupBases     map[string]string
+	archivedGroups map[string]bool
+	snap           sysstat.Snapshot
+	proc           sysstat.ProcStat
+	procFor        string
+	preview        string
+	// capture is what takes the selected pane's preview.
+	capture uicapture.State
+	agents  agentStats
+	// queuedMessages is replaced whole on every refresh rather than merged,
+	// so a delivered message's badge clears itself.
+	queuedMessages map[string]int
+	// paneLines holds each session's last meaningful pane line, which the
+	// full screen row's second line quotes. Merged rather than replaced, so
+	// a session that lost its window keeps its last words.
+	paneLines map[string]string
+	// panePrompts holds the last prompt each session's transcript echoes,
+	// which the full screen row shows as the task it is on.
+	panePrompts map[string]string
+	// panes is the last pass's agent pane geometry, which the poller reads
+	// off the UI loop alongside its liveness listing.
+	panes map[string]tmux.Pane
+	net   uiworkspace.Net
+	// lastListedAt is the newest listing applied; an older one still carries
+	// focus, turn ends and pane facts, but not the rows it saw.
+	lastListedAt time.Time
+}
+
+// snapReadings flattens an OS snapshot off its probe into the values the foot
+// lays out, so the layout never reads sysstat itself.
+func snapReadings(snap sysstat.Snapshot) uiworkspace.Readings {
+	return uiworkspace.Readings{
+		CPUPercent: snap.CPUPercent, CPUOK: snap.CPUOK,
+		MemPercent: snap.MemPercent, MemOK: snap.MemOK, MemUsed: snap.MemUsed, MemTotal: snap.MemTotal,
+		SwapOK: snap.SwapOK, SwapPercent: snap.SwapPercent, SwapUsed: snap.SwapUsed, SwapTotal: snap.SwapTotal,
+		DiskOK: snap.DiskOK, DiskPercent: snap.DiskPercent, DiskAvailable: snap.DiskAvailable,
+		BatteryOK: snap.BatteryOK, BatteryPercent: snap.BatteryPercent, BatteryCharging: snap.BatteryCharging,
+		CPUTempOK: snap.CPUTempOK, CPUTemp: snap.CPUTemp,
+		GPUTempOK: snap.GPUTempOK, GPUTemp: snap.GPUTemp,
+		SoCTempOK: snap.SoCTempOK, SoCTemp: snap.SoCTemp,
+	}
+}
+
+// computerLines is the machine block docked at the rail's foot.
+func (m *Model) computerLines(width int) []string {
+	return uiworkspace.ComputerLines(snapReadings(m.workspace.snap), m.workspace.net, width)
+}
+
+func (m *Model) railFootLines(width int) []string {
+	if m.prefs.hideStats {
+		return nil
+	}
+	if m.prefs.fullLayout {
+		return m.fullFootLine(width)
+	}
+	return m.computerLines(width)
+}
+
+func (m *Model) fullFootLine(width int) []string {
+	return uiworkspace.FootLine(snapReadings(m.workspace.snap), m.workspace.net, width)
+}
+
+var postNotification = notify.Notify
+
+var showCommand = notify.ShowCommand
+
+type poller struct {
+	runner       *execution.Runner
+	dependencies execution.Dependencies
+	options      execution.Options
+}
+
+func newPoller(st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, gitDriver *git.Driver, statusSources, sessionStores, mcpStyles, reportStyles map[string]string, shellTools map[string]bool, binaries execution.ToolBinaries, interval time.Duration) *poller {
+	deps := execution.Dependencies{Store: st, TMux: driver, Engine: engine, Hooks: hookManager, Git: gitDriver, Notify: postNotification, ShowCommand: showCommand, TakeFocus: takeNotifyFocus}
+	opts := execution.Options{StatusSources: statusSources, SessionStores: sessionStores, MCPStyles: mcpStyles, ReportStyles: reportStyles, ShellTools: shellTools, Binaries: binaries, Interval: interval}
+	return &poller{runner: execution.New(deps, opts), dependencies: deps, options: opts}
+}
+
+func pollMessage(result execution.Result) tea.Msg {
+	if result.Err != nil {
+		return errMsg{result.Err}
+	}
+	s := result.Snapshot
+	return refreshMsg{sessions: s.Sessions, listedAt: s.ListedAt, groups: s.Groups, groupPaths: s.GroupPaths,
+		groupWorktrees: s.GroupWorktrees, groupBases: s.GroupBases, archivedGroups: s.ArchivedGroups, snap: s.Snap, snapOK: s.SnapOK,
+		proc: s.Proc, procFor: s.ProcFor, preview: s.Preview, agents: agentStats{count: s.Agents.Count, cpu: s.Agents.CPU, ram: s.Agents.RAM, rss: s.Agents.RSS},
+		queuedMessages: s.QueuedMessages, paneLines: s.PaneLines, panePrompts: s.PanePrompts, panes: s.Panes,
+		tmuxSocket: s.TmuxSocket, leadingManager: s.LeadingManager, focusID: s.FocusID, turnsEnded: s.TurnsEnded, followWarning: s.FollowWarning}
+}
+
+func (p *poller) refreshOnce() tea.Msg                                { return pollMessage(p.runner.Step()) }
+func (p *poller) setInput(archived bool, selected string)             { p.runner.SetInput(archived, selected) }
+func (p *poller) requestRefresh()                                     { p.runner.RequestRefresh() }
+func (p *poller) results(ctx context.Context) <-chan execution.Result { return p.runner.Run(ctx) }
+
+func takeNotifyFocus() (string, bool) {
+	dir, err := config.Dir()
+	if err != nil {
+		return "", false
+	}
+	return notify.TakeFocus(dir)
+}
+
+const quoteHistoryLines = 300
+
+func paneBooted(pane string) bool { return strings.TrimSpace(ansi.Strip(pane)) != "" }
+func ignoreDeletedSession(err error) error {
+	if errors.Is(err, store.ErrSessionGone) {
+		return nil
+	}
+	return err
+}
 
 // agentStats aggregates process-tree usage across all live sessions.
 // cpu and ram are shares of this machine (0–100); rss is absolute bytes.
