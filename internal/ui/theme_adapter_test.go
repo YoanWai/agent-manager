@@ -30,7 +30,7 @@ func TestAgentPaneTheme(t *testing.T) {
 	} {
 		want := uitheme.Palettes[uitheme.Index(tt.theme)]
 		applyTheme(want)
-		got := uitheme.PaneTheme()
+		got := paneTheme()
 		if got.Background != want.Bg {
 			t.Errorf("%s: pane background = %q, want %q", tt.theme, got.Background, want.Bg)
 		}

@@ -16,14 +16,14 @@ type boundary struct {
 }
 
 var (
-	helpBoundary            = boundary{"Help", "/internal/ui/help", []string{"/internal/ui/help", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface"}}
+	helpBoundary            = boundary{"Help", "/internal/ui/help", []string{"/internal/ui/help", "/internal/keybind", "/internal/systheme", "/internal/ui/effects", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/theme"}}
 	surfaceBoundary         = boundary{"Surface", "/internal/ui/surface", []string{"/internal/ui/surface"}}
 	diffBoundary            = boundary{"Diff model", "/internal/diff/model", []string{"/internal/diff/model", "/internal/git/value"}}
 	reviewBoundary          = boundary{"Review", "/internal/ui/review", []string{"/internal/ui/review", "/internal/diff/model", "/internal/git/value", "/internal/ui/presentation", "/internal/ui/surface"}}
 	focusBoundary           = boundary{"Focus", "/internal/ui/focus", []string{"/internal/ui/focus", "/internal/keybind", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete"}}
 	watchBoundary           = boundary{"Focus watch", "/internal/ui/focus/watch", []string{"/internal/ui/focus/watch", "/internal/tmux", "/internal/deps", "/internal/keybind", "/internal/proctree", "/internal/pwsh"}}
 	railBoundary            = boundary{"Rail", "/internal/ui/rail", []string{"/internal/ui/rail", "/internal/keybind", "/internal/remote/value", "/internal/ui/presentation", "/internal/ui/theme"}}
-	settingsBoundary        = boundary{"Settings", "/internal/ui/settings", []string{"/internal/ui/settings", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/theme", "/internal/ui/surface"}}
+	settingsBoundary        = boundary{"Settings", "/internal/ui/settings", []string{"/internal/ui/settings", "/internal/keybind", "/internal/systheme", "/internal/ui/effects", "/internal/ui/presentation", "/internal/ui/theme", "/internal/ui/surface"}}
 	geometryBoundary        = boundary{"Geometry", "/internal/ui/geometry", []string{"/internal/ui/geometry", "/internal/keybind", "/internal/ui/surface"}}
 	terminalBoundary        = boundary{"Terminal", "/internal/ui/terminal", []string{"/internal/ui/terminal", "/internal/clipboard", "/internal/termseq", "/internal/ui/presentation", "/internal/ui/session", "/internal/wsl"}}
 	themeBoundary           = boundary{"Theme", "/internal/ui/theme", []string{"/internal/ui/theme", "/internal/systheme", "/internal/ui/effects"}}
@@ -32,7 +32,7 @@ var (
 	pathBoundary            = boundary{"Path complete", "/internal/ui/pathcomplete", []string{"/internal/ui/pathcomplete", "/internal/ui/presentation"}}
 	quickBoundary           = boundary{"Quick", "/internal/ui/quick", []string{"/internal/ui/quick", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/composer", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/atomicfile", "/internal/deps", "/internal/keybind", "/internal/proctree", "/internal/pwsh", "/internal/status", "/internal/store", "/internal/tmux", "/internal/ui/effects", "/internal/ui/session", "/internal/config", "/internal/update"}}
 	dialogsBoundary         = boundary{"Dialogs", "/internal/ui/dialogs", []string{"/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/ui/spawn", "/internal/catalog/value"}}
-	noticesBoundary         = boundary{"Notices", "/internal/ui/notices", []string{"/internal/ui/notices", "/internal/keybind", "/internal/ui/effects", "/internal/ui/presentation", "/internal/ui/surface"}}
+	noticesBoundary         = boundary{"Notices", "/internal/ui/notices", []string{"/internal/ui/notices", "/internal/keybind", "/internal/systheme", "/internal/ui/effects", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/theme"}}
 	releaseBoundary         = boundary{"Notices release", "/internal/ui/notices/release", []string{"/internal/ui/notices/release", "/internal/ui/notices", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/terminal", "/internal/clipboard", "/internal/termseq", "/internal/wsl", "/internal/config", "/internal/deps", "/internal/tmux", "/internal/proctree", "/internal/pwsh", "/internal/update", "/internal/feed", "/internal/atomicfile"}}
 	valueBoundary           = boundary{"Git values", "/internal/git/value", []string{"/internal/git/value"}}
 	catalogBoundary         = boundary{"Catalog values", "/internal/catalog/value", []string{"/internal/catalog/value"}}
@@ -43,7 +43,7 @@ var (
 	launchhintBoundary      = boundary{"Launch hint", "/internal/ui/launchhint", []string{"/internal/ui/launchhint"}}
 	previewBoundary         = boundary{"Preview", "/internal/ui/preview", []string{"/internal/ui/preview", "/internal/keybind", "/internal/ui/frame", "/internal/ui/presentation"}}
 	sessionBoundary         = boundary{"Session", "/internal/ui/session", []string{"/internal/ui/session"}}
-	startupBoundary         = boundary{"Startup", "/internal/ui/startup", []string{"/internal/ui/startup", "/internal/pwsh", "/internal/ui/presentation", "/internal/ui/theme"}}
+	startupBoundary         = boundary{"Startup", "/internal/ui/startup", []string{"/internal/ui/startup", "/internal/pwsh", "/internal/systheme", "/internal/ui/effects", "/internal/ui/presentation", "/internal/ui/theme"}}
 	statusbarBoundary       = boundary{"Status bar", "/internal/ui/statusbar", []string{"/internal/ui/statusbar", "/internal/ui/presentation", "/internal/ui/theme"}}
 	workspaceBoundary       = boundary{"Workspace", "/internal/ui/workspace", []string{"/internal/ui/workspace", "/internal/ui/frame", "/internal/ui/presentation", "/internal/ui/theme"}}
 	remoteBoundary          = boundary{"Remote values", "/internal/remote/value", []string{"/internal/remote/value"}}

@@ -2,7 +2,6 @@ package theme
 
 import (
 	"github.com/YoanWai/agent-manager/internal/systheme"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 )
 
@@ -26,28 +25,6 @@ type PanePublisher interface {
 
 // Services is what the theme effect lane captures for one job.
 type Services struct{ Tmux PanePublisher }
-
-// PaneTheme is the backdrop and text color an agent pane sits on: the
-// theme's own, the same colors the terminal is set to and the capture is
-// drawn over. Agents that auto-detect follow it, so a light theme hosts
-// light agents.
-func PaneTheme() tmux.PaneTheme {
-	current := Current()
-	fgbg := "15;0"
-	if current.LightBackdrop() {
-		fgbg = "0;15"
-	}
-	return tmux.PaneTheme{Foreground: current.Text, Background: current.Bg, ColorFgBg: fgbg}
-}
-
-// PaneRecorder takes the colors agent panes render on, synchronously: a
-// session created right after still opens on the chosen theme.
-type PaneRecorder interface {
-	PublishPaneTheme(tmux.PaneTheme)
-}
-
-// Publish records the colors agent panes render on.
-func Publish(rec PaneRecorder) { rec.PublishPaneTheme(PaneTheme()) }
 
 // PaneRequest pushes the pane colors the manager drew to a running tmux
 // server. Sessions that are already up keep whatever they resolved at

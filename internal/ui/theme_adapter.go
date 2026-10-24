@@ -6,11 +6,25 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/termseq"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+// paneTheme is the backdrop and text color an agent pane sits on: the
+// theme's own, the same colors the terminal is set to and the capture is
+// drawn over. Agents that auto-detect follow it, so a light theme hosts
+// light agents.
+func paneTheme() tmux.PaneTheme {
+	current := uitheme.Current()
+	fgbg := "15;0"
+	if current.LightBackdrop() {
+		fgbg = "0;15"
+	}
+	return tmux.PaneTheme{Foreground: current.Text, Background: current.Bg, ColorFgBg: fgbg}
+}
 
 // applyTheme publishes the styles for a token set; a theme switch repaints
 // from the next frame on.
@@ -52,7 +66,7 @@ func EnableTerminalPassthrough() {
 // published now, and the push to a running tmux server runs off the update
 // path.
 func (m *Model) syncPaneTheme() tea.Cmd {
-	uitheme.Publish(m.services.tmux)
+	m.services.tmux.PublishPaneTheme(paneTheme())
 	m.enqueueEffect(uitheme.PaneRequest{}, 0, false)
 	return m.nextEffectCmd()
 }
