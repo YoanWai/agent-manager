@@ -1,9 +1,61 @@
 package ui
 
 import (
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+// persistSplitRatio captures the current ratio for the ordered effect lane so
+// the next launch reopens at the same split without holding Update on SQLite.
+func (m *Model) persistSplitRatio() {
+	if m.services.store == nil {
+		return
+	}
+	m.layout.panes.Persist(paneSizing{m}, m.layout.split.ratio)
+}
+
+// queueGeometry queues a resize, dropping what the lane already carries and
+// folding into the geometry job queued just before it, never across an
+// accepted mutation.
+func (m *Model) queueGeometry(request uigeometrypanes.Resize) {
+	request = uigeometrypanes.Effective(request, m.queuedGeometry())
+	if request.Empty() {
+		return
+	}
+	if n := len(m.effects.Main.Pending); n > 0 {
+		if previous, ok := m.effects.Main.Pending[n-1].Request.(uigeometrypanes.ResizeRequest); ok {
+			request = uigeometrypanes.Merge(previous.Resize, request)
+			m.effects.Main.Pending = m.effects.Main.Pending[:n-1]
+		}
+	}
+	m.enqueueEffect(uigeometrypanes.ResizeRequest{Resize: request}, 0, false)
+}
+
+// queuedGeometry reads the resizes already waiting on the lane, in the order
+// the lane will run them.
+func (m *Model) queuedGeometry() []uigeometrypanes.Resize {
+	jobs := append([]*uieffects.Job(nil), m.effects.Main.Pending...)
+	if m.effects.Main.Active != nil {
+		jobs = append([]*uieffects.Job{m.effects.Main.Active}, jobs...)
+	}
+	queued := make([]uigeometrypanes.Resize, 0, len(jobs))
+	for _, job := range jobs {
+		if request, ok := job.Request.(uigeometrypanes.ResizeRequest); ok {
+			queued = append(queued, request.Resize)
+		}
+	}
+	return queued
+}
+
+// applyGeometryEffect records what a resize landed, then reports why it
+// failed.
+func (m *Model) applyGeometryEffect(result uigeometrypanes.Result, err error) {
+	m.layout.panes.Apply(result)
+	if err != nil {
+		m.reportErr(err.Error())
+	}
+}
 
 // resizeSessions syncs every live session's tmux window to the preview
 // panel's pixel box so a capture fills the preview 1:1.

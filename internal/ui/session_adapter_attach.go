@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
@@ -33,7 +34,7 @@ func (m *Model) acknowledgeSelected() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.clearErr()
-	m.enqueueEffect(ackRequest{sessionID: sess.ID}, 0, false)
+	m.enqueueEffect(focusruntime.AckRequest{SessionID: sess.ID}, 0, false)
 	return m, m.nextEffectCmd()
 }
 
@@ -146,7 +147,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// Ctrl+R and F3 inside the session leave a marker before
 		// detaching; the lane reads it once and clears it, and the
 		// completion carries it out for the session just attached.
-		m.enqueueEffect(detachRequest{sessionID: msg.sessID}, 0, false)
+		m.enqueueEffect(focusruntime.DetachRequest{SessionID: msg.sessID}, 0, false)
 		return routed(m, nil)
 	}
 	return nil, nil, false

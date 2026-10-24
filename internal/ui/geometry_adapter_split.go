@@ -23,15 +23,6 @@ func (m *Model) splitWidths() (int, int) {
 	return uigeometry.Widths(m.layout.split.ratio, m.layout.width)
 }
 
-// persistSplitRatio captures the current ratio for the ordered effect lane so
-// the next launch reopens at the same split without holding Update on SQLite.
-func (m *Model) persistSplitRatio() {
-	if m.services.store == nil {
-		return
-	}
-	m.layout.panes.Persist(paneSizing{m}, m.layout.split.ratio)
-}
-
 // prepareSplitForQuit accepts the live preview as the user's final ratio.
 // It runs only after requestQuit has passed the installer refusal gates, so a
 // refused quit leaves the active resize interaction untouched.
@@ -136,7 +127,7 @@ func (r paneSizing) Queue(request uigeometrypanes.Resize) { r.queueGeometry(requ
 
 func (r paneSizing) SaveSplitRatio(value string) uint64 {
 	previousID := r.effects.NextID
-	r.enqueueEffect(splitSaveRequest{value: value}, 0, false)
+	r.enqueueEffect(uigeometrypanes.SplitSaveRequest{Value: value}, 0, false)
 	if r.effects.NextID == previousID {
 		return 0
 	}

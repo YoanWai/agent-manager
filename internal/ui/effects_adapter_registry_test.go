@@ -19,16 +19,13 @@ type effectPair struct {
 }
 
 var effectPairs = []effectPair{
-	{inputRequest{}, inputEffectResult{}},
 	{quickSendRequest{}, quickSendResult{}},
 	{noticeDismissRequest{}, noticeDismissResult{}},
-	{splitSaveRequest{}, splitSaveResult{}},
 	{choiceSaveRequest{}, choiceSaveResult{}},
 	{lifecycleRequest{}, lifecycleEffectResult{}},
 	{afterTurnRequest{}, afterTurnResult{}},
 	{railRequest{}, railEffectResult{}},
 	{forkRequest{}, forkEffectResult{}},
-	{geometryRequest{}, geometryEffectResult{}},
 	{spawnRequest{}, spawnEffectResult{}},
 	{groupRequest{}, groupEffectResult{}},
 	{renameRequest{}, renameEffectResult{}},
@@ -37,9 +34,6 @@ var effectPairs = []effectPair{
 	{savedPromptRequest{}, savedPromptResult{}},
 	{reviewEffectRequest{}, reviewEffectResult{}},
 	{keysRequest{}, keysEffectResult{}},
-	{focusRequest{}, focusEffectResult{}},
-	{ackRequest{}, ackEffectResult{}},
-	{detachRequest{}, detachEffectResult{}},
 	{attachRequest{}, attachEffectResult{}},
 	{connectionRequest{}, connectionEffectResult{}},
 	{remoteRequest{}, remoteEffectResult{}},

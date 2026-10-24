@@ -333,12 +333,12 @@ func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
 	}
 	sess := railSelectedSession(m)
 	want := "send-keys -t " + tmux.PaneTarget(sess.ID) + " C-c"
-	request, ok := inputRequest{}, false
+	request, ok := focusruntime.InputRequest{}, false
 	if job := m.effects.Input.Active; job != nil {
-		request, ok = job.Request.(inputRequest)
+		request, ok = job.Request.(focusruntime.InputRequest)
 	}
-	if !ok || request.request.Kind != focusruntime.Keys || request.request.Command != want {
-		t.Fatalf("ctrl+c command = %q, want %q", request.request.Command, want)
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want {
+		t.Fatalf("ctrl+c command = %q, want %q", request.Value.Command, want)
 	}
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
