@@ -366,8 +366,8 @@ func TestHermesPipCommandNamesTheInterpreterThatHasPip(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	python := fakeHermesEnvironment(t, 0)
-	if got, want := hermesPipCommand(context.Background()), tmux.ShellInvoke(python)+" -m pip install mcp"; got != want {
-		t.Fatalf("hermesPipCommand = %q, want %q", got, want)
+	if got, err := hermesPipCommand(context.Background()); err != nil || got != tmux.ShellInvoke(python)+" -m pip install mcp" {
+		t.Fatalf("hermesPipCommand = %q, %v, want an install command", got, err)
 	}
 }
 
@@ -376,8 +376,8 @@ func TestHermesPipCommandIsEmptyWithoutPip(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	fakeHermesEnvironment(t, 1)
-	if got := hermesPipCommand(context.Background()); got != "" {
-		t.Fatalf("hermesPipCommand = %q, want none when the interpreter has no pip", got)
+	if got, err := hermesPipCommand(context.Background()); err != nil || got != "" {
+		t.Fatalf("hermesPipCommand = %q, %v, want none when the interpreter has no pip", got, err)
 	}
 }
 

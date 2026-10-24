@@ -571,7 +571,11 @@ func ensureHermesRegistered(ctx context.Context, exe, hooksDir string) error {
 	// Hermes without its optional SDK refuses to connect but still exits 0
 	// after the save-anyway prompt, so the message is the only signal.
 	if strings.Contains(string(out), "requires the 'mcp' Python SDK") {
-		return HermesMCPUnavailableError{PipCommand: hermesPipCommand(ctx)}
+		pipCommand, err := hermesPipCommand(ctx)
+		if err != nil {
+			return err
+		}
+		return HermesMCPUnavailableError{PipCommand: pipCommand}
 	}
 	if err != nil {
 		return fmt.Errorf("hermes mcp add: %w%s", err, outputSuffix(out))
@@ -591,19 +595,25 @@ func ensureHermesRegistered(ctx context.Context, exe, hooksDir string) error {
 
 // pipx and uv build their environments without a pip module, so the line
 // is only offered where the interpreter has one.
-func hermesPipCommand(ctx context.Context) string {
+func hermesPipCommand(ctx context.Context) (string, error) {
 	out, err := command{name: "hermes", args: []string{"--version"}}.output(ctx)
 	if err != nil {
-		return ""
+		if timedOut(err) {
+			return "", withTool(err, "hermes")
+		}
+		return "", nil
 	}
 	python := pythonFromVersion(string(out))
 	if python == "" {
-		return ""
+		return "", nil
 	}
 	if _, err := (command{name: python, args: []string{"-m", "pip", "--version"}}).output(ctx); err != nil {
-		return ""
+		if timedOut(err) {
+			return "", withTool(err, "hermes")
+		}
+		return "", nil
 	}
-	return tmux.ShellInvoke(python) + " -m pip install mcp"
+	return tmux.ShellInvoke(python) + " -m pip install mcp", nil
 }
 
 // ensureRegisteredOnce runs a tool's own mcp-add command once per binary
