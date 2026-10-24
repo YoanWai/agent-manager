@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
