@@ -175,6 +175,20 @@ func buildModel(t *testing.T) *harness {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
+			// Takes the first Enter after a paste but keeps the placeholder
+			// in its composer for a second and a half, redrawing a spinner
+			// row below it, before it draws a fresh prompt. Every later
+			// Enter is marked "!extra" beside the placeholder.
+			"slow-submit-tool": {
+				Command: `sh -c 'stty raw -echo; printf "\033[?2004h❯ "; p=0; ` +
+					`while :; do c=$(dd bs=65536 count=1 2>/dev/null | od -An -v -c | tr -d " \n"); ` +
+					`case "$c" in *201~*) p=1; printf "[Pasted text #1 +6 lines]";; ` +
+					`"\\r") if [ $p = 1 ]; then p=2; ( for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do ` +
+					`printf "\0337\r\n✻ %s\0338" $i; sleep 0.1; done; printf "\r\n\r\n❯ " ) & ` +
+					`elif [ $p = 2 ]; then printf " !extra"; fi;; esac; done'`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
 			// Collapses a paste into a placeholder and never submits it.
 			"stuck-tool": {
 				Command: `sh -c 'stty raw -echo; printf "❯ "; dd bs=65536 count=1 >/dev/null 2>&1; ` +
