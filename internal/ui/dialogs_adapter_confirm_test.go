@@ -7,8 +7,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
-	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
