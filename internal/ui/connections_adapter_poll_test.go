@@ -160,14 +160,14 @@ func TestPollRefreshesEachHostOnceAtATimeOffTheUpdatePath(t *testing.T) {
 	fake := &fakeSSH{}
 	m := listedModel(t, fake)
 
-	cmd := m.pollConnection("box")
+	cmd := m.ssh.PollHost("box")
 	if cmd == nil {
 		t.Fatal("no refresh started")
 	}
 	if len(fake.taken()) != 0 {
 		t.Fatal("the refresh ran on the update path")
 	}
-	if again := m.pollConnection("box"); again != nil {
+	if again := m.ssh.PollHost("box"); again != nil {
 		t.Fatal("a second refresh started while the first was in flight")
 	}
 	m.applyTestMsg(t, cmd())
@@ -185,11 +185,11 @@ func TestPollRefreshesEachHostOnceAtATimeOffTheUpdatePath(t *testing.T) {
 func TestOfflineHostKeepsItsLastRows(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 	fake.mu.Lock()
 	fake.stderr, fake.code = "ssh: connect to host box port 22: Connection refused", 255
 	fake.mu.Unlock()
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 
 	state := hostState(m, "box")
 	if state.OK || state.Failures != 1 || !strings.Contains(state.Err, "Connection refused") {
@@ -222,7 +222,7 @@ func TestFailedHostNamesItsTrouble(t *testing.T) {
 		fake.mu.Lock()
 		fake.snapshot.Version, fake.stderr, fake.code = tc.version, tc.stderr, tc.code
 		fake.mu.Unlock()
-		m.applyTestMsg(t, m.pollConnection("box")())
+		m.applyTestMsg(t, m.ssh.PollHost("box")())
 		if host := m.ssh.RailHosts()[0]; host.Trouble != tc.want {
 			t.Errorf("version %d, %q: trouble %q, want %q", tc.version, tc.stderr, host.Trouble, tc.want)
 		}
@@ -237,14 +237,14 @@ func TestUnreachableHostRestsBetweenRetries(t *testing.T) {
 	fake.mu.Lock()
 	fake.stderr, fake.code = "ssh: connect to host box port 22: Connection refused", 255
 	fake.mu.Unlock()
-	m.applyTestMsg(t, m.pollConnection("box")())
-	if m.pollConnection("box") != nil {
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
+	if m.ssh.PollHost("box") != nil {
 		t.Fatal("a host that just failed was dialled again at once")
 	}
 	state := hostState(m, "box")
 	state.Attempted = time.Now().Add(-remote.RetryWait(state.Failures))
 	setHost(m, "box", state)
-	cmd := m.pollConnection("box")
+	cmd := m.ssh.PollHost("box")
 	if cmd == nil {
 		t.Fatal("a host past its wait was not dialled")
 	}
@@ -257,7 +257,7 @@ func TestUnreachableHostRestsBetweenRetries(t *testing.T) {
 func TestRefreshOfAReplacedListIsDropped(t *testing.T) {
 	fake := &fakeSSH{}
 	m := listedModel(t, fake)
-	stale := m.pollConnection("box")
+	stale := m.ssh.PollHost("box")
 	m.ssh.SetList([]store.Connection{{Name: "box", Destination: "me@other"}})
 	m.applyTestMsg(t, stale())
 	if _, seen := m.ssh.Host("box"); seen {

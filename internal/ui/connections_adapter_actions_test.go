@@ -344,7 +344,7 @@ func TestQuickBarRefusesWhenARefreshDropsItsRemoteTarget(t *testing.T) {
 	fake.mu.Lock()
 	fake.snapshot.Sessions = fake.snapshot.Sessions[1:]
 	fake.mu.Unlock()
-	m.applyTestMsg(t, m.pollConnection("box")())
+	m.applyTestMsg(t, m.ssh.PollHost("box")())
 	if selection, _ := m.rail.Selected(); selection.SessionID == "s1" {
 		t.Fatal("the refresh should have moved the cursor off the dropped row")
 	}

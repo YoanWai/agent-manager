@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -58,7 +59,7 @@ func (r linkRoot) CloseAsker(gen int, asker uilink.Asker) {
 			r.closeForm()
 		}
 	case uilink.GroupFormAsker:
-		if s, ok := r.groupFormSurface(); ok && s.Gen() == gen {
+		if s, ok := surfaceOf[*uidialogs.GroupFormSurface](r.Model); ok && s.Gen() == gen {
 			r.Pop()
 		}
 	}
@@ -71,12 +72,6 @@ func (r linkRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bo
 func (r linkRoot) ReportErr(text string) { r.reportErr(text) }
 
 func (r linkRoot) ReportDone(text string) { r.reportDone(text) }
-
-// pollConnections refreshes every connection that has no refresh in
-// flight. It rides the workspace poll, off the update path.
-func (m *Model) pollConnections() tea.Cmd { return m.ssh.Poll() }
-
-func (m *Model) pollConnection(host string) tea.Cmd { return m.ssh.PollHost(host) }
 
 // routeConnectionMsg hands a routed connection result to the package, and
 // the card's own answer to this machine.

@@ -135,11 +135,11 @@ var remoteConfirm = map[uilink.Op]struct {
 	action            uidialogs.ConfirmAction
 	verb, consequence string
 }{
-	uilink.Kill:          {actionKill, "kill", " frees its RAM there, v revives it."},
-	uilink.CloseTerminal: {actionKill, "close terminal", ""},
-	uilink.Revive:        {actionRevive, "revive", ""},
-	uilink.Archive:       {actionArchive, "archive", ""},
-	uilink.Restore:       {actionRestore, "restore", ""},
+	uilink.Kill:          {uidialogs.ConfirmKill, "kill", " frees its RAM there, v revives it."},
+	uilink.CloseTerminal: {uidialogs.ConfirmKill, "close terminal", ""},
+	uilink.Revive:        {uidialogs.ConfirmRevive, "revive", ""},
+	uilink.Archive:       {uidialogs.ConfirmArchive, "archive", ""},
+	uilink.Restore:       {uidialogs.ConfirmRestore, "restore", ""},
 }
 
 // confirmRemote asks before a lifecycle call goes to the host; an offline
@@ -161,9 +161,6 @@ func (m *Model) confirmRemote(request remoteRequest) tea.Cmd {
 	})
 	return nil
 }
-
-// runRemote is the confirmed remote call.
-func (m *Model) runRemote(request remoteRequest) tea.Cmd { return m.queueRemote(request) }
 
 // queueRemote puts a call on the remote lane, unless the host's last
 // refresh could not reach it.
@@ -204,7 +201,7 @@ func (m *Model) remoteRepeat(request remoteRequest) (string, bool) {
 
 func (m *Model) confirmRemoveConnection(name string) {
 	m.openConfirm(confirmTarget{
-		action:     actionRemoveConnection,
+		action:     uidialogs.ConfirmRemoveConnection,
 		connection: name,
 		label:      "remove connection " + name + "? Its sessions keep running on the host.",
 	})
