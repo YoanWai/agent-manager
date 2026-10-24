@@ -12,60 +12,56 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func (m *Model) helpContext(width int) uihelp.Context {
-	return uihelp.Context{
-		SessionKeys: m.services.keys,
-		ListKeys:    m.services.listKeys,
-		ArrowStep:   m.prefs.arrowStep,
-		Width:       width,
-		Glyphs: uihelp.Glyphs{
-			Mode:             m.prefs.glyphMode,
-			RowMenu:          uirail.MenuGlyph,
-			Reorder:          m.glyphs().ReorderGrip,
-			AfterTurnArchive: m.afterTurnGlyph(store.AfterTurnArchive),
-			AfterTurnKill:    m.afterTurnGlyph(store.AfterTurnKill),
-		},
-		QuickKeys:    uihelp.QuickKeys{Model: uiquick.ModelKey, Effort: uiquick.EffortKey, Profile: uiquick.ProfileKey},
-		CursorMarker: uiframe.CursorMarker,
-		ReviewRows:   uireview.HelpRows(),
-		Styles: uihelp.Styles{
-			Section: uitheme.SectionStyle(),
-			Rule:    lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
-			Key:     uitheme.KeyStyle(),
-			Muted:   uitheme.MutedStyle(),
-			Subtle:  uitheme.SubtleStyle(),
-			Value:   uitheme.ValueStyle(),
-			Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
-			Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
-		},
+// helpHost is the root as the key map reads it.
+type helpHost struct{ *Model }
+
+func (h helpHost) KeyTables() uihelp.Tables {
+	return uihelp.Tables{Session: h.services.keys, List: h.services.listKeys, ArrowStep: h.prefs.arrowStep}
+}
+
+func (h helpHost) Glyphs() uihelp.Glyphs {
+	return uihelp.Glyphs{
+		Mode:             h.prefs.glyphMode,
+		RowMenu:          uirail.MenuGlyph,
+		Reorder:          h.glyphs().ReorderGrip,
+		AfterTurnArchive: h.afterTurnGlyph(store.AfterTurnArchive),
+		AfterTurnKill:    h.afterTurnGlyph(store.AfterTurnKill),
 	}
 }
 
-// helpRoot is the root as the key map reads it.
-type helpRoot struct{ *Model }
+func (h helpHost) QuickKeys() uihelp.QuickKeys {
+	return uihelp.QuickKeys{Model: uiquick.ModelKey, Effort: uiquick.EffortKey, Profile: uiquick.ProfileKey}
+}
 
-func (r helpRoot) Context(width int) uihelp.Context { return r.helpContext(width) }
+func (h helpHost) ReviewRows() [][2]string { return uireview.HelpRows() }
 
-func (r helpRoot) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
+func (h helpHost) CursorMarker() string { return uiframe.CursorMarker }
 
-func (r helpRoot) HintRows(hints [][2]string, width int) int {
+func (h helpHost) Context(width int) uihelp.Context { return uihelp.ContextFor(h, width) }
+
+func (h helpHost) Styles() uihelp.Styles {
+	return uihelp.Styles{
+		Section: uitheme.SectionStyle(),
+		Rule:    lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
+		Key:     uitheme.KeyStyle(),
+		Muted:   uitheme.MutedStyle(),
+		Subtle:  uitheme.SubtleStyle(),
+		Value:   uitheme.ValueStyle(),
+		Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
+		Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+	}
+}
+
+func (h helpHost) InnerWidth(width int) int { return uiframe.CardInnerWidth(width) }
+
+func (h helpHost) HintRows(hints [][2]string, width int) int {
 	// One untitled run, for the foot of a modal card where the tier's
 	// subject is the card's own title.
 	return lipgloss.Height(uiframe.LegendInline(hints, width, frameCap()))
 }
 
-func (r helpRoot) StatusShown() bool { return r.errBar.text != "" }
+func (h helpHost) StatusShown() bool { return h.errBar.text != "" }
 
-func (r helpRoot) TakeForeground() { r.takeForeground() }
+func (h helpHost) TakeForeground() { h.takeForeground() }
 
-func (r helpRoot) OpenDocs() tea.Cmd { return openLink(docsURL) }
-
-// openHelp scopes the key map to Review when Review is underneath. The base
-// is read here, to open, and never again.
-func (m *Model) openHelp() {
-	scope := uihelp.Global
-	if m.base == baseReview {
-		scope = uihelp.Review
-	}
-	m.push(uihelp.NewSurface(helpRoot{m}, scope))
-}
+func (h helpHost) OpenDocs() tea.Cmd { return openLink(docsURL) }

@@ -30,7 +30,7 @@ func TestHelpSurfaceOpensOnTheListKey(t *testing.T) {
 	if !m.onList() {
 		t.Fatalf("help changed the base screen to %v", m.screenID())
 	}
-	if got := helpSurfaceOf(m).State().Content(m.helpContext(84)).Title; got == "? Review keys" {
+	if got := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84)).Title; got == "? Review keys" {
 		t.Fatalf("list help opened with review scope: %q", got)
 	}
 }
@@ -63,7 +63,7 @@ func TestHelpSurfaceOverReviewScopesToReviewAndPopsBack(t *testing.T) {
 	m.base = baseReview
 	seedReviewForTest(m, uireview.Target{ID: "review"}, git.ScopeUncommitted, "/repo", diff.Set{}, false)
 	m.openHelp()
-	if got := helpSurfaceOf(m).State().Content(m.helpContext(84)).Title; got != "? Review keys" {
+	if got := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84)).Title; got != "? Review keys" {
 		t.Fatalf("help over review has title %q", got)
 	}
 	m.handleKey(namedKey(tea.KeyEsc))
@@ -73,7 +73,7 @@ func TestHelpSurfaceOverReviewScopesToReviewAndPopsBack(t *testing.T) {
 }
 
 func TestHelpSurfaceHoldsTheScopeItWasOpenedWith(t *testing.T) {
-	s := uihelp.NewSurface(helpRoot{helpModel()}, uihelp.Review)
+	s := uihelp.NewSurface(helpHost{helpModel()}, uihelp.Review)
 	if !s.Dismissible() || s.Owner() != uisurface.Manager {
 		t.Fatal("help must be a dismissible manager-owned card")
 	}

@@ -81,7 +81,7 @@ func TestActiveNoticesPinnedByDefault(t *testing.T) {
 		t.Fatalf("welcome should point at Settings for a bug or an idea: %q", joined)
 	}
 	for _, n := range m.activeNotices() {
-		if n.ID != uinotices.Welcome && n.URL == bugReportURL(m.release.Version) {
+		if n.ID != uinotices.Welcome && n.URL == uinotices.BugReportURL(m.release.Version) {
 			t.Fatalf("standalone bug-report notice still active: %q", n.ID)
 		}
 	}
@@ -357,29 +357,6 @@ func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	modal := ansi.Strip(preparedView(m))
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
 		t.Fatalf("modal did not use the canonical title:\n%s", modal)
-	}
-}
-
-func TestBugReportURLPrefillsVersion(t *testing.T) {
-	got := bugReportURL("v0.2.0")
-	if !strings.HasPrefix(got, "https://github.com/YoanWai/agent-manager/issues/new") {
-		t.Fatalf("bug report should open the new-issue page, got %q", got)
-	}
-	if !strings.Contains(got, "template=bug_report.yml") {
-		t.Fatalf("bug report should use the bug form, got %q", got)
-	}
-	if !strings.Contains(got, "version=v0.2.0") {
-		t.Fatalf("issue URL should carry the version, got %q", got)
-	}
-}
-
-func TestFeatureRequestURLUsesFeatureTemplate(t *testing.T) {
-	got := featureRequestURL()
-	if !strings.Contains(got, "template=feature_request.yml") {
-		t.Fatalf("feature request should use the feature form, got %q", got)
-	}
-	if strings.Contains(got, "template=bug_report.yml") {
-		t.Fatalf("feature request opened the bug form: %q", got)
 	}
 }
 

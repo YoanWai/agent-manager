@@ -87,7 +87,7 @@ func TestHelpArrowStepRowsFollowSetting(t *testing.T) {
 	for _, enabled := range []bool{true, false} {
 		m := helpModel()
 		m.prefs.arrowStep = enabled
-		lines := helpSurfaceOf(m).State().Content(m.helpContext(84)).Lines
+		lines := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84)).Lines
 		for _, row := range []struct{ title, key string }{
 			{"list", "→"},
 			{"list", "←"},
@@ -309,7 +309,7 @@ func TestHelpAdapterKeepsReviewLoaderRunningUnderTheCard(t *testing.T) {
 	if m.base != baseReview {
 		t.Fatalf("help over review left mode %v", m.screenID())
 	}
-	if title := helpSurfaceOf(m).State().Content(m.helpContext(84)).Title; title != "? Review keys" {
+	if title := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84)).Title; title != "? Review keys" {
 		t.Fatalf("opened review help title = %q", title)
 	}
 	m.Update(uistartup.TickMsg{})
@@ -404,9 +404,9 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 	m := helpModel()
 
 	applyTheme(uitheme.Palettes[uitheme.Index("classic")])
-	classic := helpSurfaceOf(m).State().Content(m.helpContext(84))
+	classic := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84))
 	applyTheme(uitheme.Palettes[uitheme.Index("solarized light")])
-	light := helpSurfaceOf(m).State().Content(m.helpContext(84))
+	light := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84))
 	if strings.Join(classic.Lines, "\n") == strings.Join(light.Lines, "\n") {
 		t.Fatal("theme switch left help styles unchanged")
 	}
@@ -418,7 +418,7 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 func TestHelpAdapterScopeUsesOnlyCopiedValues(t *testing.T) {
 	m := helpModel()
 	*helpSurfaceOf(m).State() = uihelp.New(uihelp.Review)
-	content := helpSurfaceOf(m).State().Content(m.helpContext(84))
+	content := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84))
 	if content.Title != "? Review keys" || len(content.Lines) == 0 {
 		t.Fatalf("review content = %+v", content)
 	}

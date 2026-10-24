@@ -2,7 +2,6 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/termseq"
-	"github.com/YoanWai/agent-manager/internal/tmux"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -43,40 +42,11 @@ func EnableTerminalPassthrough() {
 	termseq.EnablePassthrough()
 }
 
-// syncPaneTheme hands the tmux server the colors agent panes render on, so
-// an agent that auto-detects its palette resolves to the same side the
-// manager is drawing. The chosen theme is recorded synchronously so a
-// session created right after still opens on it; the push to a running
-// server shells out to tmux, so it runs as a job off the update path and
-// surfaces a failure through the status bar.
+// syncPaneTheme is the palette a Settings step asks for: the pane colors are
+// published now, and the push to a running tmux server runs off the update
+// path.
 func (m *Model) syncPaneTheme() tea.Cmd {
-	m.services.tmux.PublishPaneTheme(agentPaneTheme())
+	uitheme.Publish(m.services.tmux)
 	m.enqueueEffect(uitheme.PaneRequest{}, 0, false)
 	return m.nextEffectCmd()
-}
-
-// agentPaneTheme is the backdrop and text color an agent pane sits on: the
-// theme's own, the same colors the terminal is set to and the capture is
-// drawn over. Agents that auto-detect follow it, so a light theme hosts
-// light agents.
-func agentPaneTheme() tmux.PaneTheme {
-	current := uitheme.Current()
-	fgbg := "15;0"
-	if current.LightBackdrop() {
-		fgbg = "0;15"
-	}
-	return tmux.PaneTheme{Foreground: current.Text, Background: current.Bg, ColorFgBg: fgbg}
-}
-
-// applyPaneTheme reports a push that failed; the panes already up keep the
-// palette they resolved at startup either way.
-func (m *Model) applyPaneTheme(err error) tea.Cmd {
-	if err != nil {
-		m.reportErr(err.Error())
-	}
-	return nil
-}
-
-func (m *Model) themeServices() uitheme.Services {
-	return uitheme.Services{Tmux: m.services.tmux}
 }

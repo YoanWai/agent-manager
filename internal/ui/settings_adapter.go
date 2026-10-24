@@ -142,11 +142,11 @@ func (m *Model) applySettingsResult(d *uisettings.State, result uisettings.Resul
 	case uisettings.OpenDocs:
 		return openLink(docsURL), false
 	case uisettings.OpenFeatureRequest:
-		return openLink(featureRequestURL()), false
+		return openLink(uinotices.FeatureRequestURL()), false
 	case uisettings.RequestCLISupport:
-		return openLink(requestCLISupportURL()), false
+		return openLink(uinotices.SupportRequestURL()), false
 	case uisettings.ReportBug:
-		return openLink(bugReportURL(m.release.Version)), false
+		return openLink(uinotices.BugReportURL(m.release.Version)), false
 	case uisettings.Update:
 		if m.release.Applying {
 			return nil, false
@@ -406,16 +406,6 @@ func (m *Model) applyEditorsProbe(msg uisettings.EditorsProbe) {
 	if s, open := surfaceOf[*uisettings.Surface](m); open && msg.Generation == m.settings.Gen {
 		s.State().Editor.ApplyProbe(msg)
 	}
-}
-
-// requestCLISupportURL opens a prefilled feature request for another CLI.
-func requestCLISupportURL() string {
-	body := "**What are you trying to do**\n\n" +
-		"I want agent-manager to support another coding CLI.\n\n" +
-		"**What you have in mind**\n\n" +
-		"CLI name:\nHow to launch it:\nResume / session flags (if any):\n\n" +
-		"**Area**\nConfig and tool support\n"
-	return uinotices.RepoURL + "/issues/new?body=" + url.QueryEscape(body)
 }
 
 func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

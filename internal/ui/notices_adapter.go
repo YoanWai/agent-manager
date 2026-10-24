@@ -1,17 +1,13 @@
 package ui
 
 import (
-	"net/url"
-
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
-	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
-const docsURL = "https://agent-manager.dev/docs/"
+const docsURL = uinotices.DocsURL
 
 // noticesPanel is the messages modal: uinotices.Panel owns the list it
 // builds, the cursor, the body scroll and the dismissed set, and
@@ -20,12 +16,7 @@ const docsURL = "https://agent-manager.dev/docs/"
 // opens.
 type noticesPanel struct {
 	uinotices.Panel
-	// configImportError is why the config.toml of an earlier release was
-	// refused, shown as a notice until it is dismissed.
-	configImportError string
-	// pendingNotice is a new notice that arrived while the list was not
-	// showing; flushPendingNotice opens it once the list is back.
-	pendingNotice string
+	uinotices.Log
 }
 
 // noticeSources are the root facts the notice list is built from, copied so
@@ -34,7 +25,7 @@ func (m *Model) noticeSources() uinotices.Sources {
 	sources := m.release.Sources()
 	sources.GlyphMode = m.prefs.glyphMode
 	sources.Store = m.services.store != nil
-	sources.ConfigImportError = m.notices.configImportError
+	sources.ConfigImportError = m.notices.ImportError
 	sources.SessionKeys = m.services.keys
 	sources.ListKeys = m.services.listKeys
 	return sources
@@ -55,51 +46,8 @@ func (m *Model) noticesFrame() uinotices.Frame {
 		Applying:   m.release.Applying,
 		Latest:     m.release.Latest,
 		Status:     m.statusRow(),
-		Theme:      noticesTheme(),
+		Theme:      uinotices.PanelTheme(),
 	}
-}
-
-func noticesTheme() uinotices.Theme {
-	card := noticeCardHex()
-	return uinotices.Theme{
-		Accent:      uitheme.ColorAccent(),
-		Accent2:     uitheme.ColorAccent2(),
-		Bright:      uitheme.ColorBright(),
-		SubtleColor: uitheme.ColorSubtle(),
-		Subtle:      uitheme.SubtleStyle(),
-		Muted:       uitheme.MutedStyle(),
-		Value:       uitheme.ValueStyle(),
-		Key:         uitheme.KeyStyle(),
-		Border:      noticeBorderStyle(),
-		Title:       noticeTitleStyle(),
-		Fill:        func(row string, width int) string { return uitheme.Paint(row, width, card) },
-	}
-}
-
-// noticeCardHex warms the messages modal's fill toward yellow.
-func noticeCardHex() string { return uitheme.Mix(uitheme.PanelHex(), "#e2c044", 0.16) }
-
-// noticeBorderStyle is the card's rounded frame, dimmed toward the same
-// yellow so the outline and the fill read as one object.
-func noticeBorderStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Subtle, "#e2c044", 0.45)))
-}
-
-func noticeTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Bright, "#e2c044", 0.5))).Bold(true)
-}
-
-func bugReportURL(version string) string {
-	q := url.Values{}
-	q.Set("template", "bug_report.yml")
-	if version != "" {
-		q.Set("version", version)
-	}
-	return uinotices.RepoURL + "/issues/new?" + q.Encode()
-}
-
-func featureRequestURL() string {
-	return uinotices.RepoURL + "/issues/new?template=feature_request.yml"
 }
 
 // startupNotice is what greets this launch; uirelease.State.Greet decides
@@ -172,11 +120,12 @@ func (m *Model) applyNotices(apply func()) {
 	if _, open := surfaceOf[*uinotices.Surface](m); open {
 		return
 	}
-	if m.listReadyForNotice() {
-		m.openNotices(added)
+	staged := m.notices.Staged(added, false, m.listReadyForNotice())
+	if staged.Open != "" {
+		m.openNotices(staged.Open)
 		return
 	}
-	m.notices.pendingNotice = added
+	m.notices.Held = staged.Hold
 }
 
 func (m *Model) listReadyForNotice() bool {
@@ -184,11 +133,10 @@ func (m *Model) listReadyForNotice() bool {
 }
 
 func (m *Model) flushPendingNotice() {
-	if m.notices.pendingNotice == "" || !m.listReadyForNotice() {
+	if m.notices.Held == "" || !m.listReadyForNotice() {
 		return
 	}
-	id := m.notices.pendingNotice
-	m.notices.pendingNotice = ""
+	id := m.notices.Take()
 	for _, n := range m.activeNotices() {
 		if n.ID == id {
 			m.openNotices(id)

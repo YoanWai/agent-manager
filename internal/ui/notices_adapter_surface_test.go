@@ -5,7 +5,6 @@ import (
 
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -70,57 +69,6 @@ func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
 	m.applyNoticeDismiss(job, errTest("persist failed"))
 	if !m.noticesOpen() {
 		t.Fatal("a failed dismissal did not reopen the modal on a clear list")
-	}
-}
-
-// The modal asks the root for the list, the frame and the work its keys
-// start; a key it takes is the user moving on.
-type stubNoticesRoot struct {
-	notices     []uinotices.Notice
-	dismissed   string
-	foregrounds int
-}
-
-func (r *stubNoticesRoot) ActiveNotices() []uinotices.Notice { return r.notices }
-
-func (r *stubNoticesRoot) NoticesFrame() uinotices.Frame {
-	return uinotices.Frame{Width: 100, Height: 40}
-}
-
-func (r *stubNoticesRoot) RefreshNotices() tea.Cmd { return nil }
-
-func (r *stubNoticesRoot) StartUpdate() tea.Cmd { return nil }
-
-func (r *stubNoticesRoot) DismissNotice(id string) { r.dismissed = id }
-
-func (r *stubNoticesRoot) PaintNoticesCard([]string, []presentation.PaintedKey) string {
-	return "card"
-}
-
-func (r *stubNoticesRoot) TakeForeground() { r.foregrounds++ }
-
-func (r *stubNoticesRoot) OpenLink(string) tea.Cmd { return nil }
-
-type stubSurfaceHost struct{ pops int }
-
-func (h *stubSurfaceHost) CardSized(int, string, string, [][2]string) string { return "" }
-
-func (h *stubSurfaceHost) Size() (int, int) { return 100, 40 }
-
-func (h *stubSurfaceHost) Pop() { h.pops++ }
-
-func TestNoticesSurfaceTakesAKeyAsTheUserMovingOn(t *testing.T) {
-	root := &stubNoticesRoot{}
-	h := &stubSurfaceHost{}
-	s := uinotices.NewSurface(root, uinotices.NewPanel(nil), "")
-	if handled, _ := s.Key(h, namedKey(tea.KeyEsc)); !handled {
-		t.Fatal("the messages modal must consume every key")
-	}
-	if root.foregrounds != 1 {
-		t.Fatalf("a key reached the root %d times, want it to fence a completion once", root.foregrounds)
-	}
-	if h.pops != 1 {
-		t.Fatalf("esc popped %d times, want the card closed", h.pops)
 	}
 }
 
