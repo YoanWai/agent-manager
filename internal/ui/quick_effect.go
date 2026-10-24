@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"maps"
 )
@@ -87,14 +88,14 @@ func (s effectServices) runQuickSend(request quickSendRequest) (uieffects.Result
 		return result, errors.New("quick-send target changed its identity, tool, launch, or socket before the accepted prompt ran")
 	}
 	if s.cfg.Tools[current.Tool].Shell {
-		return result, errors.New(shellPromptHint(current.Name))
+		return result, errors.New(uisession.ShellPromptHint(current.Name))
 	}
 	exists, err := s.quickSessionExists(s.driver, current.ID)
 	if err != nil {
 		return result, fmt.Errorf("check quick-send target %s: %w", current.Name, err)
 	}
 	if !exists {
-		return result, errors.New(deadSessionHint)
+		return result, errors.New(uisession.DeadHint)
 	}
 	sent, sendErr := s.quickSendText(s.driver, current.ID, request.text)
 	if sendErr != nil {

@@ -14,6 +14,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -280,7 +281,7 @@ func (m *Model) remoteQuickSend(text string) (tea.Cmd, bool) {
 		return nil, taken
 	}
 	if row.Terminal {
-		m.reportErr(shellPromptHint(row.Name))
+		m.reportErr(uisession.ShellPromptHint(row.Name))
 		return nil, true
 	}
 	request := m.quickRemoteRequest(row.Host, text)

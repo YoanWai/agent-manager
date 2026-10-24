@@ -15,6 +15,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	"github.com/YoanWai/agent-manager/internal/update"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
@@ -588,7 +589,7 @@ func TestNoticesEnterOpensURL(t *testing.T) {
 		opened = url
 		return nil
 	}
-	t.Cleanup(func() { openBrowser = defaultOpenBrowser })
+	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	want := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].URL
 	if want == "" {

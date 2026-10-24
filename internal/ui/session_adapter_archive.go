@@ -38,7 +38,7 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 		target = confirmTarget{
 			action:   uidialogs.ConfirmArchive,
 			sessions: sessions,
-			label: followConfirmLabel("archive", entry.sess.Name, len(sessions)-1,
+			label: uisession.FollowConfirmLabel("archive", entry.sess.Name, len(sessions)-1,
 				"frees its RAM, t to find it.",
 				"frees their RAM, t to find them."),
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
@@ -79,7 +79,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 		target = confirmTarget{
 			action:   uidialogs.ConfirmRestore,
 			sessions: sessions,
-			label: followConfirmLabel("restore", entry.sess.Name, len(sessions)-1,
+			label: uisession.FollowConfirmLabel("restore", entry.sess.Name, len(sessions)-1,
 				"brings it back.",
 				"brings them back."),
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID, archivedOnly: true},
@@ -106,7 +106,7 @@ func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) 
 				continue
 			}
 			m.workspace.sessions[i].Archived = true
-			m.markSession(sess.ID, uilifecycle.GoneMark{Archived: true})
+			m.ledger.lifecycle.MarkSession(sess.ID, uilifecycle.GoneMark{Archived: true})
 			changed = true
 			break
 		}
@@ -117,7 +117,7 @@ func (m *Model) markArchivedLocally(sessions []store.Session, groupPath string) 
 				m.workspace.archivedGroups = map[string]bool{}
 			}
 			m.workspace.archivedGroups[path] = true
-			m.markGroup(path, uilifecycle.GoneMark{Archived: true})
+			m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Archived: true})
 		}
 		changed = true
 	}
@@ -153,29 +153,23 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 		}
 		if byID[m.workspace.sessions[i].ID] || (groupPath != "" && inGroupSubtree(m.workspace.sessions[i].Group, groupPath)) {
 			m.workspace.sessions[i].Archived = false
-			m.markSession(m.workspace.sessions[i].ID, uilifecycle.GoneMark{Archived: false})
+			m.ledger.lifecycle.MarkSession(m.workspace.sessions[i].ID, uilifecycle.GoneMark{Archived: false})
 		}
 	}
 	if groupPath != "" {
 		for _, path := range append([]string{groupPath}, m.subgroupPaths(groupPath)...) {
 			delete(m.workspace.archivedGroups, path)
-			m.markGroup(path, uilifecycle.GoneMark{Archived: false})
+			m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Archived: false})
 		}
 	} else {
 		for _, sess := range restored {
 			for path := sess.Group; path != ""; path = parentGroup(path) {
 				delete(m.workspace.archivedGroups, path)
-				m.markGroup(path, uilifecycle.GoneMark{Archived: false})
+				m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Archived: false})
 			}
 		}
 	}
 	m.rebuildRows()
-}
-
-// markGroup records the archive state this run just gave a group path, so
-// stale polls predating the change are reconciled on arrival.
-func (m *Model) markGroup(path string, mark uilifecycle.GoneMark) {
-	m.ledger.lifecycle.MarkGroup(path, mark)
 }
 
 func (m *Model) sessionAndChildren(sess store.Session) []store.Session {
@@ -197,10 +191,6 @@ func (m *Model) sessionsInSubtree(path string) []store.Session {
 		}
 	}
 	return sessions
-}
-
-func followConfirmLabel(verb, name string, extra int, one, many string) string {
-	return uisession.FollowConfirmLabel(verb, name, extra, one, many)
 }
 
 func groupPath(confirm confirmTarget) string {

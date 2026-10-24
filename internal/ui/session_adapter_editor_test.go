@@ -130,7 +130,7 @@ func TestEditorDirectoryCompletionDoesNotReplaceNewerDialog(t *testing.T) {
 	reader := &blockedTerminalDirectoryReader{
 		started: make(chan struct{}), release: make(chan struct{}), dir: dir,
 	}
-	_, cmd := m.openEditorWithReader(reader)
+	_, cmd := m.openEditorWithReaderForReturn(reader, "")
 	completed := make(chan tea.Msg, 1)
 	go func() { completed <- cmd() }()
 	<-reader.started
@@ -380,7 +380,7 @@ func TestResolveEditorPrecedence(t *testing.T) {
 			for key, value := range tc.env {
 				t.Setenv(key, value)
 			}
-			if got := m.captureEditorResolution().resolve(); got != tc.want {
+			if got := m.captureEditorResolution().editorLine(); got != tc.want {
 				t.Fatalf("editor resolution = %q, want %q", got, tc.want)
 			}
 		})
@@ -395,7 +395,7 @@ func TestResolveEditorFallsBackToEnvironment(t *testing.T) {
 	captureEditor(t)
 	t.Setenv("EDITOR", "nvim")
 
-	if got := m.captureEditorResolution().resolve(); got != "nvim" {
+	if got := m.captureEditorResolution().editorLine(); got != "nvim" {
 		t.Fatalf("editor resolution = %q, want nvim", got)
 	}
 	if uisession.Detached(uisession.Name("nvim")) {

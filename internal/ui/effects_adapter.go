@@ -109,7 +109,7 @@ func (m *Model) heldBy(main, input *uieffects.Job) bool {
 }
 
 func (m *Model) requestQuit() (tea.Model, tea.Cmd) {
-	if install := m.pendingInstall(); install != nil {
+	if install := m.ledger.install.Pending; install != nil {
 		m.reportErr("install may still be running in " + install.Name + "; finish it, kill its terminal with the session controls, or attach and interrupt it before quitting")
 		return m, nil
 	}

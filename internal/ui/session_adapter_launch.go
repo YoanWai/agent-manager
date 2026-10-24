@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 	"time"
 )
@@ -42,24 +43,6 @@ func (m *Model) recordLaunch(id string) { m.ledger.lifecycle.RecordLaunch(id, ti
 // since sent away is not carried back onto the tree by a poll that listed the
 // store before it was launched.
 func (m *Model) forgetLaunch(id string) { m.ledger.lifecycle.ForgetLaunch(id) }
-
-// keepPendingLaunches carries this run's spawns over a listing captured
-// before them, so the new agents do not blink off screen.
-func (m *Model) keepPendingLaunches(polled []store.Session, listedAt time.Time) []store.Session {
-	return m.ledger.lifecycle.KeepPendingLaunches(polled, m.workspace.sessions, listedAt)
-}
-
-// markSession records the loaded-list state this run just gave a session, so
-// stale polls predating the change are reconciled on arrival.
-func (m *Model) markSession(id string, mark uilifecycle.GoneMark) {
-	m.ledger.lifecycle.MarkSession(id, mark)
-}
-
-// dropRecentlyRemoved reconciles a poll's rows against what this run has just
-// done to them.
-func (m *Model) dropRecentlyRemoved(polled []store.Session, listedAt time.Time) []store.Session {
-	return m.ledger.lifecycle.DropRecentlyRemoved(polled, listedAt)
-}
 
 // reconcileListing reconciles a stale listing's group rows and archive flags
 // against what this run has just done.
@@ -124,5 +107,5 @@ func (m *Model) applyAttachEffect(request attachRequest, result attachEffectResu
 	if result.Warning != nil {
 		m.reportErr(result.Warning.Error())
 	}
-	return execTerminalProcess(m.services.tmux.AttachCommand(request.id), func(err error) tea.Msg { return attachDoneMsg{sessID: request.id, err: err} })
+	return uiterminal.ExecProcess(m.services.tmux.AttachCommand(request.id), func(err error) tea.Msg { return attachDoneMsg{sessID: request.id, err: err} })
 }

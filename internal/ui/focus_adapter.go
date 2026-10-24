@@ -10,6 +10,7 @@ import (
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -20,7 +21,7 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, nil)
 
 	case linkPageMsg:
-		return routed(m, showLinkPage(msg.url))
+		return routed(m, terminalMsgCmd(uiterminal.ShowLinkPage(msg.url)))
 
 	case focusCopiedMsg:
 		// The clipboard writer runs off the update loop and can take

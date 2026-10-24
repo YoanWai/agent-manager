@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -105,7 +106,7 @@ func reviewFileCheckCmd(req uireview.FileCheckRequest, editor editorResolution, 
 	return func() tea.Msg {
 		_, err := os.Stat(req.Path)
 		result := uireview.FileCheckResult{Request: req, Err: err}
-		var launch editorLaunch
+		var launch uisession.Launch
 		if err == nil {
 			launch = editor.prepare(req.Path)
 		}
@@ -280,7 +281,7 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := uireview.KeyContext{CodeHeight: m.diffCodeHeight(), PersistenceAvailable: m.services.store != nil}
 	if sess, ok := m.diffSession(); ok && m.isShell(sess.Tool) {
 		ctx.IsShell = true
-		ctx.SendError = shellPromptHint(sess.Name)
+		ctx.SendError = uisession.ShellPromptHint(sess.Name)
 	}
 	result := m.review.Key(msg, ctx)
 	if result.Error != "" {

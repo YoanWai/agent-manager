@@ -57,8 +57,6 @@ func (r installRoot) QueueRetry(retry uiinstall.Retry) {
 	r.enqueueEffect(retry.(effectRequest), 0, false)
 }
 
-func (m *Model) pendingInstall() *uiinstall.Pending { return m.ledger.install.Pending }
-
 // startInstall admits the setup dialog's install onto the effect lane,
 // stamped with the dialog generation, a new shell row id, the shell tool, the
 // placement group and the pane geometry. It refuses while another install is
@@ -136,7 +134,7 @@ func (m *Model) reportLaunchError(err error) {
 	var missing config.MissingToolError
 	if errors.As(err, &missing) {
 		m.openLaunchHint(uiinstall.Fix{
-			Text:    uilaunchhint.MissingText(missingTool(missing), deps.Hint(missing.Binary)),
+			Text:    uilaunchhint.MissingText(uilaunchhint.Tool{Binary: missing.Binary, WindowsPath: missing.WindowsPath}, deps.Hint(missing.Binary)),
 			Command: deps.Shown(missing.Binary),
 			Script:  deps.Command(missing.Binary),
 			Binary:  missing.Binary,
@@ -146,7 +144,7 @@ func (m *Model) reportLaunchError(err error) {
 	var outdated config.OutdatedToolError
 	if errors.As(err, &outdated) {
 		m.openLaunchHint(uiinstall.Fix{
-			Text:    uilaunchhint.OutdatedText(outdatedTool(outdated), outdatedToolCommand(outdated)),
+			Text:    uilaunchhint.OutdatedText(outdatedHint(outdated), outdatedToolCommand(outdated)),
 			Command: outdatedToolCommand(outdated),
 			Script:  outdatedToolCommand(outdated),
 			Binary:  outdated.Binary,
@@ -166,16 +164,8 @@ func outdatedToolCommand(outdated config.OutdatedToolError) string {
 	return deps.Command(outdated.Binary)
 }
 
-// outdatedToolText is the copy the spawn form shows for a too-old CLI.
-func outdatedToolText(outdated config.OutdatedToolError) string {
-	return uilaunchhint.OutdatedText(outdatedTool(outdated), outdatedToolCommand(outdated))
-}
-
-func missingTool(missing config.MissingToolError) uilaunchhint.Tool {
-	return uilaunchhint.Tool{Binary: missing.Binary, WindowsPath: missing.WindowsPath}
-}
-
-func outdatedTool(outdated config.OutdatedToolError) uilaunchhint.Tool {
+// outdatedHint is a too-old CLI as the launchhint package's copy reads it.
+func outdatedHint(outdated config.OutdatedToolError) uilaunchhint.Tool {
 	return uilaunchhint.Tool{
 		Binary:    outdated.Binary,
 		Installed: outdated.Installed,

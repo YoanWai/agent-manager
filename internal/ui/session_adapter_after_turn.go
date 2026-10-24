@@ -43,7 +43,7 @@ func (result afterTurnResult) apply(m *Model, job *uieffects.Job, err error) tea
 // starts it.
 func (m *Model) endAfterTurns(ids []string) {
 	for _, id := range ids {
-		m.enqueueEffect(afterTurnRequest{id: id, watched: m.watchedSession()}, 0, false)
+		m.enqueueEffect(afterTurnRequest{id: id, watched: m.focus.runtime.Watching()}, 0, false)
 	}
 }
 

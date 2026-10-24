@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -73,7 +74,7 @@ type terminalDirectoryMsg struct {
 	request terminalDirectoryRequest
 	dir     string
 	ok      bool
-	editor  editorLaunch
+	editor  uisession.Launch
 }
 
 type terminalDirectoryReader interface {
@@ -84,7 +85,7 @@ func terminalDirectoryCmd(request terminalDirectoryRequest, reader terminalDirec
 	request.fallbacks = slices.Clone(request.fallbacks)
 	return func() tea.Msg {
 		dir, ok := reader.resolve(request)
-		var editor editorLaunch
+		var editor uisession.Launch
 		if ok && request.target == terminalDirectoryEditor {
 			editor = request.editor.prepare(dir)
 		}

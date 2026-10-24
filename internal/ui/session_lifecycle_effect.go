@@ -56,7 +56,7 @@ func (result lifecycleEffectResult) apply(m *Model, job *uieffects.Job, err erro
 func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
 	target.sessions = append([]store.Session(nil), target.sessions...)
 	w, h := m.paneTargetSize()
-	m.enqueueEffect(lifecycleRequest{target: target, pane: sessioncmd.PaneSize{Width: w, Height: h}, watched: m.watchedSession(), allowLive: allowLive, emptyNotice: emptyNotice}, 0, false)
+	m.enqueueEffect(lifecycleRequest{target: target, pane: sessioncmd.PaneSize{Width: w, Height: h}, watched: m.focus.runtime.Watching(), allowLive: allowLive, emptyNotice: emptyNotice}, 0, false)
 }
 
 func (s effectServices) runLifecycle(request lifecycleRequest) (uieffects.Result, error) {
@@ -92,7 +92,7 @@ func (s effectServices) reflowSessions(ids []string, work func()) error { return
 // packageTarget is a confirmation as the lifecycle package runs it.
 func packageTarget(target confirmTarget) uilifecycle.Target {
 	return uilifecycle.Target{
-		Action:       packageAction(target.action),
+		Action:       uilifecycle.Action(target.action),
 		Sessions:     target.sessions,
 		Path:         groupPath(target),
 		Batch:        target.batch,
@@ -121,12 +121,6 @@ func confirmAction(action uilifecycle.Action) uidialogs.ConfirmAction {
 		return uidialogs.ConfirmDelete
 	}
 	return uidialogs.ConfirmAction(action)
-}
-
-// packageAction spells the card's action the package's way; the two name the
-// same values, delete included.
-func packageAction(action uidialogs.ConfirmAction) uilifecycle.Action {
-	return uilifecycle.Action(action)
 }
 
 func packageSelection(selection lifecycleSelection) uilifecycle.Selection {

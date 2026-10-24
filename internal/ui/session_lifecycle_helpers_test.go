@@ -12,7 +12,7 @@ import (
 // as the UI. Production handlers always return a command instead of running it.
 func (m *Model) lifecycleFixture(target confirmTarget) (lifecycleEffectResult, error) {
 	w, h := m.paneTargetSize()
-	request := lifecycleRequest{target: target, pane: sessioncmd.PaneSize{Width: w, Height: h}, watched: m.watchedSession()}
+	request := lifecycleRequest{target: target, pane: sessioncmd.PaneSize{Width: w, Height: h}, watched: m.focus.runtime.Watching()}
 	request.target.sessions = append([]store.Session(nil), target.sessions...)
 	completed, err := m.captureEffect(request)()
 	result := completed.(lifecycleEffectResult)
