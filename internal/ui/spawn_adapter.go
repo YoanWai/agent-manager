@@ -5,7 +5,9 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -111,7 +113,7 @@ func (m *Model) spawnStyles() spawn.Styles {
 		SubtleColor: colorSubtle(),
 		Accent:      colorAccent(),
 		Accent2:     colorAccent2(),
-		Input:       textInputView,
+		Input:       uiframe.TextInputView,
 	}
 }
 
@@ -146,7 +148,7 @@ func pathSuggestHint(chosen bool) [][2]string {
 
 // formValueWidth is the columns a field value can occupy inside the card.
 func (m *Model) formValueWidth() int {
-	return cardInnerWidth(m.cardWidth()) - spawn.LabelColumn
+	return uiframe.CardInnerWidth(m.cardWidth()) - spawn.LabelColumn
 }
 
 // syncFormFieldWidths fits the fields to the card so long values scroll
@@ -312,7 +314,7 @@ func (m *Model) viewForm() string {
 	facts := spawn.FormFacts{
 		Width:  m.formValueWidth(),
 		NoRepo: uilaunch.WorktreeUnavailable,
-		Group:  escapeControlsInline(displayGroup(f.GroupPath())),
+		Group:  presentation.EscapeControlsInline(uiframe.DisplayGroup(f.GroupPath())),
 		Styles: m.spawnStyles(),
 		Height: m.layout.height,
 		Chrome: m.cardChromeRows,
@@ -328,7 +330,7 @@ func (m *Model) viewForm() string {
 		facts.Base = m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath())
 	}
 	body, hint := f.Form.View(m.spawnHost(), facts)
-	return m.card(m.glyphs().NewSessionGlyph+" New Session", body, hint)
+	return m.CardSized(m.cardWidth(), m.glyphs().NewSessionGlyph+" New Session", body, hint)
 }
 
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {

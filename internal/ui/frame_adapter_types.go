@@ -103,15 +103,6 @@ func rootLegend(painted uiframe.Legend) legend {
 	return legend{text: painted.Text, hits: rootHits(painted.Hits)}
 }
 
-// cursorAnchorMarker is the private marker an input view paints at its caret.
-const cursorAnchorMarker = uiframe.CursorMarker
-
-const (
-	legendTitleColumn = uiframe.TitleColumn
-	legendGap         = uiframe.Gap
-	legendMaxRows     = uiframe.MaxRows
-)
-
 // frameCap is the live theme's painting of a key and its action, the way the
 // legend rules need it.
 func frameCap() uiframe.Cap {

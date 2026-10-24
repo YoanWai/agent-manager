@@ -58,14 +58,9 @@ func takeNotifyFocus() (string, bool) {
 	}
 	return notify.TakeFocus(dir)
 }
-func newToolBinaries(cfg config.Config) execution.ToolBinaries { return execution.NewToolBinaries(cfg) }
-func storedPreview(st *store.Store, driver *tmux.Driver, id string) (string, error) {
-	return execution.StoredPreview(st, driver, id)
-}
 
 const quoteHistoryLines = 300
 
-func oneLine(name string) string  { return strings.Join(strings.Fields(name), " ") }
 func paneBooted(pane string) bool { return strings.TrimSpace(ansi.Strip(pane)) != "" }
 func ignoreDeletedSession(err error) error {
 	if errors.Is(err, store.ErrSessionGone) {

@@ -211,7 +211,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.commitTypedPrompt()
 		if msg.snapOK {
 			m.workspace.snap = msg.snap
-			m.updateNetRates(msg.snap)
+			m.workspace.net.Update(msg.snap.NetSent, msg.snap.NetRecv, msg.snap.NetOK, time.Now())
 		}
 		// Sessions left from a previous run carry that run's window size,
 		// which the cache knows nothing about; the geometry cache adopts their

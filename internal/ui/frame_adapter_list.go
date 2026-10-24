@@ -8,9 +8,8 @@ import (
 )
 
 const (
-	railGutter    = uiframe.RailGutter
 	contentGutter = 2
-	railInset     = railGutter - 1
+	railInset     = uiframe.RailGutter - 1
 )
 
 func (m *Model) viewListFrame() string {

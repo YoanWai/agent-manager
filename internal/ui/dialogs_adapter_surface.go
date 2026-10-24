@@ -8,6 +8,7 @@ import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
@@ -60,7 +61,7 @@ func (r renameRoot) ReportErr(text string) { r.reportErr(text) }
 func (r renameRoot) ApplyPathSuggestion() tea.Cmd { return r.applyPathSuggestion() }
 
 func (r renameRoot) StepBase(s *uidialogs.RenameSurface, delta int) (string, tea.Cmd) {
-	return r.stepGroupBase(uilaunch.BaseRename, r.gens.dialog, r.capturedAbsolutePath(s.Dir(), r.capturedGroupDefaultDir(parentGroup(s.Path()))), s.Base, delta)
+	return r.stepGroupBase(uilaunch.BaseRename, r.gens.dialog, r.capturedAbsolutePath(s.Dir(), r.capturedGroupDefaultDir(uirail.ParentGroup(s.Path()))), s.Base, delta)
 }
 
 func (r renameRoot) WorktreeCount() int { return len(groupWorktreeOptions) }
@@ -95,7 +96,7 @@ func (r moveRoot) PlaceMove(move uidialogs.Move, picker *spawn.Picker) tea.Cmd {
 }
 
 func (r moveRoot) PaintMove(picker *spawn.Picker) string {
-	return r.card(uidialogs.MoveTitle(r.prefs.glyphMode), r.viewGroupPicker(picker), uidialogs.MoveHints())
+	return r.CardSized(r.cardWidth(), uidialogs.MoveTitle(r.prefs.glyphMode), r.viewGroupPicker(picker), uidialogs.MoveHints())
 }
 
 var (

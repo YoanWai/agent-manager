@@ -18,6 +18,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
@@ -84,7 +85,7 @@ type focusState struct {
 	runtime focusruntime.State
 	// imeCursor is the cell the input method opens beside, owned here
 	// because the frame writer publishes into it.
-	imeCursor *cursorAnchor
+	imeCursor *uiframe.CursorAnchor
 }
 
 type mouseCapture struct {
@@ -206,7 +207,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		rail:      uirailpersist.Load(st),
 		ssh:       uilink.New(remote.New(deps.ProfileDir), connections),
 		settings:  uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
-		focus:     focusState{runtime: focusruntime.State{}, imeCursor: &cursorAnchor{}},
+		focus:     focusState{runtime: focusruntime.State{}, imeCursor: &uiframe.CursorAnchor{}},
 		workspace: workspace{capture: uicapture.New(st, driver)},
 		startup: startupState{
 			booting: true,

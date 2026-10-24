@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
@@ -140,7 +141,7 @@ func (m *Model) captureTerminalDirectory(target terminalDirectoryTarget) (termin
 
 func (m *Model) groupDirectoryFallbacks(group string) []string {
 	var fallbacks []string
-	for path := parentGroup(group); path != ""; path = parentGroup(path) {
+	for path := uirail.ParentGroup(group); path != ""; path = uirail.ParentGroup(path) {
 		if dir := m.workspace.groupPaths[path]; dir != "" {
 			fallbacks = append(fallbacks, dir)
 		}

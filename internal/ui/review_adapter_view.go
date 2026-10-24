@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -22,7 +24,7 @@ func (m *Model) reviewRenderContext() uireview.RenderContext {
 			SelectedReapply: "\x1b[0m" + bgSeq(current().Surface) + fgSeq(current().Bright),
 			AnnotationBg:    annotationBg(), HandledAnnotationBg: handledAnnotationBg(),
 		},
-		CursorMarker: cursorAnchorMarker,
+		CursorMarker: uiframe.CursorMarker,
 	}
 }
 
@@ -94,8 +96,8 @@ func (m *Model) viewDiffFull() string {
 	// two-surface split the session list uses, so review reads as the same
 	// application rather than a second one.
 	fileLines := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle().Render("files")},
-		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*railGutter, bodyHeight-2)), railInset)...)
-	codeLines := append([]string{"", "  " + subtleStyle().Render(escapeControlsInline(m.review.CodeTitle()))},
+		indentLines(splitLines(m.viewDiffFileList(fileWidth-2*uiframe.RailGutter, bodyHeight-2)), railInset)...)
+	codeLines := append([]string{"", "  " + subtleStyle().Render(presentation.EscapeControlsInline(m.review.CodeTitle()))},
 		indentLines(splitLines(m.viewDiffCode(codeWidth-2*contentGutter, bodyHeight-2)), contentGutter)...)
 
 	// The column seam tees into the rules that open and close the body,

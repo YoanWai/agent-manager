@@ -3,10 +3,9 @@ package ui
 import (
 	"strings"
 
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uistatusbar "github.com/YoanWai/agent-manager/internal/ui/statusbar"
 )
-
-func statusbarTones() uistatusbar.Tones { return uistatusbar.TonesFor(current()) }
 
 // statusLine is the transient message: prompts, search, and self-dismissing
 // errors. It floats in a card over the frame rather than taking a row, so the
@@ -28,7 +27,7 @@ func (m *Model) statusLine() string {
 		ResizeMode:      m.layout.split.resizeMode,
 		Dragging:        m.layout.split.dragging,
 		Notice:          m.review.Snapshot().Notice,
-	}, m.glyphs(), statusbarTones())
+	}, m.glyphs(), uistatusbar.TonesFor(current()))
 }
 
 // statusMessage styles whatever sits on the status bar: an action that went
@@ -36,14 +35,14 @@ func (m *Model) statusLine() string {
 // warning, everything else as a failure, in the glyphs the calling surface
 // marks the three with.
 func (m *Model) statusMessage(fail, done, warn string) string {
-	return m.errBar.kind().Paint(m.errBar.text, uistatusbar.Marks{Fail: fail, Done: done, Warn: warn}, statusbarTones())
+	return m.errBar.kind().Paint(m.errBar.text, uistatusbar.Marks{Fail: fail, Done: done, Warn: warn}, uistatusbar.TonesFor(current()))
 }
 
 // statusToast is the transient message rendered as a card that floats over
 // the frame's top right, so a notice never costs the body a row.
 func (m *Model) statusToast() []string {
 	leftWidth, _ := m.splitWidths()
-	return uistatusbar.Toast(m.statusLine(), m.layout.width-leftWidth-2, statusbarTones())
+	return uistatusbar.Toast(m.statusLine(), m.layout.width-leftWidth-2, uistatusbar.TonesFor(current()))
 }
 
 // overlayTopRight splices a pre-painted box over the frame's rows, anchored
@@ -53,7 +52,7 @@ func (m *Model) overlayTopRight(frame string, box []string, top int) string {
 	if len(box) == 0 {
 		return frame
 	}
-	left := m.layout.width - maxLineWidth(box) - uistatusbar.Margin
+	left := m.layout.width - uiframe.MaxLineWidth(box) - uistatusbar.Margin
 	if left < 0 {
 		left = 0
 	}

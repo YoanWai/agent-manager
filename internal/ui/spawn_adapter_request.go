@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 )
@@ -95,7 +96,7 @@ func (m *Model) spawnDefaults(group string) spawnDefaults {
 // old synchronous lookup. Validation happens later inside the command.
 func (m *Model) groupDirCandidates(group string) []string {
 	candidates := make([]string, 0, 4)
-	for current := group; current != ""; current = parentGroup(current) {
+	for current := group; current != ""; current = uirail.ParentGroup(current) {
 		if path := m.workspace.groupPaths[current]; path != "" {
 			candidates = append(candidates, path)
 		}
@@ -115,7 +116,7 @@ func (m *Model) capturedGroupDefaultDir(group string) string {
 }
 
 func (m *Model) capturedAncestorGroupDir(group string) string {
-	for current := group; current != ""; current = parentGroup(current) {
+	for current := group; current != ""; current = uirail.ParentGroup(current) {
 		if path := m.workspace.groupPaths[current]; path != "" {
 			return path
 		}

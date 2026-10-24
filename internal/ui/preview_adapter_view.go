@@ -8,7 +8,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -182,7 +185,7 @@ func (m *Model) viewDetail(width int) string {
 
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(m.glyphs().StatusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
-		subtleStyle().Render(" · "+relSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))+m.elsewhereNote(sess))
+		subtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))+m.elsewhereNote(sess))
 	if sess.AfterTurn != "" {
 		state += subtleStyle().Render(" · ") + m.afterTurnBadge(sess.AfterTurn) + subtleStyle().Render(" "+afterTurnNote[sess.AfterTurn])
 	}
@@ -207,11 +210,11 @@ func (m *Model) viewDetail(width int) string {
 		usage = labelStyle().Render("cpu ") + valueStyle().Render(fmt.Sprintf("%.1f%%", m.workspace.proc.CPUPercent)) +
 			subtleStyle().Render(" · ") + labelStyle().Render("ram ") +
 			valueStyle().Render(fmt.Sprintf("%.1f%%", m.workspace.proc.RamPercent)) +
-			subtleStyle().Render(" · ") + valueStyle().Render(humanBytes(m.workspace.proc.RSS))
+			subtleStyle().Render(" · ") + valueStyle().Render(uiframe.HumanBytes(m.workspace.proc.RSS))
 	}
-	started := subtleStyle().Render("started " + relSince(sess.CreatedAt))
-	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(displayGroup(sess.Group))
-	dir := func(room int) string { return mutedStyle().Render(truncateTail(m.sessionDir(sess), room)) }
+	started := subtleStyle().Render("started " + uiframe.RelSince(sess.CreatedAt))
+	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(uiframe.DisplayGroup(sess.Group))
+	dir := func(room int) string { return mutedStyle().Render(presentation.TruncateTail(m.sessionDir(sess), room)) }
 	return uipreview.FitColumns(heads, []string{state}, width) + "\n" +
 		factRow("group", uipreview.PlainValue(group), started, width) + "\n" +
 		factRow("dir", dir, usage, width)
@@ -220,12 +223,12 @@ func (m *Model) viewDetail(width int) string {
 // viewGroupDetail heads the content column for a group: its name, how many
 // agents sit under it, where they start, and what they are all doing.
 func (m *Model) viewGroupDetail(group string, width int) string {
-	count := m.groupSessionCount(group)
+	count := uirail.GroupSessionCount(m.railAgents(), group)
 	countLabel := fmt.Sprintf("%d agents", count)
 	if count == 1 {
 		countLabel = "1 agent"
 	}
-	title := lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(displayGroup(group))
+	title := lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(uiframe.DisplayGroup(group))
 	head := uipreview.FitColumns([]string{title + "  " + chipStyle().Render(countLabel), title}, []string{""}, width)
 
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && s.IsGroup() && s.Path() == group {
@@ -238,9 +241,9 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 		path = m.capturedGroupDefaultDir(group)
 		source = subtleStyle().Render("inherited")
 	}
-	dir := func(room int) string { return mutedStyle().Render(truncateTail(path, room)) }
+	dir := func(room int) string { return mutedStyle().Render(presentation.TruncateTail(path, room)) }
 	lines := []string{head, factRow("dir", dir, source, width)}
-	if breakdown := m.groupStatusBreakdown(group); breakdown != "" {
+	if breakdown := uirail.GroupStatusBreakdown(m.railTheme(), m.railAgents(), group); breakdown != "" {
 		// The key that spawns into a group is the one people miss, since the
 		// same key answers a session, so the group says what it does here.
 		// The breakdown is the reading, so a column too tight for both keeps it.
@@ -265,7 +268,7 @@ const (
 // would sit, so a group reads as a roster: one row per agent, its name, the
 // CLI running it, and what it is doing.
 func (m *Model) viewGroupAgents(group string, width, height int) string {
-	total := m.groupSessionCount(group)
+	total := uirail.GroupSessionCount(m.railAgents(), group)
 	if total == 0 {
 		none := "(none yet)"
 		if prompt := m.listGlyph(keybind.Prompt); prompt != "" {
@@ -279,7 +282,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 	overflow := ""
 	shown := 0
 	for _, sess := range m.listedAgents() {
-		if !inGroupSubtree(sess.Group, group) {
+		if !uirail.InGroupSubtree(sess.Group, group) {
 			continue
 		}
 		if shown >= height-2 && total > shown+1 {
@@ -290,7 +293,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		rows = append(rows, rosterRow{
 			name:  tint.Render(m.glyphs().StatusGlyph(sess.Status)) + " " + valueStyle().Render(m.displayName(sess)),
 			tool:  subtleStyle().Render(sess.Tool),
-			state: tint.Render(statusLabel(sess.Status)) + subtleStyle().Render(" · "+relSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))),
+			state: tint.Render(statusLabel(sess.Status)) + subtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))),
 		})
 		shown++
 	}
@@ -331,7 +334,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 	if showState {
 		activity = subtleStyle().Render("last activity")
 	}
-	lines := []string{rowColumns(head, activity, width)}
+	lines := []string{uiframe.RowColumns(head, activity, width)}
 	for _, row := range rows {
 		// A name trimmed to the column exactly would touch the tool beside
 		// it, so the trim leaves the column's last cell as the gap.
@@ -343,7 +346,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		if !showState {
 			state = ""
 		}
-		lines = append(lines, rowColumns(line, state, width))
+		lines = append(lines, uiframe.RowColumns(line, state, width))
 	}
 	if overflow != "" {
 		lines = append(lines, overflow)

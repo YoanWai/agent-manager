@@ -5,22 +5,7 @@ import (
 	"os"
 
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 )
-
-// cursorAnchor is the real terminal cell an input method should open beside.
-// Bubble Tea v1 finishes every alternate-screen render at the bottom-left,
-// while focus mode paints a pane caret elsewhere, so an IME otherwise follows
-// that renderer cursor instead of the caret the user is typing at. The cell
-// itself lives in ui/frame, beside the writer that publishes it.
-type cursorAnchor struct {
-	cell uiframe.CursorAnchor
-}
-
-func (a *cursorAnchor) set(col, row int, ok bool) { a.cell.Set(col, row, ok) }
-
-func (a *cursorAnchor) get() (col, row int, ok bool) { return a.cell.Get() }
 
 // syncCursorAnchor publishes the input coordinates in a finished frame and
 // removes the private marker before Bubble Tea writes the frame. Focus mode
@@ -32,11 +17,11 @@ func (m *Model) syncCursorAnchor(frame string) string {
 	}
 	if m.agentOwnsKeyboard() {
 		col, row, ok := m.focusCursorAnchor()
-		m.focus.imeCursor.set(col, row, ok)
+		m.focus.imeCursor.Set(col, row, ok)
 		return uiframe.StripCursorMarker(frame)
 	}
 	frame, col, row, ok := uiframe.CursorMarkerPosition(frame)
-	m.focus.imeCursor.set(col, row, ok)
+	m.focus.imeCursor.Set(col, row, ok)
 	return frame
 }
 
@@ -51,15 +36,11 @@ func (m *Model) focusCursorAnchor() (col, row int, ok bool) {
 	return m.focus.pane.CursorAnchor(sess.ID)
 }
 
-func textInputView(input textinput.Model) string { return uiframe.TextInputView(input) }
-
-func textAreaView(input textarea.Model) string { return uiframe.TextAreaView(input) }
-
 // CursorOutput keeps native TTY detection and terminal sizing while placing
 // the host cursor at the active input caret after each rendered frame.
 func (m *Model) CursorOutput(output *os.File) io.Writer {
 	if m.focus.imeCursor == nil {
-		m.focus.imeCursor = &cursorAnchor{}
+		m.focus.imeCursor = &uiframe.CursorAnchor{}
 	}
-	return uiframe.NewCursorTTYOutput(output, &m.focus.imeCursor.cell)
+	return uiframe.NewCursorTTYOutput(output, m.focus.imeCursor)
 }

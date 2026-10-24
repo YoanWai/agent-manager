@@ -1,15 +1,19 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+)
 
 func TestViewDoesNotPublishCursorState(t *testing.T) {
 	m := &Model{}
-	m.focus.imeCursor = &cursorAnchor{}
-	m.focus.imeCursor.set(8, 4, true)
+	m.focus.imeCursor = &uiframe.CursorAnchor{}
+	m.focus.imeCursor.Set(8, 4, true)
 	if got := m.View(); got != "loading..." {
 		t.Fatalf("initial view = %q", got)
 	}
-	col, row, ok := m.focus.imeCursor.get()
+	col, row, ok := m.focus.imeCursor.Get()
 	if col != 8 || row != 4 || !ok {
 		t.Fatalf("View changed published cursor to (%d, %d, %t)", col, row, ok)
 	}

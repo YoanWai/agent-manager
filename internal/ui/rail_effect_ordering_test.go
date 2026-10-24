@@ -20,10 +20,10 @@ func TestRailStateDecisionPreservesLatestCollapseSnapshot(t *testing.T) {
 			m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: m.rail.Collapsed()}}, 0, false)
 			var expected []string
 			if scenario == "rename" {
-				m.applyRailStateDecision(m.rail.RenameGroup("parent", "renamed"))
+				m.queueRail(m.rail.RenameGroup("parent", "renamed"), 0, true)
 				expected = []string{"renamed"}
 			} else {
-				m.applyRailStateDecision(m.rail.RevealGroup("parent/child"))
+				m.queueRail(m.rail.RevealGroup("parent/child"), 0, true)
 			}
 			m.drainEffects(t)
 			raw, err := m.services.store.Setting(uirailpersist.CollapsedSetting)

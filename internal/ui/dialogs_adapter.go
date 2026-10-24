@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
@@ -69,7 +70,7 @@ func (m *Model) confirmCard(title, question, consequence string, destructive boo
 	if destructive {
 		tone = errStyle()
 	}
-	body := uidialogs.ConfirmBody(question, consequence, cardInnerWidth(width), tone, mutedStyle())
+	body := uidialogs.ConfirmBody(question, consequence, uiframe.CardInnerWidth(width), tone, mutedStyle())
 	return m.CardSized(width, title, body, uidialogs.ConfirmHints(answer))
 }
 
@@ -88,7 +89,7 @@ func (m *Model) openMove() {
 	var picker spawn.Picker
 	if row.isGroup {
 		move = uidialogs.MoveGroup(row.group)
-		picker = m.groupPickerFor(parentGroup(row.group))
+		picker = m.groupPickerFor(uirail.ParentGroup(row.group))
 		pruneMoveTargets(&picker, row.group)
 	} else {
 		move = uidialogs.MoveSession(row.sess.ID)
@@ -187,9 +188,9 @@ func (m *Model) viewFork(form *uidialogs.Fork) string {
 		Value:       valueStyle(),
 		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),
 		Field:       m.formField,
-		Input:       textInputView,
+		Input:       uiframe.TextInputView,
 	})
-	return m.card(card.Title, card.Body, card.Hints)
+	return m.CardSized(m.cardWidth(), card.Title, card.Body, card.Hints)
 }
 
 // openRename reads the selected row, the workspace's group choices and the
@@ -236,9 +237,9 @@ func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, 
 		Focused:   lipgloss.NewStyle().Foreground(colorAccent()),
 		Subtle:    subtleStyle(),
 		Value:     valueStyle(),
-		Input:     textInputView,
+		Input:     uiframe.TextInputView,
 		Worktrees: groupWorktreeOptions,
-		Base:      uidialogs.BaseChoice(subtleStyle(), valueStyle(), s.Base, m.groupBase(parentGroup(group))),
+		Base:      uidialogs.BaseChoice(subtleStyle(), valueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group))),
 	}
 	if s.Paths().Active() {
 		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }

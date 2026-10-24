@@ -1,7 +1,9 @@
 package ui
 
 import (
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -29,19 +31,19 @@ func (m *Model) paintSettings(d *settingsState) string {
 		Latest:     m.release.Latest,
 		Applying:   m.release.Applying,
 		Height:     m.layout.height,
-		InnerWidth: cardInnerWidth(m.cardWidth()),
+		InnerWidth: uiframe.CardInnerWidth(m.cardWidth()),
 		Chrome:     m.flexChromeRows,
 		Styles:     settingsStyles(),
-		TextInput:  textInputView,
-		TextArea:   textAreaView,
+		TextInput:  uiframe.TextInputView,
+		TextArea:   uiframe.TextAreaView,
 	})
 	switch frame.Card {
 	case uisettings.Confirm:
 		return m.confirmCard(frame.Title, frame.Question, frame.Consequence, frame.Destructive, frame.Answer)
 	case uisettings.Fixed:
-		return m.card(frame.Title, frame.Body, frame.Hints)
+		return m.CardSized(m.cardWidth(), frame.Title, frame.Body, frame.Hints)
 	}
-	return m.cardFlex(frame.Title, frame.Body, frame.Hints)
+	return m.CardSized(m.flexCardWidth(frame.Title, frame.Body, frame.Hints), frame.Title, frame.Body, frame.Hints)
 }
 
 func settingsStyles() uisettings.Styles {
@@ -66,7 +68,7 @@ func newSettingsSurface(m *Model, state settingsState) *uisettings.Surface {
 // where in a line a click lands: the root hands it the column too. It
 // bridges until surface.Click carries the column for every card.
 type columnClicker interface {
-	ClickAt(h surfaceHost, col, line int) tea.Cmd
+	ClickAt(h uisurface.Host, col, line int) tea.Cmd
 }
 
 var _ columnClicker = (*uisettings.Surface)(nil)

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -49,16 +50,16 @@ func (m *Model) computerLines(width int) []string {
 	lines := []string{pad + subtleStyle().Render("computer")}
 	lines = append(lines,
 		meter("cpu", snap.CPUPercent, snap.CPUOK, ""),
-		meter("mem", snap.MemPercent, snap.MemOK, humanBytes(snap.MemUsed)+"/"+humanBytes(snap.MemTotal)),
+		meter("mem", snap.MemPercent, snap.MemOK, uiframe.HumanBytes(snap.MemUsed)+"/"+uiframe.HumanBytes(snap.MemTotal)),
 	)
 	if snap.SwapOK && snap.SwapTotal > 0 {
 		// Percent is used/total of the current swap allocation (macOS
 		// grows the file under pressure; Linux uses the fixed swap size).
 		lines = append(lines, meter("swap", snap.SwapPercent, true,
-			humanBytes(snap.SwapUsed)+"/"+humanBytes(snap.SwapTotal)))
+			uiframe.HumanBytes(snap.SwapUsed)+"/"+uiframe.HumanBytes(snap.SwapTotal)))
 	}
 	if snap.DiskOK {
-		extra := diskBytes(snap.DiskAvailable) + " available"
+		extra := uiframe.DiskBytes(snap.DiskAvailable) + " available"
 		line := meter("disk", snap.DiskPercent, true, extra)
 		if ansi.StringWidth(line) > width {
 			lines = append(lines, meter("disk", snap.DiskPercent, true, ""),
@@ -82,8 +83,8 @@ func (m *Model) computerLines(width int) []string {
 	}
 	if m.workspace.net.Rates {
 		lines = append(lines, pad+labelStyle().Width(5).Render("net")+
-			valueStyle().Render("↓ "+humanBytes(m.workspace.net.Down)+"/s")+
-			subtleStyle().Render("  ↑ "+humanBytes(m.workspace.net.Up)+"/s"))
+			valueStyle().Render("↓ "+uiframe.HumanBytes(m.workspace.net.Down)+"/s")+
+			subtleStyle().Render("  ↑ "+uiframe.HumanBytes(m.workspace.net.Up)+"/s"))
 	}
 	return append(lines, "")
 }
@@ -116,12 +117,12 @@ func (m *Model) fullFootLine(width int) []string {
 	snap := snapReadings(m.workspace.snap)
 	parts := []string{
 		reading("cpu", fmt.Sprintf("%.0f%%", snap.CPUPercent), snap.CPUOK),
-		reading("mem", fmt.Sprintf("%.0f%% %s/%s", snap.MemPercent, humanBytes(snap.MemUsed), humanBytes(snap.MemTotal)), snap.MemOK),
+		reading("mem", fmt.Sprintf("%.0f%% %s/%s", snap.MemPercent, uiframe.HumanBytes(snap.MemUsed), uiframe.HumanBytes(snap.MemTotal)), snap.MemOK),
 	}
 	if snap.SwapOK && snap.SwapTotal > 0 {
-		parts = append(parts, reading("swap", fmt.Sprintf("%.0f%% %s/%s", snap.SwapPercent, humanBytes(snap.SwapUsed), humanBytes(snap.SwapTotal)), true))
+		parts = append(parts, reading("swap", fmt.Sprintf("%.0f%% %s/%s", snap.SwapPercent, uiframe.HumanBytes(snap.SwapUsed), uiframe.HumanBytes(snap.SwapTotal)), true))
 	}
-	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s available", snap.DiskPercent, diskBytes(snap.DiskAvailable)), snap.DiskOK))
+	parts = append(parts, reading("disk", fmt.Sprintf("%.0f%% %s available", snap.DiskPercent, uiframe.DiskBytes(snap.DiskAvailable)), snap.DiskOK))
 	if snap.BatteryOK {
 		value := fmt.Sprintf("%.0f%%", snap.BatteryPercent)
 		if snap.BatteryCharging {
@@ -133,7 +134,7 @@ func (m *Model) fullFootLine(width int) []string {
 		parts = append(parts, labelStyle().Render("temp ")+temps)
 	}
 	if m.workspace.net.Rates {
-		parts = append(parts, reading("net", "↓ "+humanBytes(m.workspace.net.Down)+"/s ↑ "+humanBytes(m.workspace.net.Up)+"/s", true))
+		parts = append(parts, reading("net", "↓ "+uiframe.HumanBytes(m.workspace.net.Down)+"/s ↑ "+uiframe.HumanBytes(m.workspace.net.Up)+"/s", true))
 	}
 	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
 	return []string{ansi.Truncate(line, max(width-railInset, 0), "…")}

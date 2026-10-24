@@ -16,6 +16,7 @@ import (
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -97,7 +98,7 @@ func TestEverySurfaceAnswersTheMouse(t *testing.T) {
 
 // surfaceName names a surface the way declaredSurfaces does: bare in the
 // root, qualified by its package in a feature's.
-func surfaceName(s surface) string {
+func surfaceName(s uisurface.Surface) string {
 	typ := reflect.TypeOf(s).Elem()
 	if pkg := path.Base(typ.PkgPath()); pkg != "ui" {
 		return pkg + "." + typ.Name()
@@ -105,7 +106,7 @@ func surfaceName(s surface) string {
 	return typ.Name()
 }
 
-// declaredSurfaces lists the types that declare a Leave(surfaceHost) method on a
+// declaredSurfaces lists the types that declare a Leave(uisurface.Host) method on a
 // pointer receiver, in the root and in the feature packages under it: every
 // surface does, and nothing else.
 func declaredSurfaces(t *testing.T) []string {
@@ -162,10 +163,7 @@ func takesHost(fn *ast.FuncDecl) bool {
 	if len(params) != 1 {
 		return false
 	}
-	switch typ := params[0].Type.(type) {
-	case *ast.Ident:
-		return typ.Name == "surfaceHost"
-	case *ast.SelectorExpr:
+	if typ, ok := params[0].Type.(*ast.SelectorExpr); ok {
 		return typ.Sel.Name == "Host"
 	}
 	return false

@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -19,12 +20,12 @@ func (r connectionsRoot) Look() uiconnections.DialogView {
 		Field: func(label, value string, focused bool) string {
 			return spawn.FormField(styles, label, value, focused)
 		},
-		Input: textInputView,
+		Input: uiframe.TextInputView,
 		Muted: mutedStyle(),
 	}
 }
 
-func (r connectionsRoot) CardWidth(cols int) int { return cardWidthFor(cols) }
+func (r connectionsRoot) CardWidth(cols int) int { return uiframe.CardWidthFor(cols) }
 
 func (r connectionsRoot) Save(gen uint64, editing string, next remote.Connection) tea.Cmd {
 	op := uilink.SaveAdd

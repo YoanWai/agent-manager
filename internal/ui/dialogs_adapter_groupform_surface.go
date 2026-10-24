@@ -5,6 +5,7 @@ import (
 
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -12,7 +13,7 @@ import (
 // groupRoot is the root as the New Group card reaches it.
 type groupRoot struct{ *Model }
 
-func (r groupRoot) CardWidth(cols int) int { return cardWidthFor(cols) }
+func (r groupRoot) CardWidth(cols int) int { return uiframe.CardWidthFor(cols) }
 
 func (r groupRoot) ReportErr(text string) { r.reportErr(text) }
 

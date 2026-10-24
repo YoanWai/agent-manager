@@ -4,6 +4,7 @@ import (
 	"time"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,7 +25,7 @@ func (m *Model) cachedSpawnToolSelection() ([]string, int) {
 }
 
 func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
-	for g := group; g != ""; g = parentGroup(g) {
+	for g := group; g != ""; g = uirail.ParentGroup(g) {
 		switch m.workspace.groupWorktrees[g] {
 		case "on":
 			return true
@@ -47,7 +48,7 @@ func (m *Model) cachedEnabledToolNames() []string {
 // groupBase is the ref a spawn into group branches from: the nearest ancestor
 // group's choice, or "" to detect the repo's default branch.
 func (m *Model) groupBase(group string) string {
-	for g := group; g != ""; g = parentGroup(g) {
+	for g := group; g != ""; g = uirail.ParentGroup(g) {
 		if base := m.workspace.groupBases[g]; base != "" {
 			return base
 		}
@@ -81,7 +82,7 @@ func (m *Model) handleGroupBaseStep(msg uilaunch.BaseStepMsg) {
 		base = s.BaseRef()
 	case uilaunch.BaseRename:
 		s, ok := surfaceOf[*uidialogs.RenameSurface](m)
-		if !ok || m.gens.dialog != msg.Gen || m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(parentGroup(s.Path()))) != msg.Dir {
+		if !ok || m.gens.dialog != msg.Gen || m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(uirail.ParentGroup(s.Path()))) != msg.Dir {
 			return
 		}
 		base = &s.Base

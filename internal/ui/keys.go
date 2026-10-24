@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -36,9 +37,9 @@ func (m *Model) routeQuit(msg tea.KeyMsg) quitRoute {
 		return quitNow
 	case !ctrlC:
 		return quitPass
-	case onSurface && m.baseOwner() == ownerAgent && top.Dismissible():
+	case onSurface && m.baseOwner() == uisurface.Agent && top.Dismissible():
 		return quitPopSurface
-	case onSurface && m.baseOwner() == ownerAgent:
+	case onSurface && m.baseOwner() == uisurface.Agent:
 		return quitPass
 	}
 	return quitNow

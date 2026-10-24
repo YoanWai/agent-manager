@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/config"
+	execution "github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
@@ -208,7 +209,7 @@ func TestPollRetypesARowOntoTheCLIItsPaneRuns(t *testing.T) {
 	}
 	m.services.engine = engine
 	m.poller.dependencies.Engine = engine
-	m.poller.options.Binaries = newToolBinaries(m.services.cfg)
+	m.poller.options.Binaries = execution.NewToolBinaries(m.services.cfg)
 	m.poller.options.StatusSources["tail-tool"] = ""
 
 	resetExecution(m)
@@ -245,7 +246,7 @@ func TestPollRetypesARowOntoTheCLIItsPaneRuns(t *testing.T) {
 func TestPollLeavesARunningRowAlone(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.poller.options.Binaries = newToolBinaries(m.services.cfg)
+	m.poller.options.Binaries = execution.NewToolBinaries(m.services.cfg)
 	resetExecution(m)
 	createSessionOn(t, m, "steady", "quietchat", t.TempDir())
 	sess := m.sessionRows()[0]

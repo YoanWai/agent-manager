@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
@@ -168,7 +169,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 		{name: "narrow_error", model: helpModel()},
 	}
 	tests[1].model.layout.width, tests[1].model.layout.height = 100, 28
-	tests[1].model.focus.imeCursor = &cursorAnchor{}
+	tests[1].model.focus.imeCursor = &uiframe.CursorAnchor{}
 	typeHelpSearch(tests[1].model, "中文", false)
 	*helpSurfaceOf(tests[2].model).State() = uihelp.New(uihelp.Review)
 	tests[3].model.layout.width, tests[3].model.layout.height = 60, 14
@@ -187,7 +188,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 				t.Fatalf("help content and layout changed from 560a463:\nwant:\n%s\n\ngot:\n%s", want, got)
 			}
 			if test.assertCursor {
-				if _, _, ok := test.model.focus.imeCursor.get(); !ok {
+				if _, _, ok := test.model.focus.imeCursor.Get(); !ok {
 					t.Fatal("search frame did not publish its IME cursor")
 				}
 			}

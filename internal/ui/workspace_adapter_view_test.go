@@ -2,6 +2,7 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -175,8 +176,8 @@ func TestDiskBytes(t *testing.T) {
 		{169_850_000_000, "169.8GB"},
 		{1_000_000_000_000, "1.0TB"},
 	} {
-		if got := diskBytes(tc.bytes); got != tc.want {
-			t.Errorf("diskBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
+		if got := uiframe.DiskBytes(tc.bytes); got != tc.want {
+			t.Errorf("uiframe.DiskBytes(%d) = %q, want %q", tc.bytes, got, tc.want)
 		}
 	}
 }

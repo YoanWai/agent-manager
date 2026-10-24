@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -42,7 +43,7 @@ func TestReviewPickerOpensOnItsKey(t *testing.T) {
 	if !strings.Contains(frame, "Review repo") || !strings.Contains(frame, "two") {
 		t.Fatalf("the frame should show the picker and its rows:\n%s", frame)
 	}
-	if top, _ := m.top(); top.Owner() != ownerManager || len(top.Footer()) == 0 {
+	if top, _ := m.top(); top.Owner() != uisurface.Manager || len(top.Footer()) == 0 {
 		t.Fatal("the picker should keep the keyboard on the manager and name its keys")
 	}
 }

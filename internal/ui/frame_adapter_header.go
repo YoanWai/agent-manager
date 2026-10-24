@@ -27,9 +27,9 @@ func (m *Model) viewHeaderRows() []string {
 	scope := m.headerScope()
 	agents := m.headerAgents()
 	readings := []string{
-		joinHeaderPieces(sep, scope, m.viewStatusCounts(false), agents),
-		joinHeaderPieces(sep, scope, m.viewStatusCounts(true), agents),
-		joinHeaderPieces(sep, scope, m.viewStatusCounts(true), ""),
+		uiframe.JoinHeaderPieces(sep, scope, m.viewStatusCounts(false), agents),
+		uiframe.JoinHeaderPieces(sep, scope, m.viewStatusCounts(true), agents),
+		uiframe.JoinHeaderPieces(sep, scope, m.viewStatusCounts(true), ""),
 		scope,
 		"",
 	}
@@ -60,11 +60,6 @@ func (m *Model) titleTopRowWithUpdate(frame string) string {
 	return strings.Join(rows, "\n")
 }
 
-// joinHeaderPieces joins the header's non-empty readings with a separator.
-func joinHeaderPieces(sep string, pieces ...string) string {
-	return uiframe.JoinHeaderPieces(sep, pieces...)
-}
-
 // headerScope names what the list is showing. The count is of the same
 // agents the rollup beside it breaks down, so the two lines always add up;
 // counting painted rows instead would drop everything folded inside a
@@ -93,7 +88,7 @@ func (m *Model) headerAgents() string {
 		labelStyle().Render("cpu ") + valueStyle().Render(fmt.Sprintf("%.0f%%", m.workspace.agents.cpu)) +
 		subtleStyle().Render(" · ") + labelStyle().Render("ram ") +
 		valueStyle().Render(fmt.Sprintf("%.0f%%", m.workspace.agents.ram)) +
-		subtleStyle().Render(" · ") + valueStyle().Render(humanBytes(m.workspace.agents.rss))
+		subtleStyle().Render(" · ") + valueStyle().Render(uiframe.HumanBytes(m.workspace.agents.rss))
 }
 
 // elsewhereNote marks a session this manager does not speak for: its pane

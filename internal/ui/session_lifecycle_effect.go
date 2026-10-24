@@ -166,7 +166,7 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			m.removeSessionLocally(sess.ID)
 		}
 		if len(result.Deleted.RemovedGroups) > 0 {
-			m.applyRailStateDecision(m.rail.ForgetGroups(result.Deleted.RemovedGroups))
+			m.queueRail(m.rail.ForgetGroups(result.Deleted.RemovedGroups), 0, true)
 			m.pruneGroupsLocally(result.Deleted.RemovedGroups)
 		}
 	}

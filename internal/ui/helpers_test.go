@@ -26,6 +26,7 @@ import (
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -771,7 +772,7 @@ func shotModel() *Model {
 			sessions:   sessions,
 			groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
 			agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
-			net:        netStats{Rates: true, Down: 9_400_000, Up: 2_100_000},
+			net:        uiworkspace.Net{Rates: true, Down: 9_400_000, Up: 2_100_000},
 			snap: sysstat.Snapshot{
 				CPUOK: true, CPUPercent: 22,
 				MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,

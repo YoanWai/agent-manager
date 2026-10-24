@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
@@ -324,7 +325,7 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.quickTargetDir())
 	if entry, ok := m.selectedRow(); ok {
 		if entry.isGroup {
-			facts.Group = displayGroup(entry.group)
+			facts.Group = uiframe.DisplayGroup(entry.group)
 		} else {
 			facts.Answer = m.quickAnswerRow(entry, m.displayName(entry.sess), width)
 		}
