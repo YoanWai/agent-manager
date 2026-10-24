@@ -1,11 +1,13 @@
 package review
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	ireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -212,4 +214,27 @@ func (p *Picker) Body(ctx RenderContext, inner, height int) string {
 		body.WriteString(s.Subtle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")
 	}
 	return strings.TrimRight(body.String(), "\n")
+}
+
+// PickReadRequest is one picker read a Review asks for: which rows, the reader
+// that lists them, and the foreground generation whose completion is accepted.
+type PickReadRequest struct {
+	Kind          ireviewsource.PickerLoadKind
+	Reader        ireviewsource.PickerReader
+	ForegroundGen uint64
+}
+
+// PickRead refuses a read a Review cannot answer for, with the words the status
+// bar repeats. A base read keys off the raw selection, not the resolved
+// toplevel: the toplevel is empty after a bad base errors the load, and the one
+// control that clears that base must stay reachable.
+func (m Model) PickRead(req PickReadRequest) (tea.Cmd, error) {
+	if req.Reader == nil || m.repoSel == "" {
+		return nil, errors.New("no repo under review")
+	}
+	return ireviewsource.PickerReadCmd(req.Reader, ireviewsource.PickerLoadRequest{
+		Kind:          req.Kind,
+		Source:        m.TargetSource(),
+		ForegroundGen: req.ForegroundGen,
+	}), nil
 }

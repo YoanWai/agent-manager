@@ -490,16 +490,16 @@ func (m *Model) openBranchPick() tea.Cmd {
 }
 
 func (m *Model) openBranchPickWithReader(reader uireviewsource.PickerReader) tea.Cmd {
-	state := m.review.Snapshot()
-	if reader == nil || state.RepoSelected == "" {
-		m.reportErr("no repo under review")
-		return nil
-	}
-	return uireviewsource.PickerReadCmd(reader, uireviewsource.PickerLoadRequest{
+	cmd, err := m.review.PickRead(uireview.PickReadRequest{
 		Kind:          uireviewsource.PickerLoadBranches,
-		Source:        m.reviewPickerSource(),
+		Reader:        reader,
 		ForegroundGen: m.gens.foreground,
 	})
+	if err != nil {
+		m.reportErr(err.Error())
+		return nil
+	}
+	return cmd
 }
 
 // openBasePick lists auto plus the current repo's branch refs so the user can
@@ -517,19 +517,16 @@ func (m *Model) openBasePickWithReader(reader uireviewsource.PickerReader) tea.C
 		m.reportErr("diff base is still saving")
 		return nil
 	}
-	// Key off the raw selection, not the resolved toplevel: the toplevel is
-	// empty after a bad base errors the load, which would make the one control
-	// that clears the bad base unreachable exactly when it is needed.
-	state := m.review.Snapshot()
-	if reader == nil || state.RepoSelected == "" {
-		m.reportErr("no repo under review")
-		return nil
-	}
-	return uireviewsource.PickerReadCmd(reader, uireviewsource.PickerLoadRequest{
+	cmd, err := m.review.PickRead(uireview.PickReadRequest{
 		Kind:          uireviewsource.PickerLoadBases,
-		Source:        m.reviewPickerSource(),
+		Reader:        reader,
 		ForegroundGen: m.gens.foreground,
 	})
+	if err != nil {
+		m.reportErr(err.Error())
+		return nil
+	}
+	return cmd
 }
 
 func (m *Model) handleReviewPickerLoaded(msg uireviewsource.PickerLoadedMsg) tea.Cmd {
