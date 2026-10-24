@@ -28,8 +28,7 @@ import (
 // dialogs_host.go answer the reads and run the request a card holds.
 
 func (m *Model) openConfirm(target confirmTarget) {
-	prompt := uidialogs.Confirm{Action: target.action, Group: target.isGroup, Label: target.label}
-	m.push(uidialogs.NewConfirmSurface(confirmRoot{m, target}, prompt, m.prefs.glyphMode))
+	m.push(uidialogs.NewConfirmSurface(confirmRoot{m, target}, target.prompt, m.prefs.glyphMode))
 }
 
 // listClear is the list with no card over it: what "mode is the list" meant

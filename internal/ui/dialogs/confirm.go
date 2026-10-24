@@ -13,11 +13,12 @@ import (
 // the question sits in the middle of the frame, its target is spelled out,
 // and the safe answer is the one already under the cursor.
 
-// ConfirmAction is the act a confirm asks about; the zero value is delete.
+// ConfirmAction is the act a confirm asks about, spelled as the lifecycle
+// action it runs.
 type ConfirmAction string
 
 const (
-	ConfirmDelete  ConfirmAction = ""
+	ConfirmDelete  ConfirmAction = "delete"
 	ConfirmArchive ConfirmAction = "archive"
 	ConfirmRestore ConfirmAction = "restore"
 	ConfirmKill    ConfirmAction = "kill"

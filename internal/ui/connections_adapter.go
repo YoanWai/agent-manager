@@ -113,8 +113,7 @@ func (m *Model) confirmRemote(request uilink.Call, call uiconnections.Call) tea.
 		return nil
 	}
 	m.openConfirm(confirmTarget{
-		action: call.Action,
-		label:  call.Verb + " " + presentation.EscapeControlsInline(request.Name+" on "+request.Host+"?") + call.Consequence,
+		prompt: uidialogs.Confirm{Action: call.Action, Label: call.Verb + " " + presentation.EscapeControlsInline(request.Name+" on "+request.Host+"?") + call.Consequence},
 		remote: &request,
 	})
 	return nil
@@ -159,9 +158,8 @@ func (m *Model) remoteRepeat(request uilink.Call) (string, bool) {
 
 func (m *Model) confirmRemoveConnection(name string) {
 	m.openConfirm(confirmTarget{
-		action:     uidialogs.ConfirmRemoveConnection,
+		prompt:     uidialogs.Confirm{Action: uidialogs.ConfirmRemoveConnection, Label: "remove connection " + name + "? Its sessions keep running on the host."},
 		connection: name,
-		label:      "remove connection " + name + "? Its sessions keep running on the host.",
 	})
 }
 
@@ -325,8 +323,6 @@ func (m *Model) remoteFormSpawn(req uilaunch.Request) tea.Cmd {
 // formRemote is the connection and group a New Session form spawns into,
 // as the root's own connection rows name them.
 type formRemote struct{ host, group string }
-
-func (r formRemote) on() bool { return r.host != "" }
 
 // remoteFormRequest takes the form requests that differ on a connection:
 // the group is fixed, nothing is probed locally, and the spawn goes to the

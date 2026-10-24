@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"strings"
 	"testing"
 
@@ -38,7 +39,7 @@ func TestKillTargetsALiveRowAndTheShellsUnderIt(t *testing.T) {
 	if len(intent.Card.Sessions) != 2 {
 		t.Fatalf("kill covers %d rows, want the agent and its shell", len(intent.Card.Sessions))
 	}
-	if intent.Card.Selection.RootID != "a" || intent.Card.Selection.Kind != SelectSession {
+	if intent.Card.Selection.RootID != "a" || intent.Card.Selection.Kind != uilifecycle.SelectSession {
 		t.Fatalf("selection = %+v, want the parent row", intent.Card.Selection)
 	}
 }

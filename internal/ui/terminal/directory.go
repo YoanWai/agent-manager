@@ -90,22 +90,3 @@ type Screen struct {
 	RowKey        string
 	Selected      bool
 }
-
-// StillCurrent reports whether a captured editor read may still open: a shell
-// read never carries a screen to check.
-func (t Target) StillCurrent(captured, current Screen) bool {
-	if t != TargetEditor {
-		return true
-	}
-	return current.Selected && captured.ForegroundGen == current.ForegroundGen &&
-		captured.Screen == current.Screen && captured.RowKey == current.RowKey
-}
-
-// Notice is the line a refused read reports, naming the directory for the
-// editor and only the request for a shell.
-func (t Target) Notice(msg DirectoryMsg) string {
-	if t == TargetEditor {
-		return "directory no longer exists: " + msg.Dir
-	}
-	return "no directory to open a terminal in"
-}

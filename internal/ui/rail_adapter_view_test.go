@@ -786,8 +786,8 @@ func TestRootRowRefusesGroupEdits(t *testing.T) {
 			if !m.onList() {
 				t.Fatalf("mode changed to %v", m.screenID())
 			}
-			if pendingConfirm(m).label != "" {
-				t.Fatalf("a confirmation was staged: %q", pendingConfirm(m).label)
+			if pendingConfirm(m).prompt.Label != "" {
+				t.Fatalf("a confirmation was staged: %q", pendingConfirm(m).prompt.Label)
 			}
 		})
 	}

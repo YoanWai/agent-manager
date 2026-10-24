@@ -631,8 +631,8 @@ func TestBulkActionsRespectStatusFilter(t *testing.T) {
 
 	updated, _ := m.killAllLive()
 	m = updated.(*Model)
-	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].ID != "w" {
-		t.Fatalf("filtered kill-all targets = %+v, want only the listed session", pendingConfirm(m).sessions)
+	if len(pendingConfirm(m).lifecycle.Sessions) != 1 || pendingConfirm(m).lifecycle.Sessions[0].ID != "w" {
+		t.Fatalf("filtered kill-all targets = %+v, want only the listed session", pendingConfirm(m).lifecycle.Sessions)
 	}
 	m.base = baseList
 	m.clearSurfaces()
@@ -674,7 +674,7 @@ func TestReviveAllLeavesSessionsTheFilterHides(t *testing.T) {
 	m.drainEffects(t)
 	m = updated.(*Model)
 	if confirmOpen(m) {
-		t.Fatalf("hidden sessions were counted: %q", pendingConfirm(m).label)
+		t.Fatalf("hidden sessions were counted: %q", pendingConfirm(m).prompt.Label)
 	}
 	if !m.services.tmux.Exists("shown") {
 		t.Fatalf("the listed dead session should revive at once, err = %q", m.errBar.text)
@@ -971,8 +971,8 @@ func TestGroupMenuReviveAsksLikeTheKey(t *testing.T) {
 	m = railMouseAtLine(t, m, paintedGroupLines(t, m, "work")[0], tea.MouseActionPress, tea.MouseButtonRight)
 	revive := menuEntry(t, m, "Revive")
 	m, _ = leftClickCmd(m, m.layout.displayedRail.MenuRect.Left+2, m.layout.displayedRail.MenuRect.Top+1+revive)
-	if !confirmOpen(m) || !pendingConfirm(m).isGroup {
-		t.Fatalf("Revive on a group with two dead sessions should open the group card, screen = %v isGroup = %v", m.screenID(), pendingConfirm(m).isGroup)
+	if !confirmOpen(m) || !pendingConfirm(m).prompt.Group {
+		t.Fatalf("Revive on a group with two dead sessions should open the group card, screen = %v isGroup = %v", m.screenID(), pendingConfirm(m).prompt.Group)
 	}
 	for _, sess := range m.workspace.sessions {
 		if m.services.tmux.Exists(sess.ID) {

@@ -10,42 +10,19 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
-	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 )
 
-// Selection names the rows a confirmation re-reads before acting, so a
-// selection that changed since the card opened fails instead of acting on a
-// set the user never saw.
-type Selection struct {
-	Kind         SelectionKind
-	RootID       string
-	ArchivedOnly bool
-}
-
-// SelectionKind is what a Selection names.
-type SelectionKind uint8
-
-const (
-	SelectNone SelectionKind = iota
-	SelectSession
-	SelectGroup
-)
-
-// Card is one confirmation as the root opens it.
+// Card is one confirmation as the root opens it: the lifecycle request it
+// runs once answered, and the sentence it asks with.
 type Card struct {
+	uilifecycle.Target
+	// Group words the card for a group; a group card names its Path.
 	Group bool
-	// ArchivedOnly marks a group delete issued from the archived view, which
-	// clears the group's archive instead of the group itself.
-	ArchivedOnly bool
-	Path         string
-	Label        string
-	Sessions     []store.Session
-	Action       uidialogs.ConfirmAction
-	Batch        bool
-	Selection    Selection
+	Label string
 }
 
 // Intent is what a key decided: the card to open, the batch to queue with no
@@ -176,22 +153,26 @@ func Archive(view View, row Row) Intent {
 	if row.Kind == GroupRow {
 		subtree := Subtree(view.Sessions(), row.Group)
 		return Intent{ClearsErr: true, Card: Card{
-			Group:     true,
-			Path:      row.Group,
-			Action:    uidialogs.ConfirmArchive,
-			Sessions:  subtree,
-			Label:     fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", row.Group, len(subtree)),
-			Selection: Selection{Kind: SelectGroup},
+			Group: true,
+			Label: fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", row.Group, len(subtree)),
+			Target: uilifecycle.Target{
+				Path:      row.Group,
+				Action:    uilifecycle.Archive,
+				Sessions:  subtree,
+				Selection: uilifecycle.Selection{Kind: uilifecycle.SelectGroup},
+			},
 		}}
 	}
 	sessions := Children(view.Sessions(), row.Sess)
 	return Intent{ClearsErr: true, Card: Card{
-		Action:   uidialogs.ConfirmArchive,
-		Sessions: sessions,
 		Label: uisession.FollowConfirmLabel("archive", row.Sess.Name, len(sessions)-1,
 			"frees its RAM, t to find it.",
 			"frees their RAM, t to find them."),
-		Selection: Selection{Kind: SelectSession, RootID: row.Sess.ID},
+		Target: uilifecycle.Target{
+			Action:    uilifecycle.Archive,
+			Sessions:  sessions,
+			Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID},
+		},
 	}}
 }
 
@@ -206,22 +187,26 @@ func Restore(view View, row Row) Intent {
 	if row.Kind == GroupRow {
 		archived := Archived(Subtree(view.Sessions(), row.Group))
 		return Intent{ClearsErr: true, Card: Card{
-			Group:     true,
-			Path:      row.Group,
-			Action:    uidialogs.ConfirmRestore,
-			Sessions:  archived,
-			Label:     fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", row.Group, len(archived)),
-			Selection: Selection{Kind: SelectGroup, ArchivedOnly: true},
+			Group: true,
+			Label: fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", row.Group, len(archived)),
+			Target: uilifecycle.Target{
+				Path:      row.Group,
+				Action:    uilifecycle.Restore,
+				Sessions:  archived,
+				Selection: uilifecycle.Selection{Kind: uilifecycle.SelectGroup, ArchivedOnly: true},
+			},
 		}}
 	}
 	sessions := Archived(Children(view.Sessions(), row.Sess))
 	return Intent{ClearsErr: true, Card: Card{
-		Action:   uidialogs.ConfirmRestore,
-		Sessions: sessions,
 		Label: uisession.FollowConfirmLabel("restore", row.Sess.Name, len(sessions)-1,
 			"brings it back.",
 			"brings them back."),
-		Selection: Selection{Kind: SelectSession, RootID: row.Sess.ID, ArchivedOnly: true},
+		Target: uilifecycle.Target{
+			Action:    uilifecycle.Restore,
+			Sessions:  sessions,
+			Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID, ArchivedOnly: true},
+		},
 	}}
 }
 
@@ -234,12 +219,14 @@ func Kill(view View, row Row) Intent {
 			return Intent{Notice: "no live sessions to kill in " + row.Group}
 		}
 		return Intent{Card: Card{
-			Group:    true,
-			Path:     row.Group,
-			Action:   uidialogs.ConfirmKill,
-			Sessions: live,
+			Group: true,
 			Label: fmt.Sprintf("kill group %s (%d live sessions)? frees their RAM, v revives them.",
 				row.Group, len(live)),
+			Target: uilifecycle.Target{
+				Path:     row.Group,
+				Action:   uilifecycle.Kill,
+				Sessions: live,
+			},
 		}}
 	}
 	sessions := Children(view.Sessions(), row.Sess)
@@ -254,12 +241,14 @@ func Kill(view View, row Row) Intent {
 		return Intent{Notice: row.Sess.Name + " is already dead"}
 	}
 	return Intent{Card: Card{
-		Action:   uidialogs.ConfirmKill,
-		Sessions: sessions,
 		Label: uisession.FollowConfirmLabel("kill", row.Sess.Name, len(sessions)-1,
 			"frees its RAM, v revives it.",
 			"frees their RAM, v revives them."),
-		Selection: Selection{Kind: SelectSession, RootID: row.Sess.ID},
+		Target: uilifecycle.Target{
+			Action:    uilifecycle.Kill,
+			Sessions:  sessions,
+			Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID},
+		},
 	}}
 }
 
@@ -270,9 +259,8 @@ func KillAll(view View) Intent {
 		return Intent{Notice: "no live sessions to kill"}
 	}
 	return Intent{Card: Card{
-		Action:   uidialogs.ConfirmKill,
-		Sessions: live,
-		Label:    fmt.Sprintf("kill every live session (%d)? frees their RAM, v revives them.", len(live)),
+		Label:  fmt.Sprintf("kill every live session (%d)? frees their RAM, v revives them.", len(live)),
+		Target: uilifecycle.Target{Action: uilifecycle.Kill, Sessions: live},
 	}}
 }
 
@@ -286,9 +274,8 @@ func Restart(view View, row Row) Intent {
 		label = fmt.Sprintf("restart %s with an empty context? ends the running agent and leaves its conversation behind.", row.Sess.Name)
 	}
 	return Intent{Card: Card{
-		Action:   uidialogs.ConfirmRestart,
-		Sessions: []store.Session{row.Sess},
-		Label:    label,
+		Label:  label,
+		Target: uilifecycle.Target{Action: uilifecycle.Restart, Sessions: []store.Session{row.Sess}},
 	}}
 }
 
@@ -299,13 +286,15 @@ func Revive(view View, row Row) Intent {
 		sessions := InGroup(view.Listed(), row.Group)
 		if dead := Dead(sessions); len(dead) > 1 {
 			return Intent{Card: Card{
-				Group:    true,
-				Path:     row.Group,
-				Action:   uidialogs.ConfirmRevive,
-				Batch:    true,
-				Sessions: dead,
+				Group: true,
 				Label: fmt.Sprintf("revive group %s (%d dead sessions)? brings them back.",
 					uiframe.DisplayGroup(row.Group), len(dead)),
+				Target: uilifecycle.Target{
+					Path:     row.Group,
+					Action:   uilifecycle.Revive,
+					Batch:    true,
+					Sessions: dead,
+				},
 			}}
 		}
 		return ReviveMany(sessions, "no dead sessions to revive in "+row.Group)
@@ -320,16 +309,20 @@ func Revive(view View, row Row) Intent {
 	}
 	if len(set) > 1 && dead {
 		return Intent{Card: Card{
-			Action:   uidialogs.ConfirmRevive,
-			Sessions: set,
 			Label: uisession.FollowConfirmLabel("revive", row.Sess.Name, len(set)-1,
 				"brings it back.",
 				"brings them back."),
-			Selection: Selection{Kind: SelectSession, RootID: row.Sess.ID},
+			Target: uilifecycle.Target{
+				Action:    uilifecycle.Revive,
+				Sessions:  set,
+				Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID},
+			},
 		}}
 	}
 	return Intent{Run: true, AllowLive: true,
-		Card: Card{Action: uidialogs.ConfirmRevive, Sessions: []store.Session{row.Sess}}}
+		Card: Card{
+			Target: uilifecycle.Target{Action: uilifecycle.Revive, Sessions: []store.Session{row.Sess}},
+		}}
 }
 
 // ReviveAll is what the revive-everything key asks for over the rows a view
@@ -337,10 +330,12 @@ func Revive(view View, row Row) Intent {
 func ReviveAll(listed []store.Session) Intent {
 	if dead := Dead(listed); len(dead) > 1 {
 		return Intent{Card: Card{
-			Action:   uidialogs.ConfirmRevive,
-			Batch:    true,
-			Sessions: dead,
-			Label:    fmt.Sprintf("revive every dead session (%d)? brings them back.", len(dead)),
+			Label: fmt.Sprintf("revive every dead session (%d)? brings them back.", len(dead)),
+			Target: uilifecycle.Target{
+				Action:   uilifecycle.Revive,
+				Batch:    true,
+				Sessions: dead,
+			},
 		}}
 	}
 	return ReviveMany(listed, "no dead sessions to revive")
@@ -349,7 +344,13 @@ func ReviveAll(listed []store.Session) Intent {
 // ReviveMany is the run with no card to open first.
 func ReviveMany(sessions []store.Session, emptyNotice string) Intent {
 	return Intent{Run: true, EmptyNotice: emptyNotice,
-		Card: Card{Action: uidialogs.ConfirmRevive, Batch: true, Sessions: Dead(sessions)}}
+		Card: Card{
+			Target: uilifecycle.Target{
+				Action:   uilifecycle.Revive,
+				Batch:    true,
+				Sessions: Dead(sessions),
+			},
+		}}
 }
 
 // Delete is what the delete key asks for: the row and the shells under it, or
@@ -364,8 +365,11 @@ func Delete(view View, row Row) Intent {
 			Label: uisession.FollowConfirmLabel("delete", row.Sess.Name, len(sessions)-1,
 				"kills its tmux session.",
 				"kills their tmux sessions."),
-			Sessions:  sessions,
-			Selection: Selection{Kind: SelectSession, RootID: row.Sess.ID},
+			Target: uilifecycle.Target{
+				Action:    uilifecycle.Remove,
+				Sessions:  sessions,
+				Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID},
+			},
 		}}
 	}
 	subtree := Subtree(view.Sessions(), row.Group)
@@ -394,12 +398,15 @@ func wholeGroupDelete(groups []string, path string, subtree []store.Session) Car
 		}
 	}
 	return Card{
-		Group:    true,
-		Path:     path,
-		Sessions: subtree,
+		Group: true,
 		Label: fmt.Sprintf("delete group %s (%d subgroups, %d sessions incl. archived)? kills their tmux sessions.",
 			path, subgroups, len(subtree)),
-		Selection: Selection{Kind: SelectGroup},
+		Target: uilifecycle.Target{
+			Action:    uilifecycle.Remove,
+			Path:      path,
+			Sessions:  subtree,
+			Selection: uilifecycle.Selection{Kind: uilifecycle.SelectGroup},
+		},
 	}
 }
 
@@ -410,12 +417,15 @@ func wholeGroupDelete(groups []string, path string, subtree []store.Session) Car
 func archivedGroupDelete(path string, subtree []store.Session) Card {
 	archived := Archived(subtree)
 	return Card{
-		Group:        true,
-		ArchivedOnly: true,
-		Path:         path,
-		Sessions:     archived,
+		Group: true,
 		Label: fmt.Sprintf("delete %s from the archive (%d archived sessions)? kills their tmux sessions, live ones stay.",
 			path, len(archived)),
-		Selection: Selection{Kind: SelectGroup, ArchivedOnly: true},
+		Target: uilifecycle.Target{
+			Action:       uilifecycle.Remove,
+			ArchivedOnly: true,
+			Path:         path,
+			Sessions:     archived,
+			Selection:    uilifecycle.Selection{Kind: uilifecycle.SelectGroup, ArchivedOnly: true},
+		},
 	}
 }

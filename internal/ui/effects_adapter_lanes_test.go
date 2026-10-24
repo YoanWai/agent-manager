@@ -100,7 +100,7 @@ func TestStopEffectsGivesUpOnStuckWork(t *testing.T) {
 func TestInputToAPaneWaitsForTheJobRestartingIt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmRestart, sessions: []store.Session{{ID: "s"}}}, false, "")
+	m.queueLifecycle(uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmRestart), Sessions: []store.Session{{ID: "s"}}}, false, "")
 	m.nextEffectCmd()
 	if m.effects.Main.Active == nil {
 		t.Fatal("restart did not start")
@@ -126,7 +126,7 @@ func TestAKillWaitsForTheInputInFlightToItsPane(t *testing.T) {
 	m := buildModel(t)
 	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Paste, Session: store.Session{ID: "s"}, Text: "typed"})
 	m.nextEffectCmd()
-	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmKill, sessions: []store.Session{{ID: "s"}}}, false, "")
+	m.queueLifecycle(uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill), Sessions: []store.Session{{ID: "s"}}}, false, "")
 	m.nextEffectCmd()
 	if m.effects.Main.Active != nil {
 		t.Fatal("kill started while its pane's paste was in flight")
@@ -142,7 +142,7 @@ func TestAKillWaitsForTheInputInFlightToItsPane(t *testing.T) {
 func TestQuitNamesTheWorkItWaitsFor(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.queueLifecycle(confirmTarget{action: uidialogs.ConfirmArchive, sessions: []store.Session{{ID: "s"}}}, false, "")
+	m.queueLifecycle(uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmArchive), Sessions: []store.Session{{ID: "s"}}}, false, "")
 	m.nextEffectCmd()
 	m.requestQuit()
 	if !strings.Contains(m.errBar.text, "finishing session archive") || !strings.Contains(m.errBar.text, "again") {

@@ -22,7 +22,7 @@ func TestConfirmDefersLifecycleAndKeepsCapturedTarget(t *testing.T) {
 	m.selectSessionRow(t, "alpha")
 	alpha := railSelectedSession(m)
 	m.archiveSelected()
-	held := pendingConfirm(m).sessions
+	held := pendingConfirm(m).lifecycle.Sessions
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	if !m.services.tmux.Exists(alpha.ID) {
 		t.Fatal("confirmation performed lifecycle effects before command execution")

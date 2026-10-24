@@ -143,7 +143,7 @@ func (m *Model) applyLifecycleEffect(request uilifecycle.Request, result uilifec
 		m.queueRail(m.rail.ForgetGroups(change.RemovedGroups).Mutations, 0, true)
 		m.pruneGroupsLocally(change.RemovedGroups)
 	}
-	restart := confirmAction(request.Target.Action) == uidialogs.ConfirmRestart
+	restart := request.Target.Action == uilifecycle.Restart
 	for _, each := range change.Launches {
 		m.markFreshPane(each.ID)
 		m.ledger.lifecycle.RecordLaunch(each.ID, time.Now())
@@ -353,83 +353,27 @@ func (m *Model) runSessionIntent(intent sessiondialogs.Intent) (tea.Model, tea.C
 		m.clearErr()
 	}
 	if intent.Run {
-		m.queueLifecycleCard(intent.Card, intent.AllowLive, intent.EmptyNotice)
+		m.queueLifecycle(intent.Card.Target, intent.AllowLive, intent.EmptyNotice)
 		return m, m.nextEffectCmd()
 	}
 	m.openConfirm(cardTarget(intent.Card))
 	return m, nil
 }
 
-// cardTarget is a decision's card as the confirmation's apply reads it.
+// cardTarget is a decision's card as the confirm card holds it. The card's
+// act is the lifecycle action under the same spelling.
 func cardTarget(card sessiondialogs.Card) confirmTarget {
 	return confirmTarget{
-		isGroup:      card.Group,
-		archivedOnly: card.ArchivedOnly,
-		path:         card.Path,
-		label:        card.Label,
-		sessions:     card.Sessions,
-		action:       card.Action,
-		batch:        card.Batch,
-		selection:    cardSelection(card.Selection),
+		prompt:    uidialogs.Confirm{Action: uidialogs.ConfirmAction(card.Action), Group: card.Group, Label: card.Label},
+		lifecycle: card.Target,
 	}
 }
 
-// packageTarget is a confirmation as the lifecycle package runs it.
-func packageTarget(target confirmTarget) uilifecycle.Target {
-	return uilifecycle.Target{
-		Action:       lifecycleAction(target.action),
-		Sessions:     target.sessions,
-		Path:         groupPath(target),
-		Batch:        target.batch,
-		ArchivedOnly: target.archivedOnly,
-		Selection:    packageSelection(target.selection),
-	}
-}
-
-// confirmAction is the package's action as the card spells it: the card names
-// delete with its zero value.
-func confirmAction(action uilifecycle.Action) uidialogs.ConfirmAction {
-	if action == uilifecycle.Remove {
-		return uidialogs.ConfirmDelete
-	}
-	return uidialogs.ConfirmAction(action)
-}
-
-func lifecycleAction(action uidialogs.ConfirmAction) uilifecycle.Action {
-	if action == uidialogs.ConfirmDelete {
-		return uilifecycle.Remove
-	}
-	return uilifecycle.Action(action)
-}
-
-func packageSelection(selection lifecycleSelection) uilifecycle.Selection {
-	return uilifecycle.Selection{Kind: uilifecycle.SelectionKind(selection.kind), RootID: selection.rootID, ArchivedOnly: selection.archivedOnly}
-}
-
-// queueLifecycle queues a confirmation as the lifecycle package runs it.
-func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice string) {
-	target.sessions = append([]store.Session(nil), target.sessions...)
+// queueLifecycle queues a lifecycle request on a copy of its rows.
+func (m *Model) queueLifecycle(target uilifecycle.Target, allowLive bool, emptyNotice string) {
+	target.Sessions = append([]store.Session(nil), target.Sessions...)
 	w, h := m.paneTargetSize()
-	m.enqueueEffect(uilifecycle.Request{Target: packageTarget(target), Pane: sessioncmd.PaneSize{Width: w, Height: h}, Watched: m.focus.runtime.Watching(), AllowLive: allowLive, EmptyNotice: emptyNotice}, 0, false)
-}
-
-func cardSelection(selection sessiondialogs.Selection) lifecycleSelection {
-	return lifecycleSelection{kind: lifecycleSelectionKind(selection.Kind), rootID: selection.RootID, archivedOnly: selection.ArchivedOnly}
-}
-
-func groupPath(confirm confirmTarget) string {
-	if confirm.isGroup {
-		return confirm.path
-	}
-	return ""
-}
-
-// queueLifecycleCard queues an action a decision returned.
-func (m *Model) queueLifecycleCard(card sessiondialogs.Card, allowLive bool, emptyNotice string) {
-	target := cardTarget(card)
-	target.sessions = append([]store.Session(nil), target.sessions...)
-	w, h := m.paneTargetSize()
-	m.enqueueEffect(uilifecycle.Request{Target: packageTarget(target), Pane: sessioncmd.PaneSize{Width: w, Height: h}, Watched: m.focus.runtime.Watching(), AllowLive: allowLive, EmptyNotice: emptyNotice}, 0, false)
+	m.enqueueEffect(uilifecycle.Request{Target: target, Pane: sessioncmd.PaneSize{Width: w, Height: h}, Watched: m.focus.runtime.Watching(), AllowLive: allowLive, EmptyNotice: emptyNotice}, 0, false)
 }
 
 // lifecycleServices is the effect services as a lifecycle run reaches them.

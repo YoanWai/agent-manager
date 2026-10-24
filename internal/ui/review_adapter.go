@@ -385,14 +385,6 @@ func (m *Model) loadCurrentDiffFile() tea.Cmd {
 	return m.reviewCommands(m.review.EnsureCurrentFile())
 }
 
-func (m *Model) ensureHighlight() tea.Cmd {
-	request, ok := m.review.EnsureHighlight()
-	if !ok {
-		return nil
-	}
-	return uireviewsource.HighlightCmd(request)
-}
-
 func (m *Model) handleReviewStatus(result uireview.StatusResult) tea.Cmd {
 	return m.applyReviewResult(m.review.ApplyStatus(result))
 }

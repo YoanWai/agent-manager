@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
 	"go/ast"
@@ -1843,7 +1844,7 @@ func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
 		{"messages", func(m *Model) { m.openNotices("") }},
 		{"settings", func(m *Model) { m.applyCmd(t, m.openSettings()) }},
 		{"confirm", func(m *Model) {
-			m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha? frees its RAM."})
+			m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmKill, Label: "kill alpha? frees its RAM."}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill)}})
 		}},
 		{"move", func(m *Model) { m.openMove() }},
 	} {
@@ -1988,7 +1989,7 @@ func TestACardClickRunsOnTheRelease(t *testing.T) {
 // is driven by the mouse on purpose.
 var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"dialogs.ConfirmSurface": func(t *testing.T, m *Model) {
-		m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha?"})
+		m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmKill, Label: "kill alpha?"}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill)}})
 	},
 	"dialogs.MoveSurface":   func(t *testing.T, m *Model) { m.openMove() },
 	"dialogs.RenameSurface": func(t *testing.T, m *Model) { m.openRename() },
@@ -2395,8 +2396,8 @@ func TestClickOnConfirmFootAnswers(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
-	m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha? frees its RAM."})
-	if m = clickLabel(t, m, "n/esc cancel"); !m.onList() || pendingConfirm(m).label != "" {
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmKill, Label: "kill alpha? frees its RAM."}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill)}})
+	if m = clickLabel(t, m, "n/esc cancel"); !m.onList() || pendingConfirm(m).prompt.Label != "" {
 		t.Fatalf("cancel in the foot should close the confirm, screen = %v target = %+v", m.screenID(), pendingConfirm(m))
 	}
 }

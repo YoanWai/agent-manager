@@ -332,8 +332,8 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	fake := &fakeSSH{}
 	m := connectedModel(t, fake)
 	_, cmd := m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s1")})
-	if !confirmOpen(m) || pendingConfirm(m).label != "kill api on box? frees its RAM there, v revives it." {
-		t.Fatalf("mode %v label %q, want the kill confirm", m.screenID(), pendingConfirm(m).label)
+	if !confirmOpen(m) || pendingConfirm(m).prompt.Label != "kill api on box? frees its RAM there, v revives it." {
+		t.Fatalf("mode %v label %q, want the kill confirm", m.screenID(), pendingConfirm(m).prompt.Label)
 	}
 	m.runRemoteCmd(t, m.answerRemote(t, fake, cmd, "n"))
 	if calls := fake.taken(); len(calls) != 0 || !m.onList() {
@@ -341,8 +341,8 @@ func TestRemoteLifecycleAsksFirstAndNoSendsNothing(t *testing.T) {
 	}
 	// A dead agent holds no RAM there to free.
 	m.runRailIntent(uirail.Intent{Kind: uirail.Kill, Target: boxSession("s2")})
-	if pendingConfirm(m).label != "kill old on box?" {
-		t.Fatalf("dead kill label %q", pendingConfirm(m).label)
+	if pendingConfirm(m).prompt.Label != "kill old on box?" {
+		t.Fatalf("dead kill label %q", pendingConfirm(m).prompt.Label)
 	}
 }
 
@@ -713,8 +713,8 @@ func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
 	}
 
 	_, cmd = m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}})
-	if cmd != nil || !confirmOpen(m) || pendingConfirm(m).label != "remove connection box? Its sessions keep running on the host." {
-		t.Fatalf("delete: mode %v label %q", m.screenID(), pendingConfirm(m).label)
+	if cmd != nil || !confirmOpen(m) || pendingConfirm(m).prompt.Label != "remove connection box? Its sessions keep running on the host." {
+		t.Fatalf("delete: mode %v label %q", m.screenID(), pendingConfirm(m).prompt.Label)
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.applyTestMsg(t, cmd())

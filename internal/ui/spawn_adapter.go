@@ -182,10 +182,6 @@ func (m *Model) viewForm() string {
 	return m.CardSized(m.cardWidth(), m.glyphs().NewSessionGlyph+" New Session", body, hint)
 }
 
-func (m *Model) rememberSpawnPick(tool string, worktree bool) {
-	m.ledger.spawner.RememberSpawn(tool, worktree)
-}
-
 func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case uilaunch.ProbeMsg:

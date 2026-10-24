@@ -106,19 +106,6 @@ type environment struct {
 	homeDir string
 }
 
-func NewWithInboxOwner(cfg config.Config, st *store.Store, driver *tmux.Driver, engine *status.Engine, hookManager *hooks.Manager, version string, owner sessioncmd.InboxMaintenance) (*Model, error) {
-	if owner == nil {
-		panic("inbox owner is required for explicit composition")
-	}
-	model, err := New(cfg, st, driver, engine, hookManager, version)
-	if err != nil {
-		return nil, err
-	}
-	model.poller.dependencies.Inbox = owner
-	model.poller.runner = execution.New(model.poller.dependencies, model.poller.options)
-	return model, nil
-}
-
 type Dependencies struct {
 	Config     config.Config
 	Store      *store.Store

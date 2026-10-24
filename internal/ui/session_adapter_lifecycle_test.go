@@ -34,8 +34,8 @@ func TestArchiveConfirmationUsesLoadedSessionTree(t *testing.T) {
 	}
 
 	m.archiveSelected()
-	if !confirmOpen(m) || len(pendingConfirm(m).sessions) != 1 {
-		t.Fatalf("archive confirmation depended on the closed store: screen = %v err=%q target=%+v", m.screenID(), m.errBar.text, pendingConfirm(m).sessions)
+	if !confirmOpen(m) || len(pendingConfirm(m).lifecycle.Sessions) != 1 {
+		t.Fatalf("archive confirmation depended on the closed store: screen = %v err=%q target=%+v", m.screenID(), m.errBar.text, pendingConfirm(m).lifecycle.Sessions)
 	}
 }
 
@@ -121,7 +121,7 @@ func TestRestoreSelectedNoopInActiveView(t *testing.T) {
 	m.selectGroupRow(t, "zone")
 	press("u")
 	if confirmOpen(m) {
-		t.Errorf("u on a group opened %q in the active view", pendingConfirm(m).label)
+		t.Errorf("u on a group opened %q in the active view", pendingConfirm(m).prompt.Label)
 	}
 	press("y")
 	if m.services.tmux.Exists(sleeper.ID) {
@@ -134,7 +134,7 @@ func TestRestoreSelectedNoopInActiveView(t *testing.T) {
 	m.selectSessionRow(t, "live")
 	press("u")
 	if confirmOpen(m) {
-		t.Fatalf("u on a session opened %q in the active view", pendingConfirm(m).label)
+		t.Fatalf("u on a session opened %q in the active view", pendingConfirm(m).prompt.Label)
 	}
 }
 
@@ -148,11 +148,11 @@ func TestRestoreGroupBringsBackOnlyItsArchivedSessions(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "zone")
 	m.restoreSelected()
-	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].ID != stash.ID {
-		t.Errorf("restore targets %d sessions, want stash alone", len(pendingConfirm(m).sessions))
+	if len(pendingConfirm(m).lifecycle.Sessions) != 1 || pendingConfirm(m).lifecycle.Sessions[0].ID != stash.ID {
+		t.Errorf("restore targets %d sessions, want stash alone", len(pendingConfirm(m).lifecycle.Sessions))
 	}
-	if want := "restore group zone (1 archived sessions)? brings them back."; pendingConfirm(m).label != want {
-		t.Errorf("label = %q, want %q", pendingConfirm(m).label, want)
+	if want := "restore group zone (1 archived sessions)? brings them back."; pendingConfirm(m).prompt.Label != want {
+		t.Errorf("label = %q, want %q", pendingConfirm(m).prompt.Label, want)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
@@ -568,8 +568,8 @@ func TestRestoreAgentBringsBackOnlyItsArchivedTerminals(t *testing.T) {
 
 	m.selectSessionRow(t, "coder")
 	m.restoreSelected()
-	if want := "restore coder? brings it back."; pendingConfirm(m).label != want {
-		t.Errorf("label = %q, want %q", pendingConfirm(m).label, want)
+	if want := "restore coder? brings it back."; pendingConfirm(m).prompt.Label != want {
+		t.Errorf("label = %q, want %q", pendingConfirm(m).prompt.Label, want)
 	}
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
@@ -714,7 +714,7 @@ func TestArchiveReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	loadStoredRows(t, m)
-	m.openConfirm(confirmTarget{action: uidialogs.ConfirmArchive, sessions: []store.Session{first, {ID: "beef", Status: status.Dead}}})
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmArchive}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmArchive), Sessions: []store.Session{first, {ID: "beef", Status: status.Dead}}}})
 	if err := m.archiveConfirmed(); err == nil {
 		t.Fatal("expected missing second row failure")
 	}
@@ -738,7 +738,7 @@ func TestRestoreReconcilesDurableRowsBeforeLaterFailure(t *testing.T) {
 		}
 	}
 	loadStoredRows(t, m)
-	m.openConfirm(confirmTarget{action: uidialogs.ConfirmRestore, sessions: []store.Session{first, second}})
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmRestore}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmRestore), Sessions: []store.Session{first, second}}})
 	err := m.restoreConfirmed()
 	if err == nil {
 		t.Fatal("expected second revive failure")
@@ -787,7 +787,7 @@ func TestFailedGroupRestoreDoesNotClearMembership(t *testing.T) {
 		t.Fatal(err)
 	}
 	loadStoredRows(t, m)
-	m.openConfirm(confirmTarget{action: uidialogs.ConfirmRestore, isGroup: true, path: "zone", sessions: []store.Session{sess}})
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmRestore, Group: true}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmRestore), Path: "zone", Sessions: []store.Session{sess}}})
 	if err := m.restoreConfirmed(); err == nil {
 		t.Fatal("expected group write failure")
 	}
@@ -827,11 +827,11 @@ func TestDeleteGroupSubtree(t *testing.T) {
 		}
 	}
 	m.prepareDelete()
-	if !pendingConfirm(m).isGroup || len(pendingConfirm(m).sessions) != 2 {
+	if !pendingConfirm(m).prompt.Group || len(pendingConfirm(m).lifecycle.Sessions) != 2 {
 		t.Fatalf("confirm should target 2 subtree sessions (incl. archived), got %+v", pendingConfirm(m))
 	}
 	tmuxIDs := make([]string, 0, 2)
-	for _, s := range pendingConfirm(m).sessions {
+	for _, s := range pendingConfirm(m).lifecycle.Sessions {
 		tmuxIDs = append(tmuxIDs, s.ID)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
@@ -881,10 +881,10 @@ func TestDeleteGroupInArchivedViewSparesLiveSessions(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "bugs")
 	m.prepareDelete()
-	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].Name != "old" {
-		t.Fatalf("confirm should target only the archived session, got %+v", pendingConfirm(m).sessions)
+	if len(pendingConfirm(m).lifecycle.Sessions) != 1 || pendingConfirm(m).lifecycle.Sessions[0].Name != "old" {
+		t.Fatalf("confirm should target only the archived session, got %+v", pendingConfirm(m).lifecycle.Sessions)
 	}
-	archivedID := pendingConfirm(m).sessions[0].ID
+	archivedID := pendingConfirm(m).lifecycle.Sessions[0].ID
 	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
@@ -1065,7 +1065,7 @@ func TestDeleteAgentIncludesChildren(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	m.prepareDelete()
 	ids := map[string]bool{}
-	for _, sess := range pendingConfirm(m).sessions {
+	for _, sess := range pendingConfirm(m).lifecycle.Sessions {
 		ids[sess.ID] = true
 	}
 	if !ids[shell.ID] {
@@ -1261,11 +1261,11 @@ func TestKillAgentIncludesChildren(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	_, cmd := m.killSelected()
 	m.applyCmd(t, cmd)
-	if !strings.Contains(pendingConfirm(m).label, "terminal") {
-		t.Fatalf("confirm should name terminals: %q", pendingConfirm(m).label)
+	if !strings.Contains(pendingConfirm(m).prompt.Label, "terminal") {
+		t.Fatalf("confirm should name terminals: %q", pendingConfirm(m).prompt.Label)
 	}
 	ids := map[string]bool{}
-	for _, sess := range pendingConfirm(m).sessions {
+	for _, sess := range pendingConfirm(m).lifecycle.Sessions {
 		ids[sess.ID] = true
 	}
 	if !ids[shell.ID] {
@@ -1286,8 +1286,8 @@ func TestKillChildIsSingleSession(t *testing.T) {
 	shell := spawnTerminal(t, m)
 	m.selectSessionRow(t, shell.Name)
 	m.killSelected()
-	if len(pendingConfirm(m).sessions) != 1 || pendingConfirm(m).sessions[0].ID != shell.ID {
-		t.Fatalf("child kill = %+v", pendingConfirm(m).sessions)
+	if len(pendingConfirm(m).lifecycle.Sessions) != 1 || pendingConfirm(m).lifecycle.Sessions[0].ID != shell.ID {
+		t.Fatalf("child kill = %+v", pendingConfirm(m).lifecycle.Sessions)
 	}
 }
 
@@ -1336,8 +1336,8 @@ func TestKillAgentConfirmNamesExtraTerminals(t *testing.T) {
 	m.selectSessionRow(t, "coder")
 	m.killSelected()
 	want := "kill coder and 2 terminals? frees their RAM, v revives them."
-	if pendingConfirm(m).label != want {
-		t.Fatalf("label = %q, want %q", pendingConfirm(m).label, want)
+	if pendingConfirm(m).prompt.Label != want {
+		t.Fatalf("label = %q, want %q", pendingConfirm(m).prompt.Label, want)
 	}
 }
 
@@ -1490,8 +1490,8 @@ func TestRestartEndsALiveAgentFirst(t *testing.T) {
 	if _, _ = m.restartSelected(); !confirmOpen(m) {
 		t.Fatalf("restart should ask first, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
-	if !strings.Contains(pendingConfirm(m).label, "ends the running agent") {
-		t.Fatalf("confirm label = %q", pendingConfirm(m).label)
+	if !strings.Contains(pendingConfirm(m).prompt.Label, "ends the running agent") {
+		t.Fatalf("confirm label = %q", pendingConfirm(m).prompt.Label)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
@@ -1539,8 +1539,8 @@ func TestRestartAgentStaysSingleSession(t *testing.T) {
 	spawnTerminal(t, m)
 	m.selectSessionRow(t, "coder")
 	m.restartSelected()
-	if len(pendingConfirm(m).sessions) != 1 {
-		t.Fatalf("restart confirm = %+v", pendingConfirm(m).sessions)
+	if len(pendingConfirm(m).lifecycle.Sessions) != 1 {
+		t.Fatalf("restart confirm = %+v", pendingConfirm(m).lifecycle.Sessions)
 	}
 }
 
@@ -1717,11 +1717,11 @@ func TestReviveAllRecreatesEveryDeadSession(t *testing.T) {
 	if _, _ = m.reviveAllDead(); !confirmOpen(m) {
 		t.Fatalf("reviving two dead sessions should ask first, screen = %v err = %q", m.screenID(), m.errBar.text)
 	}
-	if want := "revive every dead session (2)? brings them back."; pendingConfirm(m).label != want {
-		t.Fatalf("label = %q, want %q", pendingConfirm(m).label, want)
+	if want := "revive every dead session (2)? brings them back."; pendingConfirm(m).prompt.Label != want {
+		t.Fatalf("label = %q, want %q", pendingConfirm(m).prompt.Label, want)
 	}
-	if len(pendingConfirm(m).sessions) != 2 {
-		t.Fatalf("confirm targets = %+v, want the two dead sessions", pendingConfirm(m).sessions)
+	if len(pendingConfirm(m).lifecycle.Sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", pendingConfirm(m).lifecycle.Sessions)
 	}
 	_, cmd := m.Update(namedKey(tea.KeyEnter))
 	m.drainEffects(t)
@@ -1801,11 +1801,11 @@ func TestReviveGroupBringsBackEverySessionInside(t *testing.T) {
 	if title := mustTop(t, m).(*uidialogs.ConfirmSurface).Prompt().Title(m.prefs.glyphMode); title != "◆ Revive group" {
 		t.Fatalf("title = %q, want ◆ Revive group", title)
 	}
-	if want := "revive group work (2 dead sessions)? brings them back."; pendingConfirm(m).label != want {
-		t.Fatalf("label = %q, want %q", pendingConfirm(m).label, want)
+	if want := "revive group work (2 dead sessions)? brings them back."; pendingConfirm(m).prompt.Label != want {
+		t.Fatalf("label = %q, want %q", pendingConfirm(m).prompt.Label, want)
 	}
-	if len(pendingConfirm(m).sessions) != 2 {
-		t.Fatalf("confirm targets = %+v, want the two dead sessions", pendingConfirm(m).sessions)
+	if len(pendingConfirm(m).lifecycle.Sessions) != 2 {
+		t.Fatalf("confirm targets = %+v, want the two dead sessions", pendingConfirm(m).lifecycle.Sessions)
 	}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
@@ -2014,7 +2014,7 @@ func TestReviveAgentIncludesDeadChildren(t *testing.T) {
 	m.reviveSelected()
 	m.drainEffects(t)
 	ids := map[string]bool{}
-	for _, sess := range pendingConfirm(m).sessions {
+	for _, sess := range pendingConfirm(m).lifecycle.Sessions {
 		ids[sess.ID] = true
 	}
 	if !ids[shell.ID] {

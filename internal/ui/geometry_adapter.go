@@ -35,8 +35,6 @@ func (m *Model) listChromeRows() int { return m.geometryLayout().ChromeRows() }
 
 func (m *Model) listBodyHeight() int { return m.geometryLayout().BodyHeight() }
 
-func (m *Model) restingBodyHeight() int { return m.geometryLayout().RestingBodyHeight() }
-
 func (m *Model) previewPaneHeight() int {
 	return m.geometryLayout().PreviewHeight(m.layout.split.ratio)
 }

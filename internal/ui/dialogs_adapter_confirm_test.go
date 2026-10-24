@@ -46,7 +46,7 @@ func TestConfirmKeyIgnoresUnboundKeys(t *testing.T) {
 			if !confirmOpen(m) {
 				t.Fatalf("screen = %v, want the card to stay up", m.screenID())
 			}
-			if pendingConfirm(m).action != before.action || len(pendingConfirm(m).sessions) != len(before.sessions) {
+			if pendingConfirm(m).prompt.Action != before.prompt.Action || len(pendingConfirm(m).lifecycle.Sessions) != len(before.lifecycle.Sessions) {
 				t.Fatalf("confirm = %+v, want it untouched (%+v)", pendingConfirm(m), before)
 			}
 			if !m.services.tmux.Exists(sess.ID) {
@@ -116,11 +116,7 @@ func TestConfirmKeyCtrlCQuits(t *testing.T) {
 func TestConfirmRendersAsADialog(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.openConfirm(confirmTarget{
-		action:   uidialogs.ConfirmKill,
-		sessions: []store.Session{{ID: "one", Name: "builder"}},
-		label:    "kill builder? frees its RAM, v revives it.",
-	})
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmKill, Label: "kill builder? frees its RAM, v revives it."}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill), Sessions: []store.Session{{ID: "one", Name: "builder"}}}})
 
 	out := ansi.Strip(preparedView(m))
 	for _, want := range []string{"Kill session", "kill builder?", "frees its RAM", "cancel"} {
@@ -192,7 +188,7 @@ func openKillConfirm(t *testing.T) *Model {
 	m.layout.width, m.layout.height = 120, 34
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
-	m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha? frees its RAM."})
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmKill, Label: "kill alpha? frees its RAM."}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill)}})
 	return m
 }
 
@@ -218,7 +214,7 @@ func TestConfirmAcceptPopsOnceAndRunsTheRequest(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
 	sess := railSelectedSession(m)
-	m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, sessions: []store.Session{sess}, label: "kill alpha?"})
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmKill, Label: "kill alpha?"}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill), Sessions: []store.Session{sess}}})
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if confirmOpen(m) || len(m.surfaces) != 0 {
 		t.Fatalf("surfaces = %d, want the card gone", len(m.surfaces))

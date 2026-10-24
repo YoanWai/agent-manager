@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -48,7 +49,7 @@ func TestCtrlCOnEveryBase(t *testing.T) {
 func TestCtrlCQuitsThroughEveryCardOverTheList(t *testing.T) {
 	for name, open := range map[string]func(t *testing.T, m *Model){
 		"confirm": func(t *testing.T, m *Model) {
-			m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha?"})
+			m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmKill, Label: "kill alpha?"}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmKill)}})
 		},
 		"move":   func(t *testing.T, m *Model) { m.openMove() },
 		"rename": func(t *testing.T, m *Model) { m.openRename() },

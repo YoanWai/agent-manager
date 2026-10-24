@@ -1,7 +1,6 @@
 package theme
 
 import (
-	"strings"
 	"sync/atomic"
 
 	"github.com/charmbracelet/lipgloss"
@@ -127,17 +126,13 @@ func newThemeStyles(t Theme) *themeStyles {
 func Current() Theme { return activeStyles.Load().theme }
 
 func ColorBg() lipgloss.Color       { return lipgloss.Color(Current().Bg) }
-func ColorSurface() lipgloss.Color  { return lipgloss.Color(Current().Surface) }
 func ColorOverlay() lipgloss.Color  { return lipgloss.Color(Current().Overlay) }
 func ColorBorder() lipgloss.Color   { return lipgloss.Color(Current().Border) }
 func ColorBright() lipgloss.Color   { return lipgloss.Color(Current().Bright) }
-func ColorText() lipgloss.Color     { return lipgloss.Color(Current().Text) }
-func ColorDim() lipgloss.Color      { return lipgloss.Color(Current().Dim) }
 func ColorSubtle() lipgloss.Color   { return lipgloss.Color(Current().Subtle) }
 func ColorAccent() lipgloss.Color   { return lipgloss.Color(Current().Accent) }
 func ColorAccent2() lipgloss.Color  { return lipgloss.Color(Current().Accent2) }
 func ColorRemote() lipgloss.Color   { return lipgloss.Color(Current().Remote) }
-func ColorSelBg() lipgloss.Color    { return ColorSurface() }
 func ColorWorking() lipgloss.Color  { return lipgloss.Color(Current().Working) }
 func ColorWaiting() lipgloss.Color  { return lipgloss.Color(Current().Waiting) }
 func ColorFinished() lipgloss.Color { return lipgloss.Color(Current().Finished) }
@@ -155,8 +150,6 @@ func DoneStyle() lipgloss.Style             { return activeStyles.Load().done }
 func WarnStyle() lipgloss.Style             { return activeStyles.Load().warn }
 func KeyStyle() lipgloss.Style              { return activeStyles.Load().key }
 func AnnotationStyle() lipgloss.Style       { return activeStyles.Load().annotation }
-func ScopeBadgeStyle() lipgloss.Style       { return activeStyles.Load().scopeBadge }
-func FocusBadgeStyle() lipgloss.Style       { return activeStyles.Load().focusBadge }
 func InboxBadgeStyle() lipgloss.Style       { return activeStyles.Load().inboxBadge }
 func SearchMatchStyle() lipgloss.Style      { return activeStyles.Load().searchMatch }
 func FocusEdgeStyle() lipgloss.Style        { return activeStyles.Load().focusEdge }
@@ -169,17 +162,6 @@ func LegendAlertStyle() lipgloss.Style      { return activeStyles.Load().legendA
 func LegendLabelStyle() lipgloss.Style      { return activeStyles.Load().legendLabel }
 func LegendLeadKey() lipgloss.Style         { return activeStyles.Load().leadKey }
 func LegendLeadLabel() lipgloss.Style       { return activeStyles.Load().leadLabel }
-
-// RenderSelectedRow wraps a pre-styled line with the selected row's
-// background and foreground. Internal SGR resets emitted by per-segment
-// lipgloss.Render calls (and padRight in the root) would otherwise clear the
-// outer background after the first segment, leaving only the bar glyph
-// tinted. Re-applying the selected bg+fg after every reset keeps the row
-// tinted end-to-end.
-func RenderSelectedRow(s string) string {
-	reapply := "\x1b[0m" + BgSeq(Current().Surface) + FgSeq(Current().Bright)
-	return SelectedRowStyle().Render(strings.ReplaceAll(s, "\x1b[0m", reapply))
-}
 
 // The accent lift separates reviewer notes from the diff itself. Resolve it
 // per call so live theme and color-profile changes take effect immediately.

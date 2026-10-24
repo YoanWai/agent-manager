@@ -9,6 +9,7 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -20,34 +21,16 @@ import (
 // The hosts here answer what their surface asks and run the request it holds;
 // the adapter beside this file seeds them from the workspace and routes.
 
+// confirmTarget is what a confirm card holds: the question it asks and the
+// request a yes runs, which is a lifecycle request unless a connection or a
+// remote call is named.
 type confirmTarget struct {
-	isGroup bool
-	// archivedOnly marks a group delete issued from the archived view,
-	// which clears the group's archive instead of the group itself.
-	archivedOnly bool
-	path         string
-	label        string
-	sessions     []store.Session
-	action       uidialogs.ConfirmAction
-	batch        bool
-	selection    lifecycleSelection
-	connection   string
+	prompt    uidialogs.Confirm
+	lifecycle uilifecycle.Target
+	// connection is the SSH connection a yes removes.
+	connection string
 	// remote is a call on an SSH row, run on the host once confirmed.
 	remote *uilink.Call
-}
-
-type lifecycleSelectionKind uint8
-
-const (
-	lifecycleSelectionNone lifecycleSelectionKind = iota
-	lifecycleSelectionSession
-	lifecycleSelectionGroup
-)
-
-type lifecycleSelection struct {
-	kind         lifecycleSelectionKind
-	rootID       string
-	archivedOnly bool
 }
 
 // confirmRoot is the root as the confirm card reaches it, holding the
@@ -65,7 +48,7 @@ func (r confirmRoot) Paint(title, question, consequence string, destructive bool
 // opener passed cannot retarget it.
 func (r confirmRoot) Run() tea.Cmd {
 	target := r.target
-	target.sessions = append(target.sessions[:0:0], target.sessions...)
+	target.lifecycle.Sessions = append(target.lifecycle.Sessions[:0:0], target.lifecycle.Sessions...)
 	return r.runConfirmed(target)
 }
 
@@ -186,7 +169,7 @@ func (m *Model) runConfirmed(target confirmTarget) tea.Cmd {
 	case target.connection != "":
 		m.removeConnection(target.connection)
 	default:
-		m.queueLifecycle(target, false, "")
+		m.queueLifecycle(target.lifecycle, false, "")
 	}
 	return m.nextEffectCmd()
 }

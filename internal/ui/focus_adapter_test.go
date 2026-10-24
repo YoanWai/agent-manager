@@ -7,6 +7,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"os"
@@ -291,7 +292,7 @@ func TestFailedChildDeleteRestoresSurvivingParentWatcher(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(path, "block"), []byte("x"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	m.openConfirm(confirmTarget{sessions: []store.Session{parent, child}, action: uidialogs.ConfirmDelete})
+	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmDelete}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmDelete), Sessions: []store.Session{parent, child}}})
 	if _, err := m.deleteConfirmed(); err == nil {
 		t.Fatal("expected child cleanup failure")
 	}
