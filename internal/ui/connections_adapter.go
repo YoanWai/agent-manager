@@ -80,8 +80,8 @@ func (r linkRoot) ReportDone(text string) { r.reportDone(text) }
 // routeConnectionMsg hands a routed connection result to the package, and
 // the card's own answer to this machine.
 func (m *Model) routeConnectionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	if msg, ok := msg.(connectionDialogMsg); ok {
-		return routed(m, m.handleConnectionDialog(msg))
+	if save, ok := uilink.Route(msg); ok {
+		return routed(m, m.handleConnectionDialog(save))
 	}
 	if cmd, ok := m.ssh.Route(linkRoot{m}, msg); ok {
 		return routed(m, cmd)
@@ -91,12 +91,12 @@ func (m *Model) routeConnectionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 // handleConnectionDialog runs what the card asked: a cancel clears the
 // status line it leaves, a save queues the store write.
-func (m *Model) handleConnectionDialog(msg connectionDialogMsg) tea.Cmd {
+func (m *Model) handleConnectionDialog(save *uilink.SaveRequest) tea.Cmd {
 	m.clearErr()
-	if msg.save == nil {
+	if save == nil {
 		return nil
 	}
-	m.enqueueEffect(*msg.save, 0, false)
+	m.enqueueEffect(*save, 0, false)
 	return m.nextEffectCmd()
 }
 
@@ -221,4 +221,16 @@ func countNoun(n int, noun string) string {
 		return "1 " + noun
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// applyConnectionSave hands a finished save to the runtime, which adopts the
+// list the store returned or leaves the card open with the reason.
+func (m *Model) applyConnectionSave(request uilink.SaveRequest, result uilink.SaveResult, err error) tea.Cmd {
+	return m.ssh.ApplySave(linkRoot{m}, request, result.Connections, err)
+}
+
+// applyRemoteCall hands what a call left to the runtime, which reports it and
+// picks the host up again.
+func (m *Model) applyRemoteCall(request uilink.Call, result uilink.Result, err error) tea.Cmd {
+	return m.ssh.ApplyCall(linkRoot{m}, request, result, err)
 }

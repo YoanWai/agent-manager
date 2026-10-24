@@ -2,14 +2,15 @@ package ui
 
 import (
 	"errors"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
@@ -834,9 +835,939 @@ func TestStaleRenameCompletionIsDropped(t *testing.T) {
 	m.Pop()
 	m.openRename()
 	m.gens.dialog++
-	job := &uieffects.Job{Request: renameRequest{Request: uiapply.Request{Kind: uiapply.Session, SessID: openRename(m).SessionID(), Name: name, Gen: gen}}}
-	m.applyRenameEffect(job, renameEffectResult{}, nil)
+	job := &uieffects.Job{Request: uiapply.RenameEffect{Request: uiapply.Request{Kind: uiapply.Session, SessID: openRename(m).SessionID(), Name: name, Gen: gen}}}
+	m.applyRenameOutcome(job, uiapply.RenameEffectResult{}, nil)
 	if !renameOpen(m) {
 		t.Fatal("a completion from an older rename closed the newer one")
+	}
+}
+
+var errRenameStageTwo = errors.New("second stage failed")
+
+func TestRenameDefersGroupPersistence(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("old/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "kid", dir, "old/inner")
+
+	for i, r := range railRows(m) {
+		if r.isGroup && r.group == "old" {
+			setRailCursor(m, i)
+		}
+	}
+	m.openRename()
+	if !openRename(m).IsGroup() || openRename(m).Path() != "old" {
+		t.Fatalf("rename target wrong: %+v", openRename(m))
+	}
+	openRename(m).SetName("fresh")
+	openRename(m).SetDir(dir)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("group rename dispatch returned no command")
+	}
+	groups, _ := m.services.store.Groups()
+	for _, g := range groups {
+		if g.Name == "fresh" || g.Name == "fresh/inner" {
+			t.Fatalf("group rename persisted on the update path: %v", groups)
+		}
+	}
+	if !renameOpen(m) {
+		t.Fatalf("dialog should stay open until completion, screen = %v", m.screenID())
+	}
+	m.applyCmd(t, cmd)
+	kid := m.sessionRows()
+	if len(kid) != 1 || kid[0].Group != "fresh/inner" {
+		t.Fatalf("cascade failed: %+v", kid)
+	}
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
+	}
+	if m.workspace.groupPaths["fresh"] != dir {
+		t.Fatalf("default dir not mirrored: %v", m.workspace.groupPaths)
+	}
+}
+
+func TestRenameDefersSessionPersistence(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "before", t.TempDir(), "")
+	m.selectSessionRow(t, "before")
+	m.openRename()
+	openRename(m).SetName("after")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("session rename dispatch returned no command")
+	}
+	if names := sessionNames(m); len(names) != 1 || names[0] != "before" {
+		t.Fatalf("row renamed on the update path: %v", names)
+	}
+	m.applyCmd(t, cmd)
+	if names := sessionNames(m); len(names) != 1 || names[0] != "after" {
+		t.Fatalf("row not renamed on completion: %v", names)
+	}
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
+	}
+}
+
+func TestRenameShellChildCheckRunsInWorker(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "coder", dir, "")
+	m.selectSessionRow(t, "coder")
+	spawnTerminal(t, m)
+	m.selectSessionRow(t, "coder")
+	m.openRename()
+	openRename(m).SetName("renamed")
+	for range openRename(m).Tools() {
+		if openRename(m).Tool() == "terminal" {
+			break
+		}
+		m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	_, cmd := m.applyRename()
+	if cmd == nil {
+		t.Fatal("rename did not return the queued worker command")
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("child store read ran on the update path: %q", m.errBar.text)
+	}
+	m.applyCmd(t, cmd)
+	if m.errBar.text != "move its terminals first" {
+		t.Fatalf("worker child precondition = %q", m.errBar.text)
+	}
+	stored, err := m.services.store.Get(openRename(m).SessionID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "coder" || m.isShell(stored.Tool) {
+		t.Fatalf("failed precondition mutated the session: %+v", stored)
+	}
+}
+
+func TestRenameGroupDirectoryCheckRunsBeforeMutation(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("old", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "old")
+	m.openRename()
+	openRename(m).SetName("new")
+	openRename(m).SetDir("/definitely/missing/agent-manager")
+	_, cmd := m.applyRename()
+	groups, _ := m.services.store.Groups()
+	if len(groups) != 1 || groups[0].Name != "old" {
+		t.Fatalf("rename mutated before directory preflight: %+v", groups)
+	}
+	m.applyCmd(t, cmd)
+	groups, _ = m.services.store.Groups()
+	if len(groups) != 1 || groups[0].Name != "old" {
+		t.Fatalf("failed directory preflight mutated group: %+v", groups)
+	}
+	if !strings.Contains(m.errBar.text, "default path does not exist") {
+		t.Fatalf("directory preflight error = %q", m.errBar.text)
+	}
+}
+
+func TestRenameKeepsCapturedRowIdentity(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "captured", t.TempDir(), "")
+	m.selectSessionRow(t, "captured")
+	m.openRename()
+	openRename(m).SetName("saved")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	for i := range m.workspace.sessions {
+		m.workspace.sessions[i].Name = "mutated"
+	}
+	m.applyCmd(t, cmd)
+	if names := sessionNames(m); len(names) != 1 || names[0] != "saved" {
+		t.Fatalf("completion used the live row, want the captured one: %v", names)
+	}
+}
+
+func TestRenameChainedWhileQueuedActsOnThePreviousResult(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	repo := seedRepo(t)
+	spawned := createWorktreeSession(t, m, "alpha", repo)
+
+	m.selectSessionRow(t, "alpha")
+	m.openRename()
+	openRename(m).SetName("beta")
+	_, first := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	openRename(m).SetName("gamma")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, first)
+	if m.errBar.text != "" {
+		t.Fatalf("rename reported: %s", m.errBar.text)
+	}
+
+	stored, err := m.services.store.Get(spawned.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "gamma" || stored.WorktreeBranch != "am/gamma" {
+		t.Fatalf("stored name/branch = %q/%q, want gamma/am/gamma", stored.Name, stored.WorktreeBranch)
+	}
+	if row := m.sessionRows()[0]; row.Name != "gamma" || row.WorktreeBranch != "am/gamma" {
+		t.Fatalf("row name/branch = %q/%q, want gamma/am/gamma", row.Name, row.WorktreeBranch)
+	}
+	head, err := exec.Command("git", "-C", spawned.Cwd, "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil || strings.TrimSpace(string(head)) != "am/gamma" {
+		t.Fatalf("worktree HEAD = %q err=%v", strings.TrimSpace(string(head)), err)
+	}
+}
+
+func TestRenameFollowsARelaunchButRefusesAReplacedRow(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "before", t.TempDir(), "")
+	m.selectSessionRow(t, "before")
+	m.openRename()
+	openRename(m).SetName("after")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	id := openRename(m).SessionID()
+	if err := m.services.store.SetAgentLaunchedAt(id, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	if stored, err := m.services.store.Get(id); err != nil || stored.Name != "after" {
+		t.Fatalf("relaunched session not renamed: %q, %v", stored.Name, err)
+	}
+	m.selectSessionRow(t, "after")
+	m.openRename()
+	openRename(m).SetName("replaced")
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if err := m.services.store.SetTmuxSocket(id, "elsewhere"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	if !strings.Contains(m.errBar.text, "was replaced") {
+		t.Fatalf("replaced target error = %q", m.errBar.text)
+	}
+	if stored, err := m.services.store.Get(id); err != nil || stored.Name != "after" {
+		t.Fatalf("replaced target renamed to %q, %v", stored.Name, err)
+	}
+}
+
+func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("old/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "kid", dir, "old/inner")
+
+	request := uiapply.RenameEffect{Request: uiapply.Request{
+		Kind:     uiapply.Group,
+		OldGroup: "old",
+		NewGroup: "fresh",
+		Dir:      dir,
+		Name:     "fresh",
+		Gen:      7,
+	}}
+	job := &uieffects.Job{Request: request}
+	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("old", "", 0), ""))
+	m.gens.dialog = 7
+	m.applyRenameOutcome(job, uiapply.RenameEffectResult{Outcome: uiapply.Outcome{GroupRenamed: true}}, errRenameStageTwo)
+
+	groups, _ := m.services.store.Groups()
+	for _, g := range groups {
+		if g.Name == "old" {
+			t.Fatalf("committed rename lost: %v", groups)
+		}
+	}
+	kid := m.sessionRows()
+	if len(kid) != 1 || kid[0].Group != "fresh/inner" {
+		t.Fatalf("committed rename not mirrored locally: %+v", kid)
+	}
+	if m.workspace.groupPaths["fresh"] != "" {
+		t.Fatalf("uncommitted default dir mirrored: %v", m.workspace.groupPaths)
+	}
+	if !renameOpen(m) {
+		t.Fatalf("dialog should stay open on failure, screen = %v", m.screenID())
+	}
+	if m.errBar.text != "second stage failed" {
+		t.Fatalf("errBar=%q", m.errBar.text)
+	}
+	var renderedFresh bool
+	for _, r := range railRows(m) {
+		if r.isGroup && r.group == "fresh" {
+			renderedFresh = true
+		}
+	}
+	if !renderedFresh {
+		t.Fatal("committed rename not rendered before the error")
+	}
+}
+
+func TestRenameCompletionDoesNotReplaceNewerDialog(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	for _, name := range []string{"one", "two"} {
+		if err := m.services.store.CreateGroup(name, ""); err != nil {
+			t.Fatalf("create group: %v", err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.selectGroupRow(t, "one")
+	m.openRename()
+	openRename(m).SetName("one-renamed")
+	_, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd1 == nil {
+		t.Fatal("first rename dispatch returned no command")
+	}
+	m.selectGroupRow(t, "two")
+	m.openRename()
+	openRename(m).SetName("two-renamed")
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	updated, _ := m.Update(cmd1())
+	*m = *updated.(*Model)
+	if !renameOpen(m) || openRename(m).Path() != "two" {
+		t.Fatalf("older completion replaced the newer dialog: screen = %v path=%q", m.screenID(), openRename(m).Path())
+	}
+	m.drainEffects(t)
+	groups, _ := m.services.store.Groups()
+	renamed := map[string]bool{}
+	for _, g := range groups {
+		renamed[g.Name] = true
+	}
+	if !renamed["one-renamed"] || !renamed["two-renamed"] {
+		t.Fatalf("expected both renames committed: %v", groups)
+	}
+	if !m.onList() {
+		t.Fatalf("dialog should close on the matching completion, screen = %v", m.screenID())
+	}
+}
+
+func TestRenameCommandExecutesOnceAndCompletionIsIdempotent(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "once", t.TempDir(), "")
+	m.selectSessionRow(t, "once")
+	m.openRename()
+	openRename(m).SetName("twice")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	first := cmd()
+	second := cmd()
+	firstMsg, ok := first.(uieffects.Completed)
+	if !ok {
+		t.Fatalf("first run returned %+v", first)
+	}
+	secondMsg, ok := second.(uieffects.Completed)
+	if !ok {
+		t.Fatalf("second run returned %+v", second)
+	}
+	if firstMsg.ID != secondMsg.ID {
+		t.Fatal("second run produced a different completion")
+	}
+	updated, _ := m.Update(first)
+	*m = *updated.(*Model)
+	updated, _ = m.Update(second)
+	*m = *updated.(*Model)
+	if names := sessionNames(m); len(names) != 1 || names[0] != "twice" {
+		t.Fatalf("completion applied twice: %v", names)
+	}
+	stored, _ := m.services.store.ListSessions(false)
+	if len(stored) != 1 || stored[0].Name != "twice" {
+		t.Fatalf("store renamed twice: %+v", stored)
+	}
+}
+
+func TestQuitDrainsRenameEffects(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("old/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "kid", dir, "old/inner")
+	for i, r := range railRows(m) {
+		if r.isGroup && r.group == "old" {
+			setRailCursor(m, i)
+		}
+	}
+	m.openRename()
+	openRename(m).SetName("fresh")
+	openRename(m).SetDir(dir)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("group rename dispatch returned no command")
+	}
+	_, _ = m.requestQuit()
+	if !m.effects.Quitting {
+		t.Fatal("quit not queued")
+	}
+	m.applyCmd(t, cmd)
+	m.drainEffects(t)
+	groups, _ := m.services.store.Groups()
+	for _, g := range groups {
+		if g.Name == "old" {
+			t.Fatalf("quit drained the queue without committing: %v", groups)
+		}
+	}
+}
+
+func TestMoveSessionDefersPlacement(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("target", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "")
+
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	moved := movingSession(m)
+	pickGroup(t, m, "target")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("move dispatch returned no command")
+	}
+	got, err := m.services.store.Get(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Group != "" {
+		t.Fatalf("session placed on the update path: %+v", got)
+	}
+	if !moveOpen(m) {
+		t.Fatalf("dialog should stay open until completion, screen = %v", m.screenID())
+	}
+	m.applyCmd(t, cmd)
+	got, _ = m.services.store.Get(moved)
+	if got.Group != "target" {
+		t.Fatalf("move not committed on completion: %+v", got)
+	}
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
+	}
+}
+
+func TestMoveWorkerRejectsChangedSourcePrecondition(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, group := range []string{"target", "concurrent"} {
+		if err := m.services.store.CreateGroup(group, dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "")
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	moved := movingSession(m)
+	pickGroup(t, m, "target")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if err := m.services.store.PlaceSession(moved, "concurrent", ""); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	stored, err := m.services.store.Get(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Group != "concurrent" {
+		t.Fatalf("stale move overwrote concurrent placement: %+v", stored)
+	}
+	if m.errBar.text != "move source changed before placement" {
+		t.Fatalf("precondition error = %q", m.errBar.text)
+	}
+}
+
+func TestMoveGroupDefersPersistence(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.services.store.CreateGroup("beta", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "alpha/inner")
+
+	m.selectGroupRow(t, "alpha/inner")
+	m.openMove()
+	pickGroup(t, m, "beta")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("move dispatch returned no command")
+	}
+	groups, _ := m.services.store.Groups()
+	for _, g := range groups {
+		if g.Name == "beta/inner" {
+			t.Fatalf("group moved on the update path: %v", groups)
+		}
+	}
+	m.applyCmd(t, cmd)
+	sessions := m.sessionRows()
+	if len(sessions) != 1 || sessions[0].Group != "beta/inner" {
+		t.Fatalf("group move failed: %+v", sessions)
+	}
+	if !m.onList() {
+		t.Fatalf("dialog should close on completion, screen = %v", m.screenID())
+	}
+}
+
+func TestMoveCompletionDoesNotReplaceNewerDialog(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, name := range []string{"target", "other"} {
+		if err := m.services.store.CreateGroup(name, ""); err != nil {
+			t.Fatalf("create group: %v", err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "")
+
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	moved := movingSession(m)
+	pickGroup(t, m, "target")
+	_, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd1 == nil {
+		t.Fatal("first move dispatch returned no command")
+	}
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	pickGroup(t, m, "other")
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// The lane runs four jobs: place target, close target dialog (must not
+	// match), place other, close other dialog.
+	updated, _ := m.Update(cmd1())
+	*m = *updated.(*Model)
+	if !moveOpen(m) {
+		t.Fatalf("older completion closed the newer dialog, screen = %v", m.screenID())
+	}
+	if picker(m).Groups[picker(m).GroupIndex].Path != "other" {
+		t.Fatalf("newer dialog selection changed: %+v", picker(m).Groups)
+	}
+	m.drainEffects(t)
+	got, err := m.services.store.Get(moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Group != "other" {
+		t.Fatalf("second move not committed: %+v", got)
+	}
+	if !m.onList() {
+		t.Fatalf("dialog should close on the matching completion, screen = %v", m.screenID())
+	}
+}
+
+func TestRenameCompletionDoesNotCloseResubmittedDialog(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "before", t.TempDir(), "")
+	m.selectSessionRow(t, "before")
+	m.openRename()
+	openRename(m).SetName("after")
+	_, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd1 == nil {
+		t.Fatal("first dispatch returned no command")
+	}
+	// Same dialog, same name; resubmit without reopening (e.g. after
+	// cycling the tool). gens.dialog advanced, so cmd1's completion is stale.
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.effects.Main.Pending) == 0 {
+		t.Fatal("resubmit did not enqueue a job")
+	}
+
+	updated, _ := m.Update(cmd1())
+	*m = *updated.(*Model)
+	if !renameOpen(m) {
+		t.Fatalf("older completion closed the resubmitted dialog, screen = %v", m.screenID())
+	}
+	m.drainEffects(t)
+	if !m.onList() {
+		t.Fatalf("matching completion did not close the dialog, screen = %v", m.screenID())
+	}
+	if names := sessionNames(m); len(names) != 1 || names[0] != "after" {
+		t.Fatalf("rename not applied: %v", names)
+	}
+}
+
+func TestRenameCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("one", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.selectGroupRow(t, "one")
+	m.openRename()
+	openRename(m).SetName("renamed")
+	_, cmd1 := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd1 == nil {
+		t.Fatal("first dispatch returned no command")
+	}
+	// Reopen the same group; the old completion must not close this fresh
+	// dialog. The reopened rename targets a new name because the first one
+	// already committed "renamed".
+	m.base = baseList
+	m.clearSurfaces()
+	m.selectGroupRow(t, "one")
+	m.openRename()
+	if openRename(m).Path() != "one" {
+		t.Fatalf("reopened wrong target: %q", openRename(m).Path())
+	}
+	openRename(m).SetName("renamed-again")
+
+	updated, _ := m.Update(cmd1())
+	*m = *updated.(*Model)
+	if !renameOpen(m) {
+		t.Fatalf("older completion closed the reopened dialog, screen = %v", m.screenID())
+	}
+	if openRename(m).Name() != "renamed-again" {
+		t.Fatalf("older completion clobbered the reopened input: %q", openRename(m).Name())
+	}
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.drainEffects(t)
+	if !m.onList() {
+		t.Fatalf("matching completion did not close the dialog, screen = %v", m.screenID())
+	}
+}
+
+func TestRenameCompletionFencesStalePolls(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("old/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "kid", dir, "old/inner")
+
+	for i, r := range railRows(m) {
+		if r.isGroup && r.group == "old" {
+			setRailCursor(m, i)
+		}
+	}
+	m.openRename()
+	openRename(m).SetName("fresh")
+	openRename(m).SetDir(dir)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("group rename dispatch returned no command")
+	}
+
+	// A poll pass that read the list before the rename committed; its
+	// listedAt predates the completion, so it must be fenced out.
+	listedAt := time.Now().Add(-time.Second)
+	staleSessions := []store.Session{{ID: "kid", Name: "kid", Group: "old/inner", Tool: "claude", Cwd: dir}}
+	staleGroups := []string{"old", "old/inner"}
+	stalePaths := map[string]string{"old": dir}
+
+	m.applyCmd(t, cmd)
+	if m.effects.latestObservation.IsZero() {
+		t.Fatal("rename completion did not advance the observation fence")
+	}
+
+	m.Update(refreshMsg{sessions: staleSessions, listedAt: listedAt, groups: staleGroups, groupPaths: stalePaths})
+	for _, g := range m.workspace.groups {
+		if strings.HasPrefix(g, "old") {
+			t.Fatalf("stale poll restored the pre-rename group: %v", m.workspace.groups)
+		}
+	}
+	if !hasWorkspaceGroup(m, "fresh/inner") {
+		t.Fatalf("committed rename missing from workspace after stale poll: %v", m.workspace.groups)
+	}
+}
+
+func hasWorkspaceGroup(m *Model, path string) bool {
+	for _, g := range m.workspace.groups {
+		if g == path {
+			return true
+		}
+	}
+	return false
+}
+
+func TestMoveSession(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("target/deep", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "")
+
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	if !moveOpen(m) {
+		t.Fatal("openMove should enter move mode")
+	}
+	pickGroup(t, m, "target/deep")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 || sessions[0].Group != "target/deep" {
+		t.Fatalf("move failed: %+v", sessions)
+	}
+}
+
+func TestMoveGroupRow(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("alpha/inner", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := m.services.store.CreateGroup("beta", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", dir, "alpha/inner")
+
+	m.selectGroupRow(t, "alpha/inner")
+	m.openMove()
+	if !moveOpen(m) {
+		t.Fatal("openMove on a group row should enter move mode")
+	}
+	for _, opt := range picker(m).Groups {
+		if opt.Path == "alpha/inner" {
+			t.Fatal("picker offers the moved group itself")
+		}
+	}
+	pickGroup(t, m, "beta")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+
+	sessions := m.sessionRows()
+	if len(sessions) != 1 || sessions[0].Group != "beta/inner" {
+		t.Fatalf("group move failed: %+v", sessions)
+	}
+	if !m.onList() {
+		t.Fatal("should return to list mode")
+	}
+}
+
+func TestMoveGroupRowExcludesDescendants(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("alpha/inner/deep", ""); err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+
+	m.selectGroupRow(t, "alpha")
+	m.openMove()
+	for _, opt := range picker(m).Groups {
+		if opt.Path == "alpha" || opt.Path == "alpha/inner" || opt.Path == "alpha/inner/deep" {
+			t.Fatalf("picker offers %q inside the moved subtree", opt.Path)
+		}
+	}
+}
+
+func TestMoveTerminalOntoAgentNests(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectGroupRow(t, "backend")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	agent, _ := m.services.store.Get(m.sessionRows()[0].ID)
+	for i, opt := range picker(m).Groups {
+		if opt.SessionID == agent.ID {
+			picker(m).GroupIndex = i
+			break
+		}
+	}
+	if picker(m).Groups[picker(m).GroupIndex].SessionID != agent.ID {
+		t.Fatal("picker must list the agent")
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got, err := m.services.store.Get(shell.ID)
+	if err != nil || got.ParentID != agent.ID {
+		t.Fatalf("nested = %+v err %v", got, err)
+	}
+}
+
+func TestMoveTerminalOntoGroupUnnests(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	if err := m.services.store.CreateGroup("other", dir); err != nil {
+		t.Fatalf("other: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	pickGroup(t, m, "other")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got, _ := m.services.store.Get(shell.ID)
+	if got.ParentID != "" || got.Group != "other" {
+		t.Fatalf("unnest = %+v", got)
+	}
+}
+
+func TestMoveReportsPlacementFailure(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	agent := m.sessionRows()[0]
+	shell := spawnTerminal(t, m)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	for picker(m).Groups[picker(m).GroupIndex].SessionID != agent.ID {
+		picker(m).GroupIndex++
+		if picker(m).GroupIndex >= len(picker(m).Groups) {
+			t.Fatal("picker must list the agent")
+		}
+	}
+	if err := m.services.store.Delete(agent.ID); err != nil {
+		t.Fatalf("delete agent: %v", err)
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text == "" {
+		t.Fatal("failed placement reported nothing")
+	}
+	if !moveOpen(m) {
+		t.Fatalf("screen = %v, want the move card", m.screenID())
+	}
+	got, err := m.services.store.Get(shell.ID)
+	if err != nil || got.ParentID != agent.ID {
+		t.Fatalf("shell left its parent: %+v err %v", got, err)
+	}
+}
+
+func TestMoveReportsMissingSource(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	if err := m.services.store.Delete(shell.ID); err != nil {
+		t.Fatalf("delete shell: %v", err)
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	if m.errBar.text == "" {
+		t.Fatal("missing source reported nothing")
+	}
+	if !moveOpen(m) {
+		t.Fatalf("screen = %v, want the move card", m.screenID())
+	}
+}
+
+func TestMovePickerKeepsTheTerminalsOwnGroupSelected(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, group := range []string{"alpha", "beta"} {
+		if err := m.services.store.CreateGroup(group, dir); err != nil {
+			t.Fatalf("group %s: %v", group, err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "beta")
+	shell := spawnTerminal(t, m)
+	m.selectSessionRow(t, shell.Name)
+	m.openMove()
+	if m.selectedGroupPath() != "beta" {
+		t.Fatalf("selected group = %q, want beta", m.selectedGroupPath())
+	}
+	if sessID := picker(m).Groups[picker(m).GroupIndex].SessionID; sessID != "" {
+		t.Fatalf("selected option targets session %q", sessID)
+	}
+}
+
+func TestMoveAgentPickerHasNoSessionTargets(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("backend", dir); err != nil {
+		t.Fatalf("group: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "coder", dir, "backend")
+	createSession(t, m, "other", dir, "backend")
+	m.selectSessionRow(t, "coder")
+	m.openMove()
+	for _, opt := range picker(m).Groups {
+		if opt.SessionID != "" {
+			t.Fatalf("agent move listed session %q", opt.SessionID)
+		}
+	}
+}
+
+func TestMoveCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	if err := m.services.store.CreateGroup("target", ""); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	createSession(t, m, "wanderer", t.TempDir(), "")
+	m.selectSessionRow(t, "wanderer")
+	m.openMove()
+	moved := movingSession(m)
+	pickGroup(t, m, "target")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("move returned no effect command")
+	}
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.openMove()
+	m.applyCmd(t, cmd)
+	if !moveOpen(m) {
+		t.Fatal("older move completion closed the reopened dialog")
+	}
+	got, err := m.services.store.Get(moved)
+	if err != nil || got.Group != "target" {
+		t.Fatalf("accepted move did not reconcile: %+v, %v", got, err)
 	}
 }

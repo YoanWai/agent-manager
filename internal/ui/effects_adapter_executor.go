@@ -11,6 +11,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
@@ -42,6 +44,12 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
 		return work
 	}
+	if work, ok := uieffects.Bind(request, func() uilink.Services { return capture().link() }); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind(request, func() uiapply.Services { return capture().dialogApply() }); ok {
+		return work
+	}
 	services := capture()
 	return func() (uieffects.Result, error) { return request.(effectRequest).run(services) }
 }
@@ -54,6 +62,16 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.ledger.install.Started(installRoot{m}, job.Request.(uiinstall.StartRequest), result, err)
 	case uiinstall.SettleResult:
 		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
+	case uilink.SaveResult:
+		return m.applyConnectionSave(job.Request.(uilink.SaveRequest), result, err)
+	case uilink.Result:
+		return m.applyRemoteCall(job.Request.(uilink.Call), result, err)
+	case uiapply.ForkEffectResult:
+		return m.applyFork(job.Request.(uiapply.ForkEffect), result, err)
+	case uiapply.RenameEffectResult:
+		m.applyRenameOutcome(job, result, err)
+	case uiapply.MoveCloseResult:
+		m.applyMoveClose(job.Request.(uiapply.MoveClose))
 	case effectResult:
 		return result.apply(m, job, err)
 	}

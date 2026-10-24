@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 )
@@ -31,4 +32,17 @@ func (p dialogPathProbe) ResolveDir(path string) bool { return uilaunch.IsDir(pa
 
 func (s effectServices) dialogPathProbe() uiapply.Preflight {
 	return dialogPathProbe{systemDirectoryPreflight{git: s.gitDrv}}
+}
+
+// link hands the connection runtime the table it writes and the client it
+// calls the hosts with.
+func (s effectServices) link() uilink.Services {
+	return uilink.Services{Store: s.store, Client: s.remote, Openers: s.store}
+}
+
+// dialogApply hands the dialog workers what they reach off the update path:
+// their sources, and the read-only probe a rename and a fork resolve paths
+// with.
+func (s effectServices) dialogApply() uiapply.Services {
+	return uiapply.Services{Sources: s.dialogSources(), Preflight: s.dialogPathProbe()}
 }

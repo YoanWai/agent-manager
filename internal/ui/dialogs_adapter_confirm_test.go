@@ -157,9 +157,9 @@ func TestConfirmRemovesAConnection(t *testing.T) {
 		}
 		for _, job := range jobs {
 			switch request := job.Request.(type) {
-			case connectionRequest:
-				if request.op == uilink.SaveRemove {
-					removed = append(removed, request.name)
+			case uilink.SaveRequest:
+				if request.Op == uilink.SaveRemove {
+					removed = append(removed, request.Name)
 				}
 			case lifecycleRequest:
 				t.Fatalf("queued a lifecycle request %+v", request)

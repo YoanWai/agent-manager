@@ -6,7 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
@@ -580,5 +583,158 @@ func TestRemoteActionsTheHostCannotTakeAreRefusedHere(t *testing.T) {
 	}
 	if calls := fake.taken(); len(calls) != 0 {
 		t.Fatalf("calls = %q, want none", calls)
+	}
+}
+
+func TestClicksOnTheConnectionDialog(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	m.openConnectionDialog(remote.Connection{})
+	for _, tc := range []struct {
+		label string
+		field int
+	}{{"binary ", uiconnections.BinaryField}, {"ssh to ", uiconnections.DestinationField}, {"name ", uiconnections.NameField}} {
+		x, y := bodyCell(t, m, tc.label)
+		m = leftClick(m, x, y)
+		if !m.connectionDialogOpen() || m.connectionSurface().Dialog().Focus() != tc.field {
+			t.Fatalf("a click on %q: open %v", tc.label, m.connectionDialogOpen())
+		}
+	}
+	x, y := paintedCell(t, m, "esc")
+	if m = leftClick(m, x, y); m.connectionDialogOpen() {
+		t.Fatal("a click on the esc hint left the card open")
+	}
+}
+
+func (m *Model) connectionSurface() *uiconnections.Surface {
+	s, ok := surfaceOf[*uiconnections.Surface](m)
+	if !ok {
+		panic("the connection card is not open")
+	}
+	return s
+}
+
+func (m *Model) connectionDialogOpen() bool {
+	_, ok := surfaceOf[*uiconnections.Surface](m)
+	return ok
+}
+
+func openConnectionModel(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	if !m.connectionDialogOpen() {
+		t.Fatal("the new connection key did not open the card")
+	}
+	return m
+}
+
+// typeConnection types a name and a destination into the open dialog.
+func typeConnection(m *Model, name, destination string) {
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(name)})
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(destination)})
+}
+
+// esc closes the card and the status line it leaves is clear.
+func TestConnectionCardEscCloses(t *testing.T) {
+	m := openConnectionModel(t)
+	m.reportErr("stale")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyTestMsg(t, cmd())
+	if m.connectionDialogOpen() || len(m.surfaces) != 0 {
+		t.Fatalf("esc left %d surfaces", len(m.surfaces))
+	}
+	if m.errBar.text != "" {
+		t.Fatalf("status = %q, want it cleared", m.errBar.text)
+	}
+}
+
+// The card holds typed fields, so a stray click keeps the draft.
+func TestConnectionCardKeepsItsDraft(t *testing.T) {
+	m := openConnectionModel(t)
+	if top, _ := m.top(); top.Dismissible() {
+		t.Fatal("a card holding fields says a stray click closes it")
+	}
+	typeConnection(m, "box", "me@box")
+	m = clickBackdrop(t, m)
+	if !m.connectionDialogOpen() {
+		t.Fatal("a click off the card closed it")
+	}
+}
+
+// A save that completes after its card closed, or after another card
+// replaced it, neither closes nor releases the card on screen.
+func TestConnectionSaveCompletionIsFenced(t *testing.T) {
+	m := openConnectionModel(t)
+	stale := uilink.SaveRequest{Op: uilink.SaveAdd, Next: store.Connection{Name: "box", Destination: "me@box"}, Gen: m.connectionSurface().Gen()}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m.applyConnectionSave(stale, uilink.SaveResult{}, nil)
+	if m.connectionDialogOpen() {
+		t.Fatal("a completion reopened a closed card")
+	}
+	m.openConnectionDialog(remote.Connection{})
+	m.applyConnectionSave(stale, uilink.SaveResult{}, nil)
+	if !m.connectionDialogOpen() {
+		t.Fatal("a stale completion closed the card that replaced it")
+	}
+}
+
+func TestNewConnectionKeyOpensTheDialogAndSavesToTheStore(t *testing.T) {
+	m := buildModel(t)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	if !m.connectionDialogOpen() {
+		t.Fatal("C did not open the card")
+	}
+	typeConnection(m, "box", "me@box")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyTestMsg(t, cmd())
+	m.drainEffects(t)
+	stored, err := m.services.store.Connections()
+	if err != nil || len(stored) != 1 || stored[0] != (store.Connection{Name: "box", Destination: "me@box"}) {
+		t.Fatalf("stored = %+v, %v", stored, err)
+	}
+	if !m.onList() || len(m.ssh.List()) != 1 {
+		t.Fatalf("mode %v list %+v", m.screenID(), m.ssh.List())
+	}
+	if selection, _ := m.rail.Selected(); selection != (uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}) {
+		t.Fatalf("selection = %+v, want the new connection", selection)
+	}
+
+	_, cmd = m.runRailIntent(uirail.Intent{Kind: uirail.Delete, Target: uirail.Selection{Kind: uirail.ConnectionRow, Host: "box"}})
+	if cmd != nil || !confirmOpen(m) || pendingConfirm(m).label != "remove connection box? Its sessions keep running on the host." {
+		t.Fatalf("delete: mode %v label %q", m.screenID(), pendingConfirm(m).label)
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m.applyTestMsg(t, cmd())
+	m.drainEffects(t)
+	if stored, _ := m.services.store.Connections(); len(stored) != 0 || len(m.ssh.List()) != 0 {
+		t.Fatalf("stored %+v list %+v after removal", stored, m.ssh.List())
+	}
+}
+
+func TestAFailedConnectionSaveTakesEnterAgain(t *testing.T) {
+	m := buildModel(t)
+	m.ssh = uilink.New(testRemoteClient(t), nil)
+	if err := m.services.store.AddConnection(store.Connection{Name: "box", Destination: "me@elsewhere"}); err != nil {
+		t.Fatal(err)
+	}
+	m.applyTestMsg(t, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	typeConnection(m, "box", "me@box")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyTestMsg(t, cmd())
+	m.drainEffects(t)
+	if !m.connectionDialogOpen() {
+		t.Fatal("a refused save closed the card")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter after a refused save did nothing")
 	}
 }

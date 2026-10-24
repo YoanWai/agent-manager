@@ -45,14 +45,14 @@ func (r forkRoot) ReportErr(text string) { r.reportErr(text) }
 func (r forkRoot) ClearErr() { r.clearErr() }
 
 func (r forkRoot) Submit(name string, gen int) tea.Cmd {
-	r.queueFork(forkRequest{ForkRequest: uiapply.ForkRequest{Source: r.source, Name: name, Gen: gen}})
+	r.queueFork(uiapply.ForkEffect{ForkRequest: uiapply.ForkRequest{Source: r.source, Name: name, Gen: gen}})
 	return r.nextEffectCmd()
 }
 
 func (r forkRoot) Paint(form *uidialogs.Fork) string { return r.viewFork(form) }
 
 // renameRoot is the root as the rename row reaches it. The request a submit
-// validated stays here: a renameRequest names the session row and the effect
+// validated stays here: a RenameEffect names the session row and the effect
 // lane it runs on, so the row hands over the values and the root builds it.
 type renameRoot struct{ *Model }
 
@@ -68,7 +68,7 @@ func (r renameRoot) WorktreeCount() int { return len(groupWorktreeOptions) }
 
 func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) tea.Cmd {
 	if request.Group {
-		return r.queueRename(renameRequest{Request: uiapply.Request{
+		return r.queueRename(uiapply.RenameEffect{Request: uiapply.Request{
 			Kind:     uiapply.Group,
 			OldGroup: request.OldGroup,
 			NewGroup: request.NewGroup,
@@ -79,7 +79,7 @@ func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) te
 			Name:     request.Name,
 		}})
 	}
-	return r.queueRename(renameRequest{Request: uiapply.Request{
+	return r.queueRename(uiapply.RenameEffect{Request: uiapply.Request{
 		Kind:   uiapply.Session,
 		SessID: request.SessionID,
 		Name:   request.Name,
