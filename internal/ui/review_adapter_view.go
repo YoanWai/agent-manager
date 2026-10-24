@@ -7,6 +7,7 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -71,7 +72,7 @@ func (m *Model) prepareReviewLayout() {
 }
 
 func (m *Model) reviewRing(label string, width, height int) string {
-	return strings.Join(ringLoader(m.glyphs(), width, height, label, m.startup.startupPhase), "\n")
+	return strings.Join(uistartup.Ring(m.glyphs(), width, height, label, m.startup.startupPhase, uitheme.Current()), "\n")
 }
 
 func (m *Model) reviewSpinnerLine(label string) string {

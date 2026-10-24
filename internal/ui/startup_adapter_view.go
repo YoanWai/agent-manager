@@ -12,9 +12,5 @@ func startingLoader(g presentation.GlyphSet, starting bool, preview string, widt
 	if !starting || paneBooted(preview) {
 		return nil
 	}
-	return ringLoader(g, width, height, "starting up", phase)
-}
-
-func ringLoader(g presentation.GlyphSet, width, height int, label string, phase int) []string {
-	return uistartup.Ring(g, width, height, label, phase, uitheme.Current())
+	return uistartup.Ring(g, width, height, "starting up", phase, uitheme.Current())
 }

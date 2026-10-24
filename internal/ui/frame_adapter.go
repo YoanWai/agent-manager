@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
@@ -34,7 +35,7 @@ func (m *Model) renderFrame() string {
 	}
 	if m.startup.booting {
 		var lines []string
-		for _, line := range ringLoader(m.glyphs(), m.layout.width, m.layout.height, "loading", m.startup.startupPhase) {
+		for _, line := range uistartup.Ring(m.glyphs(), m.layout.width, m.layout.height, "loading", m.startup.startupPhase, uitheme.Current()) {
 			lines = append(lines, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 		}
 		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)

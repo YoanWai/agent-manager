@@ -12,13 +12,6 @@ import (
 // The wordmark's own measurements, timing and painting live in ui/startup;
 // the root keeps the sweep's timer and the header height the layout and the
 // mouse hit-tests are measured against.
-const (
-	bannerFrames       = uistartup.Frames
-	bannerInterval     = uistartup.Interval
-	bannerShimmerEvery = uistartup.ShimmerEvery
-	bannerRows         = uistartup.Rows
-)
-
 type (
 	bannerTickMsg    struct{}
 	bannerShimmerMsg struct{}
@@ -27,10 +20,10 @@ type (
 // bannerTick drives a sweep frame by frame; a settled wordmark waits out
 // the shimmer interval before the next one.
 func (m *Model) bannerTick() tea.Cmd {
-	if m.startup.bannerPhase >= bannerFrames {
-		return tea.Tick(bannerShimmerEvery, func(time.Time) tea.Msg { return bannerShimmerMsg{} })
+	if m.startup.bannerPhase >= uistartup.Frames {
+		return tea.Tick(uistartup.ShimmerEvery, func(time.Time) tea.Msg { return bannerShimmerMsg{} })
 	}
-	return tea.Tick(bannerInterval, func(time.Time) tea.Msg { return bannerTickMsg{} })
+	return tea.Tick(uistartup.Interval, func(time.Time) tea.Msg { return bannerTickMsg{} })
 }
 
 // showBanner reports whether the terminal leaves the tracked-out wordmark
@@ -45,7 +38,7 @@ func (m *Model) headerRows() int {
 	if m.prefs.hideHeader {
 		return 0
 	}
-	return bannerRows
+	return uistartup.Rows
 }
 
 // viewBanner draws the wordmark, lit by a highlight that sweeps left to

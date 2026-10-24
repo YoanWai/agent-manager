@@ -12,6 +12,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -101,7 +103,7 @@ func TestGlyphModeKeepsModelsIndependentAndAdvancedAppearance(t *testing.T) {
 		if !strings.Contains(ansi.Strip(viewHelpOf(m)), m.glyphs().StatusGlyph(status.Working)+" working") {
 			t.Fatal("help and renderer disagree")
 		}
-		ring := ansi.Strip(strings.Join(ringLoader(m.glyphs(), 40, 10, "loading", 0), "\n"))
+		ring := ansi.Strip(strings.Join(uistartup.Ring(m.glyphs(), 40, 10, "loading", 0, uitheme.Current()), "\n"))
 		for _, mark := range []string{m.glyphs().LoaderHead, m.glyphs().LoaderTail, m.glyphs().LoaderRest} {
 			if !strings.Contains(ring, mark) {
 				t.Errorf("loader missing %q: %s", mark, ring)

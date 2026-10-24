@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	"testing"
 )
 
@@ -9,7 +10,7 @@ import (
 func TestBannerShimmerReArms(t *testing.T) {
 	m := &Model{
 		startup: startupState{
-			bannerPhase: bannerFrames,
+			bannerPhase: uistartup.Frames,
 		},
 	}
 	if m.bannerTick() == nil {
