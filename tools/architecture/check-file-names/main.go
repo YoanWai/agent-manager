@@ -143,7 +143,7 @@ func unadaptedSources(dir string) ([]string, error) {
 		if _, ok := packaged[feature]; !ok {
 			continue
 		}
-		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") {
+		if stem == feature+"_adapter" || strings.HasPrefix(stem, feature+"_adapter_") || stem == feature+"_host" || strings.HasSuffix(stem, "_effect") || strings.HasSuffix(stem, "_surface") {
 			continue
 		}
 		unadapted = append(unadapted, name)

@@ -37,7 +37,7 @@ var (
 	valueBoundary           = boundary{"Git values", "/internal/git/value", []string{"/internal/git/value"}}
 	catalogBoundary         = boundary{"Catalog values", "/internal/catalog/value", []string{"/internal/catalog/value"}}
 	presentBoundary         = boundary{"Presentation", "/internal/ui/presentation", []string{"/internal/ui/presentation"}}
-	connectionsBoundary     = boundary{"Connections", "/internal/ui/connections", []string{"/internal/ui/connections", "/internal/remote/value", "/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/ui/spawn", "/internal/catalog/value"}}
+	connectionsBoundary     = boundary{"Connections", "/internal/ui/connections", []string{"/internal/ui/connections", "/internal/remote/value", "/internal/ui/dialogs", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/ui/spawn", "/internal/catalog/value", "/internal/atomicfile", "/internal/config", "/internal/deps", "/internal/keybind", "/internal/status", "/internal/systheme", "/internal/tmux", "/internal/update", "/internal/wsl", "/internal/ui/effects", "/internal/ui/frame", "/internal/ui/preview", "/internal/ui/rail", "/internal/ui/theme"}}
 	effectsBoundary         = boundary{"Effects", "/internal/ui/effects", []string{"/internal/ui/effects"}}
 	frameBoundary           = boundary{"Frame", "/internal/ui/frame", []string{"/internal/ui/frame", "/internal/keybind", "/internal/ui/presentation"}}
 	launchhintBoundary      = boundary{"Launch hint", "/internal/ui/launchhint", []string{"/internal/ui/launchhint"}}
