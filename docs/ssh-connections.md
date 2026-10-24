@@ -64,7 +64,7 @@ The remote command runs in the user's login shell (`exec "$SHELL" -lc ...`), so 
 | Headless manager | `internal/app`, `main.go` (`serve`) | Running the poller and after-turn work without a TUI; `--background` detaches one when none is awake |
 | Connection values | `internal/remote/value` | A connection and its validation, `<connection>::<id>` refs, failure kinds and the retry wait, with no SSH, so the UI packages can use them |
 | SSH client | `internal/remote` | The SSH command, snapshot, routed operations, starting the remote manager, and the rule that a session drives only the remote terminals it opened |
-| UI | `internal/ui/connections`, `internal/ui/connections_adapter*.go`, `internal/ui/connections_effect.go` | The package: the list, each host's last refresh, remote rows, the selected row's screen and the connection dialog. The root adapters: the client, refreshes, rail and content painting, routing actions to `internal/remote` on the effect lane |
+| UI | `internal/ui/connections`, `internal/ui/connections/link`, `internal/ui/connections_adapter*.go`, `internal/ui/connections_effect.go` | The package: the list, each host's last refresh, remote rows, the selected row's screen and the connection dialog. `link`: the client, refreshes, and the save and call effect requests. The root adapters: the client wiring, rail and content painting, routing actions to `internal/remote` |
 | MCP | `internal/mcpserver/remote.go` | Listing every connection with qualified ids and routing qualified ids to `internal/remote` |
 | Opener records | `internal/store/remote_terminals.go` | Which local session opened each remote terminal |
 

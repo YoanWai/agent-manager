@@ -33,23 +33,17 @@ func (r connectionsRoot) Save(gen uint64, editing string, next remote.Connection
 	if editing != "" {
 		op = uilink.SaveUpdate
 	}
-	request := connectionRequest{op: op, name: editing, next: store.Connection(next), gen: gen}
-	return func() tea.Msg { return connectionDialogMsg{save: &request} }
+	request := uilink.SaveRequest{Op: op, Name: editing, Next: store.Connection(next), Gen: gen}
+	return func() tea.Msg { return uilink.SaveMsg{Save: &request} }
 }
 
 func (r connectionsRoot) Report(err error) tea.Cmd {
 	return func() tea.Msg {
 		if err == nil {
-			return connectionDialogMsg{}
+			return uilink.SaveMsg{}
 		}
 		return errMsg{err: err}
 	}
-}
-
-// connectionDialogMsg is what a key on the card asked of the root: save a
-// connection, or only clear the status line the card is leaving behind.
-type connectionDialogMsg struct {
-	save *connectionRequest
 }
 
 func (m *Model) openConnectionDialog(editing remote.Connection) {

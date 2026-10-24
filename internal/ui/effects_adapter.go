@@ -4,6 +4,8 @@ import (
 	"slices"
 	"time"
 
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
@@ -38,7 +40,7 @@ func (m *Model) laneFor(request uieffects.Request) *uieffects.Lane {
 	switch request.(type) {
 	case focusruntime.InputRequest:
 		return &m.effects.Input
-	case remoteRequest:
+	case uilink.Call:
 		return &m.effects.Remote
 	}
 	return &m.effects.Main
@@ -154,7 +156,7 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case focusruntime.InputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, uirailpersist.Request, forkRequest, spawnRequest, groupRequest, renameRequest, focusruntime.ProbeRequest, focusruntime.AckRequest, attachRequest:
+	case focusruntime.InputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, uirailpersist.Request, uiapply.ForkEffect, spawnRequest, groupRequest, uiapply.RenameEffect, focusruntime.ProbeRequest, focusruntime.AckRequest, attachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}

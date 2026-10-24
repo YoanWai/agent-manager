@@ -11,6 +11,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
@@ -52,6 +54,10 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 		return work
 	}
 	if work, ok := uieffects.Bind(request, func() uirailpersist.Services { return capture().railServices() }); ok {
+	if work, ok := uieffects.Bind(request, func() uilink.Services { return capture().link() }); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind(request, func() uiapply.Services { return capture().dialogApply() }); ok {
 		return work
 	}
 	services := capture()
@@ -81,6 +87,16 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		m.applyGeometryEffect(result.Result, err)
 	case uigeometrypanes.SplitSaveResult:
 		m.layout.panes.ApplySplit(paneSizing{m}, job.ID, err)
+	case uilink.SaveResult:
+		return m.applyConnectionSave(job.Request.(uilink.SaveRequest), result, err)
+	case uilink.Result:
+		return m.applyRemoteCall(job.Request.(uilink.Call), result, err)
+	case uiapply.ForkEffectResult:
+		return m.applyFork(job.Request.(uiapply.ForkEffect), result, err)
+	case uiapply.RenameEffectResult:
+		m.applyRenameOutcome(job, result, err)
+	case uiapply.MoveCloseResult:
+		m.applyMoveClose(job.Request.(uiapply.MoveClose))
 	case effectResult:
 		return result.apply(m, job, err)
 	}

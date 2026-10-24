@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
@@ -33,7 +34,7 @@ type confirmTarget struct {
 	selection    lifecycleSelection
 	connection   string
 	// remote is a call on an SSH row, run on the host once confirmed.
-	remote *remoteRequest
+	remote *uilink.Call
 }
 
 type lifecycleSelectionKind uint8
@@ -155,9 +156,9 @@ func (m *Model) placeMove(move uidialogs.Move, p *spawn.Picker) tea.Cmd {
 		return nil
 	}
 	if request.IsGroup() {
-		return m.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: request.GroupPath, Group: request.Group}, moveDialogClose{isGroup: true, group: request.GroupPath, parent: request.Group})
+		return m.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: request.GroupPath, Group: request.Group}, uiapply.MoveClose{IsGroup: true, Group: request.GroupPath, Parent: request.Group})
 	}
-	return m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, moveDialogClose{sessID: request.SessionID, optPath: request.Group, optSessID: request.ParentID})
+	return m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, uiapply.MoveClose{SessID: request.SessionID, OptPath: request.Group, OptSessID: request.ParentID})
 }
 
 func (m *Model) openFork() {
@@ -246,4 +247,65 @@ func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, 
 		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }
 	}
 	return s.GroupFields(view)
+}
+
+// enqueueMove sends a move dialog's decision through the existing effect
+// lane as a typed Rail mutation, with a chained follow-up that closes the
+// dialog only if the generation it was submitted with is still open.
+func (m *Model) enqueueMove(mut uirail.Mutation, close uiapply.MoveClose) tea.Cmd {
+	m.gens.dialog++
+	close.Gen = m.gens.dialog
+	m.effects.NextChain++
+	chain := m.effects.NextChain
+	request := uirailpersist.Request{
+		Mutation: mut,
+		Dir:      m.workspace.groupPaths[mut.Path],
+		Worktree: m.workspace.groupWorktrees[mut.Path],
+		Base:     m.workspace.groupBases[mut.Path],
+	}
+	if mut.Kind == uirail.PlaceSession {
+		request.Placement = m.capturePlacementPrecondition(mut)
+	}
+	m.enqueueEffect(request, chain, false)
+	m.enqueueEffect(close, chain, false)
+	return m.nextEffectCmd()
+}
+
+func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) uirailpersist.Precondition {
+	precondition := uirailpersist.Precondition{Verify: true, TargetID: mutation.ParentID, TargetGroup: mutation.Group}
+	for _, session := range m.workspace.sessions {
+		switch session.ID {
+		case mutation.SessionID:
+			precondition.SourceGroup = session.Group
+			precondition.SourceParentID = session.ParentID
+		case mutation.ParentID:
+			precondition.TargetGroup = session.Group
+		}
+	}
+	// A newer move can be accepted while an earlier placement for the same
+	// row is still serialized ahead of it. Validate against that lane's
+	// promised destination, which is the state the worker will actually see.
+	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)
+	for _, job := range jobs {
+		if job == nil {
+			continue
+		}
+		request, ok := job.Request.(uirailpersist.Request)
+		if !ok || request.Mutation.Kind != uirail.PlaceSession || request.Mutation.SessionID != mutation.SessionID {
+			continue
+		}
+		precondition.SourceGroup = request.Mutation.Group
+		precondition.SourceParentID = request.Mutation.ParentID
+	}
+	return precondition
+}
+
+// applyMoveClose pops the move card the follow-up was chained to, when it is
+// still the one on screen.
+func (m *Model) applyMoveClose(request uiapply.MoveClose) {
+	if _, open := surfaceOf[*uidialogs.MoveSurface](m); !open || m.gens.dialog != request.Gen {
+		return
+	}
+	m.Pop()
+	m.rebuildRows()
 }

@@ -24,18 +24,13 @@ var effectPairs = []effectPair{
 	{choiceSaveRequest{}, choiceSaveResult{}},
 	{lifecycleRequest{}, lifecycleEffectResult{}},
 	{afterTurnRequest{}, afterTurnResult{}},
-	{forkRequest{}, forkEffectResult{}},
 	{spawnRequest{}, spawnEffectResult{}},
 	{groupRequest{}, groupEffectResult{}},
-	{renameRequest{}, renameEffectResult{}},
-	{moveDialogClose{}, moveDialogCloseResult{}},
 	{settingsRequest{}, settingsEffectResult{}},
 	{savedPromptRequest{}, savedPromptResult{}},
 	{reviewEffectRequest{}, reviewEffectResult{}},
 	{keysRequest{}, keysEffectResult{}},
 	{attachRequest{}, attachEffectResult{}},
-	{connectionRequest{}, connectionEffectResult{}},
-	{remoteRequest{}, remoteEffectResult{}},
 }
 
 // A choice save carries nothing back to the model, so only its error is

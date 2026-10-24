@@ -7,69 +7,14 @@ import (
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
-	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-// renameRequest carries what the rename worker needs; uiapply.Request holds
-// the values and the package worker runs them.
-type renameRequest struct{ uiapply.Request }
-
-func (request renameRequest) EffectName() string { return "rename" }
-
-func (value renameRequest) EffectCopy() uieffects.Request {
-	value.Request = value.Copy()
-	return value
-}
-
-func (request renameRequest) run(services effectServices) (uieffects.Result, error) {
-	return services.runRename(request)
-}
-
-// renameEffectResult reports which durable stages committed, in order.
-type renameEffectResult struct{ uiapply.Outcome }
-
-func (renameEffectResult) EffectResult() {}
-
-func (result renameEffectResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
-	m.applyRenameEffect(job, result, err)
-	return nil
-}
-
-// moveDialogClose is the chained follow-up that closes a move dialog only
-// if the dialog it captured is still the open one.
-type moveDialogClose struct {
-	isGroup   bool
-	gen       uint64
-	sessID    string
-	group     string
-	parent    string
-	optPath   string
-	optSessID string
-}
-
-func (request moveDialogClose) EffectCopy() uieffects.Request { return request }
-
-func (moveDialogClose) EffectName() string { return "move" }
-
-func (moveDialogClose) run(effectServices) (uieffects.Result, error) {
-	return moveDialogCloseResult{}, nil
-}
-
-type moveDialogCloseResult struct{}
-
-func (moveDialogCloseResult) EffectResult() {}
-
-func (moveDialogCloseResult) apply(m *Model, job *uieffects.Job, err error) tea.Cmd {
-	m.applyMoveDialogClose(job.Request.(moveDialogClose))
-	return nil
-}
 
 // queueRename completes the rename dialog's request with the inventory it
 // was captured against (the group's default-path fallbacks, or the session
 // row and whether a tool change must first find it childless), fences it to
 // a new dialog generation and runs it on the effect lane.
-func (m *Model) queueRename(request renameRequest) tea.Cmd {
+func (m *Model) queueRename(request uiapply.RenameEffect) tea.Cmd {
 	if request.Kind == uiapply.Group {
 		m.gens.dialog++
 		request.DirFallbacks = m.groupDirCandidates(uirail.ParentGroup(request.OldGroup))
@@ -97,13 +42,11 @@ func (m *Model) queueRename(request renameRequest) tea.Cmd {
 	return m.nextEffectCmd()
 }
 
-func (s effectServices) runRename(request renameRequest) (uieffects.Result, error) {
-	result, err := uiapply.Rename(s.dialogSources(), s.dialogPathProbe(), request.Request)
-	return renameEffectResult{result}, err
-}
-
-func (m *Model) applyRenameEffect(job *uieffects.Job, result renameEffectResult, err error) {
-	request := job.Request.(renameRequest)
+// applyRenameOutcome mirrors the stages the worker committed into the loaded
+// workspace, then closes the dialog that submitted this job, and only that
+// one: a reopened or resubmitted card keeps its edits.
+func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.RenameEffectResult, err error) {
+	request := job.Request.(uiapply.RenameEffect)
 	if request.Kind == uiapply.Group {
 		dir := request.Dir
 		if result.Dir != "" {
@@ -140,8 +83,6 @@ func (m *Model) applyRenameEffect(job *uieffects.Job, result renameEffectResult,
 		m.reportErr(err.Error())
 	} else if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && m.gens.dialog == request.Gen && s.Name() == request.Name &&
 		(request.Kind != uiapply.Group || s.Dir() == request.DraftDir) {
-		// Only the dialog that submitted this job closes; a reopened or
-		// resubmitted card keeps its edits.
 		m.Pop()
 	}
 	m.rebuildRows()
@@ -150,7 +91,7 @@ func (m *Model) applyRenameEffect(job *uieffects.Job, result renameEffectResult,
 // mirrorGroupRenamePartial mirrors only the stages that committed, so a
 // failed default-dir or worktree write does not leak the requested value
 // into the local inventory.
-func (m *Model) mirrorGroupRenamePartial(request renameRequest, dir string, result renameEffectResult) {
+func (m *Model) mirrorGroupRenamePartial(request uiapply.RenameEffect, dir string, result uiapply.RenameEffectResult) {
 	old, newPath := request.OldGroup, request.NewGroup
 	m.renameGroupInventory(old, newPath)
 	if result.PathSet {
@@ -162,68 +103,9 @@ func (m *Model) mirrorGroupRenamePartial(request renameRequest, dir string, resu
 	m.queueRail(m.rail.RenameGroup(old, newPath).Mutations, 0, true)
 }
 
-// enqueueMove sends a move dialog's decision through the existing effect
-// lane as a typed Rail mutation, with a chained follow-up that closes the
-// dialog only if the generation it was submitted with is still open.
-func (m *Model) enqueueMove(mut uirail.Mutation, close moveDialogClose) tea.Cmd {
-	m.gens.dialog++
-	close.gen = m.gens.dialog
-	m.effects.NextChain++
-	chain := m.effects.NextChain
-	request := uirailpersist.Request{
-		Mutation: mut,
-		Dir:      m.workspace.groupPaths[mut.Path],
-		Worktree: m.workspace.groupWorktrees[mut.Path],
-		Base:     m.workspace.groupBases[mut.Path],
-	}
-	if mut.Kind == uirail.PlaceSession {
-		request.Placement = m.capturePlacementPrecondition(mut)
-	}
-	m.enqueueEffect(request, chain, false)
-	m.enqueueEffect(close, chain, false)
-	return m.nextEffectCmd()
-}
-
-func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) uirailpersist.Precondition {
-	precondition := uirailpersist.Precondition{Verify: true, TargetID: mutation.ParentID, TargetGroup: mutation.Group}
-	for _, session := range m.workspace.sessions {
-		switch session.ID {
-		case mutation.SessionID:
-			precondition.SourceGroup = session.Group
-			precondition.SourceParentID = session.ParentID
-		case mutation.ParentID:
-			precondition.TargetGroup = session.Group
-		}
-	}
-	// A newer move can be accepted while an earlier placement for the same
-	// row is still serialized ahead of it. Validate against that lane's
-	// promised destination, which is the state the worker will actually see.
-	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)
-	for _, job := range jobs {
-		if job == nil {
-			continue
-		}
-		request, ok := job.Request.(uirailpersist.Request)
-		if !ok || request.Mutation.Kind != uirail.PlaceSession || request.Mutation.SessionID != mutation.SessionID {
-			continue
-		}
-		precondition.SourceGroup = request.Mutation.Group
-		precondition.SourceParentID = request.Mutation.ParentID
-	}
-	return precondition
-}
-
-func (m *Model) applyMoveDialogClose(request moveDialogClose) {
-	if _, open := surfaceOf[*uidialogs.MoveSurface](m); !open || m.gens.dialog != request.gen {
-		return
-	}
-	m.Pop()
-	m.rebuildRows()
-}
-
-// renameGroupLocally rewrites the in-memory tree right away, so the
-// frames between saving and the poller's next refresh already show the
-// new name and path instead of flashing the stale ones.
+// renameGroupLocally rewrites the in-memory tree right away, so the frames
+// between saving and the poller's next refresh already show the new name and
+// path instead of flashing the stale ones.
 func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base string) {
 	m.renameGroupInventory(old, newPath)
 	m.workspace.groupPaths[newPath] = dir
