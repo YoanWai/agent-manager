@@ -9,8 +9,10 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -86,12 +88,12 @@ func TestDiffHelpKeepsLoaderRunningOnReturn(t *testing.T) {
 		t.Fatal("loading review should start the loader")
 	}
 	m.openHelp()
-	m.Update(startupTickMsg{})
-	if !m.startup.startupAnimating {
+	m.Update(uistartup.TickMsg{})
+	if !m.startup.Animating {
 		t.Fatal("review is still loading under help, so the loader keeps ticking")
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	if !m.startup.startupAnimating {
+	if !m.startup.Animating {
 		t.Fatal("returning to a loading review should leave the loader running")
 	}
 }
@@ -491,7 +493,7 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.base = baseReview
 	m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnFocus, SessionID: a.ID})
 	m.closeDiff()
-	if m.effects.Main.Active == nil || m.effects.Main.Active.Request.(focusRequest).sessionID != a.ID {
+	if m.effects.Main.Active == nil || m.effects.Main.Active.Request.(focusruntime.ProbeRequest).SessionID != a.ID {
 		t.Fatal("review returned into a different session")
 	}
 }

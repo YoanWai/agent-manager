@@ -20,15 +20,11 @@ type effectPair struct {
 
 var effectPairs = []effectPair{
 	{quickSendRequest{}, quickSendResult{}},
-	{noticeDismissRequest{}, noticeDismissResult{}},
 	{choiceSaveRequest{}, choiceSaveResult{}},
 	{lifecycleRequest{}, lifecycleEffectResult{}},
 	{afterTurnRequest{}, afterTurnResult{}},
 	{spawnRequest{}, spawnEffectResult{}},
 	{groupRequest{}, groupEffectResult{}},
-	{settingsRequest{}, settingsEffectResult{}},
-	{savedPromptRequest{}, savedPromptResult{}},
-	{keysRequest{}, keysEffectResult{}},
 	{attachRequest{}, attachEffectResult{}},
 }
 

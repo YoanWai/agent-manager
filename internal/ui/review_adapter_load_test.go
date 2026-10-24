@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"os"
@@ -382,7 +383,7 @@ func TestReviewShowsLoaderWhileDiffLoads(t *testing.T) {
 		t.Fatal("loading review should start the loader tick")
 	}
 	first := code
-	m.Update(startupTickMsg{})
+	m.Update(uistartup.TickMsg{})
 	if next := ansi.Strip(m.viewDiffCode(80, 20)); next == first {
 		t.Fatal("diff loader did not move on the tick")
 	}
@@ -656,7 +657,7 @@ func (m *Model) drainCmds(t *testing.T, cmd tea.Cmd) {
 		}
 		// The startup tick reschedules itself, so following its command
 		// would spin here rather than drain what the batch already holds.
-		if _, ok := msg.(startupTickMsg); ok {
+		if _, ok := msg.(uistartup.TickMsg); ok {
 			updated, _ := m.Update(msg)
 			*m = *updated.(*Model)
 			return

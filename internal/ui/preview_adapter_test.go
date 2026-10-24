@@ -425,7 +425,7 @@ func TestPreviewLoaderIsCenteredAndMovesOnThePreviewTick(t *testing.T) {
 			t.Fatalf("loader row %q is not centered: left=%d right=%d", lines[row], left, right)
 		}
 	}
-	m.Update(startupTickMsg{})
+	m.Update(uistartup.TickMsg{})
 	if next := previewText(m); next == first {
 		t.Fatal("preview loader did not move on the startup tick")
 	}

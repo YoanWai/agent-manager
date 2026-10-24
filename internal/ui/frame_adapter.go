@@ -33,9 +33,9 @@ func (m *Model) renderFrame() string {
 	if m.layout.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
-	if m.startup.booting {
+	if m.startup.Booting {
 		var lines []string
-		for _, line := range uistartup.Ring(m.glyphs(), m.layout.width, m.layout.height, "loading", m.startup.startupPhase, uitheme.Current()) {
+		for _, line := range uistartup.Ring(m.glyphs(), m.layout.width, m.layout.height, "loading", m.startup.LoadPhase, uitheme.Current()) {
 			lines = append(lines, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 		}
 		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)

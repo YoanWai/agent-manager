@@ -1,72 +1,30 @@
 package ui
 
 import (
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	tea "github.com/charmbracelet/bubbletea"
-	"time"
 )
 
-type startupTickMsg struct{}
-
-// startupInterval is the loader animation's frame time while rows start.
-const startupInterval = 80 * time.Millisecond
-
-func (m *Model) startStartupTick() tea.Cmd {
-	if m.startup.startupAnimating || !m.needsLoaderTick() {
-		return nil
-	}
-	m.startup.startupAnimating = true
-	return func() tea.Msg { return startupTickMsg{} }
-}
-
-func (m *Model) startupTick() tea.Cmd {
-	return tea.Tick(startupInterval, func(time.Time) tea.Msg { return startupTickMsg{} })
-}
-
-type startupState struct {
-	// sessionsSized flips after the first refresh shrinks sessions left
-	// over from a previous manager run to the preview panel's width.
-	sessionsSized bool
-	// bannerPhase advances the wordmark's current sweep and then rests, so
-	// the frame is not repainted forever.
-	bannerPhase      int
-	startupPhase     int
-	startupAnimating bool
-	booting          bool
-}
+// startupState is the loader, the wordmark sweep and the boot ring: the
+// package owns the timing and the frame counter, the root the fields the
+// rail, preview and layout read every frame.
+type startupState = uistartup.State
 
 func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case paneShellMsg:
-		if msg.warning != "" {
-			m.reportWarn(msg.warning)
-		}
-		return routed(m, nil)
-
-	case bannerTickMsg:
-		m.startup.bannerPhase++
-		return routed(m, m.bannerTick())
-
-	case bannerShimmerMsg:
-		m.startup.bannerPhase = 0
-		return routed(m, m.bannerTick())
-
-	case startupTickMsg:
-		if !m.needsLoaderTick() {
-			m.startup.startupAnimating = false
-			return routed(m, nil)
-		}
-		m.startup.startupPhase++
-		return routed(m, m.startupTick())
+	cmd, ok := m.startup.Update(startupRoot{m}, msg)
+	if !ok {
+		return nil, nil, false
 	}
-	return nil, nil, false
+	return routed(m, cmd)
 }
 
-// paneShellMsg carries a warning about the pane shell, empty when it has
-// none.
-type paneShellMsg struct{ warning string }
+// startupRoot is the root as the startup animation reads it.
+type startupRoot struct{ *Model }
 
-// checkPaneShell runs the pane shell's version probe off the update path:
-// it starts a PowerShell.
-func checkPaneShell() tea.Msg {
-	return paneShellMsg{warning: paneShellWarning()}
-}
+func (h startupHost) LoaderNeeded() bool { return h.needsLoaderTick() }
+
+func (h startupHost) ReportWarn(text string) { h.reportWarn(text) }
+
+func (m *Model) startStartupTick() tea.Cmd { return m.startup.StartTick(startupRoot{m}) }
+
+func (m *Model) bannerTick() tea.Cmd { return m.startup.BannerTick() }

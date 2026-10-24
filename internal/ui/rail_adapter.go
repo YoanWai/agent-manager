@@ -193,7 +193,7 @@ func promptPreview(prompt string) string {
 }
 
 func (m *Model) sessionGlyph(session store.Session) string {
-	return uirail.SessionGlyph(m.railTheme(), m.prefs.glyphMode, uirail.Session{Status: session.Status, IsShell: m.isShell(session.Tool)}, m.startup.startupPhase)
+	return uirail.SessionGlyph(m.railTheme(), m.prefs.glyphMode, uirail.Session{Status: session.Status, IsShell: m.isShell(session.Tool)}, m.startup.LoadPhase)
 }
 
 func (m *Model) prepareRailFrame(width, height int) {
@@ -234,7 +234,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 		MouseDisabled:   m.prefs.mouseDisabled,
 		Focused:         m.focused(),
 		EnterFocuses:    m.enterFocuses(),
-		StartupPhase:    m.startup.startupPhase,
+		StartupPhase:    m.startup.LoadPhase,
 		CursorMarker:    uiframe.CursorMarker,
 		Rename:          rename,
 		Foot:            foot,

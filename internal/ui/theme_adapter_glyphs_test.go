@@ -63,7 +63,7 @@ func TestGlyphModesCoverEveryBuiltinTool(t *testing.T) {
 				for _, state := range append(states, status.Dead) {
 					sess := store.Session{Tool: toolName, Status: state}
 					for phase := 0; phase < len(g.StartupFrames)*2; phase++ {
-						m.startup.startupPhase = phase
+						m.startup.LoadPhase = phase
 						want := g.StatusGlyph(state)
 						if state == status.Starting {
 							want = g.StartupFrames[phase%len(g.StartupFrames)]

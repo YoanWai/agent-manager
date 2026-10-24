@@ -3,6 +3,7 @@ package ui
 import (
 	"net/url"
 
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -214,11 +215,54 @@ func (m *Model) dismissNotice(id string) {
 		return
 	}
 	m.notices.Dismiss(id)
-	m.enqueueEffect(noticeDismissRequest{
-		id:            id,
-		foregroundGen: m.gens.foreground,
-		modal:         m.noticesOpen(),
+	m.enqueueEffect(uinotices.DismissRequest{
+		ID:            id,
+		ForegroundGen: m.gens.foreground,
+		Modal:         m.noticesOpen(),
 	}, 0, false)
+}
+
+// noticeDismissQueued reports whether the lane already carries a dismissal
+// of id, running or waiting.
+func (m *Model) noticeDismissQueued(id string) bool {
+	queued := func(job *uieffects.Job) bool {
+		if job == nil {
+			return false
+		}
+		request, ok := job.Request.(uinotices.DismissRequest)
+		return ok && request.ID == id
+	}
+	if queued(m.effects.Main.Active) {
+		return true
+	}
+	for _, job := range m.effects.Main.Pending {
+		if queued(job) {
+			return true
+		}
+	}
+	return false
+}
+
+// applyNoticeDismiss restores a notice whose optimistic dismissal did not
+// persist, and reopens the card only when the user has not moved on since.
+func (m *Model) applyNoticeDismiss(job *uieffects.Job, err error) {
+	if err == nil {
+		return
+	}
+	request := job.Request.(uinotices.DismissRequest)
+	m.notices.Restore(request.ID)
+	m.reportErr(err.Error())
+	if request.Modal && !m.effects.Quitting && request.ForegroundGen == m.gens.foreground && (m.noticesOpen() || m.listClear()) {
+		m.openNotices(request.ID)
+	}
+}
+
+// noticesServices is what the notices effect lane writes through.
+func (m *Model) noticesServices() uinotices.Services {
+	if m.services.store == nil {
+		return uinotices.Services{}
+	}
+	return uinotices.Services{Store: m.services.store}
 }
 
 // refreshNotices is r in the panel: one manual pass over releases and the

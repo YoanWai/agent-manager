@@ -72,11 +72,11 @@ func (m *Model) prepareReviewLayout() {
 }
 
 func (m *Model) reviewRing(label string, width, height int) string {
-	return strings.Join(uistartup.Ring(m.glyphs(), width, height, label, m.startup.startupPhase, uitheme.Current()), "\n")
+	return strings.Join(uistartup.Ring(m.glyphs(), width, height, label, m.startup.LoadPhase, uitheme.Current()), "\n")
 }
 
 func (m *Model) reviewSpinnerLine(label string) string {
-	frame := m.glyphs().StartupFrame(m.startup.startupPhase)
+	frame := m.glyphs().StartupFrame(m.startup.LoadPhase)
 	return uitheme.MutedStyle().Render(frame + " " + label)
 }
 

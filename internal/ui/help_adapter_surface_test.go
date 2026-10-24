@@ -5,9 +5,11 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
+
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -75,4 +77,74 @@ func TestHelpSurfaceHoldsTheScopeItWasOpenedWith(t *testing.T) {
 	if !s.Dismissible() || s.Owner() != uisurface.Manager {
 		t.Fatal("help must be a dismissible manager-owned card")
 	}
+}
+
+func TestWheelScrollsHelp(t *testing.T) {
+	m := helpModel()
+	preparedView(m)
+	if m = wheel(m, tea.MouseButtonWheelDown, 60, 15); helpLayoutOf(m).Content.Offset != 1 {
+		t.Fatalf("a wheel notch down should scroll one row, offset %d", helpLayoutOf(m).Content.Offset)
+	}
+	if m = wheel(m, tea.MouseButtonWheelUp, 60, 15); helpLayoutOf(m).Content.Offset != 0 {
+		t.Fatalf("a wheel notch up should scroll back, offset %d", helpLayoutOf(m).Content.Offset)
+	}
+	if m.layout.card.holds(1, 15) {
+		t.Fatalf("test setup: the card covers the left edge: %+v", m.layout.card)
+	}
+	if m = wheel(m, tea.MouseButtonWheelDown, 1, 15); helpLayoutOf(m).Content.Offset != 0 || !helpOpen(m) {
+		t.Fatalf("a wheel off the card should do nothing, offset %d mode %v", helpLayoutOf(m).Content.Offset, m.screenID())
+	}
+}
+
+func TestClickOnHelpsSearchLineResumesTheSearch(t *testing.T) {
+	m := helpModel()
+	for _, msg := range []tea.KeyMsg{runeKey("/"), runeKey("fork"), namedKey(tea.KeyEnter)} {
+		m.handleKey(msg)
+	}
+	x, y := paintedCell(t, m, "search fork")
+	if m = leftClick(m, x, y); !helpSurfaceOf(m).State().Searching() || !helpOpen(m) {
+		t.Fatalf("a click on the search line should resume typing, searching %v mode %v", helpSurfaceOf(m).State().Searching(), m.screenID())
+	}
+}
+
+func runeKey(s string) tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
+
+func helpModel() *Model {
+	m := &Model{
+		layout: layoutState{
+			width:  120,
+			height: 30,
+		},
+		services: services{
+			keys:     keybind.DefaultSession(),
+			listKeys: keybind.DefaultList(),
+		},
+		prefs: preferences{
+			arrowStep: true,
+		},
+	}
+	m.openHelp()
+	return m
+}
+
+// helpSurfaceOf is the key map on the stack, which a test reads state from.
+func helpSurfaceOf(m *Model) *uihelp.Surface {
+	s, ok := surfaceOf[*uihelp.Surface](m)
+	if !ok {
+		panic("the key map is not open")
+	}
+	return s
+}
+
+func helpLayoutOf(m *Model) uihelp.Card { return helpSurfaceOf(m).Card(m) }
+
+func viewHelpOf(m *Model) string { return helpSurfaceOf(m).View(m, "") }
+
+func helpOpen(m *Model) bool {
+	_, ok := surfaceOf[*uihelp.Surface](m)
+	return ok
 }

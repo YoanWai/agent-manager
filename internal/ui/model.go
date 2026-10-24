@@ -31,6 +31,7 @@ import (
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -180,7 +181,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	applyTheme(uitheme.Palettes[uitheme.Index(resolveStartupTheme(st))])
+	applyTheme(uitheme.Palettes[uitheme.Index(uitheme.ResolveStartup(st))])
 	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
 		effects: effectState{Queue: uieffects.Queue{Lifetime: &uieffects.Lifetime{}}},
@@ -211,7 +212,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		focus:     focusState{runtime: focusruntime.State{}, imeCursor: &uiframe.CursorAnchor{}},
 		workspace: workspace{capture: uicapture.New(st, driver)},
 		startup: startupState{
-			booting: true,
+			Booting: true,
 		},
 		notices: noticesPanel{
 			Panel:             uinotices.NewPanel(uirelease.Dismissed(st)),
@@ -238,5 +239,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), uistartup.CheckPaneShell)
 }

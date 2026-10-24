@@ -238,7 +238,7 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	}
 	m.layout.width = 120
 	m.layout.height = 40
-	m.startup.booting = false
+	m.startup.Booting = false
 	t.Cleanup(func() {
 		for _, s := range m.workspace.sessions {
 			driver.Kill(s.ID)

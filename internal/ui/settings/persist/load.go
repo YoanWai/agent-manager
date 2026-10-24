@@ -111,3 +111,39 @@ func ReadFailureNote(failed int) string {
 	}
 	return fmt.Sprintf("%d committed-value reads failed; the prefs keep their current state for them", failed)
 }
+
+// LoadOutcome is what a landed read rebuilt: which surface took it, and the
+// work that rebuild asked for.
+type LoadOutcome struct {
+	Built  bool
+	Follow tea.Cmd
+}
+
+// LoadRoot is what a landed settings read reaches on the manager: the
+// surface each target rebuilds, and the settle every rebuilt one shares.
+type LoadRoot interface {
+	RebuildSettings(result LoadResult, generation uint64) LoadOutcome
+	RebuildForm(result LoadResult, generation uint64) LoadOutcome
+	RebuildQuick(result LoadResult, generation uint64) LoadOutcome
+	SettleLoad(err error, follow tea.Cmd) tea.Cmd
+}
+
+// UpdateLoad hands a landed read to the surface it was for. A read the
+// manager can no longer use rebuilds nothing and asks for nothing.
+func (s *State) UpdateLoad(root LoadRoot, msg LoadedMsg) tea.Cmd {
+	var outcome LoadOutcome
+	switch msg.Request.Target {
+	case DialogTarget:
+		outcome = root.RebuildSettings(msg.Result, msg.Request.Generation)
+	case FormTarget:
+		outcome = root.RebuildForm(msg.Result, msg.Request.Generation)
+	case QuickTarget:
+		outcome = root.RebuildQuick(msg.Result, msg.Request.Generation)
+	default:
+		return nil
+	}
+	if !outcome.Built {
+		return nil
+	}
+	return root.SettleLoad(msg.Err, outcome.Follow)
+}

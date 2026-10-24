@@ -368,7 +368,7 @@ func TestFirstRefreshResizesExistingSessions(t *testing.T) {
 		t.Fatalf("resize-window: %v", err)
 	}
 
-	m.startup.sessionsSized = false
+	m.startup.SessionsSized = false
 	m.layout.panes.LastSizes = nil
 	m.applyCmd(t, m.refreshCmd())
 	if w, _ := windowSize(t, id); w != m.previewPaneWidth() {

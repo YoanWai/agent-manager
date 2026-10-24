@@ -27,13 +27,26 @@ func (m *Model) runPromptsResult(d *uisettings.State, result uisettings.Result) 
 	case result.LoadPrompts:
 		return uipersist.SavedCmd(m.services.store, uipersist.SavedForSettings, gen, dialogGen)
 	case result.SavePrompt != nil:
-		m.enqueueEffect(savedPromptRequest{Gen: gen, DialogGen: dialogGen, Save: result.SavePrompt}, 0, false)
+		m.enqueueEffect(uipersist.PromptRequest{Gen: gen, DialogGen: dialogGen, Save: result.SavePrompt}, 0, false)
 		return m.nextEffectCmd()
 	case result.DeletePrompt != "":
-		m.enqueueEffect(savedPromptRequest{Gen: gen, DialogGen: dialogGen, Remove: result.DeletePrompt}, 0, false)
+		m.enqueueEffect(uipersist.PromptRequest{Gen: gen, DialogGen: dialogGen, Remove: result.DeletePrompt}, 0, false)
 		return m.nextEffectCmd()
 	}
 	return nil
+}
+
+// applyPromptsResult hands a committed catalog change back to the panel
+// that asked, landing on the row the write named.
+func (m *Model) applyPromptsResult(request uipersist.PromptRequest, result uipersist.PromptResult, err error) {
+	selected := ""
+	if request.Save != nil {
+		selected = request.Save.SelectedName()
+	}
+	m.applyPromptsRead(request.DialogGen, uisettings.PromptsRead{
+		Gen: request.Gen, Rows: settingsPrompts(result.Rows), Err: err,
+		Mutation: true, Committed: result.Committed, Selected: selected,
+	})
 }
 
 func (m *Model) setNotice(notice uisettings.Notice) {
