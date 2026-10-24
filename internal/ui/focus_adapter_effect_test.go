@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
@@ -516,7 +517,7 @@ func TestInputKeysUseServingControlWithoutDriverFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	command, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("control-only")})
+	command, ok := uifocus.KeyCommand(tmux.PaneTarget(sess.ID), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("control-only")})
 	if !ok {
 		t.Fatal("test key was not representable")
 	}
@@ -602,7 +603,7 @@ exit 0
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	key, ok := focusKeyCommand(tmux.PaneTarget(sess.ID), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("before-paste")})
+	key, ok := uifocus.KeyCommand(tmux.PaneTarget(sess.ID), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("before-paste")})
 	if !ok {
 		t.Fatal("test key was not representable")
 	}

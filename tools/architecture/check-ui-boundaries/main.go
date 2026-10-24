@@ -20,7 +20,7 @@ var (
 	surfaceBoundary         = boundary{"Surface", "/internal/ui/surface", []string{"/internal/ui/surface"}}
 	diffBoundary            = boundary{"Diff model", "/internal/diff/model", []string{"/internal/diff/model", "/internal/git/value"}}
 	reviewBoundary          = boundary{"Review", "/internal/ui/review", []string{"/internal/ui/review", "/internal/diff/model", "/internal/git/value", "/internal/ui/presentation", "/internal/ui/surface"}}
-	focusBoundary           = boundary{"Focus", "/internal/ui/focus", []string{"/internal/ui/focus", "/internal/keybind", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete"}}
+	focusBoundary           = boundary{"Focus", "/internal/ui/focus", []string{"/internal/ui/focus", "/internal/keybind", "/internal/ui/spawn", "/internal/catalog/value", "/internal/ui/presentation", "/internal/ui/surface", "/internal/ui/pathcomplete", "/internal/tmux", "/internal/deps", "/internal/systheme", "/internal/ui/effects", "/internal/ui/frame", "/internal/ui/theme"}}
 	watchBoundary           = boundary{"Focus watch", "/internal/ui/focus/watch", []string{"/internal/ui/focus/watch", "/internal/tmux", "/internal/deps", "/internal/keybind", "/internal/proctree", "/internal/pwsh"}}
 	railBoundary            = boundary{"Rail", "/internal/ui/rail", []string{"/internal/ui/rail", "/internal/keybind", "/internal/remote/value", "/internal/ui/presentation", "/internal/ui/theme"}}
 	settingsBoundary        = boundary{"Settings", "/internal/ui/settings", []string{"/internal/ui/settings", "/internal/keybind", "/internal/ui/presentation", "/internal/ui/theme", "/internal/ui/surface"}}

@@ -135,7 +135,7 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 
 	m, id := focusedShotPane(t, 40, 10, 5, "alpha beta", "gamma delta")
 	request := dragAlph(m, id)
-	inFlight := focusCopiedMsg{chars: 4, gen: request.Generation}
+	inFlight := uifocus.CopiedMessage{Chars: 4, Generation: request.Generation}
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 12, Y: 6})
 	m.Update(inFlight)
 	if got := m.focus.pane.Status().CopiedChars; got != 0 {
@@ -145,7 +145,7 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 	// The same confirmation still counts while its own selection stands.
 	m2, id2 := focusedShotPane(t, 40, 10, 5, "alpha beta", "gamma delta")
 	request = dragAlph(m2, id2)
-	m2.Update(focusCopiedMsg{chars: 4, gen: request.Generation})
+	m2.Update(uifocus.CopiedMessage{Chars: 4, Generation: request.Generation})
 	if got := m2.focus.pane.Status().CopiedChars; got != 4 {
 		t.Fatalf("the write for the standing selection was dropped: %d", got)
 	}
