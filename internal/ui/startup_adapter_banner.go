@@ -5,6 +5,7 @@ import (
 
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -50,5 +51,5 @@ func (m *Model) headerRows() int {
 // viewBanner draws the wordmark, lit by a highlight that sweeps left to
 // right during the intro and then rests just past the end of the word.
 func (m *Model) viewBanner() []string {
-	return uistartup.Line(m.startup.bannerPhase, uiframe.RailGutter, m.showBanner(), current())
+	return uistartup.Line(m.startup.bannerPhase, uiframe.RailGutter, m.showBanner(), uitheme.Current())
 }

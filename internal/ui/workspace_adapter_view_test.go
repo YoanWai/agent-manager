@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -103,14 +104,14 @@ func TestComputerLinesBattery(t *testing.T) {
 func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
 	forceANSI256(t)
 
-	lowCharge := sgrOf(gauge(5, 10, true))
-	highUsage := sgrOf(gauge(95, 10, false))
+	lowCharge := sgrOf(uitheme.Gauge(5, 10, true))
+	highUsage := sgrOf(uitheme.Gauge(95, 10, false))
 	if lowCharge != highUsage {
 		t.Fatalf("5%% inverted = %q, want the same alarm color as 95%% uninverted %q", lowCharge, highUsage)
 	}
 
-	highCharge := sgrOf(gauge(95, 10, true))
-	lowUsage := sgrOf(gauge(5, 10, false))
+	highCharge := sgrOf(uitheme.Gauge(95, 10, true))
+	lowUsage := sgrOf(uitheme.Gauge(5, 10, false))
 	if highCharge != lowUsage {
 		t.Fatalf("95%% inverted = %q, want the same calm color as 5%% uninverted %q", highCharge, lowUsage)
 	}
@@ -125,7 +126,7 @@ func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
 	forceANSI256(t)
 
 	row := tempReadings(uiworkspace.Readings{CPUTempOK: true, CPUTemp: 61, GPUTempOK: true, GPUTemp: 55})
-	want := sgrOf(valueStyle().Render("x"))
+	want := sgrOf(uitheme.ValueStyle().Render("x"))
 	for _, reading := range []string{"cpu 61°C", "gpu 55°C"} {
 		before, _, found := strings.Cut(row, reading)
 		if !found {

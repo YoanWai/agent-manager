@@ -15,6 +15,7 @@ import (
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -250,14 +251,14 @@ func TestQuickChipRendersInlineInTheInput(t *testing.T) {
 	}
 	// Styling must add color only: the token's width is what the textarea
 	// already used to wrap the line.
-	if lipgloss.Width(ansi.Strip(imageChip(composer.Token(1)))) != lipgloss.Width(composer.Token(1)) {
+	if lipgloss.Width(ansi.Strip(uitheme.ImageChip(composer.Token(1)))) != lipgloss.Width(composer.Token(1)) {
 		t.Fatal("styled chip must keep the token's width")
 	}
 
 	m.quick().Attachments = []composer.Attachment{{ID: 2}}
 	m.quick().Input.SetValue(composer.Token(2))
 	pending := m.quick().Composer.View(composerPaint())
-	if !strings.Contains(pending, imageChipPasting(composer.Token(2))) {
+	if !strings.Contains(pending, uitheme.ImageChipPasting(composer.Token(2))) {
 		t.Fatal("a chip waiting on the clipboard should wear the pasting style")
 	}
 }
@@ -1250,7 +1251,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 		t.Fatalf("group row leads = %q, want quick prompt mode", leads)
 	}
 	footer := m.listFooter()
-	if !strings.Contains(footer, keyCapLead("space", "quick prompt mode")) {
+	if !strings.Contains(footer, uitheme.KeyCapLead("space", "quick prompt mode")) {
 		t.Fatalf("footer should carry the filled quick prompt mode binding:\n%q", footer)
 	}
 	m.services.listKeys = m.services.listKeys.With(keybind.Prompt, bindingOf(t))
@@ -1281,11 +1282,11 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 		rows := strings.Split(footer, "\n")
 		keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1).text)
 		for i, line := range rows {
-			tone := quickModeHex()
+			tone := uitheme.QuickModeHex()
 			if i > 0 && i < len(rows)-keysHeight {
-				tone = blockHex()
+				tone = uitheme.BlockHex()
 			}
-			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
+			if !strings.HasPrefix(line, uitheme.BgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
 				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
 			}
 		}

@@ -7,6 +7,7 @@ import (
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -28,14 +29,14 @@ func (m *Model) helpContext(width int) uihelp.Context {
 		CursorMarker: uiframe.CursorMarker,
 		ReviewRows:   uireview.HelpRows(),
 		Styles: uihelp.Styles{
-			Section: sectionStyle(),
-			Rule:    lipgloss.NewStyle().Foreground(colorBorder()),
-			Key:     keyStyle(),
-			Muted:   mutedStyle(),
-			Subtle:  subtleStyle(),
-			Value:   valueStyle(),
-			Match:   lipgloss.NewStyle().Foreground(colorBright()).Bold(true),
-			Cursor:  lipgloss.NewStyle().Foreground(colorAccent()),
+			Section: uitheme.SectionStyle(),
+			Rule:    lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
+			Key:     uitheme.KeyStyle(),
+			Muted:   uitheme.MutedStyle(),
+			Subtle:  uitheme.SubtleStyle(),
+			Value:   uitheme.ValueStyle(),
+			Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
+			Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
 		},
 	}
 }

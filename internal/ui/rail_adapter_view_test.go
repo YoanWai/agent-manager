@@ -7,6 +7,7 @@ import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -169,7 +170,7 @@ func TestEmptyListKeepsItsGuidance(t *testing.T) {
 			clearRailInventory(m)
 			tc.setup(m)
 			m.rebuildRows()
-			rail := ansi.Strip(strings.Join(splitLines(joinContentText(m.railLines(40, 20))), "\n"))
+			rail := ansi.Strip(strings.Join(uitheme.SplitLines(joinContentText(m.railLines(40, 20))), "\n"))
 			if !strings.Contains(rail, tc.wantText) {
 				t.Fatalf("rail is missing %q:\n%s", tc.wantText, rail)
 			}

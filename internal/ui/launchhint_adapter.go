@@ -14,6 +14,7 @@ import (
 	uilaunchhint "github.com/YoanWai/agent-manager/internal/ui/launchhint"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -203,7 +204,7 @@ func (m *Model) presentLaunchHint(fix uiinstall.Fix) {
 		return
 	}
 	m.push(uidialogs.NewLaunchHintSurface(launchHintRoot{m}, m.launchHintCard(fix), m.glyphs(),
-		lipgloss.NewStyle().Foreground(colorAccent()).Bold(true), mutedStyle()))
+		lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true), uitheme.MutedStyle()))
 }
 
 // launchHintCard is the copy of the fix the card paints. The launch to retry,

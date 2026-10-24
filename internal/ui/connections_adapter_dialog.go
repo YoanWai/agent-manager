@@ -7,6 +7,7 @@ import (
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -21,7 +22,7 @@ func (r connectionsRoot) Look() uiconnections.DialogView {
 			return spawn.FormField(styles, label, value, focused)
 		},
 		Input: uiframe.TextInputView,
-		Muted: mutedStyle(),
+		Muted: uitheme.MutedStyle(),
 	}
 }
 

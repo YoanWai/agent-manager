@@ -14,6 +14,7 @@ import (
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -65,7 +66,7 @@ func (m *Model) openSettingsWithReader(reader settingsValueReader) tea.Cmd {
 		return nil
 	}
 	m.clearErr()
-	state := s.FromCache(m.services.cfg, current().Name)
+	state := s.FromCache(m.services.cfg, uitheme.Current().Name)
 	state.MarkBaseline()
 	m.push(newSettingsSurface(m, state))
 	probe := m.probeEditorsCmd()
@@ -85,12 +86,12 @@ func (m *Model) handleSettingsLoaded(msg settingsLoadedMsg) (tea.Model, tea.Cmd)
 		}
 		m.settings.Take(msg.Result)
 		field := card.State().Field
-		card.SetState(m.settings.FromCache(m.services.cfg, current().Name))
+		card.SetState(m.settings.FromCache(m.services.cfg, uitheme.Current().Name))
 		// A manual theme the shell changed meanwhile repaints here, so esc
 		// keeps it instead of writing back the palette cached at startup.
-		if d := card.State(); !d.ThemeAuto && current().Name != d.ManualTheme {
+		if d := card.State(); !d.ThemeAuto && uitheme.Current().Name != d.ManualTheme {
 			d.ShowTheme(d.ManualTheme)
-			applyTheme(themes[d.ThemeIndex])
+			applyTheme(uitheme.Palettes[d.ThemeIndex])
 			SyncTerminalColors()
 			follow = m.syncPaneTheme()
 		}
@@ -172,7 +173,7 @@ func (m *Model) runSettingsResult(d *settingsState, result uisettings.Result) te
 		if result.DetectTheme {
 			d.ShowTheme(autoThemeName(d.ManualTheme, systheme.Detect()))
 		}
-		applyTheme(themes[d.ThemeIndex])
+		applyTheme(uitheme.Palettes[d.ThemeIndex])
 		SyncTerminalColors()
 		return m.syncPaneTheme()
 	case result.Glyphs:

@@ -18,6 +18,7 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -236,12 +237,12 @@ func (m *Model) remoteQuickFacts(facts *uiquick.Facts) {
 	if !ok {
 		return
 	}
-	host := subtleStyle().Render(" on ") + lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)
+	host := uitheme.SubtleStyle().Render(" on ") + lipgloss.NewStyle().Foreground(uitheme.ColorRemote()).Render(row.Host)
 	if row.Kind == uiconnections.SessionRow {
-		facts.Remote = lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(presentation.EscapeControlsInline(row.Name)) + host
+		facts.Remote = lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render(presentation.EscapeControlsInline(row.Name)) + host
 		return
 	}
-	facts.Remote = lipgloss.NewStyle().Foreground(colorAccent2()).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group))) + host
+	facts.Remote = lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group))) + host
 	facts.RemoteSpawn = true
 	facts.WorktreeKnown, facts.WorktreeCapable = true, true
 	q := m.quick()

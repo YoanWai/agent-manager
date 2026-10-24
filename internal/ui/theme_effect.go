@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -31,10 +32,10 @@ func (m *Model) syncPaneTheme() tea.Cmd {
 // light agents.
 func agentPaneTheme() tmux.PaneTheme {
 	fgbg := "15;0"
-	if current().LightBackdrop() {
+	if uitheme.Current().LightBackdrop() {
 		fgbg = "0;15"
 	}
-	return tmux.PaneTheme{Foreground: current().Text, Background: current().Bg, ColorFgBg: fgbg}
+	return tmux.PaneTheme{Foreground: uitheme.Current().Text, Background: uitheme.Current().Bg, ColorFgBg: fgbg}
 }
 
 // storedTheme reads the persisted theme name. A read failure falls back to

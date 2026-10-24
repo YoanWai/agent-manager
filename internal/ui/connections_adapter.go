@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -131,12 +132,12 @@ func (m *Model) remoteContentLines(width, height int) ([]contentLine, bool) {
 	case uiconnections.ConnectionRow:
 		head = m.connectionDetail(row.Host, inner)
 	case uiconnections.GroupRow:
-		head = []string{lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group))) +
-			subtleStyle().Render("  on ") + lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)}
-		body = []string{mutedStyle().Render("press " + m.listGlyph(keybind.Prompt) + " to start an agent here")}
+		head = []string{lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group))) +
+			uitheme.SubtleStyle().Render("  on ") + lipgloss.NewStyle().Foreground(uitheme.ColorRemote()).Render(row.Host)}
+		body = []string{uitheme.MutedStyle().Render("press " + m.listGlyph(keybind.Prompt) + " to start an agent here")}
 	default:
 		head = m.remoteSessionDetail(row, inner)
-		body = m.ssh.Preview.Screen(inner, height-len(head)-1, uiconnections.ScreenView{Err: errStyle(), Muted: mutedStyle(), ExpandTabs: uipreview.ExpandTabs})
+		body = m.ssh.Preview.Screen(inner, height-len(head)-1, uiconnections.ScreenView{Err: uitheme.ErrStyle(), Muted: uitheme.MutedStyle(), ExpandTabs: uipreview.ExpandTabs})
 	}
 	var lines []contentLine
 	for _, line := range head {
@@ -157,13 +158,13 @@ func (m *Model) remoteContentLines(width, height int) ([]contentLine, bool) {
 func (m *Model) connectionDetail(host string, width int) []string {
 	conn, _ := m.ssh.Connection(host)
 	state, seen := m.ssh.Host(host)
-	title := lipgloss.NewStyle().Foreground(colorRemote()).Bold(true).Render(host) + "  " + chipStyle().Render("ssh")
-	reading := subtleStyle().Render("connecting…")
+	title := lipgloss.NewStyle().Foreground(uitheme.ColorRemote()).Bold(true).Render(host) + "  " + uitheme.ChipStyle().Render("ssh")
+	reading := uitheme.SubtleStyle().Render("connecting…")
 	switch {
 	case seen && state.OK:
-		reading = lipgloss.NewStyle().Foreground(colorFinished()).Render("online")
+		reading = lipgloss.NewStyle().Foreground(uitheme.ColorFinished()).Render("online")
 	case seen:
-		reading = errStyle().Render(fmt.Sprintf("%s · %d failed", uiconnections.TroubleLabel(state.Trouble), state.Failures))
+		reading = uitheme.ErrStyle().Render(fmt.Sprintf("%s · %d failed", uiconnections.TroubleLabel(state.Trouble), state.Failures))
 	}
 	lines := []string{
 		uipreview.FitColumns([]string{title}, []string{reading}, width),
@@ -177,12 +178,12 @@ func (m *Model) connectionDetail(host string, width int) []string {
 		if !state.ManagerAwake {
 			manager = "no manager running"
 		}
-		lines = append(lines, factRow("host", uipreview.PlainValue(mutedStyle().Render(countNoun(len(state.Sessions), "session")+" · "+
+		lines = append(lines, factRow("host", uipreview.PlainValue(uitheme.MutedStyle().Render(countNoun(len(state.Sessions), "session")+" · "+
 			countNoun(len(state.Terminals), "terminal")+" · "+manager)), "", width))
 	}
 	if seen && state.Err != "" {
 		for _, line := range strings.Split(ansi.Wordwrap(presentation.EscapeControls(state.Err), max(width-uipreview.DetailLabelWidth, 8), " "), "\n") {
-			lines = append(lines, labelStyle().Render(padRight("error", uipreview.DetailLabelWidth))+errStyle().Render(line))
+			lines = append(lines, uitheme.LabelStyle().Render(padRight("error", uipreview.DetailLabelWidth))+uitheme.ErrStyle().Render(line))
 		}
 	}
 	return lines
@@ -194,11 +195,11 @@ func (m *Model) remoteSessionDetail(row uiconnections.Row, width int) []string {
 		status = "archived"
 	}
 	state := lipgloss.NewStyle().Foreground(statusColor(row.Status)).Render(m.glyphs().StatusGlyph(row.Status) + " " + presentation.EscapeControlsInline(statusLabel(status)))
-	name := lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(presentation.EscapeControlsInline(row.Name))
-	host := lipgloss.NewStyle().Foreground(colorRemote()).Render(row.Host)
-	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group)))
+	name := lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render(presentation.EscapeControlsInline(row.Name))
+	host := lipgloss.NewStyle().Foreground(uitheme.ColorRemote()).Render(row.Host)
+	group := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Render(presentation.EscapeControlsInline(uiframe.DisplayGroup(row.Group)))
 	return []string{
-		uipreview.FitColumns([]string{name + subtleStyle().Render("  on ") + host, name}, []string{state}, width),
+		uipreview.FitColumns([]string{name + uitheme.SubtleStyle().Render("  on ") + host, name}, []string{state}, width),
 		factRow("group", uipreview.PlainValue(group), "", width),
 	}
 }

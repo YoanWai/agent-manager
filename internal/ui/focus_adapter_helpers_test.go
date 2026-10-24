@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -109,8 +110,8 @@ func prepareFocusFrame(m *Model, preview string, width, height, x, y, caretRow i
 		OriginX:        x,
 		OriginY:        y,
 		CaretRow:       caretRow,
-		CursorStyle:    lipgloss.NewStyle().Foreground(colorBg()).Background(colorAccent()),
-		SelectionStyle: lipgloss.NewStyle().Foreground(colorBg()).Background(colorAccent2()),
+		CursorStyle:    lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent()),
+		SelectionStyle: lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent2()),
 	})
 }
 

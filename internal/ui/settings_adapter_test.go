@@ -13,6 +13,7 @@ import (
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -176,7 +177,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, keyCap("↵/esc", "save and close")) {
+	if !strings.Contains(out, uitheme.KeyCap("↵/esc", "save and close")) {
 		t.Errorf("current version row should hint save, not update: %q", out)
 	}
 	m.settingsCard().State().Field = 0
@@ -187,7 +188,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 	}
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 	out = m.viewSettings()
-	if !strings.Contains(out, keyStyle().Render("↵")+mutedStyle().Render(" update to")) {
+	if !strings.Contains(out, uitheme.KeyStyle().Render("↵")+uitheme.MutedStyle().Render(" update to")) {
 		t.Errorf("focused update row should hint enter: %q", out)
 	}
 }
@@ -217,7 +218,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	opened = ""
 	m.layout.width, m.layout.height = 120, 60
 	frame := preparedView(m)
-	if !strings.Contains(frame, hintCap("↵", "open the docs")) {
+	if !strings.Contains(frame, uitheme.HintCap("↵", "open the docs")) {
 		t.Fatal("the docs shortcut should wear the footer badge")
 	}
 	m, cmd = clickBody(t, m, "open the docs")
@@ -317,11 +318,11 @@ func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
 	}
 	// Unfocused labels use accent2 + bold; prove that SGR lands on each label.
 	styled := m.viewSettings()
-	bugLabel := lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render("report a bug")
+	bugLabel := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true).Render("report a bug")
 	if !strings.Contains(styled, bugLabel) {
 		t.Fatalf("unfocused bug report label should use accent2 bold styling")
 	}
-	ideaLabel := lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render("suggest a change")
+	ideaLabel := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true).Render("suggest a change")
 	if !strings.Contains(styled, ideaLabel) {
 		t.Fatalf("unfocused feature request label should use accent2 bold styling")
 	}
@@ -616,8 +617,8 @@ func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 	m.release.Version = "v0.2.0"
 	m.release.Latest = "v0.3.0"
 	m.openSettings()
-	m.settingsCard().State().ThemeIndex = (m.settingsCard().State().ThemeIndex + 1) % len(themes)
-	staged := themes[m.settingsCard().State().ThemeIndex].Name
+	m.settingsCard().State().ThemeIndex = (m.settingsCard().State().ThemeIndex + 1) % len(uitheme.Palettes)
+	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	m.settingsCard().State().Field = uisettings.FieldUpdate
 
 	orig := uirelease.ApplyUpdate
@@ -658,8 +659,8 @@ func TestSettingsHasNoTerminalRows(t *testing.T) {
 // otherWriterTheme is a theme this manager would not write on its own.
 func otherWriterTheme(t *testing.T) string {
 	t.Helper()
-	for _, theme := range themes {
-		if theme.Name != current().Name {
+	for _, theme := range uitheme.Palettes {
+		if theme.Name != uitheme.Current().Name {
 			return theme.Name
 		}
 	}

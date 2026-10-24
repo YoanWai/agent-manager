@@ -16,6 +16,7 @@ import (
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -241,10 +242,10 @@ func TestHandledCommentsStayVisibleWithAMutedColor(t *testing.T) {
 			t.Fatalf("comment history is missing %q:\n%s", want, plain)
 		}
 	}
-	if annotationBg() == handledAnnotationBg() || !strings.Contains(rendered, annotationBg()) || !strings.Contains(rendered, handledAnnotationBg()) {
+	if uitheme.AnnotationBg() == uitheme.HandledAnnotationBg() || !strings.Contains(rendered, uitheme.AnnotationBg()) || !strings.Contains(rendered, uitheme.HandledAnnotationBg()) {
 		t.Fatalf("open and handled comments should use different washes: %q", rendered)
 	}
-	if handledAnnotationBg() != bgSeq(mix(current().Bg, current().Finished, 0.14)) || !strings.Contains(rendered, fgSeq(current().Finished)) {
+	if uitheme.HandledAnnotationBg() != uitheme.BgSeq(uitheme.Mix(uitheme.Current().Bg, uitheme.Current().Finished, 0.14)) || !strings.Contains(rendered, uitheme.FgSeq(uitheme.Current().Finished)) {
 		t.Fatalf("handled comment should use the theme's finished green: %q", rendered)
 	}
 }

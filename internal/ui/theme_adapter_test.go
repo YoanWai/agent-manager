@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
 
 func globalWindowStyle(t *testing.T) string {
@@ -19,7 +20,7 @@ func globalWindowStyle(t *testing.T) string {
 // The pane carries the theme's own backdrop, on both sides of the split, so
 // an agent that follows it renders on the side the manager is drawing.
 func TestAgentPaneTheme(t *testing.T) {
-	t.Cleanup(func() { applyTheme(themes[0]) })
+	t.Cleanup(func() { applyTheme(uitheme.Palettes[0]) })
 	for _, tt := range []struct {
 		theme string
 		fgbg  string
@@ -27,7 +28,7 @@ func TestAgentPaneTheme(t *testing.T) {
 		{"catppuccin latte", "0;15"},
 		{"tokyo night", "15;0"},
 	} {
-		want := themes[themeIndex(tt.theme)]
+		want := uitheme.Palettes[uitheme.Index(tt.theme)]
 		applyTheme(want)
 		got := agentPaneTheme()
 		if got.Background != want.Bg {
@@ -46,7 +47,7 @@ func TestAgentPaneTheme(t *testing.T) {
 // switch has to reach the tmux server as well as the manager's own frame.
 func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	m := buildModel(t)
-	t.Cleanup(func() { applyTheme(themes[0]) })
+	t.Cleanup(func() { applyTheme(uitheme.Palettes[0]) })
 	// Global options only stick while a server is up, and a server with no
 	// sessions exits at once, so one session holds it open.
 	if err := m.services.tmux.Create("panebg", "/tmp", "", nil, 0, 0); err != nil {
@@ -58,8 +59,8 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 
-	light := themes[themeIndex("solarized light")]
-	m.settingsCard().State().ThemeIndex = themeIndex("solarized light") - 1
+	light := uitheme.Palettes[uitheme.Index("solarized light")]
+	m.settingsCard().State().ThemeIndex = uitheme.Index("solarized light") - 1
 	if cmd := m.cycleSetting(1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)
@@ -72,13 +73,13 @@ func TestThemeSwitchPushesPaneBackground(t *testing.T) {
 		t.Errorf("light theme pushed window-style %q, want its own backdrop %q", got, want)
 	}
 
-	m.settingsCard().State().ThemeIndex = themeIndex("nord") - 1
+	m.settingsCard().State().ThemeIndex = uitheme.Index("nord") - 1
 	if cmd := m.cycleSetting(1); cmd != nil {
 		if msg := cmd(); msg != nil {
 			m.Update(msg)
 		}
 	}
-	nord := themes[themeIndex("nord")]
+	nord := uitheme.Palettes[uitheme.Index("nord")]
 	if got, want := globalWindowStyle(t), "fg="+nord.Text+",bg="+nord.Bg; got != want {
 		t.Errorf("dark theme pushed window-style %q, want %q", got, want)
 	}

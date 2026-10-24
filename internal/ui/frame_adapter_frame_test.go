@@ -3,6 +3,7 @@ package ui
 import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
@@ -14,12 +15,12 @@ import (
 
 func TestViewPinsTheFrameToTheTerminalHeight(t *testing.T) {
 	tall := "a\nb\nc\nd\ne"
-	got := uiframe.Clamp(tall, 3, func() string { return paint("", 1, backdropHex()) })
+	got := uiframe.Clamp(tall, 3, func() string { return uitheme.Paint("", 1, uitheme.BackdropHex()) })
 	if got != "a\nb\nc" {
 		t.Fatalf("clamp trim = %q", got)
 	}
 	short := "x"
-	got = uiframe.Clamp(short, 3, func() string { return paint("", 1, backdropHex()) })
+	got = uiframe.Clamp(short, 3, func() string { return uitheme.Paint("", 1, uitheme.BackdropHex()) })
 	lines := strings.Split(got, "\n")
 	if len(lines) != 3 || lines[0] != "x" {
 		t.Fatalf("clamp pad = %q", got)
@@ -42,8 +43,8 @@ func TestZZShot(t *testing.T) {
 		t.Skip("set AM_SHOT to render a frame")
 	}
 	if name := os.Getenv("AM_SHOT_THEME"); name != "" {
-		applyTheme(themes[themeIndex(name)])
-		t.Cleanup(func() { applyTheme(themes[0]) })
+		applyTheme(uitheme.Palettes[uitheme.Index(name)])
+		t.Cleanup(func() { applyTheme(uitheme.Palettes[0]) })
 	}
 	prev := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)

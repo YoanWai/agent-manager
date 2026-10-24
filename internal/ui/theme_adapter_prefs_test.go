@@ -5,11 +5,12 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/systheme"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
 
 func TestThemeAutoPersistsWithoutClobberingManualTheme(t *testing.T) {
 	m := buildModel(t)
-	t.Cleanup(func() { applyTheme(themes[0]) })
+	t.Cleanup(func() { applyTheme(uitheme.Palettes[0]) })
 	if err := m.services.store.SetSetting(uisettings.ThemeSetting, "nord"); err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func TestThemeAutoPersistsWithoutClobberingManualTheme(t *testing.T) {
 
 func TestManualThemeCycleDisablesAuto(t *testing.T) {
 	m := buildModel(t)
-	t.Cleanup(func() { applyTheme(themes[0]) })
+	t.Cleanup(func() { applyTheme(uitheme.Palettes[0]) })
 	if err := m.services.store.SetSetting(uisettings.ThemeSetting, "classic"); err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +57,7 @@ func TestManualThemeCycleDisablesAuto(t *testing.T) {
 	if got, _ := m.services.store.Setting(uisettings.ThemeAutoSetting); got != "off" {
 		t.Fatalf("theme_auto should persist off after a manual step: %q", got)
 	}
-	if got, _ := m.services.store.Setting(uisettings.ThemeSetting); got != themes[m.settingsCard().State().ThemeIndex].Name {
+	if got, _ := m.services.store.Setting(uisettings.ThemeSetting); got != uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name {
 		t.Fatalf("manual step not persisted: %q", got)
 	}
 }

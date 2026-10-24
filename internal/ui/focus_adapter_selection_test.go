@@ -10,6 +10,7 @@ import (
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -59,7 +60,7 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	frame := splitLines(preparedView(m))
+	frame := uitheme.SplitLines(preparedView(m))
 	box := m.focus.pane.FrameBox()
 	if !box.Valid {
 		t.Fatal("pane box never recorded")

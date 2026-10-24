@@ -2,6 +2,7 @@ package ui
 
 import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -32,9 +33,9 @@ func cardChrome() uiframe.Chrome {
 		// The theme's border tone pulled toward the accent, so a dialog
 		// reads as the app's own surface rather than as a box drawn around
 		// it.
-		Border: lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current().Border, current().Accent, 0.35))),
-		Title:  lipgloss.NewStyle().Foreground(colorAccent()).Bold(true),
-		Block:  blockHex(),
+		Border: lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Border, uitheme.Current().Accent, 0.35))),
+		Title:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
+		Block:  uitheme.BlockHex(),
 		Cap:    frameCap(),
 	}
 }
@@ -66,7 +67,7 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 // CardSized floats a modal at an explicit width, for the key map, whose
 // lines are too long to read inside the default column.
 func (m *Model) CardSized(width int, title, body string, hint [][2]string) string {
-	box, hits := uiframe.Box(m.dialogRenderContext(), cardChrome(), width, title, body, hint, paint)
+	box, hits := uiframe.Box(m.dialogRenderContext(), cardChrome(), width, title, body, hint, uitheme.Paint)
 	frame := m.centerOnBackdrop(box)
 	card := &m.layout.card
 	card.bodyTop, card.bodyLeft, card.bodyWidth = card.top+uiframe.CardBodyRow, card.left+uiframe.CardBodyColumn, uiframe.CardInnerWidth(width)
@@ -82,7 +83,7 @@ func (m *Model) centerOnBackdrop(box []string) string {
 	top, left, right := uiframe.Placement(ctx, box)
 	m.layout.card = cardRect{top: top, left: left, right: right, bottom: top + len(box)}
 	m.layout.keyHits = nil
-	return uiframe.Centered(ctx, box, backdropHex(), paint)
+	return uiframe.Centered(ctx, box, uitheme.BackdropHex(), uitheme.Paint)
 }
 
 func (m *Model) dialogRenderContext() uiframe.Context {

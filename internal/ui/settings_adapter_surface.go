@@ -4,6 +4,7 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -48,15 +49,15 @@ func (m *Model) paintSettings(d *settingsState) string {
 
 func settingsStyles() uisettings.Styles {
 	return uisettings.Styles{
-		Value:      valueStyle(),
-		Subtle:     subtleStyle(),
-		Muted:      mutedStyle(),
-		Key:        keyStyle(),
-		Annotation: annotationStyle(),
-		Marker:     lipgloss.NewStyle().Foreground(colorAccent()),
-		Focused:    lipgloss.NewStyle().Foreground(colorAccent()).Bold(true),
-		Action:     lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true),
-		ActionText: lipgloss.NewStyle().Foreground(colorAccent2()),
+		Value:      uitheme.ValueStyle(),
+		Subtle:     uitheme.SubtleStyle(),
+		Muted:      uitheme.MutedStyle(),
+		Key:        uitheme.KeyStyle(),
+		Annotation: uitheme.AnnotationStyle(),
+		Marker:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+		Focused:    lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
+		Action:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true),
+		ActionText: lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()),
 	}
 }
 

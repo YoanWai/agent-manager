@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -21,9 +22,9 @@ func (m *Model) viewHeaderRows() []string {
 	}
 	left := m.viewBanner()[0]
 	if tag := m.updateTag(); tag != "" {
-		left += subtleStyle().Render("  ") + tag
+		left += uitheme.SubtleStyle().Render("  ") + tag
 	}
-	sep := subtleStyle().Render("   ")
+	sep := uitheme.SubtleStyle().Render("   ")
 	scope := m.headerScope()
 	agents := m.headerAgents()
 	readings := []string{
@@ -40,7 +41,7 @@ func (m *Model) updateTag() string {
 	if m.release.Latest == "" {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(colorAccent()).Render(m.glyphs().UpdateGlyph + " " + m.release.Latest + " available")
+	return lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Render(m.glyphs().UpdateGlyph + " " + m.release.Latest + " available")
 }
 
 // titleTopRowWithUpdate keeps the update tag on the top edge when the header
@@ -50,7 +51,7 @@ func (m *Model) titleTopRowWithUpdate(frame string) string {
 	if !m.prefs.hideHeader || tag == "" {
 		return frame
 	}
-	title := paint(" "+tag+" ", ansi.StringWidth(tag)+2, backdropHex())
+	title := uitheme.Paint(" "+tag+" ", ansi.StringWidth(tag)+2, uitheme.BackdropHex())
 	left := m.layout.width - ansi.StringWidth(title) - uiframe.RailGutter
 	if left < uiframe.RailGutter {
 		return frame
@@ -70,11 +71,11 @@ func (m *Model) headerScope() string {
 	if count == 1 {
 		label = " agent"
 	}
-	scope := subtleStyle().Render(" · active")
+	scope := uitheme.SubtleStyle().Render(" · active")
 	if m.rail.ShowArchived() {
-		scope = subtleStyle().Render(" · archived")
+		scope = uitheme.SubtleStyle().Render(" · archived")
 	}
-	return valueStyle().Render(fmt.Sprintf("%d", count)) + subtleStyle().Render(label) + scope
+	return uitheme.ValueStyle().Render(fmt.Sprintf("%d", count)) + uitheme.SubtleStyle().Render(label) + scope
 }
 
 // headerAgents is the fleet's process cost as shares of this machine,
@@ -83,12 +84,12 @@ func (m *Model) headerAgents() string {
 	if m.workspace.agents.count == 0 {
 		return ""
 	}
-	title := lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render("agents total usage:")
+	title := lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render("agents total usage:")
 	return title + " " +
-		labelStyle().Render("cpu ") + valueStyle().Render(fmt.Sprintf("%.0f%%", m.workspace.agents.cpu)) +
-		subtleStyle().Render(" · ") + labelStyle().Render("ram ") +
-		valueStyle().Render(fmt.Sprintf("%.0f%%", m.workspace.agents.ram)) +
-		subtleStyle().Render(" · ") + valueStyle().Render(uiframe.HumanBytes(m.workspace.agents.rss))
+		uitheme.LabelStyle().Render("cpu ") + uitheme.ValueStyle().Render(fmt.Sprintf("%.0f%%", m.workspace.agents.cpu)) +
+		uitheme.SubtleStyle().Render(" · ") + uitheme.LabelStyle().Render("ram ") +
+		uitheme.ValueStyle().Render(fmt.Sprintf("%.0f%%", m.workspace.agents.ram)) +
+		uitheme.SubtleStyle().Render(" · ") + uitheme.ValueStyle().Render(uiframe.HumanBytes(m.workspace.agents.rss))
 }
 
 // elsewhereNote marks a session this manager does not speak for: its pane
@@ -125,7 +126,7 @@ func (m *Model) viewStatusCounts(compact bool) string {
 		if compact {
 			label = fmt.Sprintf(" %d", counts[st])
 		}
-		parts = append(parts, dot+subtleStyle().Render(label))
+		parts = append(parts, dot+uitheme.SubtleStyle().Render(label))
 	}
-	return strings.Join(parts, subtleStyle().Render("  "))
+	return strings.Join(parts, uitheme.SubtleStyle().Render("  "))
 }

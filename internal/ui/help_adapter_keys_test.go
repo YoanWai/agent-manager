@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -117,13 +118,13 @@ func TestHelpAdapterUsesFreshThemeStyles(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previousProfile) })
-	previous := current()
+	previous := uitheme.Current()
 	t.Cleanup(func() { applyTheme(previous) })
 	m := helpModel()
 
-	applyTheme(themes[themeIndex("classic")])
+	applyTheme(uitheme.Palettes[uitheme.Index("classic")])
 	classic := helpSurfaceOf(m).State().Content(m.helpContext(84))
-	applyTheme(themes[themeIndex("solarized light")])
+	applyTheme(uitheme.Palettes[uitheme.Index("solarized light")])
 	light := helpSurfaceOf(m).State().Content(m.helpContext(84))
 	if strings.Join(classic.Lines, "\n") == strings.Join(light.Lines, "\n") {
 		t.Fatal("theme switch left help styles unchanged")

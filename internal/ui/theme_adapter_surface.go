@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -11,14 +12,14 @@ import (
 // column at the height of the run beside it, so that cell always stepped.
 func (m *Model) railTopRow(paneWidth, width int) string {
 	if paneWidth < 2 || paneWidth >= width {
-		return paint(hrule(width), width, backdropHex())
+		return uitheme.Paint(uitheme.Hrule(width), width, uitheme.BackdropHex())
 	}
-	fill := lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex()))
-	first := plain(fill.Render("🬹"), 1)
-	interior := lipgloss.NewStyle().Foreground(colorBg()).Render(strings.Repeat("🬂", paneWidth-1))
-	last := lipgloss.NewStyle().Foreground(colorBg()).Render("🬨")
-	return first + paint(interior, paneWidth-1, panelHex()) + paint(last, 1, panelHex()) +
-		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
+	fill := lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.PanelHex()))
+	first := uitheme.Plain(fill.Render("🬹"), 1)
+	interior := lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render(strings.Repeat("🬂", paneWidth-1))
+	last := lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render("🬨")
+	return first + uitheme.Paint(interior, paneWidth-1, uitheme.PanelHex()) + uitheme.Paint(last, 1, uitheme.PanelHex()) +
+		uitheme.Paint(uitheme.Hrule(width-paneWidth-1), width-paneWidth-1, uitheme.BackdropHex())
 }
 
 // boundedRuleRow closes the body. Over the pane it draws half blocks in the
@@ -36,18 +37,18 @@ func (m *Model) railTopRow(paneWidth, width int) string {
 // pane tone stops at the corner instead of jutting past it.
 func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
 	if paneWidth < 2 || paneWidth >= width {
-		return paint(hrule(width), width, backdropHex())
+		return uitheme.Paint(uitheme.Hrule(width), width, uitheme.BackdropHex())
 	}
 	facing, corner := "▄", "▜"
 	if edge == "▄" {
 		facing, corner = "▀", "▟"
 	}
-	first := plain(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render(facing), 1)
-	interior := lipgloss.NewStyle().Foreground(colorBg()).
+	first := uitheme.Plain(lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.PanelHex())).Render(facing), 1)
+	interior := lipgloss.NewStyle().Foreground(uitheme.ColorBg()).
 		Render(strings.Repeat(edge, paneWidth-1))
-	last := lipgloss.NewStyle().Foreground(colorBg()).Render(corner)
-	return first + paint(interior, paneWidth-1, panelHex()) + paint(last, 1, panelHex()) +
-		paint(hrule(width-paneWidth-1), width-paneWidth-1, backdropHex())
+	last := lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render(corner)
+	return first + uitheme.Paint(interior, paneWidth-1, uitheme.PanelHex()) + uitheme.Paint(last, 1, uitheme.PanelHex()) +
+		uitheme.Paint(uitheme.Hrule(width-paneWidth-1), width-paneWidth-1, uitheme.BackdropHex())
 }
 
 // railEdgeCell is one row of the pane's first column, drawn as a foreground
@@ -55,7 +56,7 @@ func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
 // margin beside it inherits the cell's background — the terminal's own —
 // so the pane's left edge lands exactly on the cell grid.
 func railEdgeCell(tone string) string {
-	return plain(lipgloss.NewStyle().Foreground(lipgloss.Color(tone)).Render("█"), 1)
+	return uitheme.Plain(lipgloss.NewStyle().Foreground(lipgloss.Color(tone)).Render("█"), 1)
 }
 
 // vruleColumn is the seam between two painted columns. It doubles as the
@@ -71,7 +72,7 @@ func (m *Model) vruleColumn(height int) []string {
 // bleedColumn finishes a pane's right edge: a half block in the pane's
 // tone on the backdrop, extending the fill half a cell past the seam.
 func (m *Model) bleedColumn(height int) []string {
-	cell := paint(lipgloss.NewStyle().Foreground(colorBg()).Render("▐"), 1, panelHex())
+	cell := uitheme.Paint(lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render("▐"), 1, uitheme.PanelHex())
 	lines := make([]string, height)
 	for i := range lines {
 		lines[i] = cell
@@ -81,8 +82,8 @@ func (m *Model) bleedColumn(height int) []string {
 	// top corner sits on the rule row just above the capture.
 	box := m.focus.pane.FrameBox()
 	if m.focused() && box.Valid {
-		edge := paint(focusEdgeStyle().Render("│"), 1, panelHex())
-		corner := paint(focusEdgeStyle().Render("╭"), 1, panelHex())
+		edge := uitheme.Paint(uitheme.FocusEdgeStyle().Render("│"), 1, uitheme.PanelHex())
+		corner := uitheme.Paint(uitheme.FocusEdgeStyle().Render("╭"), 1, uitheme.PanelHex())
 		top := box.Y - m.listChromeRows()
 		if top-1 >= 0 && top-1 < len(lines) {
 			lines[top-1] = corner
@@ -104,11 +105,11 @@ func (m *Model) focusBottomRule(paneWidth, width int) string {
 	if tail < 1 || paneWidth < 2 {
 		return m.boundedRuleRow(paneWidth, width, "▄")
 	}
-	first := plain(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render("▀"), 1)
-	interior := lipgloss.NewStyle().Foreground(colorBg()).Render(strings.Repeat("▄", paneWidth-1))
-	corner := focusEdgeStyle().Render("╰")
-	return first + paint(interior, paneWidth-1, panelHex()) + paint(corner, 1, panelHex()) +
-		paint(focusEdgeStyle().Render(strings.Repeat("─", tail)), tail, backdropHex())
+	first := uitheme.Plain(lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.PanelHex())).Render("▀"), 1)
+	interior := lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render(strings.Repeat("▄", paneWidth-1))
+	corner := uitheme.FocusEdgeStyle().Render("╰")
+	return first + uitheme.Paint(interior, paneWidth-1, uitheme.PanelHex()) + uitheme.Paint(corner, 1, uitheme.PanelHex()) +
+		uitheme.Paint(uitheme.FocusEdgeStyle().Render(strings.Repeat("─", tail)), tail, uitheme.BackdropHex())
 }
 
 // seamCell is one row of the vertical seam. The column is the pane's own
@@ -117,16 +118,16 @@ func (m *Model) focusBottomRule(paneWidth, width int) string {
 func (m *Model) seamCell(railRule bool) string {
 	// While the divider is being moved the seam becomes the grip.
 	if m.layout.split.dragging || m.layout.split.resizeMode {
-		color := colorAccent()
+		color := uitheme.ColorAccent()
 		if m.layout.split.dragging {
-			color = colorAccent2()
+			color = uitheme.ColorAccent2()
 		}
-		return paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, panelHex())
+		return uitheme.Paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, uitheme.PanelHex())
 	}
 	if railRule {
-		return paint(hrule(1), 1, panelHex())
+		return uitheme.Paint(uitheme.Hrule(1), 1, uitheme.PanelHex())
 	}
-	return paint("", 1, panelHex())
+	return uitheme.Paint("", 1, uitheme.PanelHex())
 }
 
 // contentLine is one row of the content column: ours to paint, a seam that
@@ -150,20 +151,20 @@ func paintContent(lines []contentLine, width, height int, bg string) []string {
 	out := make([]string, height)
 	for i := 0; i < height; i++ {
 		if i >= len(lines) {
-			out[i] = paint("", width, bg)
+			out[i] = uitheme.Paint("", width, bg)
 			continue
 		}
 		if lines[i].rule {
 			// Seams are drawn at the column's full width, not the inset the
 			// text uses, so they meet the frame's edges exactly.
-			out[i] = paint(hrule(width), width, bg)
+			out[i] = uitheme.Paint(uitheme.Hrule(width), width, bg)
 			continue
 		}
 		if lines[i].raw {
-			out[i] = plain(lines[i].text, width)
+			out[i] = uitheme.Plain(lines[i].text, width)
 			continue
 		}
-		out[i] = paint(lines[i].text, width, bg)
+		out[i] = uitheme.Paint(lines[i].text, width, bg)
 	}
 	return out
 }

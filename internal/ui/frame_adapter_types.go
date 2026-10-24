@@ -2,6 +2,7 @@ package ui
 
 import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -107,21 +108,21 @@ func rootLegend(painted uiframe.Legend) legend {
 // legend rules need it.
 func frameCap() uiframe.Cap {
 	return uiframe.Cap{
-		Key:     keyStyle(),
-		Label:   legendLabelStyle(),
-		Muted:   mutedStyle(),
-		LeadKey: legendLeadKey(),
-		Lead:    legendLeadLabel(),
-		Alert:   legendAlertStyle(),
-		Badge:   legendBadgeStyle(),
+		Key:     uitheme.KeyStyle(),
+		Label:   uitheme.LegendLabelStyle(),
+		Muted:   uitheme.MutedStyle(),
+		LeadKey: uitheme.LegendLeadKey(),
+		Lead:    uitheme.LegendLeadLabel(),
+		Alert:   uitheme.LegendAlertStyle(),
+		Badge:   uitheme.LegendBadgeStyle(),
 	}
 }
 
 // legendTitleStyles is a tier's name as the footer paints it: the badge for
 // the tier the cursor is on, the quieter title for a secondary tier.
 func legendTitleStyles() (badge, quiet func(string) string) {
-	badgeStyle, titleStyle := legendBadgeStyle(), legendTitleStyle()
+	badgeStyle, titleStyle := uitheme.LegendBadgeStyle(), uitheme.LegendTitleStyle()
 	return func(s string) string { return badgeStyle.Render(s) }, func(s string) string { return titleStyle.Render(s) }
 }
 
-func legendSeparator() string { return subtleStyle().Render(" · ") }
+func legendSeparator() string { return uitheme.SubtleStyle().Render(" · ") }

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )
@@ -21,7 +22,7 @@ func (m *Model) prepareFrame() {
 	// A colorless profile renders the backdrop as a bare reset, which would
 	// strip the bold and reverse cells it lands beside.
 	if !m.prefs.terminalBackground && lipgloss.ColorProfile() != termenv.Ascii {
-		frame = fillBackdrop(frame, m.layout.width, current().Bg, current().Text)
+		frame = uitheme.FillBackdrop(frame, m.layout.width, uitheme.Current().Bg, uitheme.Current().Text)
 	}
 	m.layout.frame = frame
 }
@@ -34,12 +35,12 @@ func (m *Model) renderFrame() string {
 	if m.startup.booting {
 		var lines []string
 		for _, line := range ringLoader(m.glyphs(), m.layout.width, m.layout.height, "loading", m.startup.startupPhase) {
-			lines = append(lines, paint(line, m.layout.width, backdropHex()))
+			lines = append(lines, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 		}
 		frame := m.overlayTopRight(strings.Join(lines, "\n"), m.statusToast(), 0)
 		// Pinned to exactly height rows so the outer terminal cannot scroll
 		// the TUI away when a layout overshoots.
-		return m.syncCursorAnchor(uiframe.Clamp(frame, m.layout.height, func() string { return paint("", 1, backdropHex()) }))
+		return m.syncCursorAnchor(uiframe.Clamp(frame, m.layout.height, func() string { return uitheme.Paint("", 1, uitheme.BackdropHex()) }))
 	}
 	var frame string
 	if m.base == baseReview {
@@ -49,5 +50,5 @@ func (m *Model) renderFrame() string {
 	}
 	frame = m.surfaceView(frame)
 	m.layout.keyHits = m.layout.keyHits.above(m.layout.height)
-	return m.syncCursorAnchor(uiframe.Clamp(frame, m.layout.height, func() string { return paint("", 1, backdropHex()) }))
+	return m.syncCursorAnchor(uiframe.Clamp(frame, m.layout.height, func() string { return uitheme.Paint("", 1, uitheme.BackdropHex()) }))
 }

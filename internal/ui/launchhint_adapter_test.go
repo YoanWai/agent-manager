@@ -23,6 +23,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -68,7 +69,7 @@ func TestLaunchHintSurfaceWithFakeInstall(t *testing.T) {
 		t.Fatalf("open: surface %t gens %d fix %+v, want the composer images taken", ok, m.gens.dialog, hintFix(m))
 	}
 	// The card calls the root it was built with, so the fake is that root.
-	s := uidialogs.NewLaunchHintSurface(h, m.launchHintCard(m.ledger.install.Launch), m.glyphs(), mutedStyle(), mutedStyle())
+	s := uidialogs.NewLaunchHintSurface(h, m.launchHintCard(m.ledger.install.Launch), m.glyphs(), uitheme.MutedStyle(), uitheme.MutedStyle())
 	m.surfaces[len(m.surfaces)-1] = s
 	if got := ansi.Strip(s.View(h, "")); !strings.Contains(got, "Session needs a setup step") || !strings.Contains(got, "Run the installer.") {
 		t.Fatalf("view = %q", got)

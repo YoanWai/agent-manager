@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -37,9 +38,9 @@ func (c pathCompleter) PathField(target pathcomplete.Target) (string, bool) {
 func pathCompleteStyles(mode presentation.GlyphMode) pathcomplete.Styles {
 	return pathcomplete.Styles{
 		GlyphMode: mode,
-		Muted:     mutedStyle(),
-		Accent:    colorAccent(),
-		Accent2:   colorAccent2(),
+		Muted:     uitheme.MutedStyle(),
+		Accent:    uitheme.ColorAccent(),
+		Accent2:   uitheme.ColorAccent2(),
 	}
 }
 

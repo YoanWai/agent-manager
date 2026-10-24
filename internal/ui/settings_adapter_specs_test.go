@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -98,7 +99,7 @@ func TestSettingSpecsCoverEveryKeySettingsWrites(t *testing.T) {
 func TestSettingSpecsNameEveryThemeAndAgentCLI(t *testing.T) {
 	specs := specByKey(t)
 	var names []string
-	for _, theme := range themes {
+	for _, theme := range uitheme.Palettes {
 		names = append(names, theme.Name)
 	}
 	if !slices.Equal(specs[uisettings.ThemeSetting].Values, names) {
@@ -150,14 +151,14 @@ func TestOpenSettingsReadsWhatTheShellChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, m.openSettings())
-	if themes[m.settingsCard().State().ThemeIndex].Name != "nord" {
-		t.Fatalf("Settings opened on %q, want the shell's nord", themes[m.settingsCard().State().ThemeIndex].Name)
+	if uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name != "nord" {
+		t.Fatalf("Settings opened on %q, want the shell's nord", uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name)
 	}
 	if m.settingsCard().State().GlyphMode != presentation.GlyphModeBasic || m.prefs.glyphMode != presentation.GlyphModeBasic {
 		t.Fatalf("symbols opened on %q (live %q), want basic", m.settingsCard().State().GlyphMode, m.prefs.glyphMode)
 	}
-	if current().Name != "nord" {
-		t.Fatalf("the palette stayed %q after Settings read nord", current().Name)
+	if uitheme.Current().Name != "nord" {
+		t.Fatalf("the palette stayed %q after Settings read nord", uitheme.Current().Name)
 	}
 	if m.settingsCard().State().Editor.Line() != "code -n" {
 		t.Fatalf("editor row opened on %q", m.settingsCard().State().Editor.Line())

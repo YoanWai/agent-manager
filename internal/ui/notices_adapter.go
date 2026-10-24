@@ -5,6 +5,7 @@ import (
 
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -60,31 +61,31 @@ func (m *Model) noticesFrame() uinotices.Frame {
 func noticesTheme() uinotices.Theme {
 	card := noticeCardHex()
 	return uinotices.Theme{
-		Accent:      colorAccent(),
-		Accent2:     colorAccent2(),
-		Bright:      colorBright(),
-		SubtleColor: colorSubtle(),
-		Subtle:      subtleStyle(),
-		Muted:       mutedStyle(),
-		Value:       valueStyle(),
-		Key:         keyStyle(),
+		Accent:      uitheme.ColorAccent(),
+		Accent2:     uitheme.ColorAccent2(),
+		Bright:      uitheme.ColorBright(),
+		SubtleColor: uitheme.ColorSubtle(),
+		Subtle:      uitheme.SubtleStyle(),
+		Muted:       uitheme.MutedStyle(),
+		Value:       uitheme.ValueStyle(),
+		Key:         uitheme.KeyStyle(),
 		Border:      noticeBorderStyle(),
 		Title:       noticeTitleStyle(),
-		Fill:        func(row string, width int) string { return paint(row, width, card) },
+		Fill:        func(row string, width int) string { return uitheme.Paint(row, width, card) },
 	}
 }
 
 // noticeCardHex warms the messages modal's fill toward yellow.
-func noticeCardHex() string { return mix(panelHex(), "#e2c044", 0.16) }
+func noticeCardHex() string { return uitheme.Mix(uitheme.PanelHex(), "#e2c044", 0.16) }
 
 // noticeBorderStyle is the card's rounded frame, dimmed toward the same
 // yellow so the outline and the fill read as one object.
 func noticeBorderStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current().Subtle, "#e2c044", 0.45)))
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Subtle, "#e2c044", 0.45)))
 }
 
 func noticeTitleStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Foreground(lipgloss.Color(mix(current().Bright, "#e2c044", 0.5))).Bold(true)
+	return lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Bright, "#e2c044", 0.5))).Bold(true)
 }
 
 func bugReportURL(version string) string {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -33,21 +34,21 @@ func (m *Model) computerLines(width int) []string {
 	barWidth := uiworkspace.MeterWidth(width)
 
 	render := func(label string, percent float64, extra, bar string) string {
-		line := pad + labelStyle().Width(5).Render(label) + bar +
-			valueStyle().Render(fmt.Sprintf(" %3.0f%%", percent))
+		line := pad + uitheme.LabelStyle().Width(5).Render(label) + bar +
+			uitheme.ValueStyle().Render(fmt.Sprintf(" %3.0f%%", percent))
 		if extra != "" {
-			line += subtleStyle().Render(" " + extra)
+			line += uitheme.SubtleStyle().Render(" " + extra)
 		}
 		return line
 	}
 	meter := func(label string, percent float64, ok bool, extra string) string {
 		if !ok {
-			return pad + labelStyle().Width(5).Render(label) + subtleStyle().Render("n/a")
+			return pad + uitheme.LabelStyle().Width(5).Render(label) + uitheme.SubtleStyle().Render("n/a")
 		}
-		return render(label, percent, extra, gauge(percent, barWidth, false))
+		return render(label, percent, extra, uitheme.Gauge(percent, barWidth, false))
 	}
 
-	lines := []string{pad + subtleStyle().Render("computer")}
+	lines := []string{pad + uitheme.SubtleStyle().Render("computer")}
 	lines = append(lines,
 		meter("cpu", snap.CPUPercent, snap.CPUOK, ""),
 		meter("mem", snap.MemPercent, snap.MemOK, uiframe.HumanBytes(snap.MemUsed)+"/"+uiframe.HumanBytes(snap.MemTotal)),
@@ -63,7 +64,7 @@ func (m *Model) computerLines(width int) []string {
 		line := meter("disk", snap.DiskPercent, true, extra)
 		if ansi.StringWidth(line) > width {
 			lines = append(lines, meter("disk", snap.DiskPercent, true, ""),
-				pad+strings.Repeat(" ", 5)+subtleStyle().Render(extra))
+				pad+strings.Repeat(" ", 5)+uitheme.SubtleStyle().Render(extra))
 		} else {
 			lines = append(lines, line)
 		}
@@ -76,15 +77,15 @@ func (m *Model) computerLines(width int) []string {
 			extra = "charging"
 		}
 		lines = append(lines, render("batt", snap.BatteryPercent, extra,
-			gauge(snap.BatteryPercent, barWidth, true)))
+			uitheme.Gauge(snap.BatteryPercent, barWidth, true)))
 	}
 	if temps := tempReadings(snap); temps != "" {
-		lines = append(lines, pad+labelStyle().Width(5).Render("temp")+temps)
+		lines = append(lines, pad+uitheme.LabelStyle().Width(5).Render("temp")+temps)
 	}
 	if m.workspace.net.Rates {
-		lines = append(lines, pad+labelStyle().Width(5).Render("net")+
-			valueStyle().Render("↓ "+uiframe.HumanBytes(m.workspace.net.Down)+"/s")+
-			subtleStyle().Render("  ↑ "+uiframe.HumanBytes(m.workspace.net.Up)+"/s"))
+		lines = append(lines, pad+uitheme.LabelStyle().Width(5).Render("net")+
+			uitheme.ValueStyle().Render("↓ "+uiframe.HumanBytes(m.workspace.net.Down)+"/s")+
+			uitheme.SubtleStyle().Render("  ↑ "+uiframe.HumanBytes(m.workspace.net.Up)+"/s"))
 	}
 	return append(lines, "")
 }
@@ -92,9 +93,9 @@ func (m *Model) computerLines(width int) []string {
 func tempReadings(snap uiworkspace.Readings) string {
 	styled := make([]string, 0, 3)
 	for _, reading := range uiworkspace.Temperatures(snap) {
-		styled = append(styled, valueStyle().Render(reading))
+		styled = append(styled, uitheme.ValueStyle().Render(reading))
 	}
-	return strings.Join(styled, subtleStyle().Render("  "))
+	return strings.Join(styled, uitheme.SubtleStyle().Render("  "))
 }
 
 func (m *Model) railFootLines(width int) []string {
@@ -110,9 +111,9 @@ func (m *Model) railFootLines(width int) []string {
 func (m *Model) fullFootLine(width int) []string {
 	reading := func(label, value string, ok bool) string {
 		if !ok {
-			return labelStyle().Render(label+" ") + subtleStyle().Render("n/a")
+			return uitheme.LabelStyle().Render(label+" ") + uitheme.SubtleStyle().Render("n/a")
 		}
-		return labelStyle().Render(label+" ") + valueStyle().Render(value)
+		return uitheme.LabelStyle().Render(label+" ") + uitheme.ValueStyle().Render(value)
 	}
 	snap := snapReadings(m.workspace.snap)
 	parts := []string{
@@ -131,7 +132,7 @@ func (m *Model) fullFootLine(width int) []string {
 		parts = append(parts, reading("batt", value, true))
 	}
 	if temps := tempReadings(snap); temps != "" {
-		parts = append(parts, labelStyle().Render("temp ")+temps)
+		parts = append(parts, uitheme.LabelStyle().Render("temp ")+temps)
 	}
 	if m.workspace.net.Rates {
 		parts = append(parts, reading("net", "↓ "+uiframe.HumanBytes(m.workspace.net.Down)+"/s ↑ "+uiframe.HumanBytes(m.workspace.net.Up)+"/s", true))

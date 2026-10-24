@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
@@ -45,10 +46,10 @@ func TestStatusMessageWarnsInItsOwnTone(t *testing.T) {
 	if !strings.Contains(ansi.Strip(got), "▲ copied the whole pane") {
 		t.Fatalf("warning should take the warning glyph, got %q", ansi.Strip(got))
 	}
-	if got != warnStyle().Render("▲ copied the whole pane") {
+	if got != uitheme.WarnStyle().Render("▲ copied the whole pane") {
 		t.Fatalf("warning should render in the warning style, got %q", got)
 	}
-	if got == doneStyle().Render("✔ copied the whole pane") || got == errStyle().Render("✖ copied the whole pane") {
+	if got == uitheme.DoneStyle().Render("✔ copied the whole pane") || got == uitheme.ErrStyle().Render("✖ copied the whole pane") {
 		t.Fatal("warning must not read as an outcome or a failure")
 	}
 }

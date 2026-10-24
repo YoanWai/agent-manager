@@ -13,6 +13,7 @@ import (
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -154,8 +155,8 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previousProfile) })
-	previousTheme := current()
-	applyTheme(themes[0])
+	previousTheme := uitheme.Current()
+	applyTheme(uitheme.Palettes[0])
 	t.Cleanup(func() { applyTheme(previousTheme) })
 
 	tests := []struct {
@@ -220,7 +221,7 @@ func TestHelpOpensDocs(t *testing.T) {
 	t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
 
 	frame := preparedView(m)
-	if !strings.Contains(frame, hintCap("o", "docs")) {
+	if !strings.Contains(frame, uitheme.HintCap("o", "docs")) {
 		t.Fatal("the docs shortcut should wear the footer badge")
 	}
 	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})

@@ -12,6 +12,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -53,7 +54,7 @@ func TestSettingsEnterDefersStoreWrites(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().State().ThemeIndex].Name
+	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 
 	_, cmd := m.handleSettingsKey(key("enter"))
 	if m.settingsOpen() {
@@ -116,7 +117,7 @@ func TestSettingsSaveKeepsCapturedChoices(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	captured := themes[m.settingsCard().State().ThemeIndex].Name
+	captured := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	_, cmd := m.handleSettingsKey(key("enter"))
 
 	m.openSettings()
@@ -142,7 +143,7 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().State().ThemeIndex].Name
+	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	m.settingsCard().State().Field = uisettings.FieldCoordination
 	m.cycleSetting(1)
 	if !m.settingsCard().State().Proactive {
@@ -175,7 +176,7 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 	if m.errBar.text == "" {
 		t.Fatal("partial failure should surface in the err bar")
 	}
-	if got := themes[m.settingsCard().State().ThemeIndex].Name; got != staged {
+	if got := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name; got != staged {
 		t.Fatalf("live dialog restored to %q, want committed %q", got, staged)
 	}
 	if m.settingsCard().State().Proactive {
@@ -394,11 +395,11 @@ func TestSettingsSaveCompletionRefusesStaleGeneration(t *testing.T) {
 	m.settings.Gen++
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	newer := themes[m.settingsCard().State().ThemeIndex].Name
+	newer := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 
 	result := settingsEffectResult{outcome: uipersist.SaveResult{Generation: request.generation, Restored: []uisettings.Readback{{Key: uisettings.ThemeSetting, Value: "nord"}}}}
 	m.applySettingsEffect(&uieffects.Job{Request: request}, result, errors.New("partial"))
-	if themes[m.settingsCard().State().ThemeIndex].Name != newer {
+	if uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name != newer {
 		t.Fatal("stale completion overwrote the newer dialog")
 	}
 	if m.errBar.text == "" {
@@ -430,7 +431,7 @@ func TestSettingsSaveDoesNotBlockWindowUpdate(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().State().ThemeIndex].Name
+	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	_, command := m.handleSettingsKey(key("enter"))
 
 	completed := make(chan tea.Msg, 1)
@@ -466,7 +467,7 @@ func TestEffectQueueDrainsSettingsSaveOnQuit(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().State().ThemeIndex].Name
+	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	m.settings.Gen++
 	request := settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}
 	m.enqueueEffect(request, 0, false)
@@ -521,7 +522,7 @@ func TestSettingsSaveDuplicateCompletionIsIdempotent(t *testing.T) {
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldTheme
 	m.cycleSetting(1)
-	staged := themes[m.settingsCard().State().ThemeIndex].Name
+	staged := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 	m.settings.Gen++
 	m.enqueueEffect(settingsRequest{values: m.settingsCard().State().Values(), generation: m.settings.Gen}, 0, false)
 	command := m.nextEffectCmd()

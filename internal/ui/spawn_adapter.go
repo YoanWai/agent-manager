@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -105,14 +106,14 @@ func (p promptBox) Message() string { return p.c.Message() }
 func (m *Model) spawnStyles() spawn.Styles {
 	return spawn.Styles{
 		GlyphMode:   m.prefs.glyphMode,
-		Subtle:      subtleStyle(),
-		Value:       valueStyle(),
-		Muted:       mutedStyle(),
-		Warn:        warnStyle(),
-		Label:       labelStyle(),
-		SubtleColor: colorSubtle(),
-		Accent:      colorAccent(),
-		Accent2:     colorAccent2(),
+		Subtle:      uitheme.SubtleStyle(),
+		Value:       uitheme.ValueStyle(),
+		Muted:       uitheme.MutedStyle(),
+		Warn:        uitheme.WarnStyle(),
+		Label:       uitheme.LabelStyle(),
+		SubtleColor: uitheme.ColorSubtle(),
+		Accent:      uitheme.ColorAccent(),
+		Accent2:     uitheme.ColorAccent2(),
 		Input:       uiframe.TextInputView,
 	}
 }
@@ -325,7 +326,7 @@ func (m *Model) viewForm() string {
 	facts.WorktreeCapable, facts.WorktreeKnown = m.cachedWorktreeCapability(m.formSpawnDir())
 	if f.Remote.On() {
 		facts.WorktreeCapable, facts.WorktreeKnown = true, true
-		facts.Host = lipgloss.NewStyle().Foreground(colorRemote()).Render(f.Remote.Host)
+		facts.Host = lipgloss.NewStyle().Foreground(uitheme.ColorRemote()).Render(f.Remote.Host)
 	} else if m.formWorktreeOn() {
 		facts.Base = m.spawnBaseLabel(m.formSpawnDir(), m.selectedGroupPath())
 	}

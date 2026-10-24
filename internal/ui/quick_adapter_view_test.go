@@ -7,6 +7,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -70,7 +71,7 @@ func TestQuickBarMeasuresRowsAtTheWidthItJustSet(t *testing.T) {
 	m.quick().Input.SetWidth(80)
 	m.quick().Input.SetValue("one two three four five six seven eight nine ten")
 	bar := m.viewQuickBar(14, uiquick.BarMaxRows)
-	if rows := len(splitLines(bar)) - 1; rows < 2 {
+	if rows := len(uitheme.SplitLines(bar)) - 1; rows < 2 {
 		t.Fatalf("rows = %d, want the wrap at width 14, not the previous width", rows)
 	}
 }
@@ -88,7 +89,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			m.openQuickMode()
 			m.quick().Input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
 			frame := preparedView(m)
-			frameRows := splitLines(frame)
+			frameRows := uitheme.SplitLines(frame)
 			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
 				t.Fatalf("full %v width %d footer must end on the last terminal row", full, width)
 			}
@@ -109,12 +110,12 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 					t.Fatalf("band row %d width = %d, want %d", y, cells, m.layout.width)
 				}
 				for x := 0; x < m.layout.width; x++ {
-					if y == m.layout.height-keysHeight && x >= quickGutter && x < quickGutter+ansi.StringWidth(legendBadgeStyle().Render(quickModeTitle)) {
+					if y == m.layout.height-keysHeight && x >= quickGutter && x < quickGutter+ansi.StringWidth(uitheme.LegendBadgeStyle().Render(quickModeTitle)) {
 						continue
 					}
-					want := quickModeHex()
+					want := uitheme.QuickModeHex()
 					if y > m.layout.height-footerHeight && y < m.layout.height-keysHeight {
-						want = blockHex()
+						want = uitheme.BlockHex()
 					}
 					if !sameColor(backgrounds[y][x], hexColor(want)) {
 						t.Fatalf("full %v width %d row %d col %d background = %v, want %s", full, width, y, x, backgrounds[y][x], want)

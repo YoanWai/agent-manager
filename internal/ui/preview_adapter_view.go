@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -31,12 +32,12 @@ func (m *Model) contentLines(width, height int) []contentLine {
 		return out
 	}
 
-	body := ours(splitLines(m.viewDetail(inner)))
+	body := ours(uitheme.SplitLines(m.viewDetail(inner)))
 	rest := height - len(body) - 1
 	if rest >= 3 {
 		if group, ok := m.selectedGroup(); ok {
 			body = append(body, contentLine{rule: true})
-			body = append(body, ours(splitLines(m.viewGroupAgents(group, inner, rest)))...)
+			body = append(body, ours(uitheme.SplitLines(m.viewGroupAgents(group, inner, rest)))...)
 		} else {
 			separator := contentLine{rule: true}
 			if m.focused() {
@@ -57,7 +58,7 @@ func (m *Model) listHint(action, label string) string {
 	if glyph == "" {
 		return ""
 	}
-	return keyCap(glyph, label)
+	return uitheme.KeyCap(glyph, label)
 }
 
 // startupLoader is the ring a session still booting shows in place of its
@@ -100,8 +101,8 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 			OriginX:        m.focusPaneOriginX(),
 			OriginY:        originY,
 			CaretRow:       m.paneCaretRow(),
-			CursorStyle:    lipgloss.NewStyle().Foreground(colorBg()).Background(colorAccent()),
-			SelectionStyle: lipgloss.NewStyle().Foreground(colorBg()).Background(colorAccent2()),
+			CursorStyle:    lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent()),
+			SelectionStyle: lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Background(uitheme.ColorAccent2()),
 		})
 		if !rendered.HasPane {
 			return m.emptyPreview(width, gutter, loader)
@@ -129,7 +130,7 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 // ring while the session boots, otherwise a quiet placeholder.
 func (m *Model) emptyPreview(width int, gutter string, loader []string) []contentLine {
 	if loader == nil {
-		return []contentLine{{text: gutter + mutedStyle().Render("(no output yet)")}}
+		return []contentLine{{text: gutter + uitheme.MutedStyle().Render("(no output yet)")}}
 	}
 	rows := make([]string, len(loader))
 	for i, line := range loader {
@@ -163,7 +164,7 @@ func (m *Model) focusPaneOriginX() int {
 // factRow is one line of a detail head, with its label painted in the
 // manager's quiet label tone inside the head's label column.
 func factRow(label string, value func(room int) string, right string, width int) string {
-	return uipreview.FactRow(labelStyle().Render(uipreview.FactLabel(label)), value, right, width)
+	return uipreview.FactRow(uitheme.LabelStyle().Render(uipreview.FactLabel(label)), value, right, width)
 }
 
 // viewDetail heads the content column: the selected session's name, its
@@ -174,7 +175,7 @@ func (m *Model) viewDetail(width int) string {
 		if group, isGroup := m.selectedGroup(); isGroup {
 			return m.viewGroupDetail(group, width)
 		}
-		return mutedStyle().Render("Select a session to inspect it.")
+		return uitheme.MutedStyle().Render("Select a session to inspect it.")
 	}
 	tool := sess.Tool
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && !s.IsGroup() && s.SessionID() == sess.ID {
@@ -185,36 +186,36 @@ func (m *Model) viewDetail(width int) string {
 
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(m.glyphs().StatusGlyph(sess.Status)+" "+statusLabel(sess.Status)) +
-		subtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))+m.elsewhereNote(sess))
+		uitheme.SubtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))+m.elsewhereNote(sess))
 	if sess.AfterTurn != "" {
-		state += subtleStyle().Render(" · ") + m.afterTurnBadge(sess.AfterTurn) + subtleStyle().Render(" "+afterTurnNote[sess.AfterTurn])
+		state += uitheme.SubtleStyle().Render(" · ") + m.afterTurnBadge(sess.AfterTurn) + uitheme.SubtleStyle().Render(" "+afterTurnNote[sess.AfterTurn])
 	}
 	// The branch a worktree session lives on is the fact that tells it apart
 	// from its siblings, so it rides beside the tool while the row has room,
 	// and the tool chip goes before the name does.
-	name := lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(m.displayName(sess))
+	name := lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render(m.displayName(sess))
 	// Ahead of the name because FitColumns trims the head from its tail: the
 	// rail still shows the name, while a trimmed badge leaves no trace that
 	// anything is waiting.
 	if queued := m.workspace.queuedMessages[sess.ID]; queued > 0 {
 		name = inboxBadge(m.glyphs(), queued) + " " + name
 	}
-	withTool := name + "  " + chipStyle().Render(tool)
+	withTool := name + "  " + uitheme.ChipStyle().Render(tool)
 	heads := []string{withTool, name}
 	if sess.WorktreeBranch != "" {
-		heads = append([]string{withTool + " " + chipStyle().Render(m.glyphs().BranchGlyph+" "+sess.WorktreeBranch)}, heads...)
+		heads = append([]string{withTool + " " + uitheme.ChipStyle().Render(m.glyphs().BranchGlyph+" "+sess.WorktreeBranch)}, heads...)
 	}
 
 	usage := ""
 	if m.workspace.procFor == sess.ID && m.workspace.proc.OK {
-		usage = labelStyle().Render("cpu ") + valueStyle().Render(fmt.Sprintf("%.1f%%", m.workspace.proc.CPUPercent)) +
-			subtleStyle().Render(" · ") + labelStyle().Render("ram ") +
-			valueStyle().Render(fmt.Sprintf("%.1f%%", m.workspace.proc.RamPercent)) +
-			subtleStyle().Render(" · ") + valueStyle().Render(uiframe.HumanBytes(m.workspace.proc.RSS))
+		usage = uitheme.LabelStyle().Render("cpu ") + uitheme.ValueStyle().Render(fmt.Sprintf("%.1f%%", m.workspace.proc.CPUPercent)) +
+			uitheme.SubtleStyle().Render(" · ") + uitheme.LabelStyle().Render("ram ") +
+			uitheme.ValueStyle().Render(fmt.Sprintf("%.1f%%", m.workspace.proc.RamPercent)) +
+			uitheme.SubtleStyle().Render(" · ") + uitheme.ValueStyle().Render(uiframe.HumanBytes(m.workspace.proc.RSS))
 	}
-	started := subtleStyle().Render("started " + uiframe.RelSince(sess.CreatedAt))
-	group := lipgloss.NewStyle().Foreground(colorAccent2()).Render(uiframe.DisplayGroup(sess.Group))
-	dir := func(room int) string { return mutedStyle().Render(presentation.TruncateTail(m.sessionDir(sess), room)) }
+	started := uitheme.SubtleStyle().Render("started " + uiframe.RelSince(sess.CreatedAt))
+	group := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Render(uiframe.DisplayGroup(sess.Group))
+	dir := func(room int) string { return uitheme.MutedStyle().Render(presentation.TruncateTail(m.sessionDir(sess), room)) }
 	return uipreview.FitColumns(heads, []string{state}, width) + "\n" +
 		factRow("group", uipreview.PlainValue(group), started, width) + "\n" +
 		factRow("dir", dir, usage, width)
@@ -228,8 +229,8 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	if count == 1 {
 		countLabel = "1 agent"
 	}
-	title := lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render(uiframe.DisplayGroup(group))
-	head := uipreview.FitColumns([]string{title + "  " + chipStyle().Render(countLabel), title}, []string{""}, width)
+	title := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true).Render(uiframe.DisplayGroup(group))
+	head := uipreview.FitColumns([]string{title + "  " + uitheme.ChipStyle().Render(countLabel), title}, []string{""}, width)
 
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && s.IsGroup() && s.Path() == group {
 		return head + "\n" + m.viewRenameGroupFields(s, group, width)
@@ -239,9 +240,9 @@ func (m *Model) viewGroupDetail(group string, width int) string {
 	source := ""
 	if path == "" {
 		path = m.capturedGroupDefaultDir(group)
-		source = subtleStyle().Render("inherited")
+		source = uitheme.SubtleStyle().Render("inherited")
 	}
-	dir := func(room int) string { return mutedStyle().Render(presentation.TruncateTail(path, room)) }
+	dir := func(room int) string { return uitheme.MutedStyle().Render(presentation.TruncateTail(path, room)) }
 	lines := []string{head, factRow("dir", dir, source, width)}
 	if breakdown := uirail.GroupStatusBreakdown(m.railTheme(), m.railAgents(), group); breakdown != "" {
 		// The key that spawns into a group is the one people miss, since the
@@ -274,7 +275,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		if prompt := m.listGlyph(keybind.Prompt); prompt != "" {
 			none = "(none yet, press " + prompt + " to spawn one)"
 		}
-		return subtleStyle().Render("agents") + "\n" + mutedStyle().Render(none)
+		return uitheme.SubtleStyle().Render("agents") + "\n" + uitheme.MutedStyle().Render(none)
 	}
 
 	type rosterRow struct{ name, tool, state string }
@@ -286,14 +287,14 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 			continue
 		}
 		if shown >= height-2 && total > shown+1 {
-			overflow = subtleStyle().Render(fmt.Sprintf("… %d more", total-shown))
+			overflow = uitheme.SubtleStyle().Render(fmt.Sprintf("… %d more", total-shown))
 			break
 		}
 		tint := lipgloss.NewStyle().Foreground(statusColor(sess.Status))
 		rows = append(rows, rosterRow{
-			name:  tint.Render(m.glyphs().StatusGlyph(sess.Status)) + " " + valueStyle().Render(m.displayName(sess)),
-			tool:  subtleStyle().Render(sess.Tool),
-			state: tint.Render(statusLabel(sess.Status)) + subtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))),
+			name:  tint.Render(m.glyphs().StatusGlyph(sess.Status)) + " " + uitheme.ValueStyle().Render(m.displayName(sess)),
+			tool:  uitheme.SubtleStyle().Render(sess.Tool),
+			state: tint.Render(statusLabel(sess.Status)) + uitheme.SubtleStyle().Render(" · "+uiframe.RelSince(uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt))),
 		})
 		shown++
 	}
@@ -326,13 +327,13 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 		nameWidth = max(room, rosterNameMin)
 	}
 
-	head := padRight(subtleStyle().Render("agent"), nameWidth)
+	head := padRight(uitheme.SubtleStyle().Render("agent"), nameWidth)
 	if showTool {
-		head += subtleStyle().Render("tool")
+		head += uitheme.SubtleStyle().Render("tool")
 	}
 	activity := ""
 	if showState {
-		activity = subtleStyle().Render("last activity")
+		activity = uitheme.SubtleStyle().Render("last activity")
 	}
 	lines := []string{uiframe.RowColumns(head, activity, width)}
 	for _, row := range rows {

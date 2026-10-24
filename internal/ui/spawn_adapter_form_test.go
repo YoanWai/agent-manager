@@ -17,6 +17,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -544,7 +545,7 @@ func TestFormChipRendersInTheCard(t *testing.T) {
 	if strings.Contains(plain, "paste-123") {
 		t.Fatalf("the card should not show the temp path, got %q", plain)
 	}
-	if !strings.Contains(view, imageChip(composer.Token(1))) {
+	if !strings.Contains(view, uitheme.ImageChip(composer.Token(1))) {
 		t.Fatal("chip should be styled in the rendered card")
 	}
 	if !strings.Contains(plain, "paste an image") {

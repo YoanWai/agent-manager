@@ -11,6 +11,7 @@ import (
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -66,11 +67,11 @@ func (m *Model) runConfirmed(target confirmTarget) tea.Cmd {
 // confirmCard is the shared yes/no card, also drawn by Settings' reset.
 func (m *Model) confirmCard(title, question, consequence string, destructive bool, answer string) string {
 	width := m.cardWidth()
-	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
+	tone := lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true)
 	if destructive {
-		tone = errStyle()
+		tone = uitheme.ErrStyle()
 	}
-	body := uidialogs.ConfirmBody(question, consequence, uiframe.CardInnerWidth(width), tone, mutedStyle())
+	body := uidialogs.ConfirmBody(question, consequence, uiframe.CardInnerWidth(width), tone, uitheme.MutedStyle())
 	return m.CardSized(width, title, body, uidialogs.ConfirmHints(answer))
 }
 
@@ -185,8 +186,8 @@ func (m *Model) openFork() {
 func (m *Model) viewFork(form *uidialogs.Fork) string {
 	card := form.View(uidialogs.ForkStyles{
 		BranchGlyph: m.glyphs().BranchGlyph,
-		Value:       valueStyle(),
-		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),
+		Value:       uitheme.ValueStyle(),
+		Group:       lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()),
 		Field:       m.formField,
 		Input:       uiframe.TextInputView,
 	})
@@ -233,13 +234,13 @@ func (m *Model) openRename() {
 func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, width int) string {
 	view := uidialogs.GroupFieldsView{
 		Width:     width,
-		Label:     labelStyle(),
-		Focused:   lipgloss.NewStyle().Foreground(colorAccent()),
-		Subtle:    subtleStyle(),
-		Value:     valueStyle(),
+		Label:     uitheme.LabelStyle(),
+		Focused:   lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+		Subtle:    uitheme.SubtleStyle(),
+		Value:     uitheme.ValueStyle(),
 		Input:     uiframe.TextInputView,
 		Worktrees: groupWorktreeOptions,
-		Base:      uidialogs.BaseChoice(subtleStyle(), valueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group))),
+		Base:      uidialogs.BaseChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group))),
 	}
 	if s.Paths().Active() {
 		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }

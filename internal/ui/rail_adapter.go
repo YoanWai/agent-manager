@@ -12,6 +12,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -239,7 +240,7 @@ func (m *Model) prepareRailFrame(width, height int) {
 	m.layout.displayedRail = m.rail.Render(ctx, m.layout.displayedRail)
 }
 
-func (m *Model) railTheme() uirail.Theme { return current() }
+func (m *Model) railTheme() uirail.Theme { return uitheme.Current() }
 
 func railContentLines(lines []uirail.Line) []contentLine {
 	out := make([]contentLine, len(lines))

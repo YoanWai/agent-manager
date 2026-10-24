@@ -5,6 +5,7 @@ import (
 
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
 
 const (
@@ -27,7 +28,7 @@ func (m *Model) viewListFrame() string {
 
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
-		frame = append(frame, paint(line, m.layout.width, backdropHex()))
+		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	bleedWidth := contentWidth - 1
 	railWidth := leftWidth - 1
@@ -38,19 +39,19 @@ func (m *Model) viewListFrame() string {
 	edge := make([]string, bodyHeight)
 	for i := range seam {
 		seam[i] = m.seamCell(i < len(railRows) && railRows[i].rule)
-		tone := panelHex()
+		tone := uitheme.PanelHex()
 		if i < len(railRows) && railRows[i].tone != "" {
 			tone = railRows[i].tone
 		}
 		edge[i] = railEdgeCell(tone)
 	}
 	frame = append(frame, m.railTopRow(leftWidth+1, m.layout.width))
-	frame = append(frame, joinColumns(
+	frame = append(frame, uitheme.JoinColumns(
 		edge,
-		paintContent(railRows, railWidth, bodyHeight, panelHex()),
+		paintContent(railRows, railWidth, bodyHeight, uitheme.PanelHex()),
 		seam,
 		m.bleedColumn(bodyHeight),
-		paintContent(contentRows, bleedWidth, bodyHeight, backdropHex()),
+		paintContent(contentRows, bleedWidth, bodyHeight, uitheme.BackdropHex()),
 	)...)
 	bottom := m.boundedRuleRow(leftWidth+1, m.layout.width, "▄")
 	if m.focused() && m.focus.pane.FrameBox().Valid {
@@ -58,8 +59,8 @@ func (m *Model) viewListFrame() string {
 	}
 	frame = append(frame, bottom)
 	m.placeListFooter(footer, len(frame))
-	for _, line := range splitLines(footer.text) {
-		frame = append(frame, paint(line, m.layout.width, backdropHex()))
+	for _, line := range uitheme.SplitLines(footer.text) {
+		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
 }
@@ -73,24 +74,24 @@ func (m *Model) viewFullListFrame() string {
 
 	frame := []string{}
 	for _, line := range m.viewHeaderRows() {
-		frame = append(frame, paint(line, m.layout.width, backdropHex()))
+		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	m.prepareRailFrame(railWidth, bodyHeight)
 	railRows := railContentLines(m.layout.displayedRail.Lines)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
-		tone := panelHex()
+		tone := uitheme.PanelHex()
 		if i < len(railRows) && railRows[i].tone != "" {
 			tone = railRows[i].tone
 		}
 		edge[i] = railEdgeCell(tone)
 	}
 	frame = append(frame, m.railTopRow(railWidth, m.layout.width))
-	frame = append(frame, joinColumns(edge, paintContent(railRows, railWidth, bodyHeight, panelHex()))...)
+	frame = append(frame, uitheme.JoinColumns(edge, paintContent(railRows, railWidth, bodyHeight, uitheme.PanelHex()))...)
 	frame = append(frame, m.boundedRuleRow(railWidth, m.layout.width, "▄"))
 	m.placeListFooter(footer, len(frame))
-	for _, line := range splitLines(footer.text) {
-		frame = append(frame, paint(line, m.layout.width, backdropHex()))
+	for _, line := range uitheme.SplitLines(footer.text) {
+		frame = append(frame, uitheme.Paint(line, m.layout.width, uitheme.BackdropHex()))
 	}
 	return m.overlayTopRight(strings.Join(frame, "\n"), m.statusToast(), m.listChromeRows()+1)
 }

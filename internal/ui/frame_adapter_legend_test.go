@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -23,7 +24,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 		release:  uirelease.State{Latest: "v0.41.0", Version: "0.40.0"},
 	}
 	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160).text
-	if !strings.Contains(bar, legendAlertStyle().Render("M unread")) {
+	if !strings.Contains(bar, uitheme.LegendAlertStyle().Render("M unread")) {
 		t.Fatalf("waiting messages should use the working color:\n%s", bar)
 	}
 	idle := &Model{

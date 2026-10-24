@@ -7,6 +7,7 @@ import (
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -140,23 +141,23 @@ func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
 func (m *Model) spawnBaseLabel(dir, group string) string {
 	override := m.groupBase(group)
 	fetch := m.ledger.spawner.BaseFetch(dir, override)
-	label := valueStyle().Render(override) + subtleStyle().Render(" (group)")
+	label := uitheme.ValueStyle().Render(override) + uitheme.SubtleStyle().Render(" (group)")
 	if override == "" {
 		switch {
 		case !fetch.Resolved:
-			label = subtleStyle().Render("…")
+			label = uitheme.SubtleStyle().Render("…")
 		case fetch.Detected == "":
-			label = valueStyle().Render("HEAD") + subtleStyle().Render(" (auto)")
+			label = uitheme.ValueStyle().Render("HEAD") + uitheme.SubtleStyle().Render(" (auto)")
 		default:
-			label = valueStyle().Render(fetch.Detected) + subtleStyle().Render(" (auto)")
+			label = uitheme.ValueStyle().Render(fetch.Detected) + uitheme.SubtleStyle().Render(" (auto)")
 		}
 	}
 	switch {
 	case m.prefs.baseFetchOff:
 	case !fetch.Fetched:
-		label += subtleStyle().Render(" · fetching")
+		label += uitheme.SubtleStyle().Render(" · fetching")
 	case fetch.Err != nil:
-		label += subtleStyle().Render(" · fetch failed")
+		label += uitheme.SubtleStyle().Render(" · fetch failed")
 	}
 	return label
 }

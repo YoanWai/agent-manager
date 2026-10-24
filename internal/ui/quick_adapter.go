@@ -12,6 +12,7 @@ import (
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -53,7 +54,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	input.ShowLineNumbers = false
 	input.SetPromptFunc(2, func(lineIndex int) string {
 		if lineIndex == 0 {
-			return keyStyle().Render(m.glyphs().PromptGlyph + " ")
+			return uitheme.KeyStyle().Render(m.glyphs().PromptGlyph + " ")
 		}
 		return "  "
 	})
@@ -288,10 +289,10 @@ func (m *Model) handleQuickClick(hit uiquick.Hit) tea.Cmd {
 const quickModeTitle = "Quick prompt mode"
 
 func (m *Model) quickFooter(q *uiquick.Surface) legend {
-	edge := keyStyle().Render(quickEdge)
+	edge := uitheme.KeyStyle().Render(quickEdge)
 	gutter := strings.Repeat(" ", quickGutter-1)
 	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1))
-	keys := splitLines(painted.text)
+	keys := uitheme.SplitLines(painted.text)
 	rows := uiquick.BarMaxRows + 1
 	if q.Picking() != uiquick.PickNone {
 		rows = max(m.layout.height/2, rows)
@@ -300,16 +301,16 @@ func (m *Model) quickFooter(q *uiquick.Surface) legend {
 	room := m.layout.height - m.listChromeRows() - 1 - minBody - len(keys)
 	rows = max(min(rows, room), 2)
 	var lines []string
-	for i, line := range splitLines(m.viewQuickBar(max(m.layout.width-2*quickGutter, 1), rows)) {
-		tone := quickModeHex()
+	for i, line := range uitheme.SplitLines(m.viewQuickBar(max(m.layout.width-2*quickGutter, 1), rows)) {
+		tone := uitheme.QuickModeHex()
 		if i > 0 && q.Picking() == uiquick.PickNone {
-			tone = blockHex()
+			tone = uitheme.BlockHex()
 		}
-		lines = append(lines, paint(edge+gutter+line, m.layout.width, tone))
+		lines = append(lines, uitheme.Paint(edge+gutter+line, m.layout.width, tone))
 	}
 	hits := painted.hits.moved(lipgloss.Width(quickEdge), len(lines))
 	for _, line := range keys {
-		lines = append(lines, paint(edge+line, m.layout.width, quickModeHex()))
+		lines = append(lines, uitheme.Paint(edge+line, m.layout.width, uitheme.QuickModeHex()))
 	}
 	q.OriginX = quickGutter
 	return legend{text: strings.Join(lines, "\n"), hits: hits}
@@ -337,11 +338,11 @@ func (m *Model) viewQuickBar(width, maxRows int) string {
 // quickAnswerRow names the session an answer goes to, with its state and
 // tool where the width has room.
 func (m *Model) quickAnswerRow(entry treeRow, name string, width int) string {
-	label := labelStyle().Render(padRight("answer", uipreview.DetailLabelWidth)) + subtleStyle().Render("│ ")
+	label := uitheme.LabelStyle().Render(padRight("answer", uipreview.DetailLabelWidth)) + uitheme.SubtleStyle().Render("│ ")
 	sess := entry.sess
 	state := lipgloss.NewStyle().Foreground(statusColor(sess.Status)).
 		Render(m.glyphs().StatusGlyph(sess.Status) + " " + statusLabel(sess.Status))
 	return uipreview.FitColumns(
-		[]string{label + lipgloss.NewStyle().Foreground(colorBright()).Bold(true).Render(name)},
-		[]string{state + " " + chipStyle().Render(sess.Tool), state, ""}, width)
+		[]string{label + lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true).Render(name)},
+		[]string{state + " " + uitheme.ChipStyle().Render(sess.Tool), state, ""}, width)
 }

@@ -61,8 +61,8 @@ func useTrueColor(t *testing.T) {
 
 func usePaper(t *testing.T) {
 	t.Helper()
-	applyTheme(themes[themeIndex("paper")])
-	t.Cleanup(func() { applyTheme(themes[0]) })
+	applyTheme(uitheme.Palettes[uitheme.Index("paper")])
+	t.Cleanup(func() { applyTheme(uitheme.Palettes[0]) })
 }
 
 // The frame a terminal that ignores OSC 10 and 11 shows: light chrome and
@@ -82,8 +82,8 @@ func TestViewPaintsEveryCellWithTheThemeColors(t *testing.T) {
 			}
 		}
 	}
-	if corner := backgrounds[m.layout.height-1][m.layout.width-1]; !sameColor(corner, hexColor(current().Bg)) {
-		t.Errorf("bottom right cell = %v, want the backdrop %s", corner, current().Bg)
+	if corner := backgrounds[m.layout.height-1][m.layout.width-1]; !sameColor(corner, hexColor(uitheme.Current().Bg)) {
+		t.Errorf("bottom right cell = %v, want the backdrop %s", corner, uitheme.Current().Bg)
 	}
 }
 

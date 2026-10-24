@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uistartup "github.com/YoanWai/agent-manager/internal/ui/startup"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
 
 // startingLoader is the ring a session still booting shows in place of its
@@ -15,5 +16,5 @@ func startingLoader(g presentation.GlyphSet, starting bool, preview string, widt
 }
 
 func ringLoader(g presentation.GlyphSet, width, height int, label string, phase int) []string {
-	return uistartup.Ring(g, width, height, label, phase, current())
+	return uistartup.Ring(g, width, height, label, phase, uitheme.Current())
 }

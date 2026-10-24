@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -363,7 +364,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	m.prefs.comfortableRows = true
 	m.workspace.paneLines = nil
 	row := sessionRow(t, m, "add-rate-limiting")
-	lines := splitLines(m.renderTreeRow(row, false, m.layout.width-1, 4, panelHex()))
+	lines := uitheme.SplitLines(m.renderTreeRow(row, false, m.layout.width-1, 4, uitheme.PanelHex()))
 	if len(lines) != 3 {
 		t.Fatalf("comfortable row painted %d lines, want 3", len(lines))
 	}
@@ -499,11 +500,11 @@ func TestFullFocusRuleNamesTheSession(t *testing.T) {
 	if got := ansi.StringWidth(facts); got != m.layout.width {
 		t.Fatalf("facts line is %d wide, terminal is %d", got, m.layout.width)
 	}
-	if got := len(splitLines(m.focusFactsLine(m.layout.width))); got != 1 {
+	if got := len(uitheme.SplitLines(m.focusFactsLine(m.layout.width))); got != 1 {
 		t.Fatalf("facts painted %d lines, want 1", got)
 	}
 
-	rows := splitLines(ansi.Strip(preparedView(m)))
+	rows := uitheme.SplitLines(ansi.Strip(preparedView(m)))
 	head := m.headerRows()
 	isRule := func(row string) bool {
 		trimmed := strings.TrimSpace(row)

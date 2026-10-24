@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"path/filepath"
@@ -1030,7 +1031,7 @@ func TestClickOnMoreCounterSelectsTheRowItHides(t *testing.T) {
 	// A rail too short for seven sessions, so the window has to keep a
 	// counter for the ones it is leaving out.
 	m.layout.height = 12
-	frame := splitLines(preparedView(m))
+	frame := uitheme.SplitLines(preparedView(m))
 
 	y0, _ := m.bodyYRange()
 	counter, target := -1, -1
@@ -1076,7 +1077,7 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 	}
 	for _, x := range []int{2, 4, m.layout.displayedRail.Width} {
 		m.selectSessionRow(t, "one")
-		frame := splitLines(preparedView(m))
+		frame := uitheme.SplitLines(preparedView(m))
 		y0, _ := m.bodyYRange()
 		counter := -1
 		for i, row := range railHitRows(m) {

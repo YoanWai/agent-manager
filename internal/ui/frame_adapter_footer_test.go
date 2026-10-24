@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -218,12 +219,12 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	createSession(t, m, "toggles", dir, "work")
 	m.applyCmd(t, m.refreshCmd())
 
-	if footer := m.viewFooter(); !strings.Contains(footer, keyCapQuiet("F", "fold all")) {
+	if footer := m.viewFooter(); !strings.Contains(footer, uitheme.KeyCapQuiet("F", "fold all")) {
 		t.Fatalf("an open tree should offer folding:\n%s", ansi.Strip(footer))
 	}
 	updated, _ := m.handleKey(runeKey("F"))
 	m = updated.(*Model)
-	if footer := m.viewFooter(); !strings.Contains(footer, keyCapQuiet("F", "unfold all")) {
+	if footer := m.viewFooter(); !strings.Contains(footer, uitheme.KeyCapQuiet("F", "unfold all")) {
 		t.Fatalf("a folded tree should offer unfolding:\n%s", ansi.Strip(footer))
 	}
 
@@ -238,12 +239,12 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 		t.Fatalf("the fixture should list a group to fold, rows: %v", m.groupRowPaths())
 	}
 	setRailCursor(m, group)
-	if footer := m.viewFooter(); !strings.Contains(footer, keyCap("↵", "unfold")) {
+	if footer := m.viewFooter(); !strings.Contains(footer, uitheme.KeyCap("↵", "unfold")) {
 		t.Fatalf("a collapsed group should offer unfolding:\n%s", ansi.Strip(footer))
 	}
 
 	m.rail.SetArchived(true)
-	if footer := m.viewFooter(); !strings.Contains(footer, keyCapQuiet("t", "back to active")) {
+	if footer := m.viewFooter(); !strings.Contains(footer, uitheme.KeyCapQuiet("t", "back to active")) {
 		t.Fatalf("the archived view should offer the way back:\n%s", ansi.Strip(footer))
 	}
 }

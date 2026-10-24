@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -76,7 +77,7 @@ func TestOpenedEditorReadsAsAnOutcome(t *testing.T) {
 	if len(*launched) == 0 {
 		t.Fatalf("the editor never launched, status = %q", m.errBar.text)
 	}
-	if want := doneStyle().Render("● " + m.errBar.text); m.statusLine() != want {
+	if want := uitheme.DoneStyle().Render("● " + m.errBar.text); m.statusLine() != want {
 		t.Fatalf("status line is %q, want the outcome styling %q", m.statusLine(), want)
 	}
 }
@@ -90,7 +91,7 @@ func TestUpToDateReadsAsAnOutcome(t *testing.T) {
 	if m.errBar.text != "already up to date" {
 		t.Fatalf("status text is %q", m.errBar.text)
 	}
-	if want := doneStyle().Render("● already up to date"); m.statusLine() != want {
+	if want := uitheme.DoneStyle().Render("● already up to date"); m.statusLine() != want {
 		t.Fatalf("status line is %q, want %q", m.statusLine(), want)
 	}
 }
@@ -102,7 +103,7 @@ func TestFailureAfterAnOutcomeReadsAsAFailure(t *testing.T) {
 	m := shotModel()
 	m.reportDone("opened /tmp/project in code")
 	m.errBar.text = "git not found in PATH"
-	if want := errStyle().Render("✕ git not found in PATH"); m.statusLine() != want {
+	if want := uitheme.ErrStyle().Render("✕ git not found in PATH"); m.statusLine() != want {
 		t.Fatalf("status line is %q, want %q", m.statusLine(), want)
 	}
 
@@ -113,7 +114,7 @@ func TestFailureAfterAnOutcomeReadsAsAFailure(t *testing.T) {
 		m.ageError()
 	}
 	m.errBar.text = "opened /tmp/project in code"
-	if want := errStyle().Render("✕ opened /tmp/project in code"); m.statusLine() != want {
+	if want := uitheme.ErrStyle().Render("✕ opened /tmp/project in code"); m.statusLine() != want {
 		t.Fatalf("status line is %q, want %q", m.statusLine(), want)
 	}
 }

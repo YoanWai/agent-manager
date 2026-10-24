@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -510,7 +511,7 @@ func TestNarrowReviewKeepsBothPanesMeasurable(t *testing.T) {
 		if fileWidth+codeWidth > width {
 			t.Fatalf("width %d gave panes wider than the screen: %d and %d", width, fileWidth, codeWidth)
 		}
-		if lines := splitLines(preparedView(m)); len(lines) == 0 {
+		if lines := uitheme.SplitLines(preparedView(m)); len(lines) == 0 {
 			t.Fatalf("width %d rendered nothing", width)
 		}
 	}

@@ -31,6 +31,7 @@ import (
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -179,7 +180,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
+	applyTheme(uitheme.Palettes[uitheme.Index(resolveStartupTheme(st))])
 	driver.SetSessionKeys(sessionKeys)
 	model := &Model{
 		effects: effectState{Queue: uieffects.Queue{Lifetime: &uieffects.Lifetime{}}},

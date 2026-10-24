@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -153,7 +154,7 @@ func TestTerminalRowShowsItsNameImmediately(t *testing.T) {
 	if m.awaitingRename(sess) {
 		t.Fatalf("shell %q has no rename to wait for", sess.Name)
 	}
-	row := ansi.Strip(m.renderTreeRow(treeRow{sess: sess}, false, 80, 0, panelHex()))
+	row := ansi.Strip(m.renderTreeRow(treeRow{sess: sess}, false, 80, 0, uitheme.PanelHex()))
 	if !strings.Contains(row, sess.Name) {
 		t.Fatalf("shell row is missing its name %q:\n%s", sess.Name, row)
 	}

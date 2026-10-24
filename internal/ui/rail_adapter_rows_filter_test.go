@@ -6,6 +6,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"runtime"
@@ -231,7 +232,7 @@ func TestStatusFilterEmptyState(t *testing.T) {
 	}
 	m.rail.SetFilteringAttention(true)
 	m.rebuildRows()
-	rail := ansi.Strip(strings.Join(splitLines(joinContentText(m.railLines(40, 20))), "\n"))
+	rail := ansi.Strip(strings.Join(uitheme.SplitLines(joinContentText(m.railLines(40, 20))), "\n"))
 	if !strings.Contains(rail, "nothing needs attention") {
 		t.Fatalf("rail missing empty attention copy:\n%s", rail)
 	}
