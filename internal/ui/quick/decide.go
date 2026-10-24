@@ -45,10 +45,3 @@ func Execute(h Effects, q *Surface, request Request, cmd tea.Cmd) tea.Cmd {
 	}
 	return tea.Batch(cmd, follow)
 }
-
-// Spawning says the bar's target is a group, so a submit starts a session
-// rather than answers one.
-func Spawning(h Host, q *Surface) bool {
-	target, ok := h.Target()
-	return ok && target.IsGroup
-}
