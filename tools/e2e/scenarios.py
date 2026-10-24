@@ -12,13 +12,12 @@ import re
 import shlex
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import time
 import uuid
 from pathlib import Path
 
-from smoke import Sandbox, settle_messages
+from smoke import Sandbox, profile_dir, settle_messages
 
 BUILTIN_TOOLS = ('antigravity', 'claude', 'command-code', 'codex', 'gemini',
                  'grok', 'hermes', 'muse', 'opencode', 'pi', 'terminal')
@@ -51,13 +50,6 @@ def fake_cli_script(marker, delay=0):
 def config_fixture_text():
     # poll_interval shortens the poller so readiness observations stay fast.
     return 'poll_interval = "1s"\n'
-
-
-def profile_dir(sandbox):
-    # os.UserConfigDir: Library/Application Support on macOS, XDG_CONFIG_HOME elsewhere.
-    if sys.platform == 'darwin':
-        return sandbox.home / 'Library' / 'Application Support' / 'agent-manager'
-    return sandbox.home / '.config' / 'agent-manager'
 
 
 def write_fixture(sandbox, slow_seconds=0):

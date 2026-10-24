@@ -11,6 +11,11 @@ import tempfile
 import time
 
 
+def profile_dir(sandbox):
+    """Where the binary keeps its profile: the XDG_CONFIG_HOME the sandbox sets."""
+    return sandbox.home / '.config' / 'agent-manager'
+
+
 class Sandbox:
     sockets = ('e2e-outer', 'agentmgr')
 
@@ -54,7 +59,7 @@ class Sandbox:
         looks for. A cache this build parsed, checked just now and holding no
         messages, serves from disk within the check interval.
         """
-        config_dir = self.home / '.config' / 'agent-manager'
+        config_dir = profile_dir(self)
         config_dir.mkdir(parents=True, exist_ok=True)
         cache = dict(checked_at=time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), parser=1, messages=[])
         (config_dir / 'feed-messages.json').write_text(json.dumps(cache))
