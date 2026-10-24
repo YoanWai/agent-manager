@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/charmbracelet/lipgloss"
@@ -529,7 +530,7 @@ func TestRowMarksSessionsOnAnotherServer(t *testing.T) {
 				layout: layoutState{
 					width:  120,
 					height: 40,
-					split:  splitState{ratio: defaultSplitRatio},
+					split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 				},
 				workspace: workspace{sessions: []store.Session{sess},
 
@@ -556,7 +557,7 @@ func TestRowsAreUnmarkedBeforeTheFirstPoll(t *testing.T) {
 		layout: layoutState{
 			width:  120,
 			height: 40,
-			split:  splitState{ratio: defaultSplitRatio},
+			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 		},
 		workspace: workspace{sessions: []store.Session{sess}},
 		rail:      railModelFromRows([]treeRow{{sess: sess}}, 0),

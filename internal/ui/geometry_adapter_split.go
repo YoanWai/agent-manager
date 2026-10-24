@@ -1,53 +1,28 @@
 package ui
 
 import (
-	"strconv"
-
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// splitState is the horizontal sessions/sidebar split. ratio is the left
-// panel's share of the terminal width; resizeMode arms keyboard divider
-// nudging, dragging holds a divider drag whichever armed it, and moved
-// separates a drag from a plain click on the seam, which commits nothing.
+// splitState is the horizontal sessions/sidebar split as the mouse, the
+// resize surface and the status line read it. The gesture stays on the root
+// because mouse.go drives the same divider the surface does.
 type splitState struct {
 	ratio       float64
 	ratioBefore float64
 	resizeMode  bool
 	dragging    bool
 	moved       bool
-	// saveID is the newest accepted persistence job. saveError remembers only
-	// this adapter's visible failure so a later successful save can clear it
-	// without erasing another feature's status.
-	saveID    uint64
-	saveError string
 }
 
-const (
-	splitRatioSetting = uigeometry.SplitRatioSetting
-	defaultSplitRatio = uigeometry.DefaultSplitRatio
-	minSplitSide      = uigeometry.MinSplitSide
-	splitHitSlop      = uigeometry.SplitHitSlop
-)
+// splitHitSlop is how many columns past the junction count as the divider,
+// on top of the junction itself.
+const splitHitSlop = uigeometry.SplitHitSlop
 
-// settingReader is the store surface loadSplitRatio needs; tests stub it.
-type settingReader interface {
-	Setting(key string) (string, error)
-}
-
-// loadSplitRatio restores the sessions/sidebar ratio, or the 30% default
-// when nothing is stored or the value is unusable.
-func loadSplitRatio(st settingReader) float64 {
-	raw, err := st.Setting(splitRatioSetting)
-	if err != nil {
-		return defaultSplitRatio
-	}
-	return uigeometry.ParseRatio(raw)
-}
-
-func clampSplitLeft(left, width int) int { return uigeometry.ClampSplitLeft(left, width) }
-
+// splitWidths is the body's horizontal split: the sessions panel takes ratio
+// of the width, floored so both sides stay usable.
 func (m *Model) splitWidths() (int, int) {
 	return uigeometry.Widths(m.layout.split.ratio, m.layout.width)
 }
@@ -58,11 +33,7 @@ func (m *Model) persistSplitRatio() {
 	if m.services.store == nil {
 		return
 	}
-	previousID := m.effects.NextID
-	m.enqueueEffect(splitSaveRequest{value: strconv.FormatFloat(m.layout.split.ratio, 'f', 4, 64)}, 0, false)
-	if m.effects.NextID != previousID {
-		m.layout.split.saveID = m.effects.NextID
-	}
+	m.panes.Persist(paneSizing{m}, m.layout.split.ratio)
 }
 
 // prepareSplitForQuit accepts the live preview as the user's final ratio.
@@ -167,3 +138,28 @@ func (m *Model) dividerX() int {
 func (m *Model) onDivider(x int) bool {
 	return uigeometry.OnDivider(x, m.dividerX())
 }
+
+// paneSizing is the root as the geometry runtime reaches it: what a shrink
+// costs a tool, the effect lane a pin rides, and the ratio save it starts.
+type paneSizing struct{ *Model }
+
+func (r paneSizing) FitsHeight(tool string) bool { return r.services.cfg.Tools[tool].FitsHeight }
+
+func (r paneSizing) Queue(request uigeometrypanes.Resize) { r.queueGeometry(request) }
+
+func (r paneSizing) SaveSplitRatio(value string) uint64 {
+	previousID := r.effects.NextID
+	r.enqueueEffect(splitSaveRequest{value: value}, 0, false)
+	if r.effects.NextID == previousID {
+		return 0
+	}
+	return r.effects.NextID
+}
+
+func (r paneSizing) ReportErr(text string) { r.reportErr(text) }
+
+func (r paneSizing) ClearErr() { r.clearErr() }
+
+func (r paneSizing) ErrorIs(text string) bool { return r.errBar.text == text }
+
+var _ uigeometrypanes.Root = paneSizing{}

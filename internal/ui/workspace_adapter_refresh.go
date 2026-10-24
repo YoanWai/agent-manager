@@ -213,7 +213,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.updateNetRates(msg.snap)
 		}
 		// Sessions left from a previous run carry that run's window size,
-		// which the cache knows nothing about; seedPaneGeom adopts their
+		// which the cache knows nothing about; the geometry cache adopts their
 		// real geometry on the first pass, so nothing resets the cache here.
 		if !m.startup.sessionsSized && m.layout.width > 0 && len(m.workspace.sessions) > 0 {
 			m.startup.sessionsSized = true

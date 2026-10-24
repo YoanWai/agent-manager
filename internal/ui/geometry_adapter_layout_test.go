@@ -4,11 +4,12 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"github.com/charmbracelet/lipgloss"
 )
 
 func TestBodyYRangeMatchesListChrome(t *testing.T) {
-	m := &Model{layout: layoutState{width: 120, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}
+	m := &Model{layout: layoutState{width: 120, height: 40, split: splitState{ratio: uigeometry.DefaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}
 	start, end := m.bodyYRange()
 	if start != m.listChromeRows() {
 		t.Fatalf("start = %d want listChromeRows=%d", start, m.listChromeRows())

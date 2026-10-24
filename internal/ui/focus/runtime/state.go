@@ -6,21 +6,11 @@ import (
 )
 
 // State is what one run keeps for the focused pane: the watcher the manager
-// opened on its tmux server, and the sizes it published so a reflow re-pins
-// only the panes that moved. Both outlive the surface that paints them.
+// opened on its tmux server, which outlives the surface that paints it.
 type State struct {
 	// Watch follows the selected session's pane, nil until the poller starts
 	// one.
 	Watch *watch.Watcher
-	// Sizes is the last size each session's window was given, keyed by
-	// session id. A zero pair is a pin this run still owes.
-	Sizes map[string][2]int
-	// PIDs is the pane process each session ran when its size was measured,
-	// so a window a revive outside this process replaced is sized again.
-	PIDs map[string]int
-	// Published is the box recorded for the launch paths that run without a
-	// manager, which the CLI and the MCP server read.
-	Published [2]int
 }
 
 // Watching is the session the watcher serves, empty when it serves none.
@@ -96,44 +86,3 @@ func (s *State) CaughtUp(writes uint64) bool {
 func (s *State) KeepsPaneFacts(pane *focus.Model, sessionID string) bool {
 	return s.Serving(sessionID) && pane.Pane().SessionID == sessionID
 }
-
-// SizeOf is the size a session's window was last given, and whether it was
-// given one.
-func (s *State) SizeOf(id string) ([2]int, bool) {
-	size, ok := s.Sizes[id]
-	return size, ok
-}
-
-// SetSize records the size a window was set to.
-func (s *State) SetSize(id string, size [2]int) {
-	if s.Sizes == nil {
-		s.Sizes = map[string][2]int{}
-	}
-	s.Sizes[id] = size
-}
-
-// PinOwed records a session whose window this run created, so its one exact
-// pin runs once.
-func (s *State) PinOwed(id string) { s.SetSize(id, [2]int{0, 0}) }
-
-// Forget drops a remembered size, so the next measurement pins the window
-// again.
-func (s *State) Forget(id string) { delete(s.Sizes, id) }
-
-// PIDOf is the pane process recorded for a session, zero when none was.
-func (s *State) PIDOf(id string) int { return s.PIDs[id] }
-
-// SetPID records the pane process a session now runs in.
-func (s *State) SetPID(id string, pid int) {
-	if s.PIDs == nil {
-		s.PIDs = map[string]int{}
-	}
-	s.PIDs[id] = pid
-}
-
-// PublishedSize is the box recorded for the launch paths that run without a
-// manager.
-func (s *State) PublishedSize() [2]int { return s.Published }
-
-// MarkPublished records a published box.
-func (s *State) MarkPublished(size [2]int) { s.Published = size }

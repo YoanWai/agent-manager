@@ -23,6 +23,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -758,7 +759,7 @@ func shotModel() *Model {
 		layout: layoutState{
 			width:  120,
 			height: 34,
-			split:  splitState{ratio: defaultSplitRatio},
+			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{
 			keys:     keybind.DefaultSession(),

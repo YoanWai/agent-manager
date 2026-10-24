@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
@@ -276,7 +277,7 @@ func TestRailCursorAlwaysPainted(t *testing.T) {
 				layout: layoutState{
 					width:  size.w,
 					height: size.h,
-					split:  splitState{ratio: defaultSplitRatio},
+					split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 				},
 				workspace: workspace{sessions: sessions},
 				rail:      railModelFromRows(rows, cursor),

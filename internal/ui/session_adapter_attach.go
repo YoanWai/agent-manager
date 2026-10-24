@@ -138,9 +138,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// The attach client sized the window to the full terminal and tmux
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
-		m.focus.runtime.Forget(msg.sessID)
-		width, height := m.paneTargetSize()
-		m.queueGeometry(geometryRequest{targets: []paneResize{{id: msg.sessID, size: [2]int{width, height}}}})
+		m.adoptPaneGeom(msg.sessID)
 		if msg.err != nil {
 			m.reportErr(msg.err.Error())
 			m.requestRefresh()

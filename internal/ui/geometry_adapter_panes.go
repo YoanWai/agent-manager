@@ -1,24 +1,14 @@
 package ui
 
 import (
-	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // resizeSessions syncs every live session's tmux window to the preview
-// panel's pixel box so a capture fills the preview 1:1, resizing in
-// parallel so a fleet of sessions does not serialize N tmux round-trips
-// on the UI path. Width changes and height growth pin eagerly; a box that
-// lost rows, to transient chrome or a shorter terminal, leaves the pane
-// tall and lets paneWindow crop the view instead, because a height shrink
-// makes Codex clear the pane's entire scrollback (#369).
+// panel's pixel box so a capture fills the preview 1:1.
 func (m *Model) resizeSessions() {
 	width, height := m.paneTargetSize()
-	if width <= 0 || height <= 0 {
-		return
-	}
-	m.markReplacedPanesFresh()
-	m.seedPaneGeom()
 	// The session open full screen is pinned to the whole body by
 	// pinFullFocusPane, not to the preview box; matching it to the box
 	// here would shrink its height and clear its scrollback mid-focus.
@@ -28,69 +18,50 @@ func (m *Model) resizeSessions() {
 			fullFocusID = sess.ID
 		}
 	}
-	targets := m.focus.runtime.ResizeTargets(focusruntime.Plan{
-		Box:         [2]int{width, height},
-		Sessions:    m.workspace.sessions,
-		Panes:       m.workspace.panes,
-		FitsHeight:  func(tool string) bool { return m.services.cfg.Tools[tool].FitsHeight },
+	sessions := make([]uigeometrypanes.Session, 0, len(m.workspace.sessions))
+	for _, sess := range m.workspace.sessions {
+		sessions = append(sessions, uigeometrypanes.Session{
+			ID:        sess.ID,
+			Tool:      sess.Tool,
+			AltScreen: m.workspace.panes[sess.ID].AltScreen,
+			Archived:  sess.Archived,
+		})
+	}
+	m.panes.QueueAll(paneSizing{m}, uigeometrypanes.Box{
+		Width:       width,
+		Height:      height,
 		FullFocusID: fullFocusID,
-	})
-	if len(targets) == 0 {
-		return
-	}
-	request := geometryRequest{}
-	for _, target := range targets {
-		request.targets = append(request.targets, paneResize{id: target.ID, size: [2]int{width, target.Height}})
-	}
-	m.queueGeometry(request)
+	}, sessions, m.workspace.panes)
 }
 
-// pinFullFocusPane sizes a session opened full screen to the whole
-// terminal body, the reflow an attach performs, so the capture fills the
-// full width frame 1:1. Returning to the list leaves the pane this size:
-// shrinking it back would cost a Codex agent its scrollback (#369), and
-// paneWindow already crops a taller pane from its bottom.
+// pinFullFocusPane sizes a session opened full screen to the whole terminal
+// body, the reflow an attach performs.
 func (m *Model) pinFullFocusPane(id string) {
-	width, height := m.layout.width, m.listBodyHeight()
-	if width <= 0 || height <= 0 {
-		return
-	}
-	if last, sized := m.focus.runtime.SizeOf(id); sized && last[0] == width && last[1] >= height {
-		return
-	}
-	m.queueGeometry(geometryRequest{targets: []paneResize{{id: id, size: [2]int{width, height}}}})
+	m.panes.PinFullFocus(paneSizing{m}, id, m.layout.width, m.listBodyHeight())
 }
 
-// markFreshPane queues one exact size pin for a session whose window this
-// run just created. Its launch size came from pre-selection geometry, and
-// with nothing in its scrollback yet the one re-pin is free, unlike the
-// panes adopted from a previous run, which seedPaneGeom protects.
-func (m *Model) markFreshPane(id string) { m.focus.runtime.PinOwed(id) }
+// markFreshPane queues one exact size pin for a session whose window this run
+// just created.
+func (m *Model) markFreshPane(id string) { m.panes.MarkFresh(id) }
 
 // publishPaneSize records the box for the launch paths that run without a
-// manager: the CLI and the MCP server open a pane with nothing to ask for
-// the preview geometry, and tmux gives an unsized detached session 80x24.
+// manager.
 func (m *Model) publishPaneSize() {
 	if m.layout.width <= 0 {
 		return
 	}
 	width, height := m.paneTargetSize()
-	if width <= 0 || height <= 0 || m.focus.runtime.PublishedSize() == [2]int{width, height} {
-		return
-	}
-	m.queueGeometry(geometryRequest{publish: [2]int{width, height}})
+	m.panes.Publish(paneSizing{m}, width, height)
 }
 
-// markReplacedPanesFresh spots a session whose pane process changed since
-// its geometry was measured: a revive outside this process put the row on
-// a window the manager never sized.
-func (m *Model) markReplacedPanesFresh() { m.focus.runtime.MarksFresh(m.workspace.panes) }
-
-// seedPaneGeom fills the geometry cache from the pass's pane listing for
-// sessions this run has not sized yet, so a pane adopted from a previous
-// run is not shrunk (and its Codex scrollback cleared) just to match a box
-// it already exceeds.
-func (m *Model) seedPaneGeom() { m.focus.runtime.Seed(m.workspace.panes) }
+// adoptPaneGeom takes a session off the geometry cache, so its next pin is
+// exact: an attach resized its window to the whole terminal and tmux keeps
+// that size on detach.
+func (m *Model) adoptPaneGeom(id string) {
+	m.panes.Forget(id)
+	width, height := m.paneTargetSize()
+	m.queueGeometry(uigeometrypanes.Resize{Targets: []uigeometrypanes.PaneResize{{ID: id, Size: [2]int{width, height}}}})
+}
 
 func (m *Model) routeResizeMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {

@@ -18,6 +18,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
@@ -38,6 +39,7 @@ type Model struct {
 	workspace workspace
 	rail      uirail.Model
 	focus     focusState
+	panes     uigeometrypanes.Panes
 	prefs     preferences
 	ledger    launchLedger
 	startup   startupState
@@ -185,7 +187,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	model := &Model{
 		effects: effectState{Queue: uieffects.Queue{Lifetime: &uieffects.Lifetime{}}},
 		poller:  &poller{runner: deps.Execution},
-		layout:  layoutState{split: splitState{ratio: loadSplitRatio(st)}},
+		layout:  layoutState{split: splitState{ratio: uigeometrypanes.Load(st)}},
 		env: environment{
 			workDir: initialWorkingDir(),
 			homeDir: initialHomeDir(),

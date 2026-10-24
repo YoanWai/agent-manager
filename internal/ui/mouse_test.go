@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"path/filepath"
@@ -58,7 +59,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: defaultSplitRatio},
+			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{listKeys: keybind.DefaultList(),
 			store: st},
@@ -99,7 +100,7 @@ func TestDragReleasePersistsAndExits(t *testing.T) {
 		t.Fatal("release should not toggle mouse reporting")
 	}
 
-	raw, err := st.Setting(splitRatioSetting)
+	raw, err := st.Setting(uigeometry.SplitRatioSetting)
 	if err != nil {
 		t.Fatalf("read setting: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestDragResizesTmuxOnlyOnRelease(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "split-drag", t.TempDir(), "")
 	id := m.sessionRows()[0].ID
-	m.layout.split.ratio = defaultSplitRatio
+	m.layout.split.ratio = uigeometry.DefaultSplitRatio
 	m.resizeSessions()
 	m.drainEffects(t)
 	before := windowWidth(t, id)
@@ -741,7 +742,7 @@ func TestDividerPressArmsDragWithoutResizeMode(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: defaultSplitRatio},
+			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{listKeys: keybind.DefaultList()},
 	}
@@ -796,7 +797,7 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 		layout: layoutState{
 			width:  100,
 			height: 40,
-			split:  splitState{ratio: defaultSplitRatio},
+			split:  splitState{ratio: uigeometry.DefaultSplitRatio},
 		},
 		services: services{listKeys: keybind.DefaultList(),
 			store: st},
@@ -813,10 +814,10 @@ func TestDividerClickWithoutMotionCommitsNothing(t *testing.T) {
 	if m.layout.split.dragging || m.layout.split.resizeMode {
 		t.Fatal("the click should have ended the drag it armed")
 	}
-	if m.layout.split.ratio != defaultSplitRatio {
-		t.Fatalf("ratio = %v want it untouched at %v", m.layout.split.ratio, defaultSplitRatio)
+	if m.layout.split.ratio != uigeometry.DefaultSplitRatio {
+		t.Fatalf("ratio = %v want it untouched at %v", m.layout.split.ratio, uigeometry.DefaultSplitRatio)
 	}
-	if raw, err := st.Setting(splitRatioSetting); err != nil || raw != "" {
+	if raw, err := st.Setting(uigeometry.SplitRatioSetting); err != nil || raw != "" {
 		t.Fatalf("a click with no drag persisted %q (err %v)", raw, err)
 	}
 }
@@ -1325,8 +1326,8 @@ func TestDividerPressWhileSearchingOrPrompting(t *testing.T) {
 		m    *Model
 		drag bool
 	}{
-		"searching": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
-		"quick bar": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: defaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
+		"searching": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: uigeometry.DefaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}, rail: railModelCount(0, 0, true)}, false},
+		"quick bar": {&Model{layout: layoutState{width: 100, height: 40, split: splitState{ratio: uigeometry.DefaultSplitRatio}}, services: services{listKeys: keybind.DefaultList()}}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if name == "quick bar" {
