@@ -94,17 +94,17 @@ func (c *Connections) connectionDetail(host string, width int) []string {
 	}
 	lines := []string{
 		uipreview.FitColumns([]string{title}, []string{reading}, width),
-		uipreview.FactRow("ssh to", uipreview.TrimmedValue(conn.Destination), "", width),
+		uipreview.FactRow(factLabel("ssh to"), uipreview.TrimmedValue(conn.Destination), "", width),
 	}
 	if conn.Binary != "" {
-		lines = append(lines, uipreview.FactRow("binary", uipreview.TrimmedValue(conn.Binary), "", width))
+		lines = append(lines, uipreview.FactRow(factLabel("binary"), uipreview.TrimmedValue(conn.Binary), "", width))
 	}
 	if seen && state.OK {
 		manager := "manager awake"
 		if !state.ManagerAwake {
 			manager = "no manager running"
 		}
-		lines = append(lines, uipreview.FactRow("host", uipreview.PlainValue(uitheme.MutedStyle().Render(CountNoun(len(state.Sessions), "session")+" · "+
+		lines = append(lines, uipreview.FactRow(factLabel("host"), uipreview.PlainValue(uitheme.MutedStyle().Render(CountNoun(len(state.Sessions), "session")+" · "+
 			CountNoun(len(state.Terminals), "terminal")+" · "+manager)), "", width))
 	}
 	if seen && state.Err != "" {
@@ -127,7 +127,7 @@ func (c *Connections) sessionDetail(row Row, width int, glyph func(string) strin
 	return []string{
 		uipreview.FitColumns([]string{name + uitheme.SubtleStyle().Render("  on ") + host, name},
 			[]string{tint.Render(glyph(row.Status) + " " + presentation.EscapeControlsInline(StatusLabel(state)))}, width),
-		uipreview.FactRow("group", uipreview.PlainValue(group), "", width),
+		uipreview.FactRow(factLabel("group"), uipreview.PlainValue(group), "", width),
 	}
 }
 
@@ -171,4 +171,8 @@ func SameRow(a, b uirail.Selection) bool {
 		return a.Host == b.Host && a.SessionID == b.SessionID
 	}
 	return a == b
+}
+
+func factLabel(label string) string {
+	return uitheme.LabelStyle().Render(uipreview.FactLabel(label))
 }
