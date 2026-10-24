@@ -139,7 +139,12 @@ func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleFocusMouse runs the mouse over a focused pane.
 func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	return m.focus.pane.MouseUnder(focusHost{m}, msg)
+	// The package cannot name the root, so a nil model is this one.
+	model, cmd := m.focus.pane.MouseUnder(focusHost{m}, msg)
+	if model == nil {
+		model = m
+	}
+	return model, cmd
 }
 
 // paneCaretRow resolves the root-owned status fact that a tool's terminal
