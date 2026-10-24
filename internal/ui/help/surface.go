@@ -21,9 +21,8 @@ type Surface struct {
 // the copied tables, glyphs and styles it paints from, the card's geometry,
 // and the link and the fence only the root runs.
 type Root interface {
-	// Reads is the presentation state, which Context copies for a body
-	// width columns wide.
-	Reads
+	// Context is the presentation state for a body width columns wide.
+	Context(width int) Context
 	// InnerWidth is the body columns of a card width wide.
 	InnerWidth(width int) int
 	// HintRows is the rows hints take at the foot of a body width wide.
@@ -57,7 +56,7 @@ func (s *Surface) Card(h surface.Host) Card {
 	cols, rows := h.Size()
 	width := CardWidth(cols)
 	inner := s.root.InnerWidth(width)
-	ctx := ContextFor(s.root, inner)
+	ctx := s.root.Context(inner)
 	content := s.state.Content(ctx)
 	room := rows - 5 - s.root.HintRows(content.Hints, inner) - len(content.Head)
 	if s.root.StatusShown() {
