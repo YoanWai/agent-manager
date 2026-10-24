@@ -231,7 +231,7 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	}
 	rows = append(rows, [2]string{detach[0].Tea(), back})
 	if arrowStep {
-		rows = append(rows, [2]string{"←", "focused: back to the manager, at the prompt's start"})
+		rows = append(rows, [2]string{"←", "focused or attached: back to the manager, at the prompt's start"})
 	}
 	if label := keys.Binding(keybind.Review).Label(); label != "" {
 		rows = append(rows, [2]string{label, "review the session's diff, esc returns"})

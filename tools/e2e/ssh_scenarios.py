@@ -36,6 +36,9 @@ GROUPED_AGENT = 'api'
 REMOTE_NEW_GROUP = 'ops'
 QUICK_TEXT = 'ssh-quick-input'
 SPAWN_TEXT = 'ssh-spawn-prompt'
+# command-code's prompt marker, the composer an attached ← reads.
+COMPOSER = '❯ '
+LEFT_ECHO = 'agent-got-left'
 
 
 def fake_ssh_script(remote_env):
@@ -47,6 +50,52 @@ def fake_ssh_script(remote_env):
         'esac\n'
         'for last; do :; done\n'
             f'exec env -i PATH="$PATH" {exports} /bin/sh -c "$last"\n')
+
+
+COMPOSER_AGENT = r"""
+import os, sys, termios, tty
+if sys.argv[1:2] == ['mcp']:
+    sys.exit(0)
+out = sys.stdout
+out.write(READY + '\n')
+tty.setraw(0)
+draft, lefts, pending = '', 0, b''
+def draw(back=0):
+    out.write('\r\033[K' + COMPOSER + draft + '\033[D' * back)
+    out.flush()
+draw()
+while True:
+    byte = os.read(0, 1)
+    if not byte:
+        break
+    pending += byte
+    if pending == b'\033[D':
+        lefts += 1
+        out.write('\r\033[K%s %d\r\n' % (LEFT_ECHO, lefts))
+        draw(back=1)
+    elif b'\033'.startswith(pending) or b'\033['.startswith(pending):
+        continue
+    elif pending == b'\x7f':
+        draft = draft[:-1]
+        draw()
+    elif pending == b'\r':
+        draft = ''
+        out.write('\r\n')
+        draw()
+    elif pending.isascii() and pending.decode().isprintable():
+        draft += pending.decode()
+        draw()
+    pending = b''
+"""
+
+
+def composer_cli_script():
+    """The remote agent: command-code's composer, "❯ " with the caret after
+    the draft. Typed text joins the draft, backspace takes it back, and each
+    ← it receives is counted on screen, so a ← that never reached it shows."""
+    agent = (f'READY, COMPOSER, LEFT_ECHO = {READY_MARKER!r}, {COMPOSER!r}, {LEFT_ECHO!r}\n'
+             + COMPOSER_AGENT)
+    return '#!/bin/sh\n# disposable fixture agent CLI; never a real install\nexec python3 -I -c ' + shlex.quote(agent) + ' "$@"\n'
 
 
 def remote_shell_script(bin_dir):
@@ -121,7 +170,7 @@ def write_fixtures(sandbox, remote, binary):
     # A copy at a path unique to this run, so its processes are found by PID.
     manager = bin_dir / 'agent-manager'
     shutil.copy2(binary, manager)
-    (bin_dir / FAKE_BIN).write_text(fake_cli_script(READY_MARKER))
+    (bin_dir / FAKE_BIN).write_text(composer_cli_script())
     (bin_dir / 'ssh').write_text(fake_ssh_script(remote.env))
     shell = remote.home / 'login-shell'
     shell.write_text(remote_shell_script(bin_dir))
@@ -235,6 +284,30 @@ def attach(sandbox, remote, agent_id):
     frame(sandbox, 'remote-detached', f'{REMOTE_AGENT}  on {CONNECTION}')
 
 
+def left_at_prompt_head(sandbox, remote, agent_id):
+    """Issue 850: focus on a remote row opens an attach, where ← reaches the
+    agent while a draft sits before the caret and, at the head of the prompt,
+    goes back to the list the way it does in a session on this machine."""
+    pane = 'am_' + agent_id
+    select_remote_agent(sandbox)
+    key(sandbox, 'Enter')
+    frame(sandbox, 'left-attached', READY_MARKER, 'A G E N T')
+    frame(sandbox, 'left-footer', '← prompt start = back')
+    sandbox.tmux('send-keys', '-l', '-t', 'scen:0.0', 'ab')
+    sandbox.wait('left-draft', lambda: remote.tmux(sandbox, 'capture-pane', '-p', '-t', pane).stdout,
+                 lambda text: COMPOSER + 'ab' in text)
+    key(sandbox, 'Left')
+    sandbox.wait('left-reached-agent', lambda: remote.tmux(sandbox, 'capture-pane', '-p', '-t', pane).stdout,
+                 lambda text: LEFT_ECHO + ' 1' in text)
+    frame(sandbox, 'left-still-attached', LEFT_ECHO + ' 1', 'A G E N T')
+    key(sandbox, 'BSpace')
+    key(sandbox, 'BSpace')
+    sandbox.wait('left-composer-empty', lambda: remote.tmux(sandbox, 'capture-pane', '-p', '-t', pane).stdout,
+                 lambda text: text.rstrip().endswith(COMPOSER.strip()))
+    key(sandbox, 'Left')
+    frame(sandbox, 'left-at-head', f'{REMOTE_AGENT}  on {CONNECTION}', LEFT_ECHO)
+
+
 def spawn_and_terminal(sandbox, remote):
     """Quick prompt on the connection row starts an agent there; T opens a terminal there."""
     select(sandbox, 'connection-row', 'ssh to fixture@' + CONNECTION)
@@ -322,6 +395,7 @@ def scenario(sandbox, remote, binary):
     frame(sandbox, 'quick-closed', f'{REMOTE_AGENT}  on {CONNECTION}', 'Quick prompt mode')
     lifecycle(sandbox, remote, agent_id)
     attach(sandbox, remote, agent_id)
+    left_at_prompt_head(sandbox, remote, agent_id)
     spawn_and_terminal(sandbox, remote)
     offline_connection(sandbox)
     local = sqlite3.connect(str(profile_dir(sandbox) / 'state.db'), timeout=5)

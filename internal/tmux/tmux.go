@@ -49,10 +49,35 @@ type Driver struct {
 	paneThemePush     sync.Mutex
 	socketPath        atomic.Pointer[string]
 	sessionKeys       atomic.Pointer[keybind.Table]
+	promptHead        atomic.Pointer[string]
 }
 
 func (d *Driver) SetSessionKeys(keys keybind.Table) {
 	d.sessionKeys.Store(&keys)
+}
+
+// SetPromptHeadCheck names the command an attached ← runs to ask whether
+// the caret sits at the head of the agent's prompt; empty leaves ← to the
+// agent. The manager, the CLI and the MCP server each set it from the
+// stored arrow-step setting, since any of them reinstalls the bindings.
+func (d *Driver) SetPromptHeadCheck(command string) {
+	d.promptHead.Store(&command)
+}
+
+func (d *Driver) promptHeadCheck() string {
+	if command := d.promptHead.Load(); command != nil {
+		return *command
+	}
+	return ""
+}
+
+// promptHeadBinding is the ← binding this driver installs, nil when it
+// leaves ← to the agent.
+func (d *Driver) promptHeadBinding() []string {
+	if check := d.promptHeadCheck(); check != "" {
+		return promptHeadBinding(check)
+	}
+	return nil
 }
 
 func (d *Driver) currentSessionKeys() keybind.Table {

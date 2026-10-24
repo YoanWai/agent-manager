@@ -79,6 +79,32 @@ func TestCaretAtInputStart(t *testing.T) {
 	}
 }
 
+// An attached client has no focused model behind it: the ← binding asks
+// the same question of a frame and a cursor alone, so it gets the same
+// answers focus does.
+func TestCaretAtPromptHeadAnswersAsFocusDoes(t *testing.T) {
+	visible := func(x, y int) Cursor { return Cursor{X: x, Y: y, Visible: true, PositionKnown: true} }
+	cases := []struct {
+		name    string
+		preview string
+		cursor  Cursor
+		rules   markerRules
+	}{
+		{"empty prompt", "❯ \n", visible(2, 0), markerRules{}},
+		{"draft before caret", "❯ hi\n", visible(4, 0), markerRules{}},
+		{"hidden caret", "❯ \n", Cursor{X: 2, Y: 0, PositionKnown: true}, markerRules{}},
+		{"parked under an empty composer", "❯ Ask...\n\nfooter\n\n", Cursor{X: 0, Y: 3, PositionKnown: true}, markerRules{placeholder: "Ask..."}},
+		{"parked under a draft", "❯ draft\n\nfooter\n\n", Cursor{X: 0, Y: 3, PositionKnown: true}, markerRules{placeholder: "Ask..."}},
+	}
+	for _, c := range cases {
+		model := caretModel(c.cursor)
+		focused := model.CaretAtInputStart(CaretContext{SessionID: "s1", Preview: c.preview, CaughtUp: true, Rules: c.rules})
+		if attached := CaretAtPromptHead(c.cursor, c.preview, c.rules); attached != focused {
+			t.Errorf("%s: attached answers %v, focus %v", c.name, attached, focused)
+		}
+	}
+}
+
 // Keys counted to a polled pane land after the frame the mirror holds, so
 // that frame's caret cannot put Left at the prompt head, and another
 // session's mirror or a scrolled-back pane cannot decide it either.

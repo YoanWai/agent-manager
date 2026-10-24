@@ -131,33 +131,9 @@ func (m *Model) caretAtInputStart(sessID, tool string) bool {
 		SessionID: sessID,
 		Preview:   m.workspace.preview,
 		CaughtUp:  watch == nil || watch.CaughtUp(m.focus.pane.Pane().Writes),
-		Rules:     focusPromptRules{engine: m.services.engine, tool: tool},
+		Rules:     status.PromptRules{Engine: m.services.engine, Tool: tool},
 	})
 }
-
-// focusPromptRules binds the status engine's prompt rules to one tool.
-type focusPromptRules struct {
-	engine *status.Engine
-	tool   string
-}
-
-func (r focusPromptRules) InputPrefix(row string) (string, bool) {
-	return r.engine.InputPrefix(r.tool, row)
-}
-
-func (r focusPromptRules) TextBeforeCaret(row string, caretX int) bool {
-	return status.HasTextBeforeCaret(r.engine, r.tool, row, caretX)
-}
-
-func (r focusPromptRules) ComposerIsEmpty(row string) bool {
-	return r.engine.ComposerIsEmpty(r.tool, row)
-}
-
-func (r focusPromptRules) MatchesActivityCutoff(row string) bool {
-	return r.engine.MatchesActivityCutoff(r.tool, row)
-}
-
-func (r focusPromptRules) ParksItsCaret() bool { return r.engine.ParksItsCaret(r.tool) }
 
 // leaveFocus returns to the list. Mouse reporting stays on: handing it back
 // to the terminal here would let a wheel notch scroll the manager out of

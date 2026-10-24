@@ -12,7 +12,6 @@ import re
 import shlex
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import time
 import uuid
@@ -54,9 +53,8 @@ def config_fixture_text():
 
 
 def profile_dir(sandbox):
-    # os.UserConfigDir: Library/Application Support on macOS, XDG_CONFIG_HOME elsewhere.
-    if sys.platform == 'darwin':
-        return sandbox.home / 'Library' / 'Application Support' / 'agent-manager'
+    # Every fixture sets XDG_CONFIG_HOME to HOME/.config, and config.Dir
+    # takes a set XDG_CONFIG_HOME on macOS too.
     return sandbox.home / '.config' / 'agent-manager'
 
 

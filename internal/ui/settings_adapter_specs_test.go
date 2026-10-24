@@ -33,6 +33,7 @@ func TestSettingKeysMatchTheStore(t *testing.T) {
 		uisettings.CoordinationSetting: store.CoordinationSetting,
 		uisettings.EditorSetting:       store.EditorSetting,
 		uisettings.HiddenToolsSetting:  store.HiddenToolsSetting,
+		uisettings.ArrowStepSetting:    store.ArrowStepSetting,
 	} {
 		if got != want {
 			t.Errorf("settings key %q, store reads %q", got, want)

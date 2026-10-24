@@ -319,14 +319,27 @@ func (m *Model) applySettingsEffect(job *effectJob, result settingsEffectResult,
 		}
 		m.reconcileSettingsPrefs(committed)
 	}
+	var rebind tea.Cmd
+	if err == nil && changesArrowStep(request.values) {
+		rebind = m.rebindSessions
+	}
 	if request.followUpdate {
 		if err != nil {
 			m.update.applying = false
-			return nil
+			return rebind
 		}
-		return m.applyUpdateCmd()
+		return tea.Batch(rebind, m.applyUpdateCmd())
 	}
-	return nil
+	return rebind
+}
+
+func changesArrowStep(values []settingValue) bool {
+	for _, value := range values {
+		if value.Key == uisettings.ArrowStepSetting {
+			return true
+		}
+	}
+	return false
 }
 
 // reconcileSettingsPrefs restores the live-session prefs to the committed
