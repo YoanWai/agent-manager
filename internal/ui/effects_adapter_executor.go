@@ -14,6 +14,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -42,6 +43,11 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
 		return work
 	}
+	if work, ok := uieffects.Bind(request, func() uireviewsource.Services {
+		return uireviewsource.Services{Store: capture().store, Writer: uireviewsource.DriverWriter(capture().driver)}
+	}); ok {
+		return work
+	}
 	services := capture()
 	return func() (uieffects.Result, error) { return request.(effectRequest).run(services) }
 }
@@ -54,6 +60,8 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.ledger.install.Started(installRoot{m}, job.Request.(uiinstall.StartRequest), result, err)
 	case uiinstall.SettleResult:
 		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
+	case uireviewsource.ChangeResult:
+		return m.applyReviewChange(result, err)
 	case effectResult:
 		return result.apply(m, job, err)
 	}

@@ -178,30 +178,15 @@ func (m *Model) selectBase(ref string, source uireview.PickerSource, storeRoot s
 		m.reportErr("review repository is gone")
 		return nil
 	}
-	m.enqueueEffect(reviewEffectRequest{
-		op: uireviewsource.SetBase, targetID: sess.ID, repoRoot: storeRoot,
-		sourceRepo: source.RepoRoot, generation: source.Generation, baseRef: ref,
-	}, 0, false)
+	m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{
+		Op: uireviewsource.SetBase, TargetID: sess.ID, RepoRoot: storeRoot,
+		SourceRepo: source.RepoRoot, Generation: source.Generation, BaseRef: ref,
+	}}, 0, false)
 	return m.nextEffectCmd()
 }
 
 func (m *Model) reviewBaseSavePending() bool {
-	isBaseSave := func(job *uieffects.Job) bool {
-		if job == nil {
-			return false
-		}
-		request, ok := job.Request.(reviewEffectRequest)
-		return ok && request.op == uireviewsource.SetBase
-	}
-	if isBaseSave(m.effects.Main.Active) {
-		return true
-	}
-	for _, job := range m.effects.Main.Pending {
-		if isBaseSave(job) {
-			return true
-		}
-	}
-	return false
+	return uireviewsource.PendingSetBase(append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)...)
 }
 
 func (m *Model) applyReviewBase(result uireviewsource.BaseResult) tea.Cmd {

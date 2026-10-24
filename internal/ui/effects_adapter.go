@@ -157,10 +157,10 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}
-	case reviewEffectRequest:
+	case uireviewsource.Change:
 		// A send types into the agent pane, so a poll captured before it
 		// is stale exactly like a lifecycle mutation; reads are not.
-		if job.Request.(reviewEffectRequest).op == uireviewsource.Send && msg.FinishedAt.After(m.effects.latestObservation) {
+		if uireviewsource.IsSend(job.Request) && msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}
 	}

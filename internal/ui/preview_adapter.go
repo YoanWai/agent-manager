@@ -11,18 +11,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// cursorBlinkMsg toggles the focused pane's caret.
-type cursorBlinkMsg struct{}
+// caretRoot is the root the capture runtime's caret blink reaches.
+type caretRoot struct{ *Model }
 
-// cursorBlinkInterval is the caret's half period, matching the rate most
-// terminals blink their own.
-const cursorBlinkInterval = 530 * time.Millisecond
+func (r caretRoot) Focused() bool { return r.focused() }
+func (r caretRoot) BlinkCaret()   { r.focus.pane.Blink() }
 
-// cursorBlink re-arms the caret timer. It runs only while a session is
-// focused; every other mode lets the timer die.
-func (m *Model) cursorBlink() tea.Cmd {
-	return tea.Tick(cursorBlinkInterval, func(time.Time) tea.Msg { return cursorBlinkMsg{} })
-}
+// cursorBlink re-arms the caret timer.
+func (m *Model) cursorBlink() tea.Cmd { return uicapture.CaretTick() }
 
 // previewCaptures is the root as the preview's capture runtime reaches it.
 type previewCaptures struct{ *Model }
@@ -117,12 +113,8 @@ func (m *Model) needsLoaderTick() bool {
 }
 
 func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	if _, ok := msg.(cursorBlinkMsg); ok {
-		if !m.focused() {
-			return routed(m, nil)
-		}
-		m.focus.pane.Blink()
-		return routed(m, m.cursorBlink())
+	if cmd, ok := uicapture.RouteCaret(caretRoot{m}, msg); ok {
+		return routed(m, cmd)
 	}
 	if cmd, ok := m.workspace.capture.Route(previewCaptures{m}, msg); ok {
 		return routed(m, cmd)
