@@ -351,7 +351,7 @@ func TestForkLaunchFailureRetainsCapturedRequest(t *testing.T) {
 	if !ok {
 		t.Fatal("launch hint holds no captured fork request to re-dispatch")
 	}
-	if request.source.ID != source.ID || request.name != "failed fork" {
+	if request.Source.ID != source.ID || request.Name != "failed fork" {
 		t.Fatalf("captured request = %+v, want the frozen source and name", request)
 	}
 	if _, ok := forkRow(m, "failed fork"); ok {

@@ -20,9 +20,9 @@ func storeWith(t *testing.T) (*store.Store, store.Session) {
 		ID:         "s1",
 		Name:       "one",
 		Tool:       "claude",
-		Dir:        t.TempDir(),
+		Cwd:        t.TempDir(),
 		CreatedAt:  time.Now(),
-		LastStatus: "idle",
+		Status:     "idle",
 		TmuxSocket: "amtest",
 	}
 	if err := st.CreateSession(sess); err != nil {

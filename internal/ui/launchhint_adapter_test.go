@@ -1024,7 +1024,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	if hintFix(m).Retry == nil {
 		t.Fatal("missing captured restore retry")
 	}
-	m.enqueueEffect(hintFix(m).Retry, 0, false)
+	m.enqueueEffect(hintFix(m).Retry.(effectRequest), 0, false)
 	m.drainEffects(t)
 
 	restored, err := m.services.store.Get(sess.ID)
@@ -1065,11 +1065,11 @@ func TestMissingNpmCLIShowsOneLineAndInstallsTheRecipe(t *testing.T) {
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "gemini"})
 	fix := hintFix(m)
-	if fix.command != "npm install -g @google/gemini-cli" || strings.Contains(fix.text, "install_cli") {
-		t.Fatalf("dialog shows %q with text %q, want the npm line", fix.command, fix.text)
+	if fix.Command != "npm install -g @google/gemini-cli" || strings.Contains(fix.Text, "install_cli") {
+		t.Fatalf("dialog shows %q with text %q, want the npm line", fix.Command, fix.Text)
 	}
-	if fix.script != deps.Command("gemini") || !strings.Contains(fix.script, "ensure_npm") {
-		t.Fatalf("i would run %q, want the npm recipe", fix.script)
+	if fix.Script != deps.Command("gemini") || !strings.Contains(fix.Script, "ensure_npm") {
+		t.Fatalf("i would run %q, want the npm recipe", fix.Script)
 	}
 }
 

@@ -781,7 +781,7 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 		t.Fatalf("failed launch changed the last pick: %q, %v", m.spawner.LastSpawnTool, m.spawner.LastSpawnWorktree)
 	}
 	fix := hintFix(m)
-	fix.command, fix.script = installCommand, installCommand
+	fix.Command, fix.Script = installCommand, installCommand
 	m.presentLaunchHint(fix)
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)

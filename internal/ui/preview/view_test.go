@@ -32,7 +32,7 @@ func TestFactRowPadsTheLabelColumn(t *testing.T) {
 }
 
 func TestTrimmedValueCutsToItsRoom(t *testing.T) {
-	value := TrimmedValue("waiting, working, finished")("working")
+	value := TrimmedValue("waiting, working, finished")(6)
 	if value != "worki…" {
 		t.Fatalf("trimmed value = %q, want it cut to the room it got", value)
 	}

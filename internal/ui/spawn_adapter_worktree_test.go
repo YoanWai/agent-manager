@@ -97,7 +97,7 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 		t.Fatalf("fresh cache changed without a probe: capable %t known %t", capable, known)
 	}
 	answer := m.spawner.WorktreeRepos[dir]
-	answer.At = answer.At.Add(-worktreeLookupTTL)
+	answer.At = answer.At.Add(-uilaunch.WorktreeLookupTTL)
 	m.spawner.WorktreeRepos[dir] = answer
 	if _, known := m.cachedWorktreeCapability(dir); known {
 		t.Fatal("expired capability still appeared current")

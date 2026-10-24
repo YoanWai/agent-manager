@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -31,7 +32,7 @@ func TestAStaleRefreshKeepsASessionLaunchedAfterItWasListed(t *testing.T) {
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 
-	if sessionGone(m.workspace.sessions, launched[0].ID) {
+	if uilifecycle.SessionGone(m.workspace.sessions, launched[0].ID) {
 		t.Fatalf("the stale poll took the launched session off screen, leaving %v", m.sessionRows())
 	}
 }
@@ -52,7 +53,7 @@ func TestAStaleRefreshKeepsALaunchListedWhileTmuxWasStartingIt(t *testing.T) {
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 
-	if sessionGone(m.workspace.sessions, launched.ID) {
+	if uilifecycle.SessionGone(m.workspace.sessions, launched.ID) {
 		t.Fatalf("the stale poll took the launched session off screen, leaving %v", m.sessionRows())
 	}
 }
@@ -103,7 +104,7 @@ func TestAStaleRefreshDoesNotBringBackASessionJustDeleted(t *testing.T) {
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 
-	if !sessionGone(m.workspace.sessions, sess.ID) {
+	if !uilifecycle.SessionGone(m.workspace.sessions, sess.ID) {
 		t.Fatalf("a deleted session came back on a stale poll: %v", m.sessionRows())
 	}
 }
