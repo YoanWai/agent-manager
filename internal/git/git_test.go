@@ -200,6 +200,7 @@ func initRepoAt(t *testing.T, dir string) {
 		{"init", "-b", "main"},
 		{"config", "user.email", "test@test"},
 		{"config", "user.name", "test"},
+		{"config", "commit.gpgsign", "false"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = dir
@@ -783,6 +784,7 @@ func forkClone(t *testing.T) (driver *Driver, work, parent, fork string) {
 	gitIn(t, parent, "clone", "-q", fork, work)
 	gitIn(t, work, "config", "user.email", "test@test")
 	gitIn(t, work, "config", "user.name", "test")
+	gitIn(t, work, "config", "commit.gpgsign", "false")
 	gitIn(t, work, "remote", "add", "upstream", parent)
 	gitIn(t, work, "fetch", "-q", "upstream")
 	// git 2.48 and later record upstream's HEAD on fetch; older ones do not.
