@@ -3,6 +3,7 @@ package ui
 import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -31,7 +32,7 @@ func (request inputRequest) run(services effectServices) (uieffects.Result, erro
 
 type inputEffectResult struct {
 	inputID   string
-	candidate *typedPromptCandidate
+	candidate *uicapture.TypedPrompt
 	promptID  string
 	prompt    string
 }
@@ -86,11 +87,11 @@ func (m *Model) applyInputEffect(result inputEffectResult, err error) {
 	}
 }
 
-// typedPrompt carries a captured composer draft into the root's own
-// candidate, which the startup tick judges a send or a menu enter.
-func typedPrompt(candidate *focusruntime.Candidate) *typedPromptCandidate {
+// typedPrompt carries a captured composer draft into the preview's held
+// candidates, which the startup tick judges a send or a menu enter.
+func typedPrompt(candidate *focusruntime.Candidate) *uicapture.TypedPrompt {
 	if candidate == nil {
 		return nil
 	}
-	return &typedPromptCandidate{session: candidate.Session, id: candidate.ID, text: candidate.Text, at: candidate.At}
+	return &uicapture.TypedPrompt{Session: candidate.Session, ID: candidate.ID, Text: candidate.Text, At: candidate.At}
 }

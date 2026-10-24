@@ -26,20 +26,14 @@ func (m *Model) viewHeaderRows() []string {
 	sep := subtleStyle().Render("   ")
 	scope := m.headerScope()
 	agents := m.headerAgents()
-	for _, right := range []string{
+	readings := []string{
 		joinHeaderPieces(sep, scope, m.viewStatusCounts(false), agents),
 		joinHeaderPieces(sep, scope, m.viewStatusCounts(true), agents),
 		joinHeaderPieces(sep, scope, m.viewStatusCounts(true), ""),
 		scope,
 		"",
-	} {
-		gap := m.layout.width - railGutter - ansi.StringWidth(left) - ansi.StringWidth(right)
-		if right == "" || gap < 2 {
-			continue
-		}
-		return []string{left + strings.Repeat(" ", gap) + right + strings.Repeat(" ", railGutter)}
 	}
-	return []string{left}
+	return []string{uiframe.HeaderRow(left, readings, m.layout.width, uiframe.RailGutter)}
 }
 
 func (m *Model) updateTag() string {
@@ -57,8 +51,8 @@ func (m *Model) titleTopRowWithUpdate(frame string) string {
 		return frame
 	}
 	title := paint(" "+tag+" ", ansi.StringWidth(tag)+2, backdropHex())
-	left := m.layout.width - ansi.StringWidth(title) - railGutter
-	if left < railGutter {
+	left := m.layout.width - ansi.StringWidth(title) - uiframe.RailGutter
+	if left < uiframe.RailGutter {
 		return frame
 	}
 	rows := strings.SplitN(frame, "\n", 2)

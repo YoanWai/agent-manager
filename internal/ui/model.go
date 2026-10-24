@@ -22,6 +22,7 @@ import (
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -53,6 +54,7 @@ type Model struct {
 	errBar    errBar
 	release   uirelease.State
 	install   uiinstall.State
+	preview   uicapture.State
 }
 
 // generations fence asynchronous completions against the state that
@@ -203,6 +205,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			engine:      engine,
 			setSnapshot: st.SetSnapshot,
 		},
+		preview:  uicapture.New(st, driver),
 		rail:     uirailpersist.Load(st),
 		ssh:      uilink.New(remote.New(deps.ProfileDir), connections),
 		settings: uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),

@@ -1,16 +1,8 @@
 package ui
 
 import (
-	"strings"
-
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/charmbracelet/lipgloss"
-)
-
-const (
-	cardPaddingX = uiframe.CardPaddingX
-	// cardChromeX is the two border columns a card spends on its frame.
-	cardChromeX = uiframe.CardChromeX
 )
 
 // cardBodyRow and cardBodyColumn place a card's body inside it: under the
@@ -78,38 +70,17 @@ func (m *Model) flexChromeRows(hint [][2]string) int {
 }
 
 func (m *Model) chromeRowsAt(width int, hint [][2]string) int {
-	// The hint's rule and rows, one row per line it wraps to.
-	return uiframe.ChromeRows(textRows(legendInline(hint, cardInnerWidth(width))), m.errBar.text != "")
+	return uiframe.CardChrome(width, hint, frameCap(), m.errBar.text != "")
 }
-
-// textRows is the line count of a block of painted text.
-func textRows(text string) int { return strings.Count(text, "\n") + 1 }
 
 // flexCardWidth picks a width that fits every content line, never under the
 // default card width and never past the terminal edge.
 func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
-	need := m.cardWidth()
-	measure := func(s string) {
-		for _, line := range strings.Split(s, "\n") {
-			if w := lipgloss.Width(line) + cardChromeX + 2*cardPaddingX; w > need {
-				need = w
-			}
-		}
-	}
-	measure(body)
-	measure(cardTitle(title))
-	measure(legendInline(hint, 1<<30))
+	status := ""
 	if m.errBar.text != "" {
-		measure(m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph))
+		status = m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	}
-	if m.layout.width >= 28 && need > m.layout.width-4 {
-		need = m.layout.width - 4
-	}
-	return need
-}
-
-func cardTitle(title string) string {
-	return lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render(title)
+	return uiframe.FlexCardWidth(m.layout.width, title, body, hint, status, frameCap())
 }
 
 // CardSized is card at an explicit width, for the key map, whose lines are
@@ -148,19 +119,7 @@ func (m *Model) centerOnBackdrop(box []string) string {
 // centerDialog floats box in the middle of the frame, filling the rest with
 // the backdrop.
 func centerDialog(ctx uiframe.Context, box []string) string {
-	width := uiframe.MaxLineWidth(box)
-	height := max(ctx.Height, len(box))
-	top, left, _ := uiframe.Placement(ctx, box)
-	frameWidth := max(ctx.Width, left+width)
-	frame := make([]string, 0, height)
-	for i := 0; i < height; i++ {
-		row := ""
-		if i >= top && i-top < len(box) {
-			row = paint("", left, backdropHex()) + box[i-top]
-		}
-		frame = append(frame, paint(row, frameWidth, backdropHex()))
-	}
-	return strings.Join(frame, "\n")
+	return uiframe.Centered(ctx, box, backdropHex(), paint)
 }
 
 func (m *Model) dialogRenderContext() uiframe.Context {

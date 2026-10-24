@@ -377,7 +377,7 @@ func TestFullRowWorkingWithoutPaneLineAnimatesLoader(t *testing.T) {
 	}
 	m.workspace.paneLines = map[string]string{"add-rate-limiting": "Running tests…", "ui-polish": "Compiling…"}
 	m.rebuildRows()
-	if m.hasWorkingLoaderRow() {
+	if m.rail.HasWorkingLoader() {
 		t.Fatal("a quotable pane line should retire the loader")
 	}
 }

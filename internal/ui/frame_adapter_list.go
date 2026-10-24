@@ -3,11 +3,12 @@ package ui
 import (
 	"strings"
 
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
 
 const (
-	railGutter    = 2
+	railGutter    = uiframe.RailGutter
 	contentGutter = 2
 	railInset     = railGutter - 1
 )

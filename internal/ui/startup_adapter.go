@@ -29,7 +29,6 @@ type startupState struct {
 	startupPhase     int
 	startupAnimating bool
 	booting          bool
-	pendingTyped     map[string]typedPromptCandidate
 }
 
 func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

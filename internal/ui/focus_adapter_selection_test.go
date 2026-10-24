@@ -7,6 +7,7 @@ import (
 
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -168,7 +169,7 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	fresh := "typed-just-now"
 	updated, _ := m.Update(focusPreviewMsg{SessionID: sess.ID, Preview: fresh})
 	*m = *updated.(*Model)
-	updated, _ = m.Update(previewMsg{sessID: sess.ID, preview: "stale-capture"})
+	updated, _ = m.Update(uicapture.Msg{SessID: sess.ID, Preview: "stale-capture"})
 	*m = *updated.(*Model)
 	if m.workspace.preview != fresh {
 		t.Fatalf("stale tick capture overwrote the pushed frame: %q", m.workspace.preview)
@@ -190,7 +191,7 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 	m.focus.runtime.Watch.SetFocus(sess.ID)
 	m.focus.runtime.Watch.Close()
 
-	updated, _ := m.Update(previewMsg{sessID: sess.ID, preview: "polled"})
+	updated, _ := m.Update(uicapture.Msg{SessID: sess.ID, Preview: "polled"})
 	*m = *updated.(*Model)
 	if m.workspace.preview != "polled" {
 		t.Fatalf("preview after watcher stop = %q, want the polled capture", m.workspace.preview)

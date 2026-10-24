@@ -1,45 +1,14 @@
 package ui
 
 import (
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
 	tea "github.com/charmbracelet/bubbletea"
-	"slices"
-	"time"
-)
-
-type previewMsg struct {
-	sessID  string
-	preview string
-	proc    sysstat.ProcStat
-	// gen is the previewGen the capture was scheduled for; mismatched
-	// gens are discarded so a hold-j burst cannot paint a stale session.
-	gen uint64
-}
-
-// previewSettleMsg fires after the cursor has stopped moving so one
-// capture runs instead of one per key-repeat tick.
-type previewSettleMsg struct {
-	gen uint64
-}
-
-// previewSettle is how long we wait after the last cursor move before
-// talking to tmux. Short enough to feel instant, long enough to collapse
-// a held j/k burst into a single capture.
-const previewSettle = 50 * time.Millisecond
-
-// The selected session's pane is re-captured on its own timer. The full
-// poll is deliberately slow (it lists panes, samples every process tree and
-// writes the store), which left the preview refreshing on the poll cadence
-// and reading as a still image of a live agent. One capture of one pane is
-// cheap, but it is still a tmux exec, so the rate follows the session: an
-// agent that is producing output earns a fast cadence, one that is waiting
-// on a human does not.
-const (
-	startupInterval     = 80 * time.Millisecond
-	previewIntervalLive = 300 * time.Millisecond
-	previewIntervalCalm = 1200 * time.Millisecond
 )
 
 // cursorBlinkMsg toggles the focused pane's caret.
@@ -55,127 +24,62 @@ func (m *Model) cursorBlink() tea.Cmd {
 	return tea.Tick(cursorBlinkInterval, func(time.Time) tea.Msg { return cursorBlinkMsg{} })
 }
 
-// previewTickMsg drives that timer.
-type previewTickMsg struct{}
+// previewCaptures is the root as the preview's capture runtime reaches it.
+type previewCaptures struct{ *Model }
 
-func (m *Model) hasStartingRow() bool {
-	return m.rail.HasStatus(status.Starting)
-}
+func (r previewCaptures) Selected() (store.Session, bool) { return r.selected() }
 
-func (m *Model) previewInterval() time.Duration {
-	if sess, ok := m.selected(); ok {
-		switch sess.Status {
-		case status.Working, status.Starting:
-			return previewIntervalLive
-		}
-	}
-	return previewIntervalCalm
-}
+func (r previewCaptures) Generation() uint64 { return r.focus.pane.PreviewGeneration() }
 
-func (m *Model) previewTick() tea.Cmd {
-	return tea.Tick(m.previewInterval(), func(time.Time) tea.Msg { return previewTickMsg{} })
-}
+func (r previewCaptures) Accepts(gen uint64) bool { return r.focus.pane.AcceptPreview(gen) }
 
-func (m *Model) needsLoaderTick() bool {
-	return m.startup.booting || m.hasStartingRow() || m.reviewNeedsLoader() || m.hasWorkingLoaderRow()
-}
-
-// typedPromptCandidate is a composer draft snapshotted as enter went into
-// a focused pane, held until the session shows the send went through.
-type typedPromptCandidate struct {
-	session store.Session
-	id      string
-	text    string
-	at      time.Time
-}
-
-// typedPromptGrace is how long a candidate waits for its session to turn
-// working before it is judged a menu enter and dropped.
-const typedPromptGrace = 5 * time.Second
-
-// holdTypedPrompt keeps cand as its session's candidate, replacing only
-// an earlier one for the same session.
-func (m *Model) holdTypedPrompt(cand typedPromptCandidate) {
-	if m.startup.pendingTyped == nil {
-		m.startup.pendingTyped = make(map[string]typedPromptCandidate)
-	}
-	m.startup.pendingTyped[cand.id] = cand
-}
-
-// commitTypedPrompt records each stashed draft as its session's last
-// prompt once that session runs with it: an enter that opened a menu or
-// answered a dialog never turns the session working while its draft is
-// fresh, so that candidate just expires.
-func (m *Model) commitTypedPrompt() {
-	for id, cand := range m.startup.pendingTyped {
-		if time.Since(cand.at) > typedPromptGrace {
-			delete(m.startup.pendingTyped, id)
-			continue
-		}
-		i := slices.IndexFunc(m.workspace.sessions, func(s store.Session) bool { return s.ID == id })
-		if i < 0 {
-			delete(m.startup.pendingTyped, id)
-			continue
-		}
-		if m.workspace.sessions[i].Status != status.Working {
-			continue
-		}
-		m.dispatchInput(focusruntime.Request{Kind: focusruntime.Prompt, Session: cand.session, Text: cand.text})
-		delete(m.startup.pendingTyped, id)
-	}
-}
-
-// hasWorkingLoaderRow reports whether a row is animating the working
-// loader: a working session with no quotable pane line yet.
-func (m *Model) hasWorkingLoaderRow() bool {
-	return m.rail.HasWorkingLoader()
-}
-
-func (m *Model) reviewNeedsLoader() bool {
-	state := m.review.Snapshot()
-	if m.base != baseReview || !state.Active {
+// CaptureWanted reports whether a capture of sess would be painted. A
+// session with a control client already pushes every frame, and review and
+// the modal screens have no preview to feed.
+func (r previewCaptures) CaptureWanted(sess store.Session) bool {
+	if !r.previewFeeds() {
 		return false
 	}
-	if state.Loading && len(state.Set.Files) == 0 {
-		return true
-	}
-	fd := m.currentFileDiff()
-	return fd != nil && !fd.Loaded() && !m.diffFileHidden(fd)
+	return !r.focus.runtime.Serving(sess.ID)
 }
 
-// schedulePreview arms a single capture after previewSettle. Call after
-// bumping previewGen so earlier timers and in-flight captures go stale.
+func (r previewCaptures) WatchSelection() { r.watchSelection() }
+
+func (r previewCaptures) ArmTick(withRemote bool) tea.Cmd {
+	if !withRemote {
+		return r.preview.Tick(r)
+	}
+	return tea.Batch(r.tickRemotePreview(), r.preview.Tick(r))
+}
+
+func (r previewCaptures) ApplyCapture(sessID, preview string, proc sysstat.ProcStat) {
+	r.setPreview(sessID, preview)
+	r.workspace.proc, r.workspace.procFor = proc, sessID
+}
+
+func (r previewCaptures) ReportErr(err error) { r.reportErr(err.Error()) }
+
+// previewInterval is the cadence the current selection earns.
+func (m *Model) previewInterval() time.Duration { return m.preview.Interval(previewCaptures{m}) }
+
+func (m *Model) previewTick() tea.Cmd { return m.preview.Tick(previewCaptures{m}) }
+
 func (m *Model) schedulePreview() tea.Cmd {
-	gen := m.focus.pane.PreviewGeneration()
-	return tea.Tick(previewSettle, func(time.Time) tea.Msg {
-		return previewSettleMsg{gen: gen}
-	})
+	return m.preview.Schedule(m.focus.pane.PreviewGeneration())
 }
 
-// previewCmd captures one session's pane and process stats off the
-// render loop. gen tags the result so a newer cursor move can discard it.
-// Size pins stay on resizeSessions / create / attach — not on every look —
-// so a settle capture is one capture-pane, not resize+capture+pid storms.
 func (m *Model) previewCmd(sess store.Session, gen uint64) tea.Cmd {
-	return func() tea.Msg {
-		msg := previewMsg{sessID: sess.ID, gen: gen}
-		if sess.Archived || !m.services.tmux.Exists(sess.ID) {
-			snapshot, err := storedPreview(m.services.store, m.services.tmux, sess.ID)
-			if err != nil {
-				return errMsg{err}
-			}
-			msg.preview = snapshot
-			return msg
-		}
-		if pane, err := m.services.tmux.CapturePane(sess.ID); err == nil {
-			msg.preview = pane
-		}
-		if pid, err := m.services.tmux.PanePID(sess.ID); err == nil {
-			memTotal, _ := sysstat.MemTotalBytes()
-			msg.proc = sysstat.Trees([]int{pid})[pid].ScaleToHost(sysstat.LogicalCPUs(), memTotal)
-		}
-		return msg
-	}
+	return m.preview.Capture(sess, gen)
+}
+
+func (m *Model) holdTypedPrompt(cand uicapture.TypedPrompt) { m.preview.Hold(cand) }
+
+// commitTypedPrompt records each stashed draft as its session's last prompt
+// once that session runs with it.
+func (m *Model) commitTypedPrompt() {
+	m.preview.Commit(m.workspace.sessions, time.Now(), func(sess store.Session, text string) {
+		m.dispatchInput(focusruntime.Request{Kind: focusruntime.Prompt, Session: sess, Text: text})
+	})
 }
 
 // setPreview stores a polled or ticked pane capture, unless the session's
@@ -196,63 +100,20 @@ func (m *Model) setPreview(sessID, preview string) {
 	m.workspace.preview = preview
 }
 
-// sessionGone reports whether id is absent from a refresh's session list.
-func sessionGone(sessions []store.Session, id string) bool {
-	for _, sess := range sessions {
-		if sess.ID == id {
-			return false
-		}
-	}
-	return true
+func (m *Model) needsLoaderTick() bool {
+	return m.startup.booting || m.rail.HasStatus(status.Starting) || m.reviewNeedsLoader() || m.rail.HasWorkingLoader()
 }
 
 func (m *Model) routePreviewMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
-	switch msg := msg.(type) {
-	case previewTickMsg:
-		// Only the list keeps a live pane on screen; review and the modal
-		// screens have no preview to feed, so they skip the capture and
-		// just keep the timer alive.
-		sess, ok := m.selected()
-		if !ok || !m.previewFeeds() {
-			return routed(m, tea.Batch(m.tickRemotePreview(), m.previewTick()))
-		}
-		// A session with a control client already pushes every frame; a
-		// tick capture on top of that is work whose result is discarded.
-		if m.focus.runtime.Serving(sess.ID) {
-			return routed(m, m.previewTick())
-		}
-		return routed(m, tea.Batch(m.previewCmd(sess, m.focus.pane.PreviewGeneration()), m.previewTick()))
-
-	case previewSettleMsg:
-		if !m.focus.pane.PreviewSettled(msg.gen) {
-			return routed(m, nil)
-		}
-		sess, ok := m.selected()
-		if !ok {
-			return routed(m, nil)
-		}
-		// The cursor has come to rest: this is where the control client is
-		// worth opening.
-		m.watchSelection()
-		return routed(m, m.previewCmd(sess, msg.gen))
-
-	case cursorBlinkMsg:
+	if _, ok := msg.(cursorBlinkMsg); ok {
 		if !m.focused() {
 			return routed(m, nil)
 		}
 		m.focus.pane.Blink()
 		return routed(m, m.cursorBlink())
-
-	case previewMsg:
-		if !m.focus.pane.AcceptPreview(msg.gen) {
-			return routed(m, nil)
-		}
-		if sess, ok := m.selected(); ok && sess.ID == msg.sessID {
-			m.setPreview(msg.sessID, msg.preview)
-			m.workspace.proc = msg.proc
-			m.workspace.procFor = msg.sessID
-		}
-		return routed(m, nil)
+	}
+	if cmd, ok := m.preview.Route(previewCaptures{m}, msg); ok {
+		return routed(m, cmd)
 	}
 	return nil, nil, false
 }

@@ -19,8 +19,8 @@ const (
 	// MaxRows is the footer's height budget. Past it the tail is cut and
 	// marked; the full map is one ? away.
 	MaxRows = 3
-	// railGutter is the blank columns the Rail reserves left of the frame.
-	railGutter = 2
+	// RailGutter is the blank columns the Rail reserves left of the frame.
+	RailGutter = 2
 )
 
 // Section is one tier: its title, its bindings, and whether it is a
@@ -78,7 +78,7 @@ type Legend struct {
 // a tier's name as its badge, quietTitle paints a secondary tier's, and sep
 // joins the bindings of a secondary tier.
 func PaintLegend(sections []Section, width int, cap Cap, title, quietTitle func(string) string, sep string) Legend {
-	indent := strings.Repeat(" ", railGutter)
+	indent := strings.Repeat(" ", RailGutter)
 	dot := sep
 	more := cap.Muted.Render("…")
 

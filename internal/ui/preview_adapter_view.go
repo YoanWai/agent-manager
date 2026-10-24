@@ -78,8 +78,14 @@ func (m *Model) startupLoader(width, height int) []string {
 // background it drew itself, and insetting its output would put a margin
 // around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...int) []contentLine {
-	var lines []contentLine
 	loader := m.startupLoader(width, height)
+	loaderRow := func(row int) string {
+		if row < len(loader) {
+			return loader[row]
+		}
+		return ""
+	}
+	rows := []string(nil)
 	if m.focused() {
 		originY := m.listChromeRows()
 		if len(frameOrigin) > 0 {
@@ -96,53 +102,48 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 			SelectionStyle: lipgloss.NewStyle().Foreground(colorBg()).Background(colorAccent2()),
 		})
 		if !rendered.HasPane {
-			if loader != nil {
-				for _, line := range loader {
-					lines = append(lines, contentLine{text: uipreview.Line(line, width), raw: true})
-				}
-				return lines
-			}
-			return append(lines, contentLine{text: gutter + mutedStyle().Render("(no output yet)")})
+			return m.emptyPreview(width, gutter, loader)
 		}
-		for len(lines) < rendered.TopPadding {
-			lines = append(lines, contentLine{raw: true})
+		rows = make([]string, 0, height)
+		for range rendered.TopPadding {
+			rows = append(rows, "")
 		}
 		for i, line := range rendered.Rows {
-			screenRow := rendered.TopPadding + i
-			if screenRow < len(loader) && loader[screenRow] != "" {
-				line = uipreview.Line(loader[screenRow], width)
+			if replaced := loaderRow(rendered.TopPadding + i); replaced != "" {
+				line = replaced
 			}
-			lines = append(lines, contentLine{text: line, raw: true})
+			rows = append(rows, uipreview.Line(line, width))
 		}
-		for len(lines) < height {
-			lines = append(lines, contentLine{raw: true})
-		}
-		return lines
+	} else {
+		rows = uipreview.Rows(m.workspace.preview, height, width, m.paneCaretRow(), loaderRow)
 	}
-	pane := uipreview.Exact(m.workspace.preview, height, width, m.paneCaretRow())
-	if len(pane) == 0 {
-		if loader != nil {
-			for _, line := range loader {
-				lines = append(lines, contentLine{text: uipreview.Line(line, width), raw: true})
-			}
-			return lines
-		}
-		return append(lines, contentLine{text: gutter + mutedStyle().Render("(no output yet)")})
+	if len(rows) == 0 {
+		return m.emptyPreview(width, gutter, loader)
 	}
-	topPadding := height - len(pane)
-	for len(lines) < topPadding {
-		lines = append(lines, contentLine{raw: true})
+	return previewContent(rows, height)
+}
+
+// emptyPreview is the column a pane with no capture leaves: the startup
+// ring while the session boots, otherwise a quiet placeholder.
+func (m *Model) emptyPreview(width int, gutter string, loader []string) []contentLine {
+	if loader == nil {
+		return []contentLine{{text: gutter + mutedStyle().Render("(no output yet)")}}
 	}
-	for i, line := range pane {
-		screenRow := topPadding + i
-		if screenRow < len(loader) && loader[screenRow] != "" {
-			lines = append(lines, contentLine{text: uipreview.Line(loader[screenRow], width), raw: true})
-			continue
-		}
-		lines = append(lines, contentLine{text: uipreview.Line(line, width), raw: true})
+	rows := make([]string, len(loader))
+	for i, line := range loader {
+		rows[i] = uipreview.Line(line, width)
 	}
-	// Rows past the capture stay raw too: a painted tail under unpainted
-	// output would read as a box drawn around the agent's last line.
+	return previewContent(rows, len(loader))
+}
+
+// previewContent marks a column of pane rows as captured output and pads it
+// to height. Rows past the capture stay raw too: a painted tail under
+// unpainted output would read as a box drawn around the agent's last line.
+func previewContent(rows []string, height int) []contentLine {
+	lines := make([]contentLine, 0, max(height, len(rows)))
+	for _, row := range rows {
+		lines = append(lines, contentLine{text: row, raw: true})
+	}
 	for len(lines) < height {
 		lines = append(lines, contentLine{raw: true})
 	}
@@ -157,54 +158,21 @@ func (m *Model) focusPaneOriginX() int {
 	return leftWidth + 2
 }
 
-// detailLabelWidth is the column every fact label in the content head is
-// padded to, so the values under it line up as one column.
-const detailLabelWidth = 7
+// detailLabelWidth is the label column every fact in a detail head pads to.
+const detailLabelWidth = uipreview.DetailLabelWidth
 
-// factRow is one line of a detail head: a quiet label, its value, and a
-// reading set against the right edge. The value is rendered against the
-// columns it actually gets, and the reading is dropped rather than pushed
-// off the edge when the column is too narrow to hold both.
+// factRow is one line of a detail head, with its label painted in the
+// manager's quiet label tone inside the head's label column.
 func factRow(label string, value func(room int) string, right string, width int) string {
-	room := width - detailLabelWidth - ansi.StringWidth(right) - 2
-	if room < 12 {
-		right, room = "", width-detailLabelWidth
-	}
-	return rowColumns(labelStyle().Render(padRight(label, detailLabelWidth))+value(max(room, 1)), right, width)
+	return uipreview.FactRow(labelStyle().Render(uipreview.FactLabel(label)), value, right, width)
 }
 
-// plainValue is a factRow value that is already short enough to stand as it
-// is, for facts whose text does not vary with the terminal.
-func plainValue(value string) func(int) string {
-	return func(int) string { return value }
-}
+func plainValue(value string) func(int) string { return uipreview.PlainValue(value) }
 
-// trimmedValue is a factRow value cut to the columns it gets, for readings
-// that grow with the fleet rather than with the terminal.
-func trimmedValue(value string) func(int) string {
-	return func(room int) string { return ansi.Truncate(value, room, "…") }
-}
+func trimmedValue(value string) func(int) string { return uipreview.TrimmedValue(value) }
 
-// fitColumns lays the richest pair of readings that fits: rights are tried
-// from richest to plainest, and for each, the lefts in turn. Nothing fitting
-// means the plainest left is trimmed to what the column has.
 func fitColumns(lefts, rights []string, width int) string {
-	for _, right := range rights {
-		for _, left := range lefts {
-			if ansi.StringWidth(left)+ansi.StringWidth(right)+2 <= width {
-				return rowColumns(left, right, width)
-			}
-		}
-	}
-	// Nothing fits whole, so the plainest left is trimmed to keep the richest
-	// reading that still leaves it something readable.
-	last := lefts[len(lefts)-1]
-	for _, right := range rights {
-		if room := width - ansi.StringWidth(right) - 2; room >= 8 {
-			return rowColumns(ansi.Truncate(last, room, "…"), right, width)
-		}
-	}
-	return rowColumns(ansi.Truncate(last, max(width, 1), "…"), "", width)
+	return uipreview.FitColumns(lefts, rights, width)
 }
 
 // viewDetail heads the content column: the selected session's name, its
@@ -395,13 +363,6 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// lastActivity is when a session last changed state: the agent answering,
-// finishing, erroring, or the moment a prompt set it working. It is what
-// "how long since anything happened here" means to someone scanning the
-// rail, where uptime says nothing about whether an agent is stuck.
 func lastActivity(sess store.Session) time.Time {
-	if sess.LastStatusAt.IsZero() {
-		return sess.CreatedAt
-	}
-	return sess.LastStatusAt
+	return uipreview.LastActivity(sess.CreatedAt, sess.LastStatusAt)
 }

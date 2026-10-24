@@ -1,12 +1,14 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestPreviewSettleDropsStaleGen(t *testing.T) {
@@ -14,12 +16,12 @@ func TestPreviewSettleDropsStaleGen(t *testing.T) {
 	for range 3 {
 		m.focus.pane.MovePreview()
 	}
-	updated, cmd := m.Update(previewSettleMsg{gen: 2})
+	updated, cmd := m.Update(uicapture.SettleMsg{Gen: 2})
 	m = updated.(*Model)
 	if cmd != nil {
 		t.Fatal("stale settle should not schedule previewCmd")
 	}
-	_, cmd = m.Update(previewSettleMsg{gen: 3})
+	_, cmd = m.Update(uicapture.SettleMsg{Gen: 3})
 	if cmd != nil {
 		t.Fatal("settle without a session row should not capture")
 	}
@@ -31,9 +33,9 @@ func TestPreviewCadenceIsIndependentFromStartupAnimation(t *testing.T) {
 		rows []treeRow
 		want time.Duration
 	}{
-		{"selected starting", []treeRow{{sess: store.Session{ID: "a", Status: status.Starting}}}, previewIntervalLive},
-		{"selected working", []treeRow{{sess: store.Session{ID: "a", Status: status.Working}}, {sess: store.Session{ID: "b", Status: status.Starting}}}, previewIntervalLive},
-		{"selected idle", []treeRow{{sess: store.Session{ID: "a", Status: status.Idle}}, {sess: store.Session{ID: "b", Status: status.Starting}}}, previewIntervalCalm},
+		{"selected starting", []treeRow{{sess: store.Session{ID: "a", Status: status.Starting}}}, uicapture.IntervalLive},
+		{"selected working", []treeRow{{sess: store.Session{ID: "a", Status: status.Working}}, {sess: store.Session{ID: "b", Status: status.Starting}}}, uicapture.IntervalLive},
+		{"selected idle", []treeRow{{sess: store.Session{ID: "a", Status: status.Idle}}, {sess: store.Session{ID: "b", Status: status.Starting}}}, uicapture.IntervalCalm},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -73,7 +75,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 		t.Fatal("move should schedule a settle tick")
 	}
 	// tea.Tick cmds sleep; invoke the settle path directly for the gen check.
-	msg := previewSettleMsg{gen: 1}
+	msg := uicapture.SettleMsg{Gen: 1}
 	// A second move bumps gen; the first settle is now stale.
 	m.moveCursor(-1)
 	if got := m.focus.pane.PreviewGeneration(); got != 2 {
@@ -85,7 +87,7 @@ func TestMoveCursorDebouncesPreview(t *testing.T) {
 		t.Fatal("stale settle after second move must not capture")
 	}
 	// Fresh settle for the current gen with a session should schedule previewCmd.
-	_, next = m.Update(previewSettleMsg{gen: m.focus.pane.PreviewGeneration()})
+	_, next = m.Update(uicapture.SettleMsg{Gen: m.focus.pane.PreviewGeneration()})
 	if next == nil {
 		t.Fatal("current settle should schedule a capture")
 	}
@@ -151,7 +153,7 @@ func TestTypedPromptsAreHeldPerSession(t *testing.T) {
 	aID, bID := m.workspace.sessions[a].ID, m.workspace.sessions[b].ID
 	hold := func(i int, text string, at time.Time) {
 		sess := m.workspace.sessions[i]
-		m.holdTypedPrompt(typedPromptCandidate{session: sess, id: sess.ID, text: text, at: at})
+		m.holdTypedPrompt(uicapture.TypedPrompt{Session: sess, ID: sess.ID, Text: text, At: at})
 	}
 	commit := func() {
 		m.commitTypedPrompt()
@@ -179,7 +181,7 @@ func TestTypedPromptsAreHeldPerSession(t *testing.T) {
 		t.Fatalf("b's last prompt = %q, want %q", got, "prompt for b")
 	}
 
-	hold(a, "stale for a", time.Now().Add(-2*typedPromptGrace))
+	hold(a, "stale for a", time.Now().Add(-2*uicapture.TypedPromptGrace))
 	hold(b, "fresh for b", time.Now())
 	m.workspace.sessions[b].Status = status.Idle
 	commit()
