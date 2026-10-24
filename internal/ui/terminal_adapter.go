@@ -175,3 +175,11 @@ func (m *Model) sessionDir(sess store.Session) string {
 	}
 	return sess.Cwd
 }
+
+func newSystemTerminalDirectoryReader(m *Model) terminalDirectoryReader {
+	return uiterminal.SystemDirectoryReader{
+		PanePath: m.services.tmux.PaneCurrentPath,
+		Dirs:     preflightReader{reader: systemDirectoryPreflight{git: m.services.gitDrv}},
+		IsDir:    uilaunch.IsDir,
+	}
+}
