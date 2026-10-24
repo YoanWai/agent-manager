@@ -72,7 +72,7 @@ func TestRightStepsIntoTheRow(t *testing.T) {
 	*m = *updated.(*Model)
 	m.drainEffects(t)
 	if !m.focused() {
-		t.Fatalf("right did not focus the session, screen = %v, err = %q", m.screenID(), m.statusbar.Text())
+		t.Fatalf("right did not focus the session, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 }
 
