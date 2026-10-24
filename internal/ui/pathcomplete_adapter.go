@@ -53,7 +53,7 @@ func (m *Model) topPathCompleting() (pathcomplete.Field, bool) {
 }
 
 // pathRoot is the root as the completer reaches it.
-type pathRoot struct{ *Model }
+type pathRoot struct{ m *Model }
 
 func (r pathRoot) PathCompleting() (pathcomplete.Field, bool) {
 	return r.m.topPathCompleting()

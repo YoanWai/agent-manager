@@ -176,7 +176,7 @@ func (m *Model) applyGroupEffect(request uilaunch.GroupRequest, result uilaunch.
 	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && s.Gen() == request.Gen && s.Name() == request.DraftName && s.Dir() == request.DraftDir {
 		m.clearErr()
 		m.Pop()
-		m.queueRail(m.rail.RevealGroup(result.Path), 0, true)
+		m.queueRail(m.rail.RevealGroup(result.Path).Mutations, 0, true)
 	}
 	return m.refreshCmd()
 }

@@ -895,7 +895,7 @@ func TestSettingsSavePartialFailureIsDurableAndHonest(t *testing.T) {
 		}
 	}
 
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, err))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, err))
 	if m.errBar.text == "" {
 		t.Fatal("partial failure should surface in the err bar")
 	}
@@ -935,7 +935,7 @@ func TestSettingsSaveReadFailureDoesNotFabricateRestoration(t *testing.T) {
 		t.Fatal("the failing read must carry its error in the result")
 	}
 
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, err))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, err))
 	if !m.settingsCard().State().ComfortableRows {
 		t.Fatal("a failed read was fabricated into the committed value")
 	}
@@ -963,7 +963,7 @@ func TestSettingsSavePartialFailureReconcilesPrefs(t *testing.T) {
 		t.Fatal("expected the scripted write failure")
 	}
 	result := rawResult
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, err))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, err))
 	if m.prefs.comfortableRows {
 		t.Fatal("prefs kept the uncommitted density after a partial save")
 	}
@@ -992,7 +992,7 @@ func TestSettingsSaveStaleCompletionReconcilesPrefsNotDialog(t *testing.T) {
 	result := uipersist.SaveResult{Generation: request.Generation, Restored: []uisettings.Readback{
 		{Key: uisettings.ListDensitySetting, Value: "comfortable"},
 	}}
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, errors.New("partial")))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, errors.New("partial")))
 	if !m.prefs.comfortableRows {
 		t.Fatal("stale completion must reconcile the runtime prefs to committed")
 	}
@@ -1086,7 +1086,7 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 	if result.HiddenErr != nil {
 		t.Fatalf("hidden read failed: %v", result.HiddenErr)
 	}
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, err))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, err))
 	if len(m.settingsCard().State().CLIHidden) != 0 {
 		t.Fatalf("committed empty hidden state did not clear the dialog: %v", m.settingsCard().State().CLIHidden)
 	}
@@ -1100,7 +1100,7 @@ func TestSettingsSaveEmptyHiddenClearsDialog(t *testing.T) {
 		t.Fatal("expected a failed hidden read")
 	}
 	m.settingsCard().State().CLIHidden = map[string]bool{"codex": true}
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request2, result2, err2))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request2, result2, err2))
 	if !m.settingsCard().State().CLIHidden["codex"] {
 		t.Fatal("failed hidden read must keep the dialog's map")
 	}
@@ -1121,7 +1121,7 @@ func TestSettingsSaveCompletionRefusesStaleGeneration(t *testing.T) {
 	newer := uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name
 
 	result := uipersist.SaveResult{Generation: request.Generation, Restored: []uisettings.Readback{{Key: uisettings.ThemeSetting, Value: "nord"}}}
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, errors.New("partial")))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, errors.New("partial")))
 	if uitheme.Palettes[m.settingsCard().State().ThemeIndex].Name != newer {
 		t.Fatal("stale completion overwrote the newer dialog")
 	}
@@ -1282,7 +1282,7 @@ func TestLaterSuccessfulSettingsSaveReappliesCommittedPrefs(t *testing.T) {
 	m := buildModel(t)
 	request := uipersist.SaveRequest{Values: []uisettings.Value{{Key: uisettings.ListDensitySetting, Value: "comfortable"}}}
 	m.prefs.comfortableRows = false
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, uipersist.SaveResult{}, nil))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, uipersist.SaveResult{}, nil))
 	if !m.prefs.comfortableRows {
 		t.Fatal("successful queued save did not reconcile its committed preferences")
 	}
@@ -1304,7 +1304,7 @@ func TestFailedSettingsSavePreservesUnsetDefaults(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected failed save")
 	}
-	m.applyTestMsg(t, uipersist.ApplySave(settingsSaveRoot{m}, request, result, err))
+	m.applyTestMsg(t, m.settings.ApplySave(settingsSaveRoot{m}, request, result, err))
 	if !m.prefs.focusOnEnter || !m.prefs.arrowStep {
 		t.Fatalf("failed density save changed unrelated defaults, focus=%v arrows=%v", m.prefs.focusOnEnter, m.prefs.arrowStep)
 	}

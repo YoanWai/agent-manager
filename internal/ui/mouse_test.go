@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
+	"github.com/charmbracelet/x/ansi"
 	"go/ast"
 	"go/parser"
 	"go/token"

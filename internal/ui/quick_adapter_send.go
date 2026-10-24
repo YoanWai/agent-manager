@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
@@ -11,7 +12,7 @@ import (
 )
 
 // quickSendRoot is the root as a finished send reaches it.
-type quickSendRoot struct{ *Model }
+type quickSendRoot struct{ m *Model }
 
 func (r quickSendRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bool) {
 	r.m.clearAccepted(composerGen, draft, closeAfterSend)
