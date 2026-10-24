@@ -3,6 +3,7 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"testing"
@@ -268,8 +269,8 @@ func TestCopyReplyOnADeadSessionHints(t *testing.T) {
 		t.Fatalf("copy reported %q before the command ran", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	if m.errBar.text != deadSessionHint {
-		t.Fatalf("errBar = %q, want %q", m.errBar.text, deadSessionHint)
+	if m.errBar.text != uisession.DeadHint {
+		t.Fatalf("errBar = %q, want %q", m.errBar.text, uisession.DeadHint)
 	}
 }
 

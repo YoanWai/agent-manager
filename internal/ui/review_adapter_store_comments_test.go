@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -445,7 +446,7 @@ func TestSendAnnotationsRefusesAShell(t *testing.T) {
 	if _, cmd := m.handleDiffKey(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
 		t.Fatal("a refused send must not return a command")
 	}
-	if m.errBar.text != shellPromptHint(sess.Name) {
+	if m.errBar.text != uisession.ShellPromptHint(sess.Name) {
 		t.Fatalf("err = %q, want the shell refusal", m.errBar.text)
 	}
 	if len(m.review.Annotations()) != 1 {

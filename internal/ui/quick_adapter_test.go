@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -1018,7 +1019,7 @@ func TestQuickPromptRefusesAShell(t *testing.T) {
 	m.quick().Input.SetValue("summarise what you just did")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
-	if m.errBar.text != shellPromptHint(sess.Name) {
+	if m.errBar.text != uisession.ShellPromptHint(sess.Name) {
 		t.Fatalf("err = %q, want the shell refusal", m.errBar.text)
 	}
 	if m.quick().Input.Value() == "" {

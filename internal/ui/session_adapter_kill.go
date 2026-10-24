@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -45,7 +46,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 		target = confirmTarget{
 			action:   actionKill,
 			sessions: sessions,
-			label: followConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
+			label: uisession.FollowConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
 				"frees its RAM, v revives it.",
 				"frees their RAM, v revives them."),
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
@@ -94,17 +95,7 @@ func (m *Model) sessionWindowProjectedLive(id string) bool {
 	return launched
 }
 
-// unwatch stops the focus watcher before a session is killed on purpose:
-// the client going away then is the plan, not a loss to report.
-func (m *Model) unwatch(id string) {
-	m.focus.runtime.Unwatch(id)
-}
-
 // killSession ends one session's tmux window, freeing everything its agent
 // held, while the store row keeps the name, group, history and conversation
 // id that revive needs. The pane is captured first so the preview still
 // shows the agent's last output once the window is gone.
-
-func (m *Model) watchedSession() string {
-	return m.focus.runtime.Watching()
-}

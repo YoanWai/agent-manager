@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const deadSessionHint = uisession.DeadHint
-
 // reviveSelected relaunches a dead session's tmux session under the same
 // id, keeping its name, group, and history. Tools with a revive_command
 // resume where they left off (e.g. claude --continue). On a group row it
@@ -48,7 +46,7 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 		m.openConfirm(confirmTarget{
 			action:   actionRevive,
 			sessions: set,
-			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
+			label: uisession.FollowConfirmLabel("revive", entry.sess.Name, len(set)-1,
 				"brings it back.",
 				"brings them back."),
 			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
@@ -114,10 +112,8 @@ func (m *Model) degradedResumeNotice(sess store.Session) string {
 	if !ok || sess.AgentSessionID != "" || tool.ResumeByIDCommand == "" || tool.ResumePickerCommand != "" {
 		return ""
 	}
-	return degradedResumeText(sess.Name)
+	return uisession.DegradedResumeText(sess.Name)
 }
-
-func degradedResumeText(name string) string { return uisession.DegradedResumeText(name) }
 
 // reviveSession relaunches one dead session under its old id, keeping its
 // name, group, and history. When the session's own conversation id was

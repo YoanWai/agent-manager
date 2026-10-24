@@ -174,7 +174,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		if !staleListing {
 			// The focused session can die or vanish under us; fall back to the
 			// list rather than typing into nothing.
-			sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
+			sessions := m.ledger.lifecycle.DropRecentlyRemoved(m.ledger.lifecycle.KeepPendingLaunches(msg.sessions, m.workspace.sessions, msg.listedAt), msg.listedAt)
 			m.reconcileListing(&msg)
 			if m.focused() {
 				if sess, ok := m.selected(); !ok || uilifecycle.SessionGone(sessions, sess.ID) {

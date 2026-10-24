@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"strings"
 )
@@ -17,7 +18,7 @@ func (m *Model) removeSessionLocally(id string) {
 			break
 		}
 	}
-	m.markSession(id, uilifecycle.GoneMark{Deleted: true})
+	m.ledger.lifecycle.MarkSession(id, uilifecycle.GoneMark{Deleted: true})
 	m.rebuildRows()
 }
 
@@ -29,7 +30,7 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 	gone := make(map[string]bool, len(removed))
 	for _, path := range removed {
 		gone[path] = true
-		m.markGroup(path, uilifecycle.GoneMark{Deleted: true})
+		m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Deleted: true})
 	}
 	groups := make([]string, 0, len(m.workspace.groups))
 	for _, group := range m.workspace.groups {
@@ -59,7 +60,7 @@ func (m *Model) prepareDelete() {
 	if !entry.isGroup {
 		sessions := m.sessionAndChildren(entry.sess)
 		m.openConfirm(confirmTarget{
-			label: followConfirmLabel("delete", entry.sess.Name, len(sessions)-1,
+			label: uisession.FollowConfirmLabel("delete", entry.sess.Name, len(sessions)-1,
 				"kills its tmux session.",
 				"kills their tmux sessions."),
 			sessions:  sessions,

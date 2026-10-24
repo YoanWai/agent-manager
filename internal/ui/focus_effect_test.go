@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -63,8 +64,8 @@ func TestFocusDeadSessionNeverEnters(t *testing.T) {
 	if !m.onList() {
 		t.Fatalf("a dead pane should not enter focus, screen = %v", m.screenID())
 	}
-	if m.errBar.text != deadSessionHint {
-		t.Fatalf("err = %q, want %q", m.errBar.text, deadSessionHint)
+	if m.errBar.text != uisession.DeadHint {
+		t.Fatalf("err = %q, want %q", m.errBar.text, uisession.DeadHint)
 	}
 }
 
@@ -165,8 +166,8 @@ func TestAttachDeadSessionReportsFromCompletion(t *testing.T) {
 	}
 	m.applyTestMsg(t, cmd())
 	m.drainEffects(t)
-	if m.errBar.text != deadSessionHint {
-		t.Fatalf("err = %q, want %q", m.errBar.text, deadSessionHint)
+	if m.errBar.text != uisession.DeadHint {
+		t.Fatalf("err = %q, want %q", m.errBar.text, uisession.DeadHint)
 	}
 }
 

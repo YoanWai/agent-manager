@@ -13,8 +13,6 @@ import (
 	"strings"
 )
 
-func shellPromptHint(name string) string { return uisession.ShellPromptHint(name) }
-
 func (m *Model) attachSelected() (tea.Model, tea.Cmd) {
 	sess, ok := m.selected()
 	if !ok {
@@ -61,7 +59,7 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 	// A shell has no reply, and its scrollback is the user's own commands
 	// and their output rather than anything an agent said.
 	if m.isShell(sess.Tool) {
-		m.reportErr(shellPromptHint(sess.Name))
+		m.reportErr(uisession.ShellPromptHint(sess.Name))
 		return m, nil
 	}
 	engine, driver := m.services.engine, m.services.tmux

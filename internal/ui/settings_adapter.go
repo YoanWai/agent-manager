@@ -329,7 +329,7 @@ func (r editorResolution) probe() editorsProbedMsg {
 		}
 	}
 	r.configured = ""
-	return editorsProbedMsg{Found: found, Auto: r.resolve()}
+	return editorsProbedMsg{Found: found, Auto: r.editorLine()}
 }
 
 // applyEditorsProbe keeps the answer for the rows later loads rebuild, and
