@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -100,7 +101,7 @@ func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Mode
 	toolName, _ := m.shellTool()
 	w, h := m.paneTargetSize()
 	spawn := spawnRequest{
-		kind: spawnShell, toolName: toolName,
+		kind: uilaunch.Shell, toolName: toolName,
 		pane:         sessioncmd.PaneSize{Width: w, Height: h},
 		terminalDir:  request,
 		terminalRead: reader,

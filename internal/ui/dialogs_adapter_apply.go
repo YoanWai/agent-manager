@@ -2,6 +2,7 @@ package ui
 
 import (
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 )
 
 // dialogSources is what the fork and rename workers reach off the update
@@ -26,7 +27,7 @@ func (p dialogPathProbe) Resolve(raw string, fallbacks []string) (string, bool) 
 	return p.resolve(raw, fallbacks)
 }
 
-func (p dialogPathProbe) ResolveDir(path string) bool { return isDir(path) }
+func (p dialogPathProbe) ResolveDir(path string) bool { return uilaunch.IsDir(path) }
 
 func (s effectServices) dialogPathProbe() uiapply.Preflight {
 	return dialogPathProbe{systemDirectoryPreflight{git: s.gitDrv}}

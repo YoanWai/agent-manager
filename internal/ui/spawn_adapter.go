@@ -2,16 +2,13 @@ package ui
 
 import (
 	"strings"
-	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -116,10 +113,6 @@ func (m *Model) spawnStyles() spawn.Styles {
 		Accent2:     colorAccent2(),
 		Input:       textInputView,
 	}
-}
-
-func textField(placeholder string, limit int) textinput.Model {
-	return spawn.TextField(placeholder, limit)
 }
 
 const formPromptMaxRows = 4
@@ -318,7 +311,7 @@ func (m *Model) viewForm() string {
 	f := m.form()
 	facts := spawn.FormFacts{
 		Width:  m.formValueWidth(),
-		NoRepo: worktreeUnavailable,
+		NoRepo: uilaunch.WorktreeUnavailable,
 		Group:  escapeControlsInline(displayGroup(f.GroupPath())),
 		Styles: m.spawnStyles(),
 		Height: m.layout.height,
@@ -342,13 +335,9 @@ func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 	m.ledger.spawner.RememberSpawn(tool, worktree)
 }
 
-func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
-	return launch.Environment(m.services.hooks, toolName, tool, baseCommand, id, cwd, launchedAt)
-}
-
 func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
-	case worktreeProbeMsg:
+	case uilaunch.ProbeMsg:
 		return routed(m.handleWorktreeProbe(msg))
 
 	case pathcomplete.Msg:

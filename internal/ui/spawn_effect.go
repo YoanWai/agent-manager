@@ -15,13 +15,6 @@ import (
 	"slices"
 )
 
-// The spawn kinds under the names the root's call sites spell them.
-const (
-	spawnForm  = uilaunch.Form
-	spawnQuick = uilaunch.Quick
-	spawnShell = uilaunch.Shell
-)
-
 // spawnRequest is the root's queue shape of a spawn: what the form, the quick
 // bar or the terminal key captured. The run lives in ui/spawn/launch.
 type spawnRequest struct {
@@ -167,14 +160,14 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 	}
 	request.id = newID()
 	switch request.kind {
-	case spawnForm:
+	case uilaunch.Form:
 		f := m.form()
 		prompt := m.formPromptFor()
 		request.draft = prompt.Input.Value()
 		request.draftName = f.Name()
 		request.draftDir = f.Dir()
 		prompt.Attachments = nil
-	case spawnQuick:
+	case uilaunch.Quick:
 		q := m.quick()
 		request.draft = q.Input.Value()
 		q.Attachments = nil
@@ -222,7 +215,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		if request.autoNamed {
 			m.ledger.lifecycle.AwaitRename(sess.ID, sess.Name, request.prompt)
 		}
-		if request.kind != spawnShell {
+		if request.kind != uilaunch.Shell {
 			m.ledger.spawner.RememberSpawn(request.toolName, request.pickWorktree)
 			spawn.RememberModel(m.spawnHost(), request.toolName, spawn.Pick(request.choice))
 		}
@@ -230,19 +223,19 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		// the row the spawn just created is on screen.
 		m.rail.ClearStatusFilter()
 		switch request.kind {
-		case spawnForm:
+		case uilaunch.Form:
 			// A form opened later is a newer dialog the completion must not
 			// close; only the one that dispatched this spawn is closed.
 			if m.formDraftHolds(request.composerGen, request.draft, request.draftName, request.draftDir) {
 				m.closeForm()
 			}
-		case spawnQuick:
+		case uilaunch.Quick:
 			if q, ok := m.quickFor(request.composerGen); ok {
 				m.clearAccepted(request.composerGen, request.draft, q.CloseAfterSend)
 			}
 		}
 		m.rebuildRows()
-		if request.kind == spawnShell {
+		if request.kind == uilaunch.Shell {
 			m.ledger.lifecycle.TerminalKeyAt = time.Now()
 			m.focusSession(sess.ID)
 		}
@@ -254,7 +247,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 	request.plan = result.Plan
 	request.dir = result.Dir
 	request.worktree = result.Worktree
-	if request.kind == spawnShell {
+	if request.kind == uilaunch.Shell {
 		m.ledger.lifecycle.TerminalKeyAt = time.Now()
 		m.reportErr(err.Error())
 		return nil
@@ -264,9 +257,9 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 	// user opened since the dispatch is newer and keeps the screen.
 	takeOver := false
 	switch {
-	case request.kind == spawnForm && m.formHolds(request.composerGen, request.draft):
+	case request.kind == uilaunch.Form && m.formHolds(request.composerGen, request.draft):
 		takeOver = true
-	case request.kind == spawnQuick && m.quickHolds(request.composerGen, request.draft):
+	case request.kind == uilaunch.Quick && m.quickHolds(request.composerGen, request.draft):
 		takeOver = true
 	case m.listClear():
 		takeOver = true
@@ -278,7 +271,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			// at dispatch, so openLaunchHint found none of its own.
 			fix.Images = append(fix.Images, request.images...)
 			fix.Retry = request
-			if request.kind == spawnQuick {
+			if request.kind == uilaunch.Quick {
 				m.closeQuick()
 			}
 		} else {
@@ -297,12 +290,12 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 // remains, the files are dropped.
 func (m *Model) returnSpawnImages(request spawnRequest) {
 	switch request.kind {
-	case spawnForm:
+	case uilaunch.Form:
 		if prompt, ok := m.formPromptForGen(request.composerGen); ok {
 			prompt.Attachments = append(request.images, prompt.Attachments...)
 			return
 		}
-	case spawnQuick:
+	case uilaunch.Quick:
 		if q, ok := m.quickFor(request.composerGen); ok {
 			q.Attachments = append(request.images, q.Attachments...)
 			return

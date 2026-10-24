@@ -5,6 +5,7 @@ import (
 
 	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -72,7 +73,7 @@ func (m *Model) handleGroupBaseAsk(msg uidialogs.GroupBaseAskMsg) tea.Cmd {
 	if !ok || s.Gen() != msg.Gen {
 		return nil
 	}
-	choice, cmd := m.stepGroupBase(groupBaseForm, uint64(msg.Gen), m.groupFormDir(s), s.Base(), msg.Delta)
+	choice, cmd := m.stepGroupBase(uilaunch.BaseForm, uint64(msg.Gen), m.groupFormDir(s), s.Base(), msg.Delta)
 	*s.BaseRef() = choice
 	return cmd
 }

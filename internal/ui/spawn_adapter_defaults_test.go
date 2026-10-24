@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -149,11 +150,11 @@ func TestFormShowsAndFetchesTheWorktreeBase(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("an open form spawning a worktree should refresh its base")
 	}
-	next := m.recordBaseFetch(cmd().(baseFetchedMsg))
+	next := m.recordBaseFetch(cmd().(uilaunch.BaseFetchedMsg))
 	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetching") {
 		t.Fatalf("form should name the base while it fetches, got %q", view)
 	}
-	m.recordBaseFetch(next().(baseFetchedMsg))
+	m.recordBaseFetch(next().(uilaunch.BaseFetchedMsg))
 	if got, want := gitOutput(t, clone, "rev-parse", "origin/main"), gitOutput(t, remote, "rev-parse", "HEAD"); got != want {
 		t.Fatalf("origin/main = %s after the fetch, want %s", got, want)
 	}
@@ -198,7 +199,7 @@ func TestSettingsFetchOnSpawnTurnsTheFetchOff(t *testing.T) {
 	// Routed past Update, whose own refresh would take the fetch this test
 	// steps by hand.
 	m.handleMsg(m.formWorktreeProbeCmd(false)())
-	if next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg)); next != nil {
+	if next := m.recordBaseFetch(m.refreshSpawnBase()().(uilaunch.BaseFetchedMsg)); next != nil {
 		t.Fatal("with the fetch turned off, resolving the base should be the last step")
 	}
 	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto)") || strings.Contains(view, "fetch") {
@@ -224,8 +225,8 @@ func TestFormMarksAFailedBaseFetch(t *testing.T) {
 	// Routed past Update, whose own refresh would take the fetch this test
 	// steps by hand.
 	m.handleMsg(m.formWorktreeProbeCmd(false)())
-	next := m.recordBaseFetch(m.refreshSpawnBase()().(baseFetchedMsg))
-	m.recordBaseFetch(next().(baseFetchedMsg))
+	next := m.recordBaseFetch(m.refreshSpawnBase()().(uilaunch.BaseFetchedMsg))
+	m.recordBaseFetch(next().(uilaunch.BaseFetchedMsg))
 	if view := m.viewForm(); !strings.Contains(view, "origin/main (auto) · fetch failed") {
 		t.Fatalf("form should say the base was not refreshed, got %q", view)
 	}

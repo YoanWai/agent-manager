@@ -22,6 +22,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -673,7 +674,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 	w, h := m.paneTargetSize()
 	retry := spawnRequest{
 		id:       newID(),
-		kind:     spawnForm,
+		kind:     uilaunch.Form,
 		toolName: installRetryTool,
 		name:     retryName,
 		dir:      t.TempDir(),

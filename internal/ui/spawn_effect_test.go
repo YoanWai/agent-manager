@@ -575,7 +575,7 @@ func TestSpawnFailurePreservesNewAttachments(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	request := spawnRequest{kind: spawnForm, composerGen: m.formPromptFor().Gen, images: []composer.Attachment{{Path: "old"}}}
+	request := spawnRequest{kind: uilaunch.Form, composerGen: m.formPromptFor().Gen, images: []composer.Attachment{{Path: "old"}}}
 	m.formPromptFor().Attachments = []composer.Attachment{{Path: "new"}}
 	m.returnSpawnImages(request)
 	if len(m.formPromptFor().Attachments) != 2 {
@@ -588,7 +588,7 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 	m := buildModel(t)
 	m.openQuickMode()
 	m.quick().Input.SetValue("first task")
-	request := spawnRequest{kind: spawnQuick, composerGen: m.quick().Gen}
+	request := spawnRequest{kind: uilaunch.Quick, composerGen: m.quick().Gen}
 	m.dispatchSpawn(request)
 	request = m.effects.Main.Pending[0].Request.(spawnRequest)
 	m.quick().Input.SetValue("next task")

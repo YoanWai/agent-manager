@@ -5,22 +5,15 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 )
 
-// The group picker is spawn's, under the names the root's surfaces and
-// their tests spell it.
-type (
-	groupOption = spawn.GroupOption
-	groupPicker = spawn.Picker
-)
-
 // groupPickerFor is the picker rows of the group tree, highlighting
 // selectPath. Index 0 is always the root.
-func (m *Model) groupPickerFor(selectPath string) groupPicker {
+func (m *Model) groupPickerFor(selectPath string) spawn.Picker {
 	groups, index := m.groupOptions(selectPath)
-	return groupPicker{Groups: groups, GroupIndex: index}
+	return spawn.Picker{Groups: groups, GroupIndex: index}
 }
 
 // groupOptions is the picker's rows and the index of selectPath in them.
-func (m *Model) groupOptions(selectPath string) ([]groupOption, int) {
+func (m *Model) groupOptions(selectPath string) ([]spawn.GroupOption, int) {
 	sessionGroups := make([]string, 0, len(m.workspace.sessions))
 	for _, session := range m.workspace.sessions {
 		sessionGroups = append(sessionGroups, session.Group)
@@ -33,10 +26,10 @@ func (m *Model) groupOptions(selectPath string) ([]groupOption, int) {
 	}
 	children := spawn.ChildIndex(paths, m.workspace.groups)
 
-	options := []groupOption{{Path: "", Depth: 0}}
+	options := []spawn.GroupOption{{Path: "", Depth: 0}}
 	var walk func(path string, depth int)
 	walk = func(path string, depth int) {
-		options = append(options, groupOption{Path: path, Depth: depth})
+		options = append(options, spawn.GroupOption{Path: path, Depth: depth})
 		for _, child := range children[path] {
 			walk(child, depth+1)
 		}
@@ -70,6 +63,6 @@ func (m *Model) materializeGroupsLocal(paths []string) {
 	}
 }
 
-func (m *Model) viewGroupPicker(p *groupPicker) string {
+func (m *Model) viewGroupPicker(p *spawn.Picker) string {
 	return spawn.ViewGroupOptions(p.Groups, p.GroupIndex, m.spawnStyles())
 }
