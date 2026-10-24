@@ -450,6 +450,7 @@ func TestPendingFocusDistinguishesIgnoredAndBoundKeys(t *testing.T) {
 			t.Parallel()
 			m := buildModel(t)
 			createSession(t, m, "alpha", t.TempDir(), "")
+			m.drainEffects(t)
 			m.selectSessionRow(t, "alpha")
 			if bound {
 				key, err := keybind.Parse("f12")

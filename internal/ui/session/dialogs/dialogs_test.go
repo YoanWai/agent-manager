@@ -100,8 +100,9 @@ func TestReviveOfOneDeadRowRunsWithoutACard(t *testing.T) {
 	t.Parallel()
 	dead := store.Session{ID: "a", Name: "one", Status: status.Dead}
 	intent := ReviveAll([]store.Session{dead})
-	if !intent.Run || !intent.AllowLive {
-		t.Fatalf("intent = %+v, want the run itself", intent)
+	// The batch still refuses a row that came back to life meanwhile.
+	if !intent.Run || intent.AllowLive {
+		t.Fatalf("intent = %+v, want the run itself, refusing live rows", intent)
 	}
 	if len(intent.Card.Sessions) != 1 || intent.Card.Sessions[0].ID != "a" {
 		t.Fatalf("run covers %+v, want the one dead row", intent.Card.Sessions)

@@ -147,12 +147,12 @@ func TestRosterAlignsToolsAndFillsItsWidth(t *testing.T) {
 func TestRosterShedsToolThenState(t *testing.T) {
 	title, rows := rosterRows()
 
-	narrow := strings.Join(Roster(title, rows, 30), "\n")
+	narrow := strings.Join(Roster(title, rows, 24), "\n")
 	if strings.Contains(narrow, "claude") {
-		t.Errorf("30 columns kept the tool column: %q", narrow)
+		t.Errorf("24 columns kept the tool column: %q", narrow)
 	}
 	if !strings.Contains(narrow, "working") {
-		t.Errorf("30 columns dropped the state: %q", narrow)
+		t.Errorf("24 columns dropped the state: %q", narrow)
 	}
 
 	narrower := strings.Join(Roster(title, rows, 16), "\n")

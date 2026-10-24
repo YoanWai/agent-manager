@@ -72,6 +72,7 @@ func (m *Model) enterResizeMode() (tea.Model, tea.Cmd) {
 	gesture := geometryHost{m}.Gesture()
 	gesture.ResizeMode = true
 	gesture.Dragging = false
+	gesture.RatioBefore = gesture.Ratio
 	m.applyGesture(gesture)
 	m.push(newResizeSurface(m))
 	m.clearErr()

@@ -218,7 +218,8 @@ type AfterTurnApply struct {
 func AfterTurn(request AfterTurnRequest, result AfterTurnResult, err error) AfterTurnApply {
 	apply := AfterTurnApply{Survivor: result.Lifecycle.Survivor, Done: request.Name, Err: err}
 	if result.Target.Action != None {
-		change := Changes(Request{Target: result.Target, Watched: request.Watched}, result.Lifecycle, err)
+		apply.ChangeRequest = Request{Target: result.Target, Watched: request.Watched}
+		change := Changes(apply.ChangeRequest, result.Lifecycle, err)
 		apply.Change = &change
 	}
 	if result.Cleared {
