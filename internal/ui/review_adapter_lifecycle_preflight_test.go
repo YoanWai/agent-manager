@@ -8,6 +8,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/store"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 )
@@ -144,7 +145,7 @@ func TestReviewFocusReturnKeepsItsCapturedSession(t *testing.T) {
 	m.base = baseReview
 	m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnFocus, SessionID: a.ID})
 	m.closeDiff()
-	if m.effects.Main.Active == nil || m.effects.Main.Active.Request.(focusRequest).sessionID != a.ID {
+	if m.effects.Main.Active == nil || m.effects.Main.Active.Request.(focusruntime.ProbeRequest).SessionID != a.ID {
 		t.Fatal("review returned into a different session")
 	}
 }

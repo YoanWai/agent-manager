@@ -36,7 +36,7 @@ type effectState struct {
 
 func (m *Model) laneFor(request uieffects.Request) *uieffects.Lane {
 	switch request.(type) {
-	case inputRequest:
+	case focusruntime.InputRequest:
 		return &m.effects.Input
 	case remoteRequest:
 		return &m.effects.Remote
@@ -97,8 +97,8 @@ func inputTarget(job *uieffects.Job) (string, bool) {
 	if job == nil {
 		return "", false
 	}
-	request, ok := job.Request.(inputRequest)
-	return request.request.Session.ID, ok
+	request, ok := job.Request.(focusruntime.InputRequest)
+	return request.Value.Session.ID, ok
 }
 
 // heldBy reports whether the main-lane job kills or relaunches the pane the
@@ -148,13 +148,13 @@ func (m *Model) handleEffectCompleted(msg uieffects.Completed) (tea.Model, tea.C
 	}
 	// Keys, paste and mouse change no stored row, so they neither fence a
 	// listing nor ask for a poll; a typed prompt records LastPrompt and does.
-	if request, ok := job.Request.(inputRequest); ok && request.request.Kind != focusruntime.Prompt {
-		result, _ := msg.Result.(inputEffectResult)
+	if request, ok := job.Request.(focusruntime.InputRequest); ok && request.Value.Kind != focusruntime.Prompt {
+		result, _ := msg.Result.(focusruntime.InputResult)
 		m.applyInputEffect(result, msg.Err)
 		return m, m.nextEffectCmd()
 	}
 	switch job.Request.(type) {
-	case inputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, uirailpersist.Request, forkRequest, spawnRequest, groupRequest, renameRequest, focusRequest, ackRequest, attachRequest:
+	case focusruntime.InputRequest, quickSendRequest, uiinstall.StartRequest, lifecycleRequest, afterTurnRequest, uirailpersist.Request, forkRequest, spawnRequest, groupRequest, renameRequest, focusruntime.ProbeRequest, focusruntime.AckRequest, attachRequest:
 		if msg.FinishedAt.After(m.effects.latestObservation) {
 			m.effects.latestObservation = msg.FinishedAt
 		}

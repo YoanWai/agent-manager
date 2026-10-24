@@ -12,7 +12,9 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
+	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	tea "github.com/charmbracelet/bubbletea"
@@ -40,6 +42,12 @@ type effectServices struct {
 // declared here.
 func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, error) {
 	capture := m.captureServices
+	if work, ok := uieffects.Bind(request, func() focusruntime.Services { return capture().focusRuntime() }); ok {
+		return work
+	}
+	if work, ok := uieffects.Bind(request, func() uigeometrypanes.Services { return capture().geometry() }); ok {
+		return work
+	}
 	if work, ok := uieffects.Bind(request, func() uiinstall.Services { return capture().install() }); ok {
 		return work
 	}
@@ -60,6 +68,19 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return m.ledger.install.Settled(installRoot{m}, job.Request.(uiinstall.SettleRequest), result, err)
 	case uirailpersist.ChangeResult:
 		return m.applyRailEffect(result, job.Request.(uirailpersist.Request), job.Chain, err)
+	case focusruntime.ProbeResult:
+		return m.applyFocusEffect(job.Request.(focusruntime.ProbeRequest), err)
+	case focusruntime.AckResult:
+		m.applyAckEffect(err)
+		return nil
+	case focusruntime.DetachResult:
+		return m.applyDetachEffect(job.Request.(focusruntime.DetachRequest), result, err)
+	case focusruntime.InputResult:
+		m.applyInputEffect(result, err)
+	case uigeometrypanes.ResizeResult:
+		m.applyGeometryEffect(result.Result, err)
+	case uigeometrypanes.SplitSaveResult:
+		m.layout.panes.ApplySplit(paneSizing{m}, job.ID, err)
 	case effectResult:
 		return result.apply(m, job, err)
 	}
@@ -109,4 +130,26 @@ func (s effectServices) reflow(ids []string, work func()) error {
 		return nil
 	}
 	return s.runner.ReflowSessions(ids, work)
+}
+
+// focusRuntime is the store, tmux server, watcher, engine and paste transport
+// the focus effects run against.
+func (s effectServices) focusRuntime() focusruntime.Services {
+	return focusruntime.Services{
+		Store:  s.store,
+		Driver: s.driver,
+		Engine: s.engine,
+		Watch:  s.watch,
+		Paste:  s.pasteInput,
+	}
+}
+
+// geometry is the store, tmux server and poller reflower the pane resize runs
+// against.
+func (s effectServices) geometry() uigeometrypanes.Services {
+	var reflower uigeometrypanes.Reflower
+	if s.runner != nil {
+		reflower = s.runner
+	}
+	return uigeometrypanes.Services{Store: s.store, Driver: s.driver, Reflower: reflower}
 }

@@ -2,17 +2,35 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/keybind"
-	"github.com/YoanWai/agent-manager/internal/store"
-	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
-	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
-	"strconv"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testfixture"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uisurface "github.com/YoanWai/agent-manager/internal/ui/surface"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 // A bare Model must default to mouse reporting on: mouseDisabled is named
@@ -1796,5 +1814,755 @@ func TestClicksWorkWhileTheQuickBarIsOpen(t *testing.T) {
 	m.drainEffects(t)
 	if !m.focused() || (m.quick() != nil) {
 		t.Fatalf("a row click should focus and close the bar, screen = %v quick = %v", m.screenID(), (m.quick() != nil))
+	}
+}
+
+// A corner of the terminal is backdrop under every centered card.
+func clickBackdrop(t *testing.T, m *Model) *Model {
+	t.Helper()
+	preparedView(m)
+	if m.layout.card.holds(0, 0) {
+		t.Fatalf("test setup: the card covers the corner: %+v", m.layout.card)
+	}
+	m = leftClick(m, 0, 0)
+	m.drainEffects(t)
+	return m
+}
+
+func TestBackdropClickClosesACardTheWayEscDoes(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		open func(*Model)
+	}{
+		{"help", func(m *Model) { m.openHelp() }},
+		{"messages", func(m *Model) { m.openNotices("") }},
+		{"settings", func(m *Model) { m.applyCmd(t, m.openSettings()) }},
+		{"confirm", func(m *Model) {
+			m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha? frees its RAM."})
+		}},
+		{"move", func(m *Model) { m.openMove() }},
+	} {
+		m := buildModel(t)
+		m.layout.width, m.layout.height = 120, 34
+		createSession(t, m, "alpha", t.TempDir(), "")
+		m.selectSessionRow(t, "alpha")
+		tc.open(m)
+		if m.listClear() {
+			t.Fatalf("%s: test setup did not open the card, err %q", tc.name, m.errBar.text)
+		}
+		if m = clickBackdrop(t, m); !m.listClear() {
+			t.Errorf("%s: a backdrop click should close the card, screen = %v", tc.name, m.screenID())
+		}
+		if confirmOpen(m) {
+			t.Errorf("%s: a backdrop click on a confirm is its cancel, target = %+v", tc.name, pendingConfirm(m))
+		}
+	}
+}
+
+func TestBackdropClickKeepsATypedDraft(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		open func(*Model)
+	}{
+		{"new session", func(m *Model) { m.applyCmd(t, m.openForm()) }},
+		{"new group", func(m *Model) { m.openGroupForm() }},
+		{"fork", func(m *Model) {
+			m.push(uidialogs.NewForkSurface(forkRoot{m, store.Session{Name: "alpha"}}, "alpha", "", 1))
+		}},
+	} {
+		m := buildModel(t)
+		m.layout.width, m.layout.height = 120, 34
+		createSessionOn(t, m, "alpha", "claude", t.TempDir())
+		m.selectSessionRow(t, "alpha")
+		tc.open(m)
+		if len(m.surfaces) != 1 {
+			t.Fatalf("%s: test setup put %d surfaces up, err %q", tc.name, len(m.surfaces), m.errBar.text)
+		}
+		if m = clickBackdrop(t, m); len(m.surfaces) != 1 {
+			t.Errorf("%s: a stray click closed the draft", tc.name)
+		}
+	}
+}
+
+func TestBackdropClickKeepsTheSettingsEditorField(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	editorSettings(t, m, "code")
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyLeft})
+	m.pressInSettings(t, tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.settingsCard().State().Editor.Typing() {
+		t.Fatal("test setup: enter on custom opens the field")
+	}
+	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().State().Editor.Typing() {
+		t.Fatalf("a stray click should keep the typed line open, screen = %v typing = %v", m.screenID(), m.settingsCard().State().Editor.Typing())
+	}
+}
+
+// A click inside the card that lands on nothing it paints leaves it open.
+func TestClickOnACardsOwnBlankStaysOpen(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openHelp()
+	preparedView(m)
+	if m = leftClick(m, m.layout.card.left+1, m.layout.card.top+1); !helpOpen(m) {
+		t.Fatalf("a click on the card's own edge should leave it open, screen = %v", m.screenID())
+	}
+}
+
+func TestBackdropClickKeepsASavedPromptDraft(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.applyCmd(t, m.openSettings())
+	m.applyCmd(t, m.runSettingsResult(m.settingsCard().State(), m.settingsCard().State().OpenPrompts()))
+	m.pressInSettings(t, runeKey("n"))
+	if !m.settingsCard().State().Prompts.Editing() {
+		t.Fatal("test setup: n opens the prompt editor")
+	}
+	if m = clickBackdrop(t, m); !m.settingsOpen() || !m.settingsCard().State().Prompts.Editing() {
+		t.Fatalf("a stray click should keep the prompt being typed, screen = %v", m.screenID())
+	}
+}
+
+// The saved prompts card over a focused session covers the focus footer,
+// so only the card's own keys answer a click.
+func TestSavedPromptsOverFocusHideTheFooterKeys(t *testing.T) {
+	m := focusedModel(t)
+	m.openFocusSaved()
+	preparedView(m)
+	if len(m.layout.keyHits) == 0 {
+		t.Fatal("test setup: the card paints its own keys")
+	}
+	for _, hit := range m.layout.keyHits {
+		if !m.layout.card.holds(hit.x0, hit.y) {
+			t.Fatalf("a key at %d,%d answers outside the card %+v", hit.x0, hit.y, m.layout.card)
+		}
+	}
+}
+
+// A rename typed into its row holds the list still under the mouse.
+func TestRenameHoldsTheListUnderTheMouse(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	createSession(t, m, "alpha", t.TempDir(), "")
+	createSession(t, m, "beta", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	m.openRename()
+	x, y := bodyCell(t, m, "beta")
+	m = leftClick(m, x, y)
+	m = wheel(m, tea.MouseButtonWheelDown, x, y)
+	if row, ok := m.selectedRow(); !renameOpen(m) || !ok || row.sess.Name != "alpha" {
+		t.Fatalf("the mouse moved the list under a rename: mode %v row %+v", m.screenID(), row.sess.Name)
+	}
+}
+
+// A card answers a click when the button comes back up over the spot the
+// press landed on, so a press on the backdrop released over the card
+// closes nothing.
+func TestACardClickRunsOnTheRelease(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openHelp()
+	preparedView(m)
+	card := m.layout.card
+	if m = leftPress(m, 0, 0); !helpOpen(m) {
+		t.Fatalf("the press alone closed the card, screen = %v", m.screenID())
+	}
+	if m = leftRelease(m, card.left+1, card.top+1); !helpOpen(m) {
+		t.Fatalf("a release over the card closed it, screen = %v", m.screenID())
+	}
+	if m = leftClick(m, 0, 0); !m.onList() {
+		t.Fatalf("a click on the backdrop should close the card, screen = %v", m.screenID())
+	}
+}
+
+// mouseOpeners mounts every surface the way the user does, on a list with
+// a selected session. A surface type missing here fails, so a new surface
+// is driven by the mouse on purpose.
+var mouseOpeners = map[string]func(t *testing.T, m *Model){
+	"dialogs.ConfirmSurface": func(t *testing.T, m *Model) {
+		m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha?"})
+	},
+	"dialogs.MoveSurface":   func(t *testing.T, m *Model) { m.openMove() },
+	"dialogs.RenameSurface": func(t *testing.T, m *Model) { m.openRename() },
+	"dialogs.ForkSurface": func(t *testing.T, m *Model) {
+		source := railSelectedSession(m)
+		m.push(uidialogs.NewForkSurface(forkRoot{m, source}, source.Name, source.Group, 1))
+	},
+	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
+		m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Binary: "tool"})
+	},
+	"help.Surface":             func(t *testing.T, m *Model) { m.openHelp() },
+	"notices.Surface":          func(t *testing.T, m *Model) { m.Update(key("M")) },
+	"settings.Surface":         func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
+	"dialogs.GroupFormSurface": func(t *testing.T, m *Model) { m.openGroupForm() },
+	"connections.Surface":      func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
+	"quick.Surface":            func(t *testing.T, m *Model) { m.applyCmd(t, m.openQuickMode()) },
+	"spawn.Surface":            func(t *testing.T, m *Model) { m.applyCmd(t, m.openForm()) },
+	"geometry.Surface":         func(t *testing.T, m *Model) { m.enterResizeMode() },
+	"focus.Surface":            func(t *testing.T, m *Model) { m.push(newFocusSurface(m)) },
+	"focus.Saved": func(t *testing.T, m *Model) {
+		m.push(newFocusSurface(m))
+		m.push(uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles()))
+	},
+	"review.Surface": func(t *testing.T, m *Model) {
+		m.base = baseReview
+		m.push(uireview.NewSurface(reviewRoot{m}, []uireview.PickerRow{{Label: "main"}}, "branch", uireview.PickRepo, "", uireview.PickerSource{}, "", uireview.RenderContext{}, ""))
+	},
+}
+
+// Every surface answers the mouse: a wheel and a click over it neither
+// panic nor touch the stack under it.
+func TestEverySurfaceAnswersTheMouse(t *testing.T) {
+	for _, name := range declaredSurfaces(t) {
+		open, ok := mouseOpeners[name]
+		if !ok {
+			t.Errorf("%s has no opener in mouseOpeners: drive it by the mouse here", name)
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			m := buildModel(t)
+			m.layout.width, m.layout.height = 120, 40
+			createSession(t, m, "alpha", t.TempDir(), "")
+			m.selectSessionRow(t, "alpha")
+			open(t, m)
+			top, ok := m.top()
+			if !ok || surfaceName(top) != name {
+				t.Fatalf("the opener did not put %s on top, stack %d, err %q", name, len(m.surfaces), m.errBar.text)
+			}
+			below := len(m.surfaces) - 1
+			preparedView(m)
+			x, y := m.layout.width/2, m.layout.height/2
+			for _, msg := range []tea.MouseMsg{
+				{X: x, Y: y, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress},
+				{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress},
+				{X: x, Y: y, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease},
+			} {
+				m.Update(msg)
+				if len(m.surfaces) < below {
+					t.Fatalf("a mouse event over %s popped the stack under it", name)
+				}
+			}
+		})
+	}
+	for name := range mouseOpeners {
+		if !contains(declaredSurfaces(t), name) {
+			t.Errorf("mouseOpeners names %s, which no longer implements surface", name)
+		}
+	}
+}
+
+// surfaceName names a surface the way declaredSurfaces does: bare in the
+// root, qualified by its package in a feature's.
+func surfaceName(s uisurface.Surface) string {
+	typ := reflect.TypeOf(s).Elem()
+	if pkg := path.Base(typ.PkgPath()); pkg != "ui" {
+		return pkg + "." + typ.Name()
+	}
+	return typ.Name()
+}
+
+// declaredSurfaces lists the types that declare a Leave(uisurface.Host) method on a
+// pointer receiver, in the root and in the feature packages under it: every
+// surface does, and nothing else.
+func declaredSurfaces(t *testing.T) []string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirs := []string{"."}
+	for _, entry := range entries {
+		if entry.IsDir() && entry.Name() != "testdata" {
+			dirs = append(dirs, entry.Name())
+		}
+	}
+	var names []string
+	for _, dir := range dirs {
+		fset := token.NewFileSet()
+		packages, err := parser.ParseDir(fset, dir, func(info fs.FileInfo) bool {
+			return !strings.HasSuffix(info.Name(), "_test.go")
+		}, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for pkg, parsed := range packages {
+			for _, file := range parsed.Files {
+				for _, decl := range file.Decls {
+					fn, ok := decl.(*ast.FuncDecl)
+					if !ok || fn.Recv == nil || fn.Name.Name != "Leave" || !takesHost(fn) {
+						continue
+					}
+					if star, ok := fn.Recv.List[0].Type.(*ast.StarExpr); ok {
+						if ident, ok := star.X.(*ast.Ident); ok {
+							name := ident.Name
+							if pkg != "ui" {
+								name = pkg + "." + name
+							}
+							names = append(names, name)
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(names) == 0 {
+		t.Fatal("found no surfaces")
+	}
+	return names
+}
+
+// takesHost is whether fn's one parameter is the stack's host, which tells a
+// surface's Leave from another type's.
+func takesHost(fn *ast.FuncDecl) bool {
+	params := fn.Type.Params.List
+	if len(params) != 1 {
+		return false
+	}
+	if typ, ok := params[0].Type.(*ast.SelectorExpr); ok {
+		return typ.Sel.Name == "Host"
+	}
+	return false
+}
+
+func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
+	// One row shorter than the symbols line. Save lives in the footer, so the
+	// body spends that row on a field.
+	for _, size := range [][2]int{{34, 11}, {80, 10}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := buildModel(t)
+			m.layout.width, m.layout.height = size[0], size[1]
+			m.runBatch(t, m.openSettings())
+			if paints(m, "symbols") {
+				t.Fatal("symbols should start below this viewport")
+			}
+			for range uisettings.FieldGlyphs {
+				m = wheelOnCard(m, tea.MouseButtonWheelDown)
+			}
+			if m.settingsCard().State().Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
+				t.Fatal("wheel did not reveal symbols")
+			}
+			if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
+				t.Fatal("revealed symbols row was not clickable")
+			}
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+				m = wheelOnCard(m, tea.MouseButtonWheelDown)
+			}
+			if m.settingsCard().State().Field != uisettings.FieldDocs || !paints(m, "docs") {
+				t.Fatal("wheel did not reveal docs")
+			}
+			var opened string
+			openBrowser = func(url string) error { opened = url; return nil }
+			t.Cleanup(func() { openBrowser = uiterminal.DefaultOpenBrowser })
+			m, docs := clickBody(t, m, "docs")
+			m.runBatch(t, docs)
+			if opened != docsURL {
+				t.Fatal("docs click did not follow the scrolled row")
+			}
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+				m = wheelOnCard(m, tea.MouseButtonWheelUp)
+			}
+			if m.settingsCard().State().Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
+				t.Fatal("wheel up did not return to symbols")
+			}
+		})
+	}
+}
+
+func TestSettingsWheelLeavesSubpanelsAlone(t *testing.T) {
+	for _, panel := range []string{"CLIs", "keys", "editor"} {
+		t.Run(panel, func(t *testing.T) {
+			m := buildModel(t)
+			m.runBatch(t, m.openSettings())
+			switch panel {
+			case "CLIs":
+				m.settingsCard().State().Field = uisettings.FieldCLIs
+				m.handleSettingsKey(key("enter"))
+			case "keys":
+				m.settingsCard().State().Field = uisettings.FieldKeybindings
+				m.handleSettingsKey(key("enter"))
+			case "editor":
+				m.settingsCard().State().Field = uisettings.FieldEditor
+				m.settingsCard().State().Editor = uisettings.NewEditorRow("custom --test", nil)
+				m.handleSettingsKey(key("enter"))
+			}
+			field := m.settingsCard().State().Field
+			for _, button := range []tea.MouseButton{tea.MouseButtonWheelDown, tea.MouseButtonWheelUp} {
+				if m = wheelOnCard(m, button); m.settingsCard().State().Field != field {
+					t.Fatal("wheel in a subpanel moved the parent Settings field")
+				}
+			}
+		})
+	}
+}
+
+// The guard has to be transparent while the application really is tracking
+// the mouse, and silent once it has stopped.
+func TestGuardedMouseCommandFollowsTheLiveFlag(t *testing.T) {
+	if _, err := exec.LookPath(tmux.Binary); err != nil {
+		t.Skip(tmux.Binary + " not installed")
+	}
+	command := `printf '\033[?1003h\033[?1006h'; cat`
+	if runtime.GOOS == "windows" {
+		command = testfixture.Command("mouse-tool")
+	}
+	driver, err := tmux.NewWithSocket("amguard")
+	if err != nil {
+		t.Fatalf("driver: %v", err)
+	}
+	sessID := "guard-probe"
+	ready := filepath.Join(t.TempDir(), "ready")
+	if err := driver.Create(sessID, t.TempDir(), command, map[string]string{testfixture.ReadyEnv: ready}, 80, 24); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { _ = driver.Kill(sessID) })
+	waitForMouseFlag(t, driver, sessID, "1")
+	if runtime.GOOS == "windows" {
+		// The flag is up once the escape is printed, before cat has a raw
+		// console to read a report through.
+		testfixture.WaitForReady(t, ready)
+	}
+
+	_, args := tmux.GuardedMouseReport(tmux.PaneTarget(sessID), "\x1b[<64;7;3M")
+	if err := driver.SendCommand(args...); err != nil {
+		t.Fatalf("guarded send while tracking: %v", err)
+	}
+	if !paneGains(t, driver, sessID, "64;7;3M") {
+		t.Fatal("a report was dropped while the application was tracking the mouse")
+	}
+
+	stopMouseTracking(t, driver, sessID)
+
+	_, args = tmux.GuardedMouseReport(tmux.PaneTarget(sessID), "\x1b[<64;9;4M")
+	if err := driver.SendCommand(args...); err != nil {
+		t.Fatalf("guarded send after tracking stopped: %v", err)
+	}
+	if paneGains(t, driver, sessID, "64;9;4M") {
+		pane, _ := driver.CapturePane(sessID)
+		t.Fatalf("a report reached the pane after the application left mouse mode:\n%s", strings.TrimSpace(pane))
+	}
+}
+
+// A report forwarded over the control pipe must leave the replies behind it
+// on their own commands, whichever branch the guard takes: a capture that
+// receives the guard's spare block paints the focused pane blank.
+func TestGuardedMouseCommandKeepsControlRepliesAligned(t *testing.T) {
+	skipControlMode(t)
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux not installed")
+	}
+	driver, err := tmux.NewWithSocket("amguard")
+	if err != nil {
+		t.Fatalf("driver: %v", err)
+	}
+	sessID := "guard-replies"
+	if err := driver.Create(sessID, t.TempDir(),
+		`printf '\033[?1003h\033[?1006h'; cat`, map[string]string{}, 80, 24); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	t.Cleanup(func() { _ = driver.Kill(sessID) })
+	control, err := driver.OpenControl(sessID)
+	if err != nil {
+		t.Fatalf("control: %v", err)
+	}
+	t.Cleanup(func() { _ = control.Close() })
+
+	expectAligned := func(state string) {
+		t.Helper()
+		command, _ := tmux.GuardedMouseReport(tmux.PaneTarget(sessID), "\x1b[<64;7;3M")
+		if err := control.SendBlocks(command, tmux.GuardedMouseReplies); err != nil {
+			t.Fatalf("guarded send while %s: %v", state, err)
+		}
+		for _, marker := range []string{"first", "second"} {
+			reply, err := control.Command("display-message -p " + marker)
+			if err != nil || reply != marker {
+				t.Fatalf("while %s, reply = %q (%v), want %q", state, reply, err, marker)
+			}
+		}
+	}
+	waitForMouseFlag(t, driver, sessID, "1")
+	expectAligned("tracking the mouse")
+
+	stopMouseTracking(t, driver, sessID)
+	expectAligned("not tracking the mouse")
+}
+
+// cat holds the line until a newline arrives, and only what it echoes
+// reaches the pane's terminal to turn mouse reporting off.
+func stopMouseTracking(t *testing.T, driver *tmux.Driver, sessID string) {
+	t.Helper()
+	if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(sessID) +
+		" -H 1b 5b 3f 31 30 30 33 6c 1b 5b 3f 31 30 30 36 6c 0a"); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	waitForMouseFlag(t, driver, sessID, "0")
+}
+
+func waitForMouseFlag(t *testing.T, driver *tmux.Driver, sessID, want string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		cmd := exec.Command(tmux.Binary, "-L", driver.SocketName(),
+			"display-message", "-p", "-t", tmux.PaneTarget(sessID), "#{mouse_any_flag}")
+		if runtime.GOOS == "windows" {
+			// The same PSMUX_NO_WARM tmuxCmd sets, so a poll does not
+			// start a standby server.
+			cmd.Env = append(os.Environ(), "PSMUX_NO_WARM=1")
+		}
+		out, err := cmd.Output()
+		if err == nil && strings.TrimSpace(string(out)) == want {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("mouse_any_flag never reached %q", want)
+}
+
+func paneGains(t *testing.T, driver *tmux.Driver, sessID, want string) bool {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if pane, err := driver.CapturePane(sessID); err == nil && strings.Contains(pane, want) {
+			return true
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return false
+}
+
+func TestClickOnListFooterGroupKeyOpensTheCard(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 320, 40
+	createSession(t, m, "alpha", t.TempDir(), "")
+	if m = clickLabel(t, m, "g group"); !m.groupFormOpen() {
+		t.Fatalf("click on the group key did not open the card (err %q)", m.errBar.text)
+	}
+}
+
+func TestClickOnListFooterSettingsKeyOpensTheCard(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 320, 40
+	createSession(t, m, "alpha", t.TempDir(), "")
+	if m = clickLabel(t, m, "s settings"); !m.settingsOpen() {
+		t.Fatalf("click on the settings key did not open the card (err %q)", m.errBar.text)
+	}
+}
+
+func TestClickOnListFooterKeysOpensTheirModals(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		label string
+		open  func(*Model) bool
+	}{
+		{"n new", formOpen},
+		{"g group", func(m *Model) bool { return m.groupFormOpen() }},
+		{"? keys", func(m *Model) bool { _, ok := surfaceOf[*uihelp.Surface](m); return ok }},
+		{"s settings", func(m *Model) bool { return m.settingsOpen() }},
+	} {
+		m := buildModel(t)
+		m.layout.width, m.layout.height = 320, 40
+		createSession(t, m, "alpha", t.TempDir(), "")
+		if m = clickLabel(t, m, tc.label); !tc.open(m) {
+			t.Errorf("click on %q opened nothing (err %q)", tc.label, m.errBar.text)
+		}
+	}
+}
+
+// A footer names keys the search field would take as typing, so the field
+// keeps a click on them.
+func TestClickOnListFooterWhileSearchingTypesNothing(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 200, 40
+	x, y := paintedCell(t, m, "n new")
+	m.rail.SetSearch(m.rail.Search(), true)
+	preparedView(m)
+	if m = leftClick(m, x, y); !m.onList() || !m.rail.Searching() || m.rail.Search() != "" {
+		t.Fatalf("search owns the click, screen = %v searching = %v query = %q", m.screenID(), m.rail.Searching(), m.rail.Search())
+	}
+}
+
+func TestClickOnConfirmFootAnswers(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openConfirm(confirmTarget{action: uidialogs.ConfirmKill, label: "kill alpha? frees its RAM."})
+	if m = clickLabel(t, m, "n/esc cancel"); !m.onList() || pendingConfirm(m).label != "" {
+		t.Fatalf("cancel in the foot should close the confirm, screen = %v target = %+v", m.screenID(), pendingConfirm(m))
+	}
+}
+
+func TestClickOnHelpFootCloses(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openHelp()
+	if m = clickLabel(t, m, "esc/q close"); !m.onList() {
+		t.Fatalf("close in the foot should leave help, screen = %v", m.screenID())
+	}
+}
+
+func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.openNotices("")
+	if len(m.activeNotices()) == 0 {
+		t.Fatal("test setup: a fresh model shows the welcome notice")
+	}
+	for _, key := range []string{"↑↓ pick", "pgup/pgdn"} {
+		x, y := paintedCell(t, m, key)
+		if _, ok := m.layout.keyHits.at(x, y); ok {
+			t.Fatalf("%q moves the cursor; the rows and the wheel answer for it", key)
+		}
+	}
+	if m = clickLabel(t, m, "esc"); !m.onList() {
+		t.Fatalf("esc in the foot should close messages, screen = %v", m.screenID())
+	}
+}
+
+func TestClickOnFocusFootLeavesFocus(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 200, 40
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
+	}
+	if m = clickLabel(t, m, "mouse back"); !m.onList() {
+		t.Fatalf("the back pair in the foot should leave focus, screen = %v", m.screenID())
+	}
+}
+
+// A key runs when the button comes back up over it, so whatever it opens
+// starts after the release. A press that slides off the key runs nothing.
+func TestAKeyRunsOnTheRelease(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 200, 40
+	x, y := paintedCell(t, m, "? keys")
+	if m = leftPress(m, x, y); !m.onList() {
+		t.Fatalf("the press alone ran the key, screen = %v", m.screenID())
+	}
+	if m = leftRelease(m, 0, y); !m.onList() {
+		t.Fatalf("a release off the key ran it, screen = %v", m.screenID())
+	}
+	if m = leftRelease(m, x, y); !m.onList() {
+		t.Fatalf("a second release with no press ran the key, screen = %v", m.screenID())
+	}
+	if m = leftClick(m, x, y); !helpOpen(m) {
+		t.Fatalf("a click on the key should run it, screen = %v", m.screenID())
+	}
+}
+
+// A key repainted under a held button is not the key the press chose, so
+// the release runs nothing.
+func TestARepaintedKeyDoesNotRunOnTheRelease(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 200, 40
+	x, y := paintedCell(t, m, "? keys")
+	m = leftPress(m, x, y)
+	repainted := false
+	for i, hit := range m.layout.keyHits {
+		if hit.y == y && x >= hit.x0 && x < hit.x1 {
+			m.layout.keyHits[i].key, repainted = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}, true
+		}
+	}
+	if !repainted {
+		t.Fatal("test setup: no key painted under the press")
+	}
+	if m = leftRelease(m, x, y); !m.onList() {
+		t.Fatalf("the release ran the repainted key, screen = %v", m.screenID())
+	}
+}
+
+func focusedModel(t *testing.T) *Model {
+	t.Helper()
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	updated, _ := m.focusSelected()
+	m = updated.(*Model)
+	m.drainEffects(t)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
+	}
+	return m
+}
+
+// A press anywhere in the rail column leaves focus on the press, the blank
+// below the last row included, not only on a row.
+func TestPressOnTheRailsBlankLeavesFocus(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	blank := -1
+	for line, row := range railHitRows(m) {
+		if row < 0 && line > 0 {
+			blank = y0 + line
+			break
+		}
+	}
+	if blank < 0 {
+		t.Fatal("test setup: the rail paints no line without a row")
+	}
+	if m = leftPress(m, 2, blank); !m.onList() {
+		t.Fatalf("a press on the rail's blank should leave focus, screen = %v", m.screenID())
+	}
+	if sess, ok := m.selected(); !ok || sess.Name != "alpha" {
+		t.Fatalf("leaving should keep the cursor on alpha, got %q", sess.Name)
+	}
+}
+
+func TestPressOnTheDividerKeepsFocus(t *testing.T) {
+	t.Parallel()
+	m := focusedModel(t)
+	preparedView(m)
+	y0, _ := m.bodyYRange()
+	for _, x := range []int{m.dividerX(), m.dividerX() + uigeometry.SplitHitSlop} {
+		if m = leftPress(m, x, y0+1); !m.focused() {
+			t.Fatalf("a press on the divider at %d left focus", x)
+		}
+	}
+}
+
+// The preview only focuses a session that focus would open: a group, an
+// archived row, the search field and the quick bar keep the press, and
+// full screen has no preview beside the list.
+func TestPreviewPressFocusesOnlyALiveSession(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name  string
+		setup func(*Model)
+	}{
+		{"group", func(m *Model) { m.selectGroupRow(t, "work") }},
+		{"search", func(m *Model) { m.rail.SetSearch(m.rail.Search(), true) }},
+		{"quick bar", func(m *Model) { m.openQuickMode() }},
+		{"full screen", func(m *Model) { m.prefs.fullLayout = true }},
+	} {
+		m := buildModel(t)
+		if err := m.services.store.CreateGroup("work", ""); err != nil {
+			t.Fatal(err)
+		}
+		m.applyCmd(t, m.refreshCmd())
+		createSession(t, m, "alpha", t.TempDir(), "work")
+		m.selectSessionRow(t, "alpha")
+		tc.setup(m)
+		preparedView(m)
+		y0, _ := m.bodyYRange()
+		if m = leftPress(m, m.layout.width-3, y0+1); m.focused() {
+			t.Errorf("%s: a press on the preview focused", tc.name)
+		}
 	}
 }

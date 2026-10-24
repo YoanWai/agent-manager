@@ -25,7 +25,7 @@ func TestInputDoesNotWaitBehindTheMainLane(t *testing.T) {
 	if m.nextEffectCmd() == nil {
 		t.Fatal("input waited for the busy main lane")
 	}
-	if _, ok := m.effects.Input.Active.Request.(inputRequest); !ok {
+	if _, ok := m.effects.Input.Active.Request.(focusruntime.InputRequest); !ok {
 		t.Fatalf("input lane active = %#v", m.effects.Input.Active)
 	}
 }
@@ -36,14 +36,14 @@ func TestKeysNeitherFenceListingsNorAskForAPoll(t *testing.T) {
 	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Keys, Session: store.Session{ID: "s"}, Command: "x"})
 	m.nextEffectCmd()
 	id := m.effects.Input.Active.ID
-	m.handleEffectCompleted(uieffects.Completed{ID: id, Result: inputEffectResult{}, FinishedAt: time.Now()})
+	m.handleEffectCompleted(uieffects.Completed{ID: id, Result: focusruntime.InputResult{}, FinishedAt: time.Now()})
 	if !m.effects.latestObservation.IsZero() {
 		t.Fatal("a keystroke fenced later listings")
 	}
 	m.dispatchInput(focusruntime.Request{Kind: focusruntime.Prompt, Session: store.Session{ID: "s"}, Text: "p"})
 	m.nextEffectCmd()
 	id = m.effects.Input.Active.ID
-	m.handleEffectCompleted(uieffects.Completed{ID: id, Result: inputEffectResult{}, FinishedAt: time.Now()})
+	m.handleEffectCompleted(uieffects.Completed{ID: id, Result: focusruntime.InputResult{}, FinishedAt: time.Now()})
 	if m.effects.latestObservation.IsZero() {
 		t.Fatal("a recorded prompt did not fence older listings")
 	}
@@ -110,7 +110,7 @@ func TestInputToAPaneWaitsForTheJobRestartingIt(t *testing.T) {
 	if id, _ := inputTarget(m.effects.Input.Active); id != "other" {
 		t.Fatalf("input lane started %q, want the other pane's keys", id)
 	}
-	m.handleEffectCompleted(uieffects.Completed{ID: m.effects.Input.Active.ID, Result: inputEffectResult{}, FinishedAt: time.Now()})
+	m.handleEffectCompleted(uieffects.Completed{ID: m.effects.Input.Active.ID, Result: focusruntime.InputResult{}, FinishedAt: time.Now()})
 	if m.effects.Input.Active != nil {
 		t.Fatal("the paste started under the restart of its own pane")
 	}
@@ -130,7 +130,7 @@ func TestAKillWaitsForTheInputInFlightToItsPane(t *testing.T) {
 	if m.effects.Main.Active != nil {
 		t.Fatal("kill started while its pane's paste was in flight")
 	}
-	m.handleEffectCompleted(uieffects.Completed{ID: m.effects.Input.Active.ID, Result: inputEffectResult{}, FinishedAt: time.Now()})
+	m.handleEffectCompleted(uieffects.Completed{ID: m.effects.Input.Active.ID, Result: focusruntime.InputResult{}, FinishedAt: time.Now()})
 	if _, ok := m.effects.Main.Active.Request.(lifecycleRequest); !ok {
 		t.Fatalf("main lane active = %#v, want the kill once the paste landed", m.effects.Main.Active)
 	}
