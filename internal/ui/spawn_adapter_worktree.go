@@ -3,6 +3,7 @@ package ui
 import (
 	"time"
 
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -13,8 +14,8 @@ func (m *Model) formWorktreeOn() bool {
 	return m.form().Worktree() && known && capable
 }
 
-// toggleFormWorktree flips the toggle, or explains why the chosen
-// directory rules a worktree out.
+// toggleFormWorktree flips the toggle, or explains why the chosen directory
+// rules a worktree out.
 func (m *Model) toggleFormWorktree() tea.Cmd {
 	dir := m.formSpawnDir()
 	capable, known := m.cachedWorktreeCapability(dir)
@@ -32,20 +33,16 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 }
 
 func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
-	answer, ok := m.ledger.worktreeRepos[dir]
-	if !ok || answer.at.IsZero() || time.Since(answer.at) >= worktreeLookupTTL {
-		return false, false
-	}
-	return answer.capable, true
+	return m.spawner.CachedWorktree(dir, time.Now())
 }
 
 func (m *Model) requestWorktreeProbe(target worktreeProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
 	m.gens.worktreeProbe++
 	request := worktreeProbeRequest{
-		target: target, generation: generation, sequence: m.gens.worktreeProbe,
-		dir: dir, toggle: toggle, from: from,
+		Target: target, Generation: generation, Sequence: m.gens.worktreeProbe,
+		Dir: dir, Toggle: toggle, From: from,
 	}
-	return worktreeProbeCmd(request, systemDirectoryPreflight{git: m.services.gitDrv})
+	return uilaunch.ProbeCmd(request, preflightReader{reader: systemDirectoryPreflight{git: m.services.gitDrv}})
 }
 
 func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
@@ -64,61 +61,65 @@ func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	return m.requestWorktreeProbe(worktreeProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
 }
 
+// worktreeProbeTarget names the surface a probe answers.
+type worktreeProbeTarget = uilaunch.ProbeTarget
+
+const (
+	worktreeProbeForm  = uilaunch.ProbeForm
+	worktreeProbeQuick = uilaunch.ProbeQuick
+)
+
+// worktreeProbeRequest names one directory's probe, with the sequence that
+// retires an older one.
+type worktreeProbeRequest = uilaunch.ProbeRequest
+
+// worktreeProbeMsg carries a directory's git-repo verdict.
+type worktreeProbeMsg = uilaunch.ProbeMsg
+
 func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
-	request := msg.request
-	if request.sequence != m.gens.worktreeProbe {
+	request := msg.Request
+	if request.Sequence != m.gens.worktreeProbe {
 		return m, nil
 	}
-	switch request.target {
+	switch request.Target {
 	case worktreeProbeForm:
-		if _, ok := m.formFor(request.generation); !ok || m.formSpawnDir() != request.dir {
+		if _, ok := m.formFor(request.Generation); !ok || m.formSpawnDir() != request.Dir {
 			return m, nil
 		}
 	case worktreeProbeQuick:
-		if _, ok := m.quickFor(request.generation); !ok || m.quickTargetDir() != request.dir {
+		if _, ok := m.quickFor(request.Generation); !ok || m.quickTargetDir() != request.Dir {
 			return m, nil
 		}
 	default:
 		return m, nil
 	}
-	if m.ledger.worktreeRepos == nil {
-		m.ledger.worktreeRepos = make(map[string]repoAnswer)
-	}
-	m.ledger.worktreeRepos[request.dir] = repoAnswer{capable: msg.capable, at: time.Now()}
-	if !request.toggle {
+	m.spawner.RememberWorktree(request.Dir, msg.Capable, time.Now())
+	if !request.Toggle {
 		return m, nil
 	}
-	if !msg.capable {
-		m.reportErr("worktree sessions need a git repository: " + request.dir + " is not one")
+	if !msg.Capable {
+		m.reportErr("worktree sessions need a git repository: " + request.Dir + " is not one")
 		return m, nil
 	}
 	m.clearErr()
-	if request.target == worktreeProbeForm {
-		if m.form().Worktree() != request.from {
+	if request.Target == worktreeProbeForm {
+		if m.form().Worktree() != request.From {
 			return m, nil
 		}
-		m.form().SetWorktree(!request.from)
+		m.form().SetWorktree(!request.From)
 	} else {
-		if m.quick().Worktree() != request.from {
+		if m.quick().Worktree() != request.From {
 			return m, nil
 		}
-		m.quick().SetWorktree(!request.from)
+		m.quick().SetWorktree(!request.From)
 	}
 	return m, nil
 }
 
 // worktreeUnavailable is what the worktree toggle reads when the target
 // directory cannot host one.
-const worktreeUnavailable = "unavailable (not a git repo)"
-
-// worktreeLookupTTL bounds how long a directory's repo answer is reused.
-// The quick bar stays open across prompts, so a directory git-initialised
-// meanwhile has to be seen without closing it, while a frame that repaints
-// on every keystroke must not shell out to git each time.
-const worktreeLookupTTL = 2 * time.Second
+const worktreeUnavailable = uilaunch.WorktreeUnavailable
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.
 // Opening the form or the quick bar calls it.
-func (m *Model) forgetWorktreeCapability() {
-	m.ledger.worktreeRepos = nil
-}
+func (m *Model) forgetWorktreeCapability() { m.spawner.ForgetWorktree() }

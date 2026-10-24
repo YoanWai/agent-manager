@@ -1,42 +1,32 @@
 package ui
 
 import (
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
-	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 	"slices"
 )
 
-type spawnKind int
-
+// The spawn kinds under the names the root's call sites spell them.
 const (
-	spawnForm spawnKind = iota
-	spawnQuick
-	spawnShell
+	spawnForm  = uilaunch.Form
+	spawnQuick = uilaunch.Quick
+	spawnShell = uilaunch.Shell
 )
 
-// spawnRequest captures everything a spawn needs at dispatch time, so the
-// worker never reads the Model: the tool, the captured launch inputs, the
-// pane size the manager draws, and the images the prompt names, moved out
-// of the composer that held them.
+// spawnRequest is the root's queue shape of a spawn: what the form, the quick
+// bar or the terminal key captured. The run lives in ui/spawn/launch.
 type spawnRequest struct {
 	id           string
-	kind         spawnKind
+	kind         uilaunch.Kind
 	toolName     string
 	name         string
 	dir          string
@@ -83,18 +73,42 @@ func (request spawnRequest) run(services effectServices) (uieffects.Result, erro
 	return services.runSpawn(request)
 }
 
-// spawnEffectResult is the durable outcome of a spawn: the persisted
-// session row, which exists only when the pane was created too, and a label
-// failure that stays a warning after committed placement.
-type spawnEffectResult struct {
-	plan        *launch.Plan
-	session     store.Session
-	label       error
-	dir         string
-	worktree    bool
-	repoKnown   bool
-	repoCapable bool
+func (request spawnRequest) packageRequest() uilaunch.Request {
+	id := request.id
+	if id == "" {
+		id = newID()
+	}
+	return uilaunch.Request{
+		ID:           id,
+		Kind:         request.kind,
+		ToolName:     request.toolName,
+		Name:         request.name,
+		Dir:          request.dir,
+		Group:        request.group,
+		ParentID:     request.parentID,
+		Prompt:       request.prompt,
+		AutoNamed:    request.autoNamed,
+		Worktree:     request.worktree,
+		PickWorktree: request.pickWorktree,
+		Pane:         request.pane,
+		ComposerGen:  request.composerGen,
+		DraftName:    request.draftName,
+		DraftDir:     request.draftDir,
+		Draft:        request.draft,
+		RawDir:       request.rawDir,
+		DirFallbacks: request.dirFallbacks,
+		WantWorktree: request.wantWorktree,
+		DirReader:    crossPreflight(request.dirReader),
+		TerminalDir:  uilaunch.TerminalDirectoryRequest{PaneID: request.terminalDir.paneID, RawDir: request.terminalDir.rawDir, Fallbacks: request.terminalDir.fallbacks},
+		TerminalRead: crossTerminalReader(request.terminalRead),
+		Plan:         request.plan,
+		Images:       request.images,
+		Choice:       request.choice,
+		Base:         request.base,
+	}
 }
+
+type spawnEffectResult struct{ uilaunch.Result }
 
 func (spawnEffectResult) EffectResult() {}
 
@@ -103,9 +117,8 @@ func (result spawnEffectResult) apply(m *Model, job *uieffects.Job, err error) t
 }
 
 // groupRequest captures a group creation; the accepted effect validates the
-// directory before the store write.
-// gen identifies the dispatching group form so a completion cannot replace
-// a form the user has since reopened.
+// directory before the store write. Gen identifies the dispatching group form
+// so a completion cannot replace a form the user has since reopened.
 type groupRequest struct {
 	draftName string
 	draftDir  string
@@ -132,11 +145,7 @@ func (request groupRequest) run(services effectServices) (uieffects.Result, erro
 	return services.runGroup(request)
 }
 
-type groupEffectResult struct {
-	path     string
-	dir      string
-	worktree string
-}
+type groupEffectResult struct{ uilaunch.GroupResult }
 
 func (groupEffectResult) EffectResult() {}
 
@@ -144,8 +153,8 @@ func (result groupEffectResult) apply(m *Model, job *uieffects.Job, err error) t
 	return m.applyGroupEffect(job.Request.(groupRequest), result, err)
 }
 
-// dispatchSpawn takes the prompt's images out of the composer and queues
-// the spawn on the shared effect lane; completion routes the images.
+// dispatchSpawn takes the prompt's images out of the composer and queues the
+// spawn on the shared effect lane; completion routes the images.
 func (m *Model) dispatchSpawn(request spawnRequest) {
 	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
@@ -173,135 +182,48 @@ func (m *Model) dispatchSpawn(request spawnRequest) {
 	m.enqueueEffect(request, 0, false)
 }
 
+// launchServices is the effect services as a spawn reaches them.
+func (s effectServices) launchServices() uilaunch.Services {
+	return uilaunch.Services{Lifecycle: s.lifecycle, Store: s.store, Config: s.cfg, Git: s.gitDrv}
+}
+
 func (s effectServices) runSpawn(request spawnRequest) (uieffects.Result, error) {
-	result := spawnEffectResult{}
-	if s.lifecycle == nil {
-		return result, errors.New("spawn requires the lifecycle service")
-	}
-	tool := s.cfg.Tools[request.toolName].WithChoice(request.choice)
-	dir := request.dir
-	if dir == "" {
-		if request.kind == spawnShell {
-			reader := request.terminalRead
-			if reader == nil {
-				reader = systemTerminalDirectoryReader{tmux: s.driver, dirs: systemDirectoryPreflight{git: s.gitDrv}}
-			}
-			var ok bool
-			dir, ok = reader.resolve(request.terminalDir)
-			if !ok {
-				return result, errors.New("no directory to open a terminal in")
-			}
-		} else {
-			reader := request.dirReader
-			if reader == nil {
-				reader = systemDirectoryPreflight{git: s.gitDrv}
-			}
-			var ok bool
-			dir, ok = reader.resolve(request.rawDir, request.dirFallbacks)
-			if !ok {
-				prefix := "working directory does not exist: "
-				if request.kind == spawnQuick {
-					prefix = "group has no valid default path: "
-				}
-				return result, errors.New(prefix + dir)
-			}
-			if request.wantWorktree {
-				result.repoKnown = true
-				result.repoCapable = reader.repoCapable(dir)
-				request.worktree = result.repoCapable
-			}
-		}
-	}
-	result.dir = dir
-	result.worktree = request.worktree
-	plan := launch.Plan{}
-	if request.kind == spawnShell {
-		plan.Command = tool.Command
-	} else if request.plan != nil {
-		plan = *request.plan
-	} else {
-		proactive, err := s.store.ProactiveCoordination()
-		if err != nil {
-			return result, err
-		}
-		plan = launch.Assemble(request.toolName, tool, request.prompt, request.autoNamed, proactive)
-	}
-	result.plan = &plan
-	id := request.id
-	if id == "" {
-		id = newID()
-	}
-	var worktree *sessioncmd.WorktreeRequest
-	if request.worktree {
-		worktree = &sessioncmd.WorktreeRequest{Base: request.base}
-	}
-	launched, err := s.lifecycle.Spawn(sessioncmd.SpawnRequest{
-		Session: store.Session{
-			ID:       id,
-			Name:     request.name,
-			Tool:     request.toolName,
-			Cwd:      dir,
-			Group:    request.group,
-			ParentID: request.parentID,
-			Choice:   request.choice,
-		},
-		Tool:     tool,
-		Plan:     plan,
-		Pane:     request.pane,
-		Worktree: worktree,
-	})
-	if err != nil {
-		return result, err
-	}
-	result.session = launched.Session
-	result.label = launched.LabelError
-	return result, nil
+	result, err := uilaunch.Run(s.launchServices(), request.packageRequest())
+	return spawnEffectResult{result}, err
 }
 
 func (s effectServices) runGroup(request groupRequest) (uieffects.Result, error) {
-	dir := request.dir
-	if dir == "" {
-		reader := request.dirReader
-		if reader == nil {
-			reader = systemDirectoryPreflight{git: s.gitDrv}
-		}
-		var ok bool
-		dir, ok = reader.resolve(request.rawDir, request.fallbacks)
-		if !ok {
-			return groupEffectResult{}, errors.New("default path does not exist: " + dir)
-		}
-	}
-	if err := s.store.AddGroup(request.path, dir, request.worktree, request.base); err != nil {
-		return groupEffectResult{}, err
-	}
-	return groupEffectResult{path: request.path, dir: dir, worktree: request.worktree}, nil
+	result, err := uilaunch.RunGroup(s.launchServices(), uilaunch.GroupRequest{
+		DraftName: request.draftName,
+		DraftDir:  request.draftDir,
+		Path:      request.path,
+		Dir:       request.dir,
+		Worktree:  request.worktree,
+		Base:      request.base,
+		Gen:       request.gen,
+		RawDir:    request.rawDir,
+		Fallbacks: request.fallbacks,
+		DirReader: crossPreflight(request.dirReader),
+	})
+	return groupEffectResult{result}, err
 }
 
 func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult, err error) tea.Cmd {
-	if result.repoKnown {
-		if m.ledger.worktreeRepos == nil {
-			m.ledger.worktreeRepos = make(map[string]repoAnswer)
-		}
-		m.ledger.worktreeRepos[result.dir] = repoAnswer{capable: result.repoCapable, at: time.Now()}
+	if result.RepoKnown {
+		m.spawner.RememberWorktree(result.Dir, result.RepoCapable, time.Now())
 	}
 	if err == nil {
-		sess := result.session
+		sess := result.Session
 		m.markFreshPane(sess.ID)
-		if m.ledger.launched == nil {
-			m.ledger.launched = map[string]time.Time{}
-		}
-		m.ledger.launched[sess.ID] = time.Now()
+		m.lifecycle.RecordLaunch(sess.ID, time.Now())
 		m.workspace.sessions = append(m.workspace.sessions, sess)
 		// The directive went out with the launch, so the row waits for the
 		// name the agent picks instead of showing the one generated for it.
 		if request.autoNamed {
-			if m.ledger.awaitedRenames == nil {
-				m.ledger.awaitedRenames = map[string]awaitedRename{}
-			}
-			m.ledger.awaitedRenames[sess.ID] = awaitedRename{generated: sess.Name, prompt: request.prompt}
+			m.lifecycle.AwaitRename(sess.ID, sess.Name, request.prompt)
 		}
 		if request.kind != spawnShell {
-			m.rememberSpawnPick(request.toolName, request.pickWorktree)
+			m.spawner.RememberSpawn(request.toolName, request.pickWorktree)
 			spawn.RememberModel(m.spawnHost(), request.toolName, spawn.Pick(request.choice))
 		}
 		// New sessions start as starting, which attention excludes; clear so
@@ -321,19 +243,19 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		}
 		m.rebuildRows()
 		if request.kind == spawnShell {
-			m.ledger.terminalKeyAt = time.Now()
+			m.lifecycle.TerminalKeyAt = time.Now()
 			m.focusSession(sess.ID)
 		}
-		if result.label != nil {
-			m.reportErr(result.label.Error())
+		if result.Label != nil {
+			m.reportErr(result.Label.Error())
 		}
 		return m.refreshCmd()
 	}
-	request.plan = result.plan
-	request.dir = result.dir
-	request.worktree = result.worktree
+	request.plan = result.Plan
+	request.dir = result.Dir
+	request.worktree = result.Worktree
 	if request.kind == spawnShell {
-		m.ledger.terminalKeyAt = time.Now()
+		m.lifecycle.TerminalKeyAt = time.Now()
 		m.reportErr(err.Error())
 		return nil
 	}
@@ -397,13 +319,13 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	// The durable inventory reconciles no matter what is on screen: the row
 	// and its path/worktree are in the workspace, so the next render shows
 	// them wherever the user is.
-	m.materializeGroupsLocal([]string{result.path})
+	m.materializeGroupsLocal([]string{result.Path})
 	if m.workspace.groupPaths == nil {
 		m.workspace.groupPaths = map[string]string{}
 	}
-	m.workspace.groupPaths[result.path] = result.dir
-	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, result.path, result.worktree)
-	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, result.path, request.base)
+	m.workspace.groupPaths[result.Path] = result.Dir
+	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, result.Path, result.Worktree)
+	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, result.Path, request.base)
 	m.rebuildRows()
 	// Presentation (closing the form, revealing and selecting the new group)
 	// lands only when the dispatching group form is still the dialog on
@@ -413,14 +335,14 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	if s, ok := m.groupFormSurface(); ok && s.Gen() == request.gen && s.Name() == request.draftName && s.Dir() == request.draftDir {
 		m.clearErr()
 		m.Pop()
-		m.applyRailStateDecision(m.rail.RevealGroup(result.path))
+		m.applyRailStateDecision(m.rail.RevealGroup(result.Path))
 	}
 	return m.refreshCmd()
 }
 
 // choiceSaveRequest persists a CLI's kept choice or recent models. The
-// settings cache already holds the value, so the next form reads it
-// without waiting for the write.
+// settings cache already holds the value, so the next form reads it without
+// waiting for the write.
 type choiceSaveRequest struct {
 	key   string
 	value string
@@ -441,96 +363,5 @@ type choiceSaveResult struct{}
 func (choiceSaveResult) EffectResult() {}
 
 func (s effectServices) runChoiceSave(request choiceSaveRequest) (uieffects.Result, error) {
-	if err := s.store.SetSetting(request.key, request.value); err != nil {
-		return choiceSaveResult{}, fmt.Errorf("saving %s: %w", request.key, err)
-	}
-	return choiceSaveResult{}, nil
-}
-
-// directoryPreflight is the read-only filesystem/repository seam captured by
-// spawn and group effects. Its calls run inside the accepted FIFO worker.
-type directoryPreflight interface {
-	resolve(raw string, fallbacks []string) (string, bool)
-	repoCapable(dir string) bool
-}
-
-type systemDirectoryPreflight struct{ git *git.Driver }
-
-func (p systemDirectoryPreflight) resolve(raw string, fallbacks []string) (string, bool) {
-	if raw != "" {
-		return resolveExistingDir(raw, "")
-	}
-	var resolved string
-	for _, fallback := range fallbacks {
-		candidate, ok := resolveExistingDir("", fallback)
-		resolved = candidate
-		if ok {
-			return candidate, true
-		}
-	}
-	return resolved, false
-}
-
-func (p systemDirectoryPreflight) repoCapable(dir string) bool {
-	if p.git == nil || dir == "" {
-		return false
-	}
-	_, err := p.git.RepoRoot(dir)
-	return err == nil
-}
-
-func initialWorkingDir() string {
-	dir, _ := os.Getwd()
-	return dir
-}
-
-func initialHomeDir() string {
-	dir, _ := os.UserHomeDir()
-	return dir
-}
-
-// resolveExistingDir turns raw field input into a usable directory:
-// expand ~, fall back when empty, absolutize, and require it to exist.
-// The resolved value returns either way so error messages can show it.
-func resolveExistingDir(raw, fallback string) (string, bool) {
-	dir := pathcomplete.ExpandHome(strings.TrimSpace(raw))
-	if dir == "" {
-		dir = fallback
-	}
-	if abs, err := filepath.Abs(dir); err == nil {
-		dir = abs
-	}
-	return dir, isDir(dir)
-}
-
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
-}
-
-type worktreeProbeTarget uint8
-
-const (
-	worktreeProbeForm worktreeProbeTarget = iota
-	worktreeProbeQuick
-)
-
-type worktreeProbeRequest struct {
-	target     worktreeProbeTarget
-	generation int
-	sequence   uint64
-	dir        string
-	toggle     bool
-	from       bool
-}
-
-type worktreeProbeMsg struct {
-	request worktreeProbeRequest
-	capable bool
-}
-
-func worktreeProbeCmd(request worktreeProbeRequest, reader directoryPreflight) tea.Cmd {
-	return func() tea.Msg {
-		return worktreeProbeMsg{request: request, capable: reader.repoCapable(request.dir)}
-	}
+	return choiceSaveResult{}, uilaunch.SaveChoice(s.store, request.key, request.value)
 }

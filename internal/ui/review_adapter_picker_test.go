@@ -312,7 +312,7 @@ func TestVanishedHandPickedRepoIsReportedAndForgotten(t *testing.T) {
 	if !strings.Contains(m.viewDiffStatus(), m.errBar.text) {
 		t.Fatalf("review status should show %q", m.errBar.text)
 	}
-	if _, still := m.ledger.pickedRepos[sess.ID]; still {
+	if _, still := m.lifecycle.PickedRepos[sess.ID]; still {
 		t.Fatal("the dead pick must be forgotten so the declaration can take over")
 	}
 

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"strings"
 	"testing"
 
@@ -100,12 +101,12 @@ func TestGroupFormCompletionsAreFenced(t *testing.T) {
 	m := openGroupFormModel(t)
 	stale := groupRequest{path: "x", gen: m.groupSurface().Gen(), draftName: "", draftDir: m.groupSurface().Dir()}
 	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	m.applyGroupEffect(stale, groupEffectResult{path: "x"}, nil)
+	m.applyGroupEffect(stale, groupEffectResult{GroupResult: uilaunch.GroupResult{Path: "x"}}, nil)
 	if m.groupFormOpen() {
 		t.Fatal("a completion opened or kept a popped form")
 	}
 	m.openGroupForm()
-	m.applyGroupEffect(stale, groupEffectResult{path: "x"}, nil)
+	m.applyGroupEffect(stale, groupEffectResult{GroupResult: uilaunch.GroupResult{Path: "x"}}, nil)
 	if !m.groupFormOpen() {
 		t.Fatal("a stale completion closed the form that replaced it")
 	}

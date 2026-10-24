@@ -1,10 +1,10 @@
 package ui
 
 import (
-	"slices"
 	"time"
 
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -15,7 +15,7 @@ func (m *Model) cachedDefaultToolSelection() ([]string, int) {
 func (m *Model) cachedSpawnToolSelection() ([]string, int) {
 	names, index := m.cachedDefaultToolSelection()
 	for i, name := range names {
-		if name == m.ledger.lastSpawnTool {
+		if name == m.spawner.LastSpawnTool {
 			return names, i
 		}
 	}
@@ -32,8 +32,8 @@ func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 		}
 	}
 	for _, name := range m.cachedEnabledToolNames() {
-		if name == m.ledger.lastSpawnTool {
-			return m.ledger.lastSpawnWorktree
+		if name == m.spawner.LastSpawnTool {
+			return m.spawner.LastSpawnWorktree
 		}
 	}
 	return m.settings.Cache.Value(uisettings.WorktreeSetting) == "on"
@@ -43,8 +43,8 @@ func (m *Model) cachedEnabledToolNames() []string {
 	return m.services.cfg.EnabledAgentTools(m.cachedHiddenTools())
 }
 
-// groupBase is the ref a spawn into group branches from: the nearest
-// ancestor group's choice, or "" to detect the repo's default branch.
+// groupBase is the ref a spawn into group branches from: the nearest ancestor
+// group's choice, or "" to detect the repo's default branch.
 func (m *Model) groupBase(group string) string {
 	for g := group; g != ""; g = parentGroup(g) {
 		if base := m.workspace.groupBases[g]; base != "" {
@@ -55,114 +55,77 @@ func (m *Model) groupBase(group string) string {
 }
 
 // groupBaseTarget names the base picker a branch read answers.
-type groupBaseTarget uint8
+type groupBaseTarget = uilaunch.BaseTarget
 
 const (
-	groupBaseForm groupBaseTarget = iota
-	groupBaseRename
+	groupBaseForm   = uilaunch.BaseForm
+	groupBaseRename = uilaunch.BaseRename
 )
 
 // baseRefsTTL bounds how long a repo's branch list steps a base picker
 // without a fresh read, so a held arrow steps at key speed.
-const baseRefsTTL = 10 * time.Second
+const baseRefsTTL = uilaunch.BaseRefsTTL
 
-type baseRefsAnswer struct {
-	refs []string
-	at   time.Time
-}
+// groupBaseStepMsg is a base picker's step, answered off the update path with
+// the branches of dir. It lands only on the picker that asked, while it still
+// shows from.
+type groupBaseStepMsg = uilaunch.BaseStepMsg
 
-// groupBaseStepMsg is a base picker's step, answered off the update path
-// with the branches of dir. It lands only on the picker that asked, while
-// it still shows from.
-type groupBaseStepMsg struct {
-	target groupBaseTarget
-	gen    uint64
-	dir    string
-	from   string
-	delta  int
-	refs   []string
-	err    error
-}
-
-// stepGroupBase moves a group's base choice through auto and the branches
-// of the repo at dir. Branches read within baseRefsTTL step at once;
-// otherwise the read runs as a command and the step lands with it.
+// stepGroupBase moves a group's base choice through auto and the branches of
+// the repo at dir. Branches read within baseRefsTTL step at once; otherwise
+// the read runs as a command and the step lands with it.
 func (m *Model) stepGroupBase(target groupBaseTarget, gen uint64, dir, current string, delta int) (string, tea.Cmd) {
-	if answer, ok := m.ledger.baseRefs[dir]; ok && time.Since(answer.at) < baseRefsTTL {
-		m.clearErr()
-		return stepBaseChoice(answer.refs, current, delta), nil
-	}
-	driver := m.services.gitDrv
-	if driver == nil {
-		m.reportErr("a group base needs git installed")
+	next, cmd, err := m.spawner.StepGroupBase(m.services.gitDrv, target, gen, dir, current, delta, time.Now())
+	if err != nil {
+		m.reportErr(err.Error())
 		return current, nil
 	}
-	return current, func() tea.Msg {
-		refs, err := driver.BranchRefs(dir)
-		return groupBaseStepMsg{target: target, gen: gen, dir: dir, from: current, delta: delta, refs: refs, err: err}
+	if cmd == nil {
+		m.clearErr()
 	}
+	return next, cmd
 }
 
 func stepBaseChoice(refs []string, current string, delta int) string {
-	choices := append([]string{""}, refs...)
-	at := max(slices.Index(choices, current), 0)
-	return choices[(at+delta+len(choices))%len(choices)]
+	return uilaunch.StepBaseChoice(refs, current, delta)
 }
 
 func (m *Model) handleGroupBaseStep(msg groupBaseStepMsg) {
 	var base *string
-	switch msg.target {
+	switch msg.Target {
 	case groupBaseForm:
 		s, ok := m.groupFormSurface()
-		if !ok || uint64(s.Gen()) != msg.gen || m.groupFormDir(s) != msg.dir {
+		if !ok || uint64(s.Gen()) != msg.Gen || m.groupFormDir(s) != msg.Dir {
 			return
 		}
 		base = s.BaseRef()
 	case groupBaseRename:
 		s, ok := m.renaming()
-		if !ok || m.gens.dialog != msg.gen || m.renameGroupDir(s) != msg.dir {
+		if !ok || m.gens.dialog != msg.Gen || m.renameGroupDir(s) != msg.Dir {
 			return
 		}
 		base = &s.Base
 	default:
 		return
 	}
-	if msg.err != nil {
-		m.reportErr("group base: " + msg.err.Error())
+	if msg.Err != nil {
+		m.reportErr("group base: " + msg.Err.Error())
 		return
 	}
-	if m.ledger.baseRefs == nil {
-		m.ledger.baseRefs = map[string]baseRefsAnswer{}
-	}
-	m.ledger.baseRefs[msg.dir] = baseRefsAnswer{refs: msg.refs, at: time.Now()}
-	if *base != msg.from {
+	m.spawner.KeepBaseRefs(msg.Dir, msg.Refs, time.Now())
+	if *base != msg.From {
 		return
 	}
 	m.clearErr()
-	*base = stepBaseChoice(msg.refs, msg.from, msg.delta)
+	*base = uilaunch.StepBaseChoice(msg.Refs, msg.From, msg.Delta)
 }
 
 // baseFetchInterval keeps a burst of spawns into one repo to one fetch.
-const baseFetchInterval = time.Minute
+const baseFetchInterval = uilaunch.BaseFetchInterval
 
-type baseFetchKey struct{ dir, override string }
+type baseFetchKey = uilaunch.BaseFetchKey
 
-// baseFetch is one refresh of a spawn's base: when it started, the default
-// branch the repo resolved to, and how the fetch ended.
-type baseFetch struct {
-	at       time.Time
-	resolved bool
-	detected string
-	fetched  bool
-	err      error
-}
-
-type baseFetchedMsg struct {
-	key      baseFetchKey
-	detected string
-	fetched  bool
-	err      error
-}
+type baseFetchedMsg = uilaunch.BaseFetchedMsg
 
 // refreshSpawnBase resolves the base of the worktree spawn the form or the
 // quick bar is set to make, for the form to show, then fetches it unless
@@ -173,44 +136,21 @@ func (m *Model) refreshSpawnBase() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	key := baseFetchKey{dir: dir, override: m.groupBase(group)}
-	if last, seen := m.ledger.baseFetches[key]; seen && time.Since(last.at) < baseFetchInterval {
+	key := baseFetchKey{Dir: dir, Override: m.groupBase(group)}
+	if !m.spawner.ReserveBaseFetch(key, time.Now()) {
 		return nil
 	}
-	if m.ledger.baseFetches == nil {
-		m.ledger.baseFetches = map[baseFetchKey]baseFetch{}
-	}
-	m.ledger.baseFetches[key] = baseFetch{at: time.Now()}
-	driver := m.services.gitDrv
-	return func() tea.Msg {
-		return baseFetchedMsg{key: key, detected: driver.DefaultBase(dir)}
-	}
+	return uilaunch.ResolveBaseCmd(m.services.gitDrv, key)
 }
 
 // recordBaseFetch keeps what a step of a base refresh found, and starts the
 // fetch once the resolving step is in.
 func (m *Model) recordBaseFetch(msg baseFetchedMsg) tea.Cmd {
-	fetch, ok := m.ledger.baseFetches[msg.key]
-	if !ok {
-		return nil
-	}
-	fetch.resolved, fetch.detected = true, msg.detected
-	if msg.fetched {
-		fetch.fetched, fetch.err = true, msg.err
-	}
-	m.ledger.baseFetches[msg.key] = fetch
-	if msg.fetched || m.prefs.baseFetchOff {
-		return nil
-	}
-	driver, key := m.services.gitDrv, msg.key
-	return func() tea.Msg {
-		err := driver.FetchBase(key.dir, key.override)
-		return baseFetchedMsg{key: key, detected: driver.DefaultBase(key.dir), fetched: true, err: err}
-	}
+	return m.spawner.RecordBaseFetch(msg, m.services.gitDrv, m.prefs.baseFetchOff)
 }
 
-// pendingWorktreeSpawn is the directory and group of the worktree spawn
-// the New Session form or the quick bar is set to make.
+// pendingWorktreeSpawn is the directory and group of the worktree spawn the
+// New Session form or the quick bar is set to make.
 func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
 	switch {
 	case m.form() != nil && m.formWorktreeOn():
@@ -221,27 +161,27 @@ func (m *Model) pendingWorktreeSpawn() (dir, group string, ok bool) {
 	return "", "", false
 }
 
-// spawnBaseLabel names the ref a worktree spawn into dir branches from,
-// where that choice came from, and how fetching it went.
+// spawnBaseLabel names the ref a worktree spawn into dir branches from, where
+// that choice came from, and how fetching it went.
 func (m *Model) spawnBaseLabel(dir, group string) string {
 	override := m.groupBase(group)
-	fetch := m.ledger.baseFetches[baseFetchKey{dir: dir, override: override}]
+	fetch := m.spawner.BaseFetch(dir, override)
 	label := valueStyle().Render(override) + subtleStyle().Render(" (group)")
 	if override == "" {
 		switch {
-		case !fetch.resolved:
+		case !fetch.Resolved:
 			label = subtleStyle().Render("…")
-		case fetch.detected == "":
+		case fetch.Detected == "":
 			label = valueStyle().Render("HEAD") + subtleStyle().Render(" (auto)")
 		default:
-			label = valueStyle().Render(fetch.detected) + subtleStyle().Render(" (auto)")
+			label = valueStyle().Render(fetch.Detected) + subtleStyle().Render(" (auto)")
 		}
 	}
 	switch {
 	case m.prefs.baseFetchOff:
-	case !fetch.fetched:
+	case !fetch.Fetched:
 		label += subtleStyle().Render(" · fetching")
-	case fetch.err != nil:
+	case fetch.Err != nil:
 		label += subtleStyle().Render(" · fetch failed")
 	}
 	return label

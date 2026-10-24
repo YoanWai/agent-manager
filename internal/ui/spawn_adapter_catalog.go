@@ -1,118 +1,46 @@
 package ui
 
 import (
-	"context"
-	"errors"
 	"maps"
 	"slices"
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/catalog"
-	"github.com/YoanWai/agent-manager/internal/config"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type catalogState struct {
-	cat       catalog.Catalog
-	err       error
-	loaded    bool
-	loading   bool
-	checkedAt time.Time
-}
-
-// A running manager rereads the kept answer to catch a CLI upgrade or a
-// spawn's refresh, and retries a failure sooner, since a login may be all
-// it lacked.
-const (
-	catalogRecheck = 10 * time.Minute
-	catalogRetry   = 30 * time.Second
-)
-
-type catalogMsg struct {
-	tool string
-	cat  catalog.Catalog
-	err  error
-	// stale is shown while a fresh answer is asked.
-	stale bool
-}
+// catalogMsg is a CLI's answer on its way through the model's message router.
+type catalogMsg = uilaunch.CatalogMsg
 
 // ensureCatalog reads the kept answer or asks the CLI off the update path,
 // since an answer takes up to seconds.
 func (m *Model) ensureCatalog(toolName string) tea.Cmd {
-	tool := m.services.cfg.Tools[toolName]
-	if tool.Catalog == "" {
-		return nil
-	}
-	if m.ledger.catalogs == nil {
-		m.ledger.catalogs = map[string]*catalogState{}
-	}
-	state := m.ledger.catalogs[toolName]
-	if state == nil {
-		state = &catalogState{}
-		m.ledger.catalogs[toolName] = state
-	}
-	if state.loading {
-		return nil
-	}
-	// An old CLI changes when the user updates it, so the next open asks again.
-	var outdated config.OutdatedToolError
-	if !errors.As(state.err, &outdated) {
-		recheck := catalogRecheck
-		if state.err != nil {
-			recheck = catalogRetry
-		}
-		if state.loaded && time.Since(state.checkedAt) < recheck {
-			return nil
-		}
-	}
-	state.loading = true
-	configDir := m.services.configDir
-	return func() tea.Msg {
-		if err := config.CheckVersion(tool); err != nil {
-			return catalogMsg{tool: toolName, err: err}
-		}
-		if cat, fresh, ok := catalog.Cached(configDir, toolName, tool); ok {
-			return catalogMsg{tool: toolName, cat: cat, stale: !fresh}
-		}
-		return refreshCatalog(configDir, toolName, tool)
-	}
-}
-
-func refreshCatalog(configDir, toolName string, tool config.Tool) tea.Msg {
-	cat, err := catalog.Refresh(context.Background(), configDir, toolName, tool)
-	return catalogMsg{tool: toolName, cat: cat, err: err}
+	cmd, _ := m.spawner.EnsureCatalog(m.services.cfg, m.services.configDir, toolName, time.Now())
+	return cmd
 }
 
 func (m *Model) handleCatalog(msg catalogMsg) tea.Cmd {
-	state := m.ledger.catalogs[msg.tool]
-	if msg.err == nil {
-		state.cat = msg.cat
-	}
-	state.err = msg.err
-	state.loaded = true
-	state.loading = msg.stale
-	state.checkedAt = time.Now()
+	outdated, cmd := m.spawner.Apply(msg, m.services.cfg, m.services.configDir, time.Now())
 	m.fitChoices()
-	var outdated config.OutdatedToolError
-	active := (m.form() != nil && m.formTool() == msg.tool) ||
-		(m.quick() != nil && m.quickTool() == msg.tool)
-	if errors.As(msg.err, &outdated) && active {
+	if outdated != nil && m.catalogToolActive(msg.Tool) {
 		m.advanceDialogGen()
 		m.presentLaunchHint(uiinstall.Fix{
-			Text:    outdatedToolText(outdated),
-			Command: outdatedToolCommand(outdated),
-			Script:  outdatedToolCommand(outdated),
+			Text:    outdatedToolText(*outdated),
+			Command: outdatedToolCommand(*outdated),
+			Script:  outdatedToolCommand(*outdated),
 			Binary:  outdated.Binary,
 			Update:  true,
 		})
 	}
-	if !msg.stale {
-		return nil
-	}
-	tool, configDir := m.services.cfg.Tools[msg.tool], m.services.configDir
-	return func() tea.Msg { return refreshCatalog(configDir, msg.tool, tool) }
+	return cmd
+}
+
+// catalogToolActive reports whether the form or the quick bar shows the CLI
+// whose answer this is, which is what earns the update dialog.
+func (m *Model) catalogToolActive(tool string) bool {
+	return (m.form() != nil && m.formTool() == tool) || (m.quick() != nil && m.quickTool() == tool)
 }
 
 func (m *Model) fitChoices() {
@@ -133,12 +61,12 @@ func (m *Model) choiceSettingKeys() []string {
 	return choiceSettingKeys(slices.Sorted(maps.Keys(m.services.cfg.Tools)))
 }
 
-// choiceSettingKeys are the per-CLI keys the form and quick prompt read
-// from the settings cache.
+// choiceSettingKeys are the per-CLI keys the form and quick prompt read from
+// the settings cache.
 func choiceSettingKeys(tools []string) []string { return spawn.SettingKeys(tools) }
 
-// refreshFormChoicePrefs and refreshQuickChoicePrefs take a newer read of
-// the CLI's kept choice into an open choice.
+// refreshFormChoicePrefs and refreshQuickChoicePrefs take a newer read of the
+// CLI's kept choice into an open choice.
 func (m *Model) refreshFormChoicePrefs() {
 	f := m.form()
 	f.Choice().RefreshPrefs(m.spawnHost(), f.Tool())

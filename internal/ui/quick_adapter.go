@@ -193,7 +193,7 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 	}
 	q := m.quick()
 	return spawnRequest{
-		kind:         spawnQuick,
+		kind:         uilaunch.Quick,
 		toolName:     request.Tool,
 		name:         name,
 		group:        request.Group,

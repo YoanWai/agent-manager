@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 )
@@ -70,7 +71,7 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), tmux.CommandTimeout)
 		defer cancel()
 		if !driver.ExistsContext(ctx, sess.ID) {
-			return errMsg{errors.New(deadSessionHint)}
+			return errMsg{errors.New(uilifecycle.DeadSessionHint)}
 		}
 		pane, err := driver.CapturePaneHistoryContext(ctx, sess.ID, quoteHistoryLines)
 		if err != nil {
@@ -111,7 +112,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case replyCopiedMsg:
 		if msg.unreadable {
-			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.tool))
+			m.reportWarn(fmt.Sprintf("no reply to read in %s: a %s pane is not read that way", msg.name, msg.Tool))
 			return routed(m, nil)
 		}
 		if msg.chars == 0 {
@@ -120,7 +121,7 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		}
 		if msg.unbounded {
 			m.reportWarn(fmt.Sprintf("copied %d chars from %s: %s marks no turn start here, so this is the whole pane",
-				msg.chars, msg.name, msg.tool))
+				msg.chars, msg.name, msg.Tool))
 			return routed(m, nil)
 		}
 		m.reportDone(fmt.Sprintf("copied %d chars from %s", msg.chars, msg.name))
@@ -139,8 +140,8 @@ func (m *Model) routeSessionMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		// keeps that size on detach; pin it back to the current layout's
 		// box so the capture is not clipped on the right.
 		m.adoptPaneGeom(msg.sessID)
-		if msg.err != nil {
-			m.reportErr(msg.err.Error())
+		if msg.Err != nil {
+			m.reportErr(msg.Err.Error())
 			m.requestRefresh()
 			return routed(m, nil)
 		}

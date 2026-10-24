@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"reflect"
 	"slices"
 	"strings"
@@ -28,7 +29,7 @@ func answered(m *Model, tool config.Tool, cat catalog.Catalog) {
 	base.Catalog, base.CatalogCommand = tool.Catalog, tool.CatalogCommand
 	base.ModelArgs, base.EffortArgs, base.ProfileArgs = tool.ModelArgs, tool.EffortArgs, tool.ProfileArgs
 	m.services.cfg.Tools["claude"] = base
-	m.ledger.catalogs = map[string]*catalogState{"claude": {cat: cat, loaded: true}}
+	m.spawner.Catalogs = map[string]*uilaunch.CatalogState{"claude": {Cat: cat, Loaded: true}}
 }
 
 var claudeLike = config.Tool{Catalog: "claude", CatalogCommand: "claude", ModelArgs: "--model {model}", EffortArgs: "--effort {effort}"}
@@ -328,7 +329,7 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 		for range 3 {
 			m.handleFormKey(down)
 		}
-		m.handleCatalog(catalogMsg{tool: "claude", cat: catalog.Catalog{Models: claudeAnswer.Models[:1]}})
+		m.handleCatalog(catalogMsg{Tool: "claude", Cat: catalog.Catalog{Models: claudeAnswer.Models[:1]}})
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
 		if m.form().Choice().Model() != "default" {
 			t.Fatalf("picked %q", m.form().Choice().Model())
@@ -662,13 +663,13 @@ func TestChoiceIsKeptPerCLI(t *testing.T) {
 	t.Run("answer arrives after the prompt opens", func(t *testing.T) {
 		m := buildModel(t)
 		answered(m, claudeLike, catalog.Catalog{})
-		m.ledger.catalogs["claude"] = &catalogState{loading: true}
+		m.spawner.Catalogs["claude"] = &uilaunch.CatalogState{Loading: true}
 		keepSetting(t, m, "choice.claude", `{"Model":"opus","Effort":"medium"}`)
 		openFormOnClaude(t, m)
 		if m.form().Choice().Model() != "" {
 			t.Fatal("placed a model before the CLI answered")
 		}
-		m.handleCatalog(catalogMsg{tool: "claude", cat: claudeAnswer})
+		m.handleCatalog(catalogMsg{Tool: "claude", Cat: claudeAnswer})
 		if got := m.form().Choice().Current(m.spawnHost(), "claude"); config.Choice(got) != (config.Choice{Model: "opus", Effort: "medium"}) {
 			t.Fatalf("choice once answered = %+v", got)
 		}

@@ -34,11 +34,11 @@ func (h spawnHost) ChoiceCaps(toolName string) spawn.Caps {
 // ChoiceAnswer hands the choice a copy, so only the root's catalog
 // handlers change what the CLI answered.
 func (h spawnHost) ChoiceAnswer(toolName string) *spawn.Answer {
-	state := h.m.ledger.catalogs[toolName]
-	if state == nil {
+	answer := h.m.spawner.Answer(toolName)
+	if answer == nil {
 		return nil
 	}
-	return &spawn.Answer{Cat: state.cat, Err: state.err, Loaded: state.loaded, Loading: state.loading}
+	return &spawn.Answer{Cat: answer.Cat, Err: answer.Err, Loaded: answer.Loaded, Loading: answer.Loading}
 }
 
 func (h spawnHost) ChoiceSetting(key string) string { return h.m.settings.Cache.Value(key) }
@@ -339,8 +339,7 @@ func (m *Model) viewForm() string {
 }
 
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
-	m.ledger.lastSpawnTool = tool
-	m.ledger.lastSpawnWorktree = worktree
+	m.spawner.RememberSpawn(tool, worktree)
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {

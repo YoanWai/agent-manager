@@ -8,6 +8,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 )
 
 // formSpawnRequest names the session, places it in the picked group and
@@ -22,7 +23,7 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 	group := f.GroupPath()
 	defaults := m.spawnDefaults(group)
 	return spawnRequest{
-		kind:         spawnForm,
+		kind:         uilaunch.Form,
 		toolName:     request.Tool,
 		name:         name,
 		group:        group,

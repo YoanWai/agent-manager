@@ -3,16 +3,14 @@ package ui
 import (
 	"time"
 
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
-	"github.com/YoanWai/agent-manager/internal/store"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // afterTurnRequest carries out, or withdraws, the archive or kill a session
-// asked for once its turn ends. Lifecycle.EndAfterTurn rereads the row,
-// because the poll report that queued it can trail a newer turn or an
-// earlier pass's work.
+// asked for once its turn ends. The run rereads the row, because the poll
+// report that queued it can trail a newer turn or an earlier pass's work.
 type afterTurnRequest struct {
 	id      string
 	name    string
@@ -31,9 +29,7 @@ func (request afterTurnRequest) run(services effectServices) (uieffects.Result, 
 }
 
 type afterTurnResult struct {
-	target    confirmTarget
-	lifecycle lifecycleEffectResult
-	cleared   bool
+	uilifecycle.AfterTurnResult
 }
 
 func (afterTurnResult) EffectResult() {}
@@ -51,8 +47,8 @@ func (m *Model) endAfterTurns(ids []string) {
 	}
 }
 
-// cancelEndSelected keeps the selected session past its turn, withdrawing
-// the archive or kill it asked for.
+// cancelEndSelected keeps the selected session past its turn, withdrawing the
+// archive or kill it asked for.
 func (m *Model) cancelEndSelected() (tea.Model, tea.Cmd) {
 	entry, ok := m.selectedRow()
 	if !ok || entry.isGroup || entry.sess.AfterTurn == "" {
@@ -63,60 +59,26 @@ func (m *Model) cancelEndSelected() (tea.Model, tea.Cmd) {
 }
 
 func (s effectServices) runAfterTurn(request afterTurnRequest) (uieffects.Result, error) {
-	result := afterTurnResult{}
-	if request.cancel {
-		err := s.store.ClearAfterTurn(request.id)
-		result.cleared = err == nil
-		return result, err
-	}
-	children, err := s.store.Children(request.id)
-	if err != nil {
-		return result, err
-	}
-	ids := []string{request.id}
-	for _, child := range children {
-		ids = append(ids, child.ID)
-	}
-	var ended sessioncmd.EndAfterTurnResult
-	var endErr error
-	reflowErr := s.reflow(ids, func() {
-		// Stop watching first, so the watcher does not report a kill it asked for as a lost client.
-		if s.watch != nil {
-			for _, id := range ids {
-				s.watch.Unwatch(id)
-			}
-		}
-		ended, endErr = s.lifecycle.EndAfterTurn(request.id)
-		if request.watched != "" {
-			result.lifecycle.survivor = s.driver.Exists(request.watched)
-		}
+	result, err := uilifecycle.RunAfterTurn(s.lifecycleServices(), uilifecycle.AfterTurnRequest{
+		ID:      request.id,
+		Name:    request.name,
+		Cancel:  request.cancel,
+		Watched: request.watched,
 	})
-	if reflowErr != nil {
-		return result, reflowErr
-	}
-	switch ended.Action {
-	case store.AfterTurnArchive:
-		result.target = confirmTarget{action: actionArchive, sessions: ended.Sessions}
-		result.lifecycle.archive.Sessions = ended.Sessions
-	case store.AfterTurnKill:
-		result.target = confirmTarget{action: actionKill, sessions: ended.Sessions}
-		result.lifecycle.changed = ended.Sessions
-	}
-	result.cleared = ended.Action != ""
-	return result, endErr
+	return afterTurnResult{result}, err
 }
 
 func (m *Model) applyAfterTurn(request afterTurnRequest, result afterTurnResult, err error) tea.Cmd {
 	var command tea.Cmd
-	if result.target.action != "" {
-		command = m.applyLifecycleEffect(lifecycleRequest{target: result.target, watched: request.watched}, result.lifecycle, err)
+	if result.Target.Action != uilifecycle.None {
+		command = m.applyLifecycleEffect(lifecycleRequest{target: confirmTargetFor(result.Target), watched: request.watched}, lifecycleEffectResult{result.Lifecycle}, err)
 	} else {
 		if err != nil {
 			m.reportErr(err.Error())
 		}
-		m.rewatchSurvivor(request.watched, result.lifecycle.survivor)
+		m.rewatchSurvivor(request.watched, result.Lifecycle.Survivor)
 	}
-	if result.cleared {
+	if result.Cleared {
 		for i := range m.workspace.sessions {
 			if m.workspace.sessions[i].ID == request.id {
 				m.workspace.sessions[i].AfterTurn, m.workspace.sessions[i].AfterTurnAt = "", time.Time{}

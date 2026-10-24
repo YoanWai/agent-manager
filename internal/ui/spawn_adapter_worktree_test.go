@@ -9,6 +9,7 @@ import (
 
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -95,9 +96,9 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
 		t.Fatalf("fresh cache changed without a probe: capable %t known %t", capable, known)
 	}
-	answer := m.ledger.worktreeRepos[dir]
-	answer.at = answer.at.Add(-worktreeLookupTTL)
-	m.ledger.worktreeRepos[dir] = answer
+	answer := m.spawner.WorktreeRepos[dir]
+	answer.At = answer.At.Add(-worktreeLookupTTL)
+	m.spawner.WorktreeRepos[dir] = answer
 	if _, known := m.cachedWorktreeCapability(dir); known {
 		t.Fatal("expired capability still appeared current")
 	}
@@ -114,9 +115,9 @@ type blockedRepoPreflight struct {
 	capable bool
 }
 
-func (r *blockedRepoPreflight) resolve(string, []string) (string, bool) { return "", false }
+func (r *blockedRepoPreflight) Resolve(string, []string) (string, bool) { return "", false }
 
-func (r *blockedRepoPreflight) repoCapable(string) bool {
+func (r *blockedRepoPreflight) RepoCapable(string) bool {
 	r.once.Do(func() { close(r.started) })
 	<-r.release
 	return r.capable
@@ -133,10 +134,10 @@ func TestWorktreeProbeDefersGitAndRejectsReopenedForm(t *testing.T) {
 	}
 	m.gens.worktreeProbe++
 	request := worktreeProbeRequest{
-		target: worktreeProbeForm, generation: m.formPromptFor().Gen,
-		sequence: m.gens.worktreeProbe, dir: m.formSpawnDir(), toggle: true, from: m.form().Worktree(),
+		Target: worktreeProbeForm, Generation: m.formPromptFor().Gen,
+		Sequence: m.gens.worktreeProbe, Dir: m.formSpawnDir(), Toggle: true, From: m.form().Worktree(),
 	}
-	cmd := worktreeProbeCmd(request, reader)
+	cmd := uilaunch.ProbeCmd(request, reader)
 	select {
 	case <-reader.started:
 		t.Fatal("repo probe ran on the update path")
@@ -160,9 +161,9 @@ func TestPrepareFrameConsumesCapturedWorktreeFacts(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.ledger.worktreeRepos = nil
+	m.spawner.WorktreeRepos = nil
 	m.prepareFrame()
-	if m.ledger.worktreeRepos != nil {
+	if m.spawner.WorktreeRepos != nil {
 		t.Fatal("rendering performed a repository lookup")
 	}
 }

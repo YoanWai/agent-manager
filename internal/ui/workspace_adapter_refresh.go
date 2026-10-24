@@ -174,7 +174,7 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			// The focused session can die or vanish under us; fall back to the
 			// list rather than typing into nothing.
 			sessions := m.dropRecentlyRemoved(m.keepPendingLaunches(msg.sessions, msg.listedAt), msg.listedAt)
-			stripDeletedGroups(&msg, m.ledger.goneGroups)
+			m.reconcileListing(&msg)
 			if m.focused() {
 				if sess, ok := m.selected(); !ok || sessionGone(sessions, sess.ID) {
 					focusExit = m.leaveFocus()

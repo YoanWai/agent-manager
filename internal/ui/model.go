@@ -28,8 +28,10 @@ import (
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -51,6 +53,8 @@ type Model struct {
 	reviewNav uireviewsource.Nav
 	mouse     mouseCapture
 	settings  uipersist.State
+	lifecycle uilifecycle.State
+	spawner   uilaunch.State
 	env       environment
 	ssh       uilink.State
 	layout    layoutState
@@ -186,8 +190,8 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		poller:  &poller{runner: deps.Execution},
 		layout:  layoutState{split: splitState{ratio: uigeometrypanes.Load(st)}},
 		env: environment{
-			workDir: initialWorkingDir(),
-			homeDir: initialHomeDir(),
+			workDir: uilaunch.InitialWorkingDir(),
+			homeDir: uilaunch.InitialHomeDir(),
 		},
 		release: uirelease.New(st, version),
 		services: services{

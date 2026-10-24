@@ -1,17 +1,20 @@
 package ui
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"maps"
 	"slices"
 )
 
+// lifecycleRequest is the root's queue shape of a session action; the work
+// itself runs in ui/session/lifecycle.
 type lifecycleRequest struct {
 	target      confirmTarget
 	pane        sessioncmd.PaneSize
@@ -23,10 +26,10 @@ type lifecycleRequest struct {
 func (lifecycleRequest) EffectRequest() {}
 
 func (request lifecycleRequest) effectName() string {
-	if request.target.action == actionDelete {
+	if request.Target.action == actionDelete {
 		return "session delete"
 	}
-	return "session " + string(request.target.action)
+	return "session " + string(request.Target.action)
 }
 
 func (value lifecycleRequest) copied() effectRequest {
@@ -42,20 +45,7 @@ func (request lifecycleRequest) run(services effectServices) (uieffects.Result, 
 	return services.runLifecycle(request)
 }
 
-type relaunchedSession struct {
-	id     string
-	result sessioncmd.RelaunchResult
-}
-type lifecycleEffectResult struct {
-	archive  sessioncmd.ArchiveResult
-	deleted  sessioncmd.DeleteResult
-	changed  []store.Session
-	launches []relaunchedSession
-	failed   []store.Session
-	survivor bool
-	notice   string
-	warning  error
-}
+type lifecycleEffectResult struct{ uilifecycle.Result }
 
 func (lifecycleEffectResult) EffectResult() {}
 
@@ -70,175 +60,56 @@ func (m *Model) queueLifecycle(target confirmTarget, allowLive bool, emptyNotice
 }
 
 func (s effectServices) runLifecycle(request lifecycleRequest) (uieffects.Result, error) {
-	result := lifecycleEffectResult{}
-	target, err := s.validateLifecycleSelection(request.target)
-	if err != nil {
-		return result, err
-	}
-	ids := make([]string, 0, len(target.sessions))
-	for _, sess := range target.sessions {
-		ids = append(ids, sess.ID)
-	}
-	var operationErr error
-	reflowErr := s.reflow(ids, func() {
-		if s.watch != nil && (target.action == actionArchive || target.action == actionDelete || target.action == actionKill || target.action == actionRestart) {
-			for _, id := range ids {
-				s.watch.Unwatch(id)
-			}
-		}
-		switch target.action {
-		case actionArchive:
-			result.archive, operationErr = s.lifecycle.ArchiveForHuman(sessioncmd.ArchiveSelection{Sessions: target.sessions, GroupPath: groupPath(target)})
-		case actionRestore:
-			wasDead := map[string]bool{}
-			for _, sess := range target.sessions {
-				wasDead[sess.ID] = !s.driver.Exists(sess.ID)
-			}
-			result.archive, operationErr = s.lifecycle.RestoreForHuman(sessioncmd.ArchiveSelection{Sessions: target.sessions, GroupPath: groupPath(target)}, request.pane)
-			for _, sess := range result.archive.Sessions {
-				if wasDead[sess.ID] {
-					result.launches = append(result.launches, relaunchedSession{sess.ID, sessioncmd.RelaunchResult{LaunchedAt: sess.AgentLaunchedAt}})
-				}
-			}
-			result.warning = result.archive.LabelError
-		case actionDelete:
-			result.deleted, operationErr = s.lifecycle.DeleteForHuman(sessioncmd.DeleteSelection{Sessions: target.sessions, GroupPath: groupPath(target), ArchivedOnly: target.archivedOnly})
-		case actionKill, actionRestart, actionRevive:
-			for i, sess := range target.sessions {
-				var err error
-				switch target.action {
-				case actionKill:
-					if !s.driver.Exists(sess.ID) {
-						continue
-					}
-					var killed store.Session
-					killed, err = s.lifecycle.Kill(sess)
-					if err == nil {
-						result.changed = append(result.changed, killed)
-					}
-				case actionRestart, actionRevive:
-					if target.action == actionRevive && !request.allowLive && s.driver.Exists(sess.ID) {
-						continue
-					}
-					var launched sessioncmd.RelaunchResult
-					if target.action == actionRestart {
-						launched, err = s.lifecycle.Restart(sess, request.pane)
-					} else {
-						launched, err = s.lifecycle.Revive(sess, request.pane)
-					}
-					if err == nil {
-						result.launches = append(result.launches, relaunchedSession{sess.ID, launched})
-						if launched.LabelError != nil {
-							result.warning = launched.LabelError
-						}
-					}
-				}
-				if err != nil {
-					if operationErr == nil {
-						operationErr = err
-					}
-					if target.batch {
-						result.failed = append(result.failed, sess)
-						continue
-					}
-					result.failed = append(result.failed, target.sessions[i:]...)
-					break
-				}
-			}
-		default:
-			operationErr = fmt.Errorf("unknown confirm action %q", target.action)
-		}
-		if request.watched != "" {
-			result.survivor = s.driver.Exists(request.watched)
-		}
+	result, err := uilifecycle.Run(s.lifecycleServices(), uilifecycle.Request{
+		Target:      packageTarget(request.Target),
+		Pane:        request.pane,
+		Watched:     request.watched,
+		AllowLive:   request.allowLive,
+		EmptyNotice: request.emptyNotice,
 	})
-	if reflowErr != nil {
-		return result, reflowErr
-	}
-	// The notice reads the revived row: the listed copy can predate the
-	// conversation the agent last reported.
-	if target.action == actionRevive && !target.batch && len(target.sessions) == 1 && len(result.launches) == 1 && result.launches[0].result.Degraded {
-		result.notice = degradedResumeText(result.launches[0].result.Session.Name)
-	}
-	if target.action == actionRevive && target.batch {
-		switch {
-		case operationErr != nil:
-			result.notice = fmt.Sprintf("revived %d, first error: %s", len(result.launches), operationErr)
-		case len(result.launches) == 0:
-			result.notice = request.emptyNotice
-		default:
-			degraded := 0
-			for _, each := range result.launches {
-				if each.result.Degraded {
-					degraded++
-				}
-			}
-			if degraded > 0 {
-				result.notice = fmt.Sprintf("revived %d, %d without a captured id (used --continue)", len(result.launches), degraded)
-			}
-		}
-	}
-	return result, operationErr
+	return lifecycleEffectResult{result}, err
 }
 
-func (s effectServices) validateLifecycleSelection(target confirmTarget) (confirmTarget, error) {
-	selection := target.selection
-	if selection.kind == lifecycleSelectionNone {
-		return target, nil
+// lifecycleServices is the effect services as a lifecycle run reaches them.
+func (s effectServices) lifecycleServices() uilifecycle.Services {
+	return uilifecycle.Services{
+		Lifecycle: s.lifecycle,
+		Store:     s.store,
+		Driver:    s.driver,
+		Watch:     s.watch,
+		Reflow:    s.reflowSessions,
 	}
-	var (
-		current []store.Session
-		err     error
-	)
-	switch selection.kind {
-	case lifecycleSelectionSession:
-		root, getErr := s.store.Get(selection.rootID)
-		if getErr != nil {
-			return target, getErr
-		}
-		children, childrenErr := s.store.Children(selection.rootID)
-		if childrenErr != nil {
-			return target, childrenErr
-		}
-		current = append([]store.Session{root}, children...)
-	case lifecycleSelectionGroup:
-		current, err = s.store.SessionsInSubtree(target.path)
-		if err != nil {
-			return target, err
-		}
-	default:
-		return target, fmt.Errorf("unknown lifecycle selection kind %d", selection.kind)
-	}
-	if selection.archivedOnly {
-		current = archivedSessions(current)
-	}
-	if !sameSessionIDs(current, target.sessions) {
-		return target, fmt.Errorf("sessions changed since confirmation; review the selection and try again")
-	}
-	target.sessions = current
-	return target, nil
 }
 
-func sameSessionIDs(left, right []store.Session) bool {
-	if len(left) != len(right) {
-		return false
+// reflowSessions holds the panes a lifecycle run touches, the lane contract
+// that keeps an input job from writing into a session it is killing.
+func (s effectServices) reflowSessions(ids []string, work func()) error { return s.reflow(ids, work) }
+
+// packageTarget is a confirmation as the lifecycle package runs it.
+func packageTarget(target confirmTarget) uilifecycle.Target {
+	return uilifecycle.Target{
+		Action:       packageAction(target.action),
+		Sessions:     target.sessions,
+		Path:         groupPath(target),
+		Batch:        target.batch,
+		ArchivedOnly: target.archivedOnly,
+		Selection:    packageSelection(target.selection),
 	}
-	ids := make(map[string]bool, len(left))
-	for _, sess := range left {
-		ids[sess.ID] = true
-	}
-	for _, sess := range right {
-		if !ids[sess.ID] {
-			return false
-		}
-		delete(ids, sess.ID)
-	}
-	return len(ids) == 0
+}
+
+// packageTarget spells the card's action the package's way; the two name the
+// same values, delete included.
+func packageAction(action uidialogs.ConfirmAction) uilifecycle.Action {
+	return uilifecycle.Action(action)
+}
+
+func packageSelection(selection lifecycleSelection) uilifecycle.Selection {
+	return uilifecycle.Selection{Kind: uilifecycle.SelectionKind(selection.kind), RootID: selection.rootID, ArchivedOnly: selection.archivedOnly}
 }
 
 func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleEffectResult, err error) tea.Cmd {
-	target := request.target
-	for _, sess := range append(result.changed, result.archive.Sessions...) {
+	target := request.Target
+	for _, sess := range append(result.Changed, result.Archive.Sessions...) {
 		for i := range m.workspace.sessions {
 			if m.workspace.sessions[i].ID == sess.ID {
 				m.workspace.sessions[i].Status = sess.Status
@@ -246,19 +117,19 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 		}
 	}
 	if target.action == actionKill {
-		for _, sess := range result.changed {
+		for _, sess := range result.Changed {
 			m.forgetLaunch(sess.ID)
 			delete(m.workspace.panes, sess.ID)
 		}
 	}
 	group := ""
-	if result.archive.GroupChanged {
-		group = result.archive.GroupPath
+	if result.Archive.GroupChanged {
+		group = result.Archive.GroupPath
 	}
 	switch target.action {
 	case actionArchive, actionRestore:
 		var durable []store.Session
-		for _, sess := range result.archive.Sessions {
+		for _, sess := range result.Archive.Sessions {
 			if sess.Archived == (target.action == actionArchive) {
 				durable = append(durable, sess)
 				if sess.Archived {
@@ -272,56 +143,51 @@ func (m *Model) applyLifecycleEffect(request lifecycleRequest, result lifecycleE
 			m.markRestoredLocally(durable, group)
 		}
 	case actionDelete:
-		for _, sess := range result.deleted.Deleted {
-			delete(m.ledger.pickedRepos, sess.ID)
-			delete(m.ledger.awaitedRenames, sess.ID)
-			m.forgetLaunch(sess.ID)
+		for _, sess := range result.Deleted.Deleted {
+			m.lifecycle.ForgetSession(sess.ID)
 			m.removeSessionLocally(sess.ID)
 		}
-		if len(result.deleted.RemovedGroups) > 0 {
-			m.applyRailStateDecision(m.rail.ForgetGroups(result.deleted.RemovedGroups))
-			m.pruneGroupsLocally(result.deleted.RemovedGroups)
+		if len(result.Deleted.RemovedGroups) > 0 {
+			m.applyRailStateDecision(m.rail.ForgetGroups(result.Deleted.RemovedGroups))
+			m.pruneGroupsLocally(result.Deleted.RemovedGroups)
 		}
 	}
-	for _, each := range result.launches {
-		m.markFreshPane(each.id)
-		if m.ledger.launched == nil {
-			m.ledger.launched = map[string]time.Time{}
-		}
-		m.ledger.launched[each.id] = time.Now()
+	for _, each := range result.Launches {
+		m.markFreshPane(each.ID)
+		m.lifecycle.RecordLaunch(each.ID, time.Now())
 		if target.action == actionRestart {
-			m.bindRestartLocally(each.id, each.result.Conversation, each.result.LaunchedAt)
+			m.bindRestartLocally(each.ID, each.Result.Conversation, each.Result.LaunchedAt)
 		} else {
-			m.bindReviveLocally(each.id, each.result.LaunchedAt)
+			m.bindReviveLocally(each.ID, each.Result.LaunchedAt)
 		}
 	}
-	if len(result.launches) > 0 {
+	if len(result.Launches) > 0 {
 		m.focus.runtime.Retry()
 	}
-	m.rewatchSurvivor(request.watched, result.survivor)
+	m.rewatchSurvivor(request.watched, result.Survivor)
 	m.rebuildRows()
-	m.reportErr(result.notice)
-	if result.deleted.Notice != "" {
-		m.reportErr(result.deleted.Notice)
+	m.reportErr(result.Notice)
+	if result.Deleted.Notice != "" {
+		m.reportErr(result.Deleted.Notice)
 	}
-	if result.warning != nil && err == nil {
-		m.reportErr(result.warning.Error())
+	if result.Warning != nil && err == nil {
+		m.reportErr(result.Warning.Error())
 	}
 	if err != nil {
 		if target.batch {
-			if result.notice == "" {
+			if result.Notice == "" {
 				m.reportErr(err.Error())
 			}
 			return nil
 		}
 		if target.action == actionRestart || target.action == actionRevive || target.action == actionRestore {
 			retry := request
-			if len(result.failed) > 0 {
-				retry.target.sessions = append([]store.Session(nil), result.failed...)
+			if len(result.Failed) > 0 {
+				retry.target.sessions = append([]store.Session(nil), result.Failed...)
 			}
 			if target.action == actionRestore {
 				done := map[string]bool{}
-				for _, sess := range result.archive.Sessions {
+				for _, sess := range result.Archive.Sessions {
 					if !sess.Archived {
 						done[sess.ID] = true
 					}

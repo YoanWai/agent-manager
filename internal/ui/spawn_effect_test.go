@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"os"
 	"strings"
 	"sync"
@@ -216,8 +217,8 @@ func TestSpawnFormDefersCreationFromUpdate(t *testing.T) {
 	if got := storeRows(t, m); got != 0 {
 		t.Fatalf("store gained %d rows on the update path", got)
 	}
-	if len(m.ledger.launched) != 0 {
-		t.Fatalf("ledger recorded %d launches on the update path", len(m.ledger.launched))
+	if len(m.lifecycle.Launched) != 0 {
+		t.Fatalf("ledger recorded %d launches on the update path", len(m.lifecycle.Launched))
 	}
 	m.applyCmd(t, cmd)
 	if got := storeRows(t, m); got != 1 {
@@ -260,7 +261,7 @@ func TestQuickSpawnDefersCreationFromUpdate(t *testing.T) {
 		t.Fatalf("quick spawn created a row on the update path: workspace=%d store=%d",
 			len(m.workspace.sessions), storeRows(t, m))
 	}
-	if len(m.ledger.launched) != 0 {
+	if len(m.lifecycle.Launched) != 0 {
 		t.Fatal("ledger recorded a launch on the update path")
 	}
 	m.applyCmd(t, cmd)
@@ -331,7 +332,7 @@ func TestSpawnWorkerFailureLeavesNothingBehind(t *testing.T) {
 	if len(m.workspace.sessions) != 0 {
 		t.Fatal("failed spawn left a workspace row")
 	}
-	if len(m.ledger.launched) != 0 {
+	if len(m.lifecycle.Launched) != 0 {
 		t.Fatal("ledger recorded a launch for a failed spawn")
 	}
 	if !formOpen(m) {
@@ -387,7 +388,7 @@ func TestSpawnUpdateReturnsWhileWriterIsQueued(t *testing.T) {
 	submitFormSpawn(t, m, "first", t.TempDir())
 	// The effect is queued, not begun: no row, no pane, and a window update
 	// must not block on it.
-	if storeRows(t, m) != 0 || len(m.ledger.launched) != 0 {
+	if storeRows(t, m) != 0 || len(m.lifecycle.Launched) != 0 {
 		t.Fatal("writer ran on the update path")
 	}
 	done := make(chan struct{})
@@ -591,7 +592,7 @@ func TestQuickSpawnCompletionPreservesEditedDraft(t *testing.T) {
 	m.dispatchSpawn(request)
 	request = m.effects.Main.Pending[0].Request.(spawnRequest)
 	m.quick().Input.SetValue("next task")
-	m.applySpawnEffect(request, spawnEffectResult{session: store.Session{ID: "child", Name: "child"}}, nil)
+	m.applySpawnEffect(request, spawnEffectResult{Result: uilaunch.Result{Session: store.Session{ID: "child", Name: "child"}}}, nil)
 	if m.quick().Input.Value() != "next task" {
 		t.Fatal("completion cleared a newer draft")
 	}
@@ -632,7 +633,7 @@ func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	m.enqueueEffect(retry, 0, false)
 	msg = m.nextEffectCmd()().(uieffects.Completed)
 	result := msg.Result.(spawnEffectResult)
-	if result.plan == nil || result.plan.AgentSessionID != retry.plan.AgentSessionID {
+	if result.Plan == nil || result.Plan.AgentSessionID != retry.plan.AgentSessionID {
 		t.Fatal("retry regenerated the conversation identity")
 	}
 }
@@ -645,7 +646,7 @@ func TestGroupCompletionPreservesEditedForm(t *testing.T) {
 	m.enqueueEffect(groupRequest{path: "first", gen: m.groupSurface().Gen(), draftName: m.groupSurface().Name(), draftDir: m.groupSurface().Dir()}, 0, false)
 	request := m.effects.Main.Pending[0].Request.(groupRequest)
 	m.groupSurface().SetName("next")
-	m.applyGroupEffect(request, groupEffectResult{path: "first"}, nil)
+	m.applyGroupEffect(request, groupEffectResult{GroupResult: uilaunch.GroupResult{Path: "first"}}, nil)
 	if !m.groupFormOpen() || m.groupSurface().Name() != "next" {
 		t.Fatal("completion closed the edited group form")
 	}

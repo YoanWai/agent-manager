@@ -173,14 +173,14 @@ func parentGroup(group string) string { return uirail.ParentGroup(group) }
 func baseName(path string) string { return uirail.BaseName(path) }
 
 func (m *Model) awaitingRename(session store.Session) bool {
-	awaited, ok := m.ledger.awaitedRenames[session.ID]
+	awaited, ok := m.lifecycle.AwaitedRenames[session.ID]
 	if !ok {
 		return false
 	}
 	if session.Name == awaited.generated && session.Status != status.Dead && time.Since(session.CreatedAt) < renameGrace {
 		return true
 	}
-	delete(m.ledger.awaitedRenames, session.ID)
+	delete(m.lifecycle.AwaitedRenames, session.ID)
 	return false
 }
 
@@ -188,7 +188,7 @@ func (m *Model) displayName(session store.Session) string {
 	if !m.awaitingRename(session) {
 		return session.Name
 	}
-	if preview := promptPreview(m.ledger.awaitedRenames[session.ID].prompt); preview != "" {
+	if preview := promptPreview(m.lifecycle.AwaitedRenames[session.ID].Prompt); preview != "" {
 		return preview
 	}
 	return namePlaceholder

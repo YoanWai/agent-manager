@@ -5,6 +5,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"path/filepath"
@@ -65,7 +66,7 @@ func TestAttachReportsTransportFailureWithoutCallingPaneDead(t *testing.T) {
 	}
 	services := effectServices{store: m.services.store, driver: driver}
 	_, err = services.runAttach(attachRequest{id: "attach-probe"})
-	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), deadSessionHint) {
+	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), uilifecycle.DeadSessionHint) {
 		t.Fatalf("transport failure mislabeled: %v", err)
 	}
 }

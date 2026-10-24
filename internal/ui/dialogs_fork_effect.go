@@ -66,10 +66,7 @@ func (m *Model) applyForkEffect(request forkRequest, result forkEffectResult, er
 	launched := result.Launched
 	if launched.ID != "" {
 		m.markFreshPane(launched.ID)
-		if m.ledger.launched == nil {
-			m.ledger.launched = map[string]time.Time{}
-		}
-		m.ledger.launched[launched.ID] = time.Now()
+		m.lifecycle.RecordLaunch(launched.ID, time.Now())
 		m.workspace.sessions = append(m.workspace.sessions, launched)
 		// Forks start as starting, which attention excludes; clear so the
 		// row the fork just created is on screen.

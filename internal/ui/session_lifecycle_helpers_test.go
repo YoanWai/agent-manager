@@ -17,7 +17,7 @@ func (m *Model) lifecycleFixture(target confirmTarget) (lifecycleEffectResult, e
 	result := completed.(lifecycleEffectResult)
 	m.applyLifecycleEffect(request, result, err)
 	if err == nil {
-		err = result.warning
+		err = result.Warning
 	}
 	return result, err
 }
@@ -31,7 +31,7 @@ func (m *Model) restoreConfirmed() error {
 }
 func (m *Model) deleteConfirmed() (sessioncmd.DeleteResult, error) {
 	result, err := m.lifecycleFixture(pendingConfirm(m))
-	return result.deleted, err
+	return result.Deleted, err
 }
 func (m *Model) killSession(sess store.Session) error {
 	_, err := m.lifecycleFixture(confirmTarget{action: actionKill, sessions: []store.Session{sess}})

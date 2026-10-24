@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"strings"
 )
 
@@ -16,7 +17,7 @@ func (m *Model) removeSessionLocally(id string) {
 			break
 		}
 	}
-	m.markSession(id, goneMark{deleted: true})
+	m.markSession(id, uilifecycle.GoneMark{Deleted: true})
 	m.rebuildRows()
 }
 
@@ -28,7 +29,7 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 	gone := make(map[string]bool, len(removed))
 	for _, path := range removed {
 		gone[path] = true
-		m.markGroup(path, goneMark{deleted: true})
+		m.markGroup(path, uilifecycle.GoneMark{Deleted: true})
 	}
 	groups := make([]string, 0, len(m.workspace.groups))
 	for _, group := range m.workspace.groups {

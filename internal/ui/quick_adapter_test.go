@@ -739,7 +739,7 @@ func TestQuickHiddenLastToolFallsBackToSettings(t *testing.T) {
 	m.applyCmd(t, cmd)
 	closeQuick(m)
 
-	if err := m.services.store.SetHiddenTools(map[string]bool{m.ledger.lastSpawnTool: true}); err != nil {
+	if err := m.services.store.SetHiddenTools(map[string]bool{m.spawner.LastSpawnTool: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -777,8 +777,8 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	if !hintOpen(m) || hintFix(m).Retry == nil {
 		t.Fatalf("expected a refused launch with retry, screen = %v err=%q", m.screenID(), m.errBar.text)
 	}
-	if m.ledger.lastSpawnTool != "ready-tool" || m.ledger.lastSpawnWorktree {
-		t.Fatalf("failed launch changed the last pick: %q, %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
+	if m.spawner.LastSpawnTool != "ready-tool" || m.spawner.LastSpawnWorktree {
+		t.Fatalf("failed launch changed the last pick: %q, %v", m.spawner.LastSpawnTool, m.spawner.LastSpawnWorktree)
 	}
 	fix := hintFix(m)
 	fix.command, fix.script = installCommand, installCommand
@@ -786,8 +786,8 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
 
-	if m.ledger.lastSpawnTool != "claude" || !m.ledger.lastSpawnWorktree {
-		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree, m.errBar.text)
+	if m.spawner.LastSpawnTool != "claude" || !m.spawner.LastSpawnWorktree {
+		t.Fatalf("successful retry did not remember the pick: %q, %v; err=%q", m.spawner.LastSpawnTool, m.spawner.LastSpawnWorktree, m.errBar.text)
 	}
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
