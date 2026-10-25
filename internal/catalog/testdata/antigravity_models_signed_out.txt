@@ -1,0 +1,1 @@
+Error: Please sign in to view available models. Launch the CLI without arguments to sign in.

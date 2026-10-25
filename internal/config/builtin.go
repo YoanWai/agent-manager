@@ -357,6 +357,8 @@ rules = [
 # Antigravity CLI (agy), Google's successor to Gemini CLI
 [tools.antigravity]
 command = "agy"
+# 1.3.4 is the first agy that takes a model's base id without --effort.
+minimum_version = "1.3.4"
 session_report = "antigravity"
 # agy reads a startup prompt only from -p, which exits after one turn, or -i
 prompt_flag = "-i"
@@ -368,6 +370,10 @@ resume_by_id_command = "agy --conversation {id}"
 resume_picker_command = "agy"
 resume_picker_keys = "/resume"
 revive_command = "agy -c"
+catalog = "antigravity"
+catalog_command = "agy models"
+model_args = "--model {model}"
+effort_args = "--effort {effort}"
 default_status = "idle"
 # the composer row: ">" at rest, "!" in bash mode
 activity_cutoff = "(?m)^[>!]"
