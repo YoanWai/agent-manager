@@ -17,7 +17,8 @@ var antigravityRow = regexp.MustCompile(`^\S+\t.+$`)
 // agy lists each thinking level of a model as a row of its own, the level
 // named in the label and suffixed to the id ("Gemini 3.8 Flash (High)",
 // gemini-3.8-flash-high). The base id with --effort reaches the same model.
-var antigravityLevel = regexp.MustCompile(`^(.+) \((Low|Medium|High)\)$`)
+// The levels are the ones --effort takes and Google's model docs name.
+var antigravityLevel = regexp.MustCompile(`^(.+) \((Low|Medium|High|Max)\)$`)
 
 // readAntigravity folds the levels of a model into its efforts, so the
 // picker offers one model and its levels apart, as for every other CLI.

@@ -175,6 +175,14 @@ func TestAntigravityFoldsLevelsIntoEfforts(t *testing.T) {
 	}
 }
 
+// Business accounts list Claude at four levels, max among them.
+func TestAntigravityFoldsTheMaxLevel(t *testing.T) {
+	base, label, level := antigravityModel("claude-sonnet-5-5-max", "Claude Sonnet 5.5 (Max)")
+	if base != "claude-sonnet-5-5" || label != "Claude Sonnet 5.5" || level != "max" {
+		t.Fatalf("antigravityModel = %q, %q, %q", base, label, level)
+	}
+}
+
 // opencode's server can answer the first ask before its plugins settle; the
 // reader asks again, and gives up on the error after a few.
 func TestOpencodeIsAskedAgainWhileItsServerSettles(t *testing.T) {
