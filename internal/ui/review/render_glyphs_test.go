@@ -49,3 +49,23 @@ func TestDiffOutcomeMarksFollowMode(t *testing.T) {
 		}
 	}
 }
+
+func TestCompatibleSendConfirmationMeasuresDisplayedKeys(t *testing.T) {
+	m := New(false)
+	m.sendConfirm = true
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		for _, width := range []int{40, 60, 120} {
+			text := ansi.Strip(m.Status(RenderContext{GlyphMode: mode}, width))
+			for _, hit := range m.StatusKeys() {
+				got := ansi.Cut(text, hit.X0, hit.X1)
+				want := presentation.KeyLabel(mode, hit.Label)
+				if !strings.HasPrefix(got, want) {
+					t.Fatalf("%s/%d %q hit=%q", mode, width, hit.Label, got)
+				}
+			}
+			if mode == presentation.GlyphModeBasic && strings.ContainsAny(text, "↵⌫") {
+				t.Fatalf("compatible status=%q", text)
+			}
+		}
+	}
+}

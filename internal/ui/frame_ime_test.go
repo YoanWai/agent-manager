@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -216,34 +217,37 @@ func TestNoActiveInputClearsCursorAnchor(t *testing.T) {
 }
 
 func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
-	m := &Model{
-		layout: layoutState{
-			width:  100,
-			height: 28,
-		},
-		mode: modeHelp,
-		help: helpFeature{state: uihelp.New(uihelp.Global)},
-		services: services{
-			keys:     keybind.DefaultSession(),
-			listKeys: keybind.DefaultList(),
-		},
-		focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
-	}
-	m.handleHelpKey(runeKey("/"))
-	for _, r := range "中文" {
-		m.handleHelpKey(runeKey(string(r)))
-	}
-	frame := preparedView(m)
-	if strings.Contains(frame, cursorAnchorMarker) {
-		t.Fatal("private cursor marker leaked from the final frame")
-	}
-	col, row, ok := m.focus.runtime.imeCursor.get()
-	if !ok || col < 1 || col > m.layout.width || row < 1 || row > m.layout.height {
-		t.Fatalf("final cursor anchor = (%d, %d, %v), frame is %dx%d", col, row, ok, m.layout.width, m.layout.height)
-	}
-	plain := strings.Split(ansi.Strip(frame), "\n")
-	if row > len(plain) || !strings.Contains(plain[row-1], "search 中文▏") {
-		t.Fatalf("anchor row %d does not contain the help input: %q", row, plain[row-1])
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		m := &Model{
+			layout: layoutState{
+				width:  100,
+				height: 28,
+			},
+			mode:  modeHelp,
+			prefs: preferences{glyphMode: mode},
+			help:  helpFeature{state: uihelp.New(uihelp.Global)},
+			services: services{
+				keys:     keybind.DefaultSession(),
+				listKeys: keybind.DefaultList(),
+			},
+			focus: focusState{runtime: focusRuntimeState{imeCursor: &cursorAnchor{}}},
+		}
+		m.handleHelpKey(runeKey("/"))
+		for _, r := range "中文" {
+			m.handleHelpKey(runeKey(string(r)))
+		}
+		frame := preparedView(m)
+		if strings.Contains(frame, cursorAnchorMarker) {
+			t.Fatal("private cursor marker leaked from the final frame")
+		}
+		col, row, ok := m.focus.runtime.imeCursor.get()
+		if !ok || col < 1 || col > m.layout.width || row < 1 || row > m.layout.height {
+			t.Fatalf("final cursor anchor = (%d, %d, %v), frame is %dx%d", col, row, ok, m.layout.width, m.layout.height)
+		}
+		plain := strings.Split(ansi.Strip(frame), "\n")
+		if row > len(plain) || !strings.Contains(plain[row-1], "search 中文▏") {
+			t.Fatalf("anchor row %d does not contain the help input: %q", row, plain[row-1])
+		}
 	}
 }
 

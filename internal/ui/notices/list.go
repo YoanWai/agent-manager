@@ -232,7 +232,7 @@ func (src Sources) firstListKey(action string) string {
 	if len(keys) == 0 {
 		return ""
 	}
-	return keys[0].Glyph()
+	return presentation.KeyLabel(src.GlyphMode, keys[0].Glyph())
 }
 
 func (src Sources) firstListKeys(actions ...string) string {

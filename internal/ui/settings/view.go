@@ -94,7 +94,7 @@ func (s *State) View(ctx ViewContext) Frame {
 	}
 	// An action row: enter runs it, so it carries no picker arrows.
 	actionRow := func(field int, name, action string) string {
-		return lead(field, name) + st.Key.Render("↵") + st.Muted.Render(" "+action)
+		return lead(field, name) + st.Key.Render(presentation.KeyLabel(ctx.GlyphMode, "↵")) + st.Muted.Render(" "+action)
 	}
 	// Report and suggest stay accent-colored even when unfocused so the
 	// actions read as a call-to-action among the picker rows above them.
@@ -108,7 +108,7 @@ func (s *State) View(ctx ViewContext) Frame {
 		return marker + presentation.PadRight(labelStyle.Render(name), 18)
 	}
 	ctaRow := func(field int, name, action string) string {
-		return ctaLead(field, name) + st.Key.Render("↵") + " " + st.ActionText.Render(action)
+		return ctaLead(field, name) + st.Key.Render(presentation.KeyLabel(ctx.GlyphMode, "↵")) + " " + st.ActionText.Render(action)
 	}
 	label := func(field int) string { return byField[field].Row }
 	editorLine := row(FieldEditor, label(FieldEditor), s.Editor.Label())
@@ -156,7 +156,7 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, versionRow(ctx, lead, actionRow))
 		default:
 			setting := byField[field]
-			line := row(field, setting.Row, setting.label(*setting.Flag(s)))
+			line := row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s))))
 			if setting.Beta {
 				line += betaTag
 			}
@@ -262,7 +262,7 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 	}
 	b.WriteByte('\n')
 	b.WriteString(reqMarker)
-	b.WriteString(st.Key.Render("↵"))
+	b.WriteString(st.Key.Render(presentation.KeyLabel(ctx.GlyphMode, "↵")))
 	b.WriteString(" ")
 	b.WriteString(reqLabel)
 	b.WriteString(st.Muted.Render("  open a GitHub issue"))

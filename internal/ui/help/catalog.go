@@ -141,7 +141,7 @@ func connectionRowHelpRows(list keybind.Table) [][2]string {
 // the rows that pair would answer are left out rather than named as dead.
 func helpSections(ctx Context) []helpSection {
 	list := ctx.ListKeys
-	return []helpSection{
+	sections := []helpSection{
 		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.Glyphs)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
 		{title: "the mark on a session row", rows: markHelpRows(list, ctx.Glyphs)},
@@ -218,6 +218,19 @@ func helpSections(ctx Context) []helpSection {
 			{"esc", "close"},
 		}},
 	}
+	return formatSections(sections, ctx.Glyphs.Mode)
+}
+
+func formatSections(sections []helpSection, mode presentation.GlyphMode) []helpSection {
+	for i := range sections {
+		sections[i].title = presentation.KeyLabel(mode, sections[i].title)
+		for j := range sections[i].rows {
+			for col := range sections[i].rows[j] {
+				sections[i].rows[j][col] = presentation.KeyLabel(mode, sections[i].rows[j][col])
+			}
+		}
+	}
+	return sections
 }
 
 func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) [][2]string {
@@ -291,7 +304,7 @@ func reviewHelpSection(list keybind.Table) helpSection {
 
 func (s State) visibleSections(ctx Context) []helpSection {
 	if s.scope == Review {
-		return []helpSection{reviewHelpSection(ctx.ListKeys)}
+		return formatSections([]helpSection{reviewHelpSection(ctx.ListKeys)}, ctx.Glyphs.Mode)
 	}
 	return helpSections(ctx)
 }

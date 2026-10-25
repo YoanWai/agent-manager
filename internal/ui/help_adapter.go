@@ -77,7 +77,7 @@ func (m *Model) helpLayout() helpLayout {
 	width := uihelp.CardWidth(dialog.width)
 	inner := cardInnerWidth(width)
 	content := m.help.state.Content(m.helpContext(inner))
-	rows := dialog.height - 5 - lipgloss.Height(legendInline(content.Hints, inner)) - len(content.Head)
+	rows := dialog.height - 5 - lipgloss.Height(legendInline(content.Hints, inner, m.prefs.glyphMode)) - len(content.Head)
 	if dialog.status != "" {
 		rows -= 2
 	}

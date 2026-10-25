@@ -64,7 +64,7 @@ func hrule(width int) string {
 // not half blocks: no half block fits the corner over the half-width bleed
 // column at the height of the run beside it, so that cell always stepped.
 func (m *Model) railTopRow(paneWidth, width int) string {
-	if paneWidth < 2 || paneWidth >= width {
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic || paneWidth < 2 || paneWidth >= width {
 		return paint(hrule(width), width, backdropHex())
 	}
 	fill := lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex()))

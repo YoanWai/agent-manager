@@ -287,7 +287,7 @@ func (r renderer) listHint(action, label string) string {
 	if glyph == "" {
 		return ""
 	}
-	return r.palette.keyCap(glyph, label)
+	return r.palette.keyCap(presentation.KeyLabel(r.ctx.GlyphMode, glyph), label)
 }
 
 func (r *renderer) entryRowLines(row treeRow, index int, tone string) []Line {

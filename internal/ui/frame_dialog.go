@@ -56,7 +56,7 @@ func (m *Model) flexChromeRows(hint [][2]string) int {
 }
 
 func (m *Model) chromeRowsAt(width int, hint [][2]string) int {
-	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(width)), "\n") + 1
+	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(width), m.prefs.glyphMode), "\n") + 1
 	if m.errBar.text != "" {
 		rows += 2
 	}
@@ -76,7 +76,7 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 	}
 	measure(body)
 	measure(cardTitle(title))
-	measure(legendInline(hint, 1<<30))
+	measure(legendInline(hint, 1<<30, m.prefs.glyphMode))
 	if m.errBar.text != "" {
 		measure(m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph))
 	}
@@ -164,5 +164,5 @@ func (m *Model) dialogRenderContext() dialogRenderContext {
 	if m.errBar.text != "" {
 		status = m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	}
-	return dialogRenderContext{width: m.layout.width, height: m.layout.height, status: status}
+	return dialogRenderContext{glyphMode: m.prefs.glyphMode, width: m.layout.width, height: m.layout.height, status: status}
 }

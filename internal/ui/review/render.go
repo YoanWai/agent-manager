@@ -379,12 +379,13 @@ func (m *Model) Status(ctx RenderContext, width int) string {
 		count := m.DraftCount()
 		question := s.Err.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, CommentNoun(count)))
 		send := ansi.StringWidth(question) + 2
-		cancel := send + ansi.StringWidth("↵/y send · ")
+		sendLabel := presentation.KeyLabel(ctx.GlyphMode, "↵/y") + " send"
+		cancel := send + ansi.StringWidth(sendLabel+" · ")
 		m.statusKeys = keptWithin([]presentation.PaintedKey{
-			{X0: send, X1: send + ansi.StringWidth("↵/y send"), Label: "↵/y"},
+			{X0: send, X1: send + ansi.StringWidth(sendLabel), Label: "↵/y"},
 			{X0: cancel, X1: cancel + ansi.StringWidth("esc cancel"), Label: "esc"},
 		}, width)
-		return presentation.PadRight(question+s.Subtle.Render("  ↵/y send · esc cancel"), width)
+		return presentation.PadRight(question+s.Subtle.Render("  "+sendLabel+" · esc cancel"), width)
 	}
 	return ""
 }

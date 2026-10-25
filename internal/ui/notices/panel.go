@@ -253,7 +253,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), renderFoot(footPairs(notices, p.cursor, inner), t), t)
+		frame := cardFrame(rows, inner, legend(t), renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode), t, f.GlyphMode), t)
 		return frame
 	}
 	var rows []string
@@ -285,7 +285,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 
 	frame := cardFrame(rows, inner,
 		legend(t),
-		renderFoot(footPairs(notices, p.cursor, inner), t), t)
+		renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode), t, f.GlyphMode), t)
 	return frame
 }
 
@@ -301,11 +301,11 @@ func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	inner := innerWidth(notices, f.Width)
 	var keys []presentation.PaintedKey
 	x := footStart
-	for i, pair := range footPairs(notices, p.cursor, inner) {
+	for i, pair := range footPairs(notices, p.cursor, inner, f.GlyphMode) {
 		if i > 0 {
 			x += lipgloss.Width(footSep)
 		}
-		width := lipgloss.Width(footPart(pair))
+		width := lipgloss.Width(footPart(pair, f.GlyphMode))
 		if x+width > footStart+inner+1 {
 			break
 		}
@@ -315,7 +315,7 @@ func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	return keys
 }
 
-func footPairs(notices []Notice, cursor, inner int) [][2]string {
+func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode) [][2]string {
 	if len(notices) == 0 {
 		return [][2]string{{"r", "refresh"}, {"esc", ""}}
 	}
@@ -335,31 +335,33 @@ func footPairs(notices []Notice, cursor, inner int) [][2]string {
 		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
 		actions,
 	} {
-		if lipgloss.Width(footText(pairs)) <= inner+1 {
+		if lipgloss.Width(footText(pairs, mode)) <= inner+1 {
 			return pairs
 		}
 	}
 	return bare
 }
 
-func footPart(pair [2]string) string { return strings.TrimSpace(pair[0] + " " + pair[1]) }
+func footPart(pair [2]string, mode presentation.GlyphMode) string {
+	return strings.TrimSpace(presentation.KeyLabel(mode, pair[0]) + " " + pair[1])
+}
 
-func renderFoot(pairs [][2]string, t Theme) string {
+func renderFoot(pairs [][2]string, t Theme, mode presentation.GlyphMode) string {
 	parts := make([]string, len(pairs))
 	for i, pair := range pairs {
 		style := t.Muted
 		if pair[0] == "u" {
 			style = t.Key
 		}
-		parts[i] = style.Render(footPart(pair))
+		parts[i] = style.Render(footPart(pair, mode))
 	}
 	return strings.Join(parts, t.Muted.Render(footSep))
 }
 
-func footText(pairs [][2]string) string {
+func footText(pairs [][2]string, mode presentation.GlyphMode) string {
 	parts := make([]string, len(pairs))
 	for i, pair := range pairs {
-		parts[i] = footPart(pair)
+		parts[i] = footPart(pair, mode)
 	}
 	return strings.Join(parts, footSep)
 }
