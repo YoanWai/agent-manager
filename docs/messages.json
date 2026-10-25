@@ -15,6 +15,21 @@
     "expires_at": "2026-11-22T12:00:00Z"
   },
   {
+    "id": "v0432-quiet-on-dead-sessions",
+    "banner": "Less CPU with dead sessions in the list",
+    "title": "v0.43.2: the manager stays quiet on dead sessions",
+    "body": [
+      "A dead session in the list or an open review no longer holds the manager at half a CPU core or more.",
+      "Pasting several lines into a working Pi session keeps the line breaks. Thanks @ribeirojose.",
+      "Save and close moved from a button above the Settings rows into the footer. Enter, esc or a click saves.",
+      "The next update message draws Press u to update and its u update key in the key color.",
+      "Thanks @infierno-lab for reporting and bisecting the CPU use.",
+      "Press Enter for the full v0.43.2 release notes."
+    ],
+    "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.43.2",
+    "max_version": "0.43.2"
+  },
+  {
     "id": "v0430-ssh-sessions",
     "banner": "Sessions on your other machines",
     "title": "v0.43.0: sessions on your other machines",
