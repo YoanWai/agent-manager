@@ -198,7 +198,9 @@ func paint(text string, width int, bg string) string {
 	if bg == "" {
 		return text + strings.Repeat(" ", padding)
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color(bg)).Render(text + strings.Repeat(" ", padding))
+	fill := "\x1b[" + lipgloss.ColorProfile().Color(bg).Sequence(true) + "m"
+	text = strings.ReplaceAll(text, "\x1b[0m", "\x1b[0m"+fill)
+	return fill + text + strings.Repeat(" ", padding) + "\x1b[0m"
 }
 
 func rowColumns(lead, meta string, width int) string {

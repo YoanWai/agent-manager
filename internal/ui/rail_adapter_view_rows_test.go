@@ -891,3 +891,39 @@ func TestAWaitingRowIsNamedByTheWordsNotThePastedImage(t *testing.T) {
 		t.Fatalf("displayName = %q, want it to open with what was typed", got)
 	}
 }
+
+// The selected row's band runs under every cell of the row, not only up to
+// the first glyph whose style ends in a reset.
+func TestSelectedRowBandFillsTheWholeRow(t *testing.T) {
+	useTrueColor(t)
+	selections := map[string]func(*Model){
+		"backend":           func(m *Model) { m.selectGroupRow(t, "backend") },
+		"add-rate-limiting": func(m *Model) { m.selectSessionRow(t, "add-rate-limiting") },
+	}
+	for _, full := range []bool{false, true} {
+		for target, selectRow := range selections {
+			m := shotModel()
+			m.prefs.fullLayout = full
+			selectRow(m)
+			frame := preparedView(m)
+			railWidth := m.layout.displayedRail.Width
+			y := -1
+			for index, line := range strings.Split(frame, "\n") {
+				if strings.Contains(ansi.Strip(ansi.Cut(line, 0, 1+railWidth)), target) {
+					y = index
+					break
+				}
+			}
+			if y < 0 {
+				t.Fatalf("full=%v: no rail row shows %q", full, target)
+			}
+			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
+			for x := 1; x <= railWidth; x++ {
+				if !sameColor(backgrounds[y][x], hexColor(selectedHex())) {
+					t.Errorf("full=%v %s: col %d background = %v, want the selected band %s",
+						full, target, x, backgrounds[y][x], selectedHex())
+				}
+			}
+		}
+	}
+}
