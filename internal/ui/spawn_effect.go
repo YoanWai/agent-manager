@@ -265,12 +265,14 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		// New sessions start as starting, which attention excludes; clear so
 		// the row the spawn just created is on screen.
 		m.rail.ClearStatusFilter()
+		reveal := false
 		switch request.kind {
 		case spawnForm:
 			// A form opened later is a newer dialog the completion must not
 			// close; only the one that dispatched this spawn is closed.
 			if m.mode == modeForm && m.form.prompt.gen == request.composerGen && m.form.prompt.input.Value() == request.draft && m.form.Name() == request.draftName && m.form.Dir() == request.draftDir && len(m.form.prompt.attachments) == 0 {
 				m.mode = modeList
+				reveal = true
 			}
 		case spawnQuick:
 			if m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0 {
@@ -278,9 +280,14 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 		}
 		m.rebuildRows()
+		if reveal {
+			m.applyRailStateDecision(m.rail.RevealGroup(sess.Group))
+		}
+		if reveal || request.kind == spawnShell {
+			m.focusSession(sess.ID)
+		}
 		if request.kind == spawnShell {
 			m.ledger.terminalKeyAt = time.Now()
-			m.focusSession(sess.ID)
 		}
 		if result.label != nil {
 			m.reportErr(result.label.Error())
@@ -372,6 +379,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	if m.mode == modeGroupForm && m.groupForm.Gen() == request.gen && m.groupForm.Name() == request.draftName && m.groupForm.Dir() == request.draftDir {
 		m.clearErr()
 		m.mode = modeList
+		m.rail.SetHideEmptyGroups(false)
 		m.applyRailStateDecision(m.rail.RevealGroup(result.path))
 	}
 	return m.refreshCmd()

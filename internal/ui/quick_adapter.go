@@ -72,6 +72,9 @@ func (m *Model) openQuickMode() tea.Cmd {
 }
 
 func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
+	if m.rail.ShowArchived() {
+		return nil
+	}
 	names, index := m.cachedSpawnToolSelection()
 	if len(names) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")

@@ -164,7 +164,7 @@ func TestPanelFootKeysSitOnTheirLabels(t *testing.T) {
 			for _, foot := range feet {
 				labels[foot.Label] = true
 			}
-			if !labels["r"] || !labels["↵"] || !labels["x"] || !labels["esc"] {
+			if !labels["r"] || !labels["↵"] || !labels["x"] || !labels["esc/q"] {
 				t.Fatalf("width %d: the edge names r, ↵, x and esc at least, got %+v", width, feet)
 			}
 			for _, foot := range feet {

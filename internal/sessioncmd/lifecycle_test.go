@@ -3,6 +3,7 @@ package sessioncmd
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -495,5 +496,211 @@ func TestRelaunchKillsTheNewPaneWhenItsLaunchCannotPersist(t *testing.T) {
 	}
 	if h.driver.Exists(sess.ID) {
 		t.Fatal("the pane started for a launch the row never recorded is still running")
+	}
+}
+
+func TestLifecycleRefusesArchivedRelaunchFromStaleRow(t *testing.T) {
+	for _, operation := range []string{"revive", "restart"} {
+		for _, live := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/live=%v", operation, live), func(t *testing.T) {
+				h := newSessionHarness(t)
+				created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "archived"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				listed, err := h.store.Get(created.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !live {
+					if err := h.driver.Kill(listed.ID); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := h.store.SetArchived(listed.ID, true); err != nil {
+					t.Fatal(err)
+				}
+				lifecycle, err := NewLifecycle(harnessRuntime(t, h))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if operation == "revive" {
+					_, err = lifecycle.Revive(listed, PaneSize{Width: 80, Height: 24})
+				} else {
+					_, err = lifecycle.Restart(listed, PaneSize{Width: 80, Height: 24})
+				}
+				if err == nil || !strings.Contains(err.Error(), "archived; restore") {
+					t.Fatalf("error = %v", err)
+				}
+				stored, err := h.store.Get(listed.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !stored.Archived || !stored.AgentLaunchedAt.Equal(listed.AgentLaunchedAt) || stored.AgentSessionID != listed.AgentSessionID || h.driver.Exists(listed.ID) != live {
+					t.Fatalf("relaunch changed archived row: before=%+v after=%+v live=%v", listed, stored, h.driver.Exists(listed.ID))
+				}
+			})
+		}
+	}
+}
+
+func TestFailedGroupRestoreStopsOnlyPanesItStarted(t *testing.T) {
+	h := newSessionHarness(t)
+	group := "zone"
+	if err := h.store.CreateGroup(group, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	var members []store.Session
+	for _, name := range []string{"preexisting", "first", "missing"} {
+		created, err := h.sessions.Create("", CreateSessionOptions{Name: name, Group: &group, Directory: t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		row, err := h.store.Get(created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		members = append(members, row)
+	}
+	lifecycle, err := NewLifecycle(harnessRuntime(t, h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lifecycle.ArchiveForHuman(ArchiveSelection{Sessions: members, GroupPath: group}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range members {
+		members[i], err = h.store.Get(members[i].ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.driver.Create(members[0].ID, members[0].Cwd, "sleep 30", nil, 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(members[2].Cwd); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.store.SetSnapshot(members[1].ID, "ARCHIVED WORK"); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := lifecycle.RestoreForHuman(ArchiveSelection{Sessions: members, GroupPath: group}, PaneSize{Width: 80, Height: 24})
+	if err == nil {
+		t.Fatal("restore unexpectedly succeeded")
+	}
+	if !h.driver.Exists(members[0].ID) {
+		t.Error("rollback killed a preexisting pane")
+	}
+	if h.driver.Exists(members[1].ID) {
+		t.Error("failed group restore left newly started pane running while archived")
+	}
+	if snapshot, err := h.store.Snapshot(members[1].ID); err != nil || snapshot != "ARCHIVED WORK" {
+		t.Errorf("rollback overwrote archived work: %q %v", snapshot, err)
+	}
+
+	for _, row := range members {
+		stored, err := h.store.Get(row.ID)
+		if err != nil || !stored.Archived {
+			t.Errorf("archive membership changed: %+v %v", stored, err)
+		}
+	}
+	for _, row := range result.Sessions {
+		if row.ID == members[1].ID && row.Status != status.Dead {
+			t.Errorf("rollback result incorrectly reports %s", row.Status)
+		}
+	}
+}
+
+func TestRestoreFailureAfterPaneCreationStopsThePane(t *testing.T) {
+	for _, column := range []string{"status", "acked"} {
+		t.Run(column, func(t *testing.T) {
+			h := newSessionHarness(t)
+			if err := h.store.CreateGroup("zone", t.TempDir()); err != nil {
+				t.Fatal(err)
+			}
+			sess := store.Session{ID: "restore-failure", Name: "restore-failure", Tool: "echoer", Cwd: t.TempDir(), Group: "zone", Archived: true, Status: status.Dead}
+			if err := h.store.CreateSession(sess); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.store.SetGroupArchived("zone", true); err != nil {
+				t.Fatal(err)
+			}
+			db, err := sql.Open("sqlite", filepath.Join(h.sessions.configDir, "state.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			trigger := fmt.Sprintf("CREATE TRIGGER refuse_restore BEFORE UPDATE OF %s ON sessions WHEN NEW.id = 'restore-failure' AND NEW.%s = %s BEGIN SELECT RAISE(ABORT, 'restore write refused'); END", column, column, map[string]string{"status": "'starting'", "acked": "0"}[column])
+			if _, err := db.Exec(trigger); err != nil {
+				t.Fatal(err)
+			}
+			lifecycle, err := NewLifecycle(harnessRuntime(t, h))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = lifecycle.RestoreForHuman(ArchiveSelection{Sessions: []store.Session{sess}, GroupPath: "zone"}, PaneSize{80, 24})
+			if err == nil || !strings.Contains(err.Error(), "restore write refused") {
+				t.Fatalf("restore error: %v", err)
+			}
+			if h.driver.Exists(sess.ID) {
+				t.Fatal("failed restore left its newly created archived pane running")
+			}
+		})
+	}
+}
+
+func TestFailedGroupRestoreReportsRollbackFailure(t *testing.T) {
+	h := newSessionHarness(t)
+	if err := h.store.CreateGroup("zone", t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	first := store.Session{ID: "first-rollback", Name: "first", Tool: "echoer", Cwd: t.TempDir(), Group: "zone", Status: status.Dead, Archived: true}
+	second := store.Session{ID: "second-rollback", Name: "second", Tool: "echoer", Cwd: t.TempDir(), Group: "zone", Status: status.Dead, Archived: true}
+	for _, sess := range []store.Session{first, second} {
+		if err := h.store.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.store.SetGroupArchived("zone", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(second.Cwd); err != nil {
+		t.Fatal(err)
+	}
+	lifecycle, err := NewLifecycle(harnessRuntime(t, h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rollbackErr := errors.New("fixture cannot stop pane")
+	lifecycle.killPane = func(string) error { return rollbackErr }
+	result, err := lifecycle.RestoreForHuman(ArchiveSelection{Sessions: []store.Session{first, second}, GroupPath: "zone"}, PaneSize{80, 24})
+	if !errors.Is(err, rollbackErr) || !strings.Contains(err.Error(), "working directory no longer exists") || !strings.Contains(err.Error(), "stop failed restore of first") {
+		t.Fatalf("error lost original or cleanup failure: %v", err)
+	}
+	if !h.driver.Exists(first.ID) || len(result.Sessions) != 1 || result.Sessions[0].Status != status.Starting || !result.Sessions[0].Archived {
+		t.Fatalf("rollback result hid running archived pane: %+v", result)
+	}
+}
+
+func TestLifecycleRelaunchReportsDeletedRow(t *testing.T) {
+	h := newSessionHarness(t)
+	lifecycle, err := NewLifecycle(harnessRuntime(t, h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := store.Session{ID: "gone-restore"}
+	for _, operation := range []string{"revive", "restart", "restore"} {
+		switch operation {
+		case "revive":
+			_, err = lifecycle.Revive(sess, PaneSize{80, 24})
+		case "restart":
+			_, err = lifecycle.Restart(sess, PaneSize{80, 24})
+		case "restore":
+			_, err = lifecycle.RestoreForHuman(ArchiveSelection{Sessions: []store.Session{sess}}, PaneSize{80, 24})
+		}
+		if !errors.Is(err, store.ErrSessionGone) {
+			t.Errorf("%s deleted row: %v", operation, err)
+		}
 	}
 }

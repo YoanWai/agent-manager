@@ -2,7 +2,6 @@ package sessioncmd
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/testenv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 )
 
 func TestSessionsKillKeepsTheScreenAndReviveBringsItBack(t *testing.T) {
@@ -335,4 +335,32 @@ default_status = "idle"
 		t.Fatalf("Revive: %v", err)
 	}
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "resumed conv-logged")
+}
+
+func TestSessionsReviveRefusesArchivedSession(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create("", CreateSessionOptions{Name: "archived"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sessions.Kill("", created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sessions.Archive("", created.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	before, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.sessions.Revive("", created.ID); err == nil || !strings.Contains(err.Error(), "archived; restore") {
+		t.Fatalf("revive error = %v", err)
+	}
+	after, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.Archived || !after.AgentLaunchedAt.Equal(before.AgentLaunchedAt) || h.driver.Exists(created.ID) {
+		t.Fatalf("archived revive changed state: %+v", after)
+	}
 }

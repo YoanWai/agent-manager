@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	"github.com/YoanWai/agent-manager/internal/feed"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -83,6 +84,7 @@ func (m *Model) activeNotices() []uinotices.Notice {
 // bar as the panel's tail shows them.
 func (m *Model) noticesFrame() uinotices.Frame {
 	return uinotices.Frame{
+		CloseKey:    m.services.listKeys.Binding(keybind.Messages),
 		GlyphMode:   m.prefs.glyphMode,
 		Width:       m.layout.width,
 		Height:      m.layout.height,

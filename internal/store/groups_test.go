@@ -429,3 +429,81 @@ func TestRemoveGroupMatchesWildcardNamesLiterally(t *testing.T) {
 		t.Fatalf("removed = %v", removed)
 	}
 }
+
+func TestRestoreSubgroupClearsOnlyItsGroupAncestors(t *testing.T) {
+	for _, root := range []string{"a", "a_b", "a%b"} {
+		t.Run(root, func(t *testing.T) {
+			st := newTestStore(t)
+			selected := root + "/mid/target"
+			for _, path := range []string{root, root + "/mid", selected, selected + "/deep", selected + "-other", root + "/sibling"} {
+				if err := st.CreateGroup(path, ""); err != nil {
+					t.Fatal(err)
+				}
+				if err := st.CreateSession(sample(path, path)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := st.SetGroupArchived(root, true); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.SetGroupArchived(selected, false); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{root, root + "/mid", selected, selected + "/deep"} {
+				if groupArchived(t, st, path) {
+					t.Errorf("restored group ancestry remains archived: %s", path)
+				}
+			}
+			for _, path := range []string{root, root + "/mid", selected + "-other", root + "/sibling"} {
+				if !sessionArchived(t, st, path) {
+					t.Errorf("unrelated session restored: %s", path)
+				}
+			}
+			for _, path := range []string{selected + "-other", root + "/sibling"} {
+				if !groupArchived(t, st, path) {
+					t.Errorf("unrelated group restored: %s", path)
+				}
+			}
+			for _, path := range []string{selected, selected + "/deep"} {
+				if sessionArchived(t, st, path) {
+					t.Errorf("selected session still archived: %s", path)
+				}
+			}
+		})
+	}
+}
+
+func TestRestoreSubgroupAncestorFailureRollsBack(t *testing.T) {
+	st := newTestStore(t)
+	for _, path := range []string{"a", "a/b", "a/b/c"} {
+		if err := st.CreateGroup(path, ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.CreateSession(sample(path, path)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.SetGroupArchived("a", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.db.Exec(`CREATE TRIGGER refuse_ancestor BEFORE UPDATE OF archived ON groups WHEN OLD.name='a' AND NEW.archived=0 BEGIN SELECT RAISE(ABORT,'ancestor refused'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetGroupArchived("a/b", false); err == nil || !strings.Contains(err.Error(), "ancestor refused") {
+		t.Fatalf("ancestor refusal: %v", err)
+	}
+	for _, path := range []string{"a", "a/b", "a/b/c"} {
+		if !groupArchived(t, st, path) || !sessionArchived(t, st, path) {
+			t.Errorf("partial restore committed: %s", path)
+		}
+	}
+	if _, err := st.db.Exec(`DROP TRIGGER refuse_ancestor`); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetGroupArchived("a/b", false); err != nil {
+		t.Fatal(err)
+	}
+	if groupArchived(t, st, "a") || sessionArchived(t, st, "a/b") || !sessionArchived(t, st, "a") {
+		t.Fatal("retry did not preserve ancestor session state")
+	}
+}

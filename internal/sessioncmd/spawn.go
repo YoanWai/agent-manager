@@ -304,10 +304,9 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		return "", "", err
 	}
 	byName := make(map[string]store.Group, len(groups))
-	archived := make(map[string]bool, len(groups))
+	archived := store.ArchivedGroups(groups)
 	for _, candidate := range groups {
 		byName[candidate.Name] = candidate
-		archived[candidate.Name] = candidate.Archived
 	}
 	if requestedGroup != nil {
 		group = strings.TrimSpace(*requestedGroup)

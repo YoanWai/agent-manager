@@ -138,6 +138,9 @@ func TestOpenQuickModeDefersSettingsReadAndGuardsDefaults(t *testing.T) {
 func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	if err := m.services.store.SetKeys(m.services.listKeys.With(keybind.Revive, bindingOf(t, "U")).With(keybind.Restart, bindingOf(t))); err != nil {
+		t.Fatal(err)
+	}
 	createSession(t, m, "gone", t.TempDir(), "")
 
 	sess := m.sessionRows()[0]
@@ -150,7 +153,7 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	m.quick.input.SetValue("hello?")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
-	if m.errBar.text != "session is dead - press v to revive or R to restart" {
+	if m.errBar.text != "session is dead - press U to revive" {
 		t.Fatalf("err = %q", m.errBar.text)
 	}
 	if !m.quick.active {

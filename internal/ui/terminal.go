@@ -107,6 +107,9 @@ func terminalDirectoryCmd(request terminalDirectoryRequest, reader terminalDirec
 }
 
 func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Model, tea.Cmd) {
+	if m.rail.ShowArchived() {
+		return m, nil
+	}
 	request, ok := m.captureTerminalDirectory(terminalDirectorySpawn)
 	if !ok {
 		m.reportErr("no directory to open a terminal in")
