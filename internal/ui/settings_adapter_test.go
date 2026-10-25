@@ -237,7 +237,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	}
 
 	opened = ""
-	x, y := paintedCell(t, m, "enter/esc")
+	x, y := paintedCell(t, m, "save and close")
 	m, cmd = leftClickCmd(m, x, y)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
