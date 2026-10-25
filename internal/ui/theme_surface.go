@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -183,14 +184,11 @@ func (m *Model) seamCell(railRule bool) string {
 }
 
 // paint pads a possibly-styled line to an exact width and fills every cell
-// with bg. Inner SGR resets emitted by per-segment renders would drop the
-// fill partway across, so each reset re-applies it.
+// with bg.
 func paint(s string, width int, bg string) string {
 	if bg == "" {
 		return plain(s, width)
 	}
-	fill := bgSeq(bg)
-	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+fill)
 	w := ansi.StringWidth(s)
 	if w > width {
 		s = ansi.Truncate(s, width, "…")
@@ -199,7 +197,7 @@ func paint(s string, width int, bg string) string {
 	if w < width {
 		s += strings.Repeat(" ", width-w)
 	}
-	return fill + s + "\x1b[0m"
+	return presentation.Fill(s, bg)
 }
 
 // plain pads a line to width without filling it, leaving it on the backdrop.
