@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -1110,11 +1111,12 @@ func TestMoreCounterOnlyScrolls(t *testing.T) {
 }
 
 // A trackpad flick that is still arriving when ctrl+q leaves focus must not
-// walk the list selection; once it has settled, a deliberate scroll still
-// works normally. See issue #727.
+// walk the list selection, down to its slow last notch; once it has
+// settled, a deliberate scroll moves the selection as before (#727).
 func TestLeavingFocusSwallowsTheFlickStillArriving(t *testing.T) {
+	t.Parallel()
 	m := buildModel(t)
-	for _, name := range []string{"one", "two", "three"} {
+	for _, name := range []string{"one", "two", "three", "four"} {
 		createSession(t, m, name, t.TempDir(), "")
 	}
 	m.selectSessionRow(t, "two")
@@ -1125,7 +1127,6 @@ func TestLeavingFocusSwallowsTheFlickStillArriving(t *testing.T) {
 	if m.mode != modeFocus {
 		t.Fatalf("enter did not focus, mode = %v", m.mode)
 	}
-
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
 	m = updated.(*Model)
 	m.drainEffects(t)
@@ -1135,26 +1136,44 @@ func TestLeavingFocusSwallowsTheFlickStillArriving(t *testing.T) {
 	before := m.rail.Cursor()
 
 	wheel := tea.MouseMsg{Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}
+	// Leaving focus stamped the clock; the notches that follow run on the mouse
+	// context's clock too, so a slow runner cannot stretch the gap past the
+	// settle gap between the stamp and the first notch.
+	if m.mouse.flickAt.IsZero() {
+		t.Fatal("leaving focus should stamp the flick clock")
+	}
 	for i := 0; i < 2; i++ {
-		updated, _ = m.handleMouse(wheel)
+		updated, _ = m.listWheel(wheel, uirail.MouseContext{Now: m.mouse.flickAt.Add(10 * time.Millisecond)})
 		m = updated.(*Model)
 	}
 	if m.rail.Cursor() != before {
-		t.Fatalf("a scroll event right after leaving focus moved the cursor from %d to %d", before, m.rail.Cursor())
+		t.Fatalf("a notch right after leaving focus moved the cursor from %d to %d", before, m.rail.Cursor())
 	}
 
-	time.Sleep(220 * time.Millisecond)
-	updated, _ = m.handleMouse(wheel)
-	m = updated.(*Model)
-	if m.rail.Cursor() != before {
-		t.Fatalf("the slow last event of a flick moved the cursor from %d to %d", before, m.rail.Cursor())
+	// The clock is the mouse context's, so the gaps are exact rather than
+	// a sleep the scheduler can stretch past the settle gap.
+	left := time.Unix(100, 0)
+	m.mouse.flickAt = left
+	wheelAt := func(now time.Time) {
+		updated, _ := m.listWheel(wheel, uirail.MouseContext{Now: now})
+		m = updated.(*Model)
 	}
-
-	time.Sleep(wheelSuppressGap + 20*time.Millisecond)
-	updated, _ = m.handleMouse(wheel)
-	m = updated.(*Model)
+	for _, gap := range []time.Duration{30 * time.Millisecond, 40 * time.Millisecond, 220 * time.Millisecond} {
+		wheelAt(m.mouse.flickAt.Add(gap))
+		if m.rail.Cursor() != before {
+			t.Fatalf("a notch %v after the previous one moved the cursor from %d to %d", gap, before, m.rail.Cursor())
+		}
+	}
+	wheelAt(m.mouse.flickAt.Add(wheelSettleGap + time.Millisecond))
 	if m.rail.Cursor() != before+1 {
-		t.Fatalf("a deliberate scroll once the flick has settled should move the cursor, got %d want %d", m.rail.Cursor(), before+1)
+		t.Fatalf("a scroll once the flick has settled should move the cursor, got %d want %d", m.rail.Cursor(), before+1)
+	}
+	if !m.mouse.flickAt.IsZero() {
+		t.Fatal("a settled flick should stop stamping notches")
+	}
+	wheelAt(left.Add(time.Hour))
+	if m.rail.Cursor() != before+2 {
+		t.Fatalf("a later scroll should move the cursor, got %d want %d", m.rail.Cursor(), before+2)
 	}
 }
 
