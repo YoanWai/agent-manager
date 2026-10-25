@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	"strings"
 
@@ -12,7 +13,7 @@ import (
 // not half blocks: no half block fits the corner over the half-width bleed
 // column at the height of the run beside it, so that cell always stepped.
 func (m *Model) railTopRow(paneWidth, width int) string {
-	if paneWidth < 2 || paneWidth >= width {
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic || paneWidth < 2 || paneWidth >= width {
 		return uitheme.Paint(uitheme.Hrule(width), width, uitheme.BackdropHex())
 	}
 	fill := lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.PanelHex()))

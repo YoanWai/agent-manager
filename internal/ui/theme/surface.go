@@ -1,6 +1,7 @@
 package theme
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -52,8 +53,6 @@ func Paint(s string, width int, bg string) string {
 	if bg == "" {
 		return Plain(s, width)
 	}
-	fill := BgSeq(bg)
-	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+fill)
 	w := ansi.StringWidth(s)
 	if w > width {
 		s = ansi.Truncate(s, width, "…")
@@ -62,7 +61,7 @@ func Paint(s string, width int, bg string) string {
 	if w < width {
 		s += strings.Repeat(" ", width-w)
 	}
-	return fill + s + "\x1b[0m"
+	return presentation.Fill(s, bg)
 }
 
 // Plain pads a line to width without filling it, leaving it on the backdrop.

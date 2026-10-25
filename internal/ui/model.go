@@ -4,6 +4,7 @@ import (
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
@@ -99,6 +100,11 @@ type mouseCapture struct {
 	// pressed is what the last left press landed on, which its release
 	// clicks when it comes back up over the same one.
 	pressed clickTarget
+	// flickAt is the last wheel notch of a trackpad flick that was still
+	// arriving when focus left, or zero once it has settled. The notches
+	// belong to the session just left, so the list swallows them until the
+	// first gap wider than wheelSettleGap.
+	flickAt time.Time
 }
 
 type environment struct {

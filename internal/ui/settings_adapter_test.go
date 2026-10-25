@@ -237,7 +237,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	}
 
 	opened = ""
-	x, y := paintedCell(t, m, "save and close")
+	x, y := paintedCell(t, m, "enter/esc")
 	m, cmd = leftClickCmd(m, x, y)
 	if cmd != nil {
 		m.applyCmd(t, cmd)
@@ -1614,7 +1614,7 @@ func TestSymbolsMouseSaveUsesPaintedRows(t *testing.T) {
 		if !paints(m, "Compatible") {
 			t.Fatal("symbols label did not update")
 		}
-		x, y := paintedCell(t, m, "save and close")
+		x, y := paintedCell(t, m, "enter/esc")
 		m, save := leftClickCmd(m, x, y)
 		m.applyCmd(t, save)
 		if raw, _ := m.services.store.Setting(uisettings.GlyphModeSetting); raw != "basic" || m.settingsOpen() {

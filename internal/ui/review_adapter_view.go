@@ -184,5 +184,5 @@ func (m *Model) diffFooter() legend {
 	for _, section := range m.review.Legend() {
 		sections = append(sections, legendSection{Title: section.Title, Quiet: section.Quiet, Pairs: section.Pairs})
 	}
-	return paintLegend(sections, m.layout.width)
+	return paintLegend(sections, m.layout.width, m.prefs.glyphMode)
 }

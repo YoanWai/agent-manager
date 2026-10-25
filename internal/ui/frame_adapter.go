@@ -69,8 +69,8 @@ func (m *Model) renderFrame() string {
 
 // paintLegend renders a legend as the app's footer, one tier per line where
 // the terminal allows it and the tail marked when it does not.
-func paintLegend(sections []legendSection, width int) legend {
-	return uiframe.PaintLive(sections, width)
+func paintLegend(sections []legendSection, width int, mode presentation.GlyphMode) legend {
+	return uiframe.PaintLive(sections, width, mode)
 }
 
 // placeKeys records a legend's keys painted with its first row at y and
@@ -228,7 +228,7 @@ func (r cardRect) bodyAt(x, y int) (col, line int, ok bool) {
 }
 
 func (m *Model) cardSizing(hint [][2]string) uiframe.CardSizing {
-	sizing := uiframe.CardSizing{Cols: m.layout.width, Hint: hint}
+	sizing := uiframe.CardSizing{Mode: m.prefs.glyphMode, Cols: m.layout.width, Hint: hint}
 	if m.errBar.text != "" {
 		sizing.Status = m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	}
@@ -260,7 +260,7 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 // CardSized floats a modal at an explicit width, for the key map, whose
 // lines are too long to read inside the default column.
 func (m *Model) CardSized(width int, title, body string, hint [][2]string) string {
-	box, hits := uiframe.Box(m.dialogRenderContext(), uiframe.LiveChrome(), width, title, body, hint, uitheme.Paint)
+	box, hits := uiframe.Box(m.dialogRenderContext(), uiframe.LiveChrome(m.prefs.glyphMode), width, title, body, hint, uitheme.Paint)
 	frame := m.centerOnBackdrop(box)
 	card := &m.layout.card
 	card.bodyTop, card.bodyLeft, card.bodyWidth = card.top+uiframe.CardBodyRow, card.left+uiframe.CardBodyColumn, uiframe.CardInnerWidth(width)
@@ -312,6 +312,7 @@ func (m *Model) footer() legend {
 // footerOf is the footer's height rule, over the base screen's tiers.
 func (m *Model) footerOf() uiframe.Footer {
 	return uiframe.Footer{
+		Mode:       m.prefs.glyphMode,
 		List:       m.listTiers(),
 		Width:      m.layout.width,
 		FullLayout: m.prefs.fullLayout,
@@ -375,7 +376,7 @@ func (m *Model) listGlyph(actions ...string) string {
 		}
 		joined += glyph
 	}
-	return joined
+	return presentation.KeyLabel(m.prefs.glyphMode, joined)
 }
 
 func (m *Model) messagesAlert() (glyph, label string) {

@@ -43,7 +43,7 @@ func (h helpHost) Styles() uihelp.Styles { return uihelp.CurrentStyles() }
 func (h helpHost) HintRows(hints [][2]string, width int) int {
 	// One untitled run, for the foot of a modal card where the tier's
 	// subject is the card's own title.
-	return lipgloss.Height(uiframe.LegendInline(hints, width, uiframe.LiveCap()))
+	return lipgloss.Height(uiframe.LegendInline(hints, width, uiframe.LiveCap(h.prefs.glyphMode)))
 }
 
 func (h helpHost) StatusShown() bool { return h.errBar.text != "" }

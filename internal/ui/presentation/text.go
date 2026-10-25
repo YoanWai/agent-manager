@@ -26,6 +26,27 @@ func PadRight(s string, width int) string {
 	return s
 }
 
+// ColorSequence is the raw SGR that sets hex as the background or the
+// foreground under the live color profile, so a 256-color terminal gets an
+// indexed sequence. It is empty when the profile has no colors.
+func ColorSequence(hex string, background bool) string {
+	sequence := lipgloss.ColorProfile().Color(hex).Sequence(background)
+	if sequence == "" {
+		return ""
+	}
+	return "\x1b[" + sequence + "m"
+}
+
+// Fill paints bg under every cell of a styled line. Each segment's own
+// reset would end the fill partway across, so every reset sets it again.
+func Fill(s, bg string) string {
+	fill := ColorSequence(bg, true)
+	if fill == "" {
+		return s
+	}
+	return fill + strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+fill) + "\x1b[0m"
+}
+
 func Divider(label string, width int, section, rule lipgloss.Style) string {
 	head := section.Render("▍"+label) + " "
 	dashes := width - ansi.StringWidth(label) - 2

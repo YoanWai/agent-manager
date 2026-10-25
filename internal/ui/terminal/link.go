@@ -77,13 +77,13 @@ func DefaultOpenBrowser(target string) error {
 // waiting for it.
 func DefaultOpener(url string) error {
 	if runtime.GOOS == "windows" {
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		return StartReaped(exec.Command("rundll32", "url.dll,FileProtocolHandler", url))
 	}
 	opener := "xdg-open"
 	if runtime.GOOS == "darwin" {
 		opener = "open"
 	}
-	return exec.Command(opener, url).Start()
+	return StartReaped(exec.Command(opener, url))
 }
 
 func OpenBrowserWith(goos, browser, target string, run func(*exec.Cmd) error) error {

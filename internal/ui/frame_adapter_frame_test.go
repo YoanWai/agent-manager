@@ -231,7 +231,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
 		release:  uirelease.State{Latest: "v0.41.0", Version: "0.40.0"},
 	}
-	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160).Text
+	bar := paintLegend([]legendSection{waiting.viewLegend()}, 160, presentation.DefaultGlyphMode).Text
 	if !strings.Contains(bar, uitheme.LegendAlertStyle().Render("M unread")) {
 		t.Fatalf("waiting messages should use the working color:\n%s", bar)
 	}
@@ -240,7 +240,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 		release:  uirelease.State{Version: "0.40.0"},
 		notices:  noticesPanel{Panel: uinotices.NewPanel(map[string]bool{uinotices.Welcome: true, uinotices.ArrowStep: true})},
 	}
-	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160).Text)
+	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160, presentation.DefaultGlyphMode).Text)
 	if strings.Contains(idleBar, "unread") {
 		t.Fatalf("an empty panel should leave the messages key off:\n%s", idleBar)
 	}
@@ -256,7 +256,7 @@ func TestRootLegendKeepsItsTiersAndHits(t *testing.T) {
 		Hint:   "a hint",
 		Pairs:  [][2]string{{"r", "rename"}},
 	}}
-	painted := paintLegend(sections, 200)
+	painted := paintLegend(sections, 200, presentation.DefaultGlyphMode)
 	plain := ansi.Strip(painted.Text)
 	for _, want := range []string{"Session", "p quick prompt mode", "M unread", "a hint", "r rename"} {
 		if !strings.Contains(plain, want) {

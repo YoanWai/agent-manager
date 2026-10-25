@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestPadRightUsesDisplayWidthAndKeepsStyledRowsClosed(t *testing.T) {
@@ -107,5 +108,23 @@ func TestFollowHoldsTheWindowWhileTheCursorIsInside(t *testing.T) {
 		if got := Follow(tc.first, tc.cursor, tc.count, tc.visible); got != tc.want {
 			t.Errorf("Follow(%d, %d, %d, %d) = %d, want %d", tc.first, tc.cursor, tc.count, tc.visible, got, tc.want)
 		}
+	}
+}
+
+func TestFillSetsTheBackgroundAgainAfterEveryReset(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+	line := "\x1b[1mname\x1b[0m meta \x1b[2mdim\x1b[0m"
+
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	fill := "\x1b[48;2;35;40;48m"
+	want := fill + "\x1b[1mname\x1b[0m" + fill + " meta \x1b[2mdim\x1b[0m" + fill + "\x1b[0m"
+	if got := Fill(line, "#232830"); got != want {
+		t.Fatalf("filled line = %q, want %q", got, want)
+	}
+
+	lipgloss.SetColorProfile(termenv.Ascii)
+	if got := Fill(line, "#232830"); got != line {
+		t.Fatalf("a profile with no colors changed the line to %q", got)
 	}
 }

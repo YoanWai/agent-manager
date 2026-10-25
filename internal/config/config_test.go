@@ -557,6 +557,22 @@ func TestOmpDefaults(t *testing.T) {
 	}
 }
 
+func TestAntigravityTakesTheModelAndEffort(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := cfg.Tools["antigravity"]
+	if tool.Catalog != "antigravity" || tool.CatalogCommand != "agy models" || tool.MinimumVersion != "1.3.4" {
+		t.Fatalf("antigravity catalog = %+v", tool)
+	}
+	chosen := tool.WithChoice(Choice{Model: "gemini-3.8-flash", Effort: "low"})
+	flags := ` --model 'gemini-3.8-flash' --effort 'low'`
+	if chosen.Command != "agy"+flags || chosen.ReviveCommand != "agy -c"+flags || chosen.ResumeByIDCommand != "agy --conversation {id}"+flags {
+		t.Fatalf("antigravity launch lines = %q, %q, %q", chosen.Command, chosen.ReviveCommand, chosen.ResumeByIDCommand)
+	}
+}
+
 func TestCursorDefaults(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {

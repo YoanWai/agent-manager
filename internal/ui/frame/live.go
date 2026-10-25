@@ -1,12 +1,14 @@
 package frame
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 )
 
-func LiveCap() Cap {
+func LiveCap(mode presentation.GlyphMode) Cap {
 	return Cap{
+		Mode:    mode,
 		Key:     uitheme.KeyStyle(),
 		Label:   uitheme.LegendLabelStyle(),
 		Muted:   uitheme.MutedStyle(),
@@ -30,18 +32,18 @@ func Separator() string { return uitheme.SubtleStyle().Render(" · ") }
 // dialog reads as the app's own surface rather than as a box drawn around it,
 // the accent its title reads in, the block fill inside it, and the caps on its
 // foot.
-func LiveChrome() Chrome {
+func LiveChrome(mode presentation.GlyphMode) Chrome {
 	return Chrome{
 		Border: lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.Mix(uitheme.Current().Border, uitheme.Current().Accent, 0.35))),
 		Title:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
 		Block:  uitheme.BlockHex(),
-		Cap:    LiveCap(),
+		Cap:    LiveCap(mode),
 	}
 }
 
 // PaintLive renders the app's footer, one tier per line where the terminal
 // allows it and the tail marked when it does not.
-func PaintLive(sections []Section, width int) Legend {
+func PaintLive(sections []Section, width int, mode presentation.GlyphMode) Legend {
 	badge, quiet := TitleStyles()
-	return PaintLegend(sections, width, LiveCap(), badge, quiet, Separator())
+	return PaintLegend(sections, width, LiveCap(mode), badge, quiet, Separator())
 }

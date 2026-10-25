@@ -295,11 +295,19 @@ func (m *Model) listMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))
 }
 
+// wheelSettleGap is the pause between two wheel notches that ends a
+// trackpad flick. A flick keeps sending notches after the fingers lift and
+// slows down at the end. In iTerm2 debug logs its last gaps run about 180
+// to 220ms, so this covers that tail with some margin. Ending on a gap
+// rather than after a fixed time covers a flick of any length without
+// eating the next deliberate scroll.
+const wheelSettleGap = 300 * time.Millisecond
+
 // listWheel scrolls the rail, or the list open over the quick bar's
 // prompt, which owns the wheel the way it owns ↑↓. A resize keeps both
-// still.
+// still, and so does a flick that was still arriving when focus left.
 func (m *Model) listWheel(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model, tea.Cmd) {
-	if m.layout.split.ResizeMode || m.layout.split.Dragging {
+	if m.layout.split.ResizeMode || m.layout.split.Dragging || m.swallowsFlick(ctx.Now) {
 		return m, nil
 	}
 	if !m.quickPicking() {
@@ -309,6 +317,22 @@ func (m *Model) listWheel(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 		return m.handleQuickKey(arrow)
 	}
 	return m, nil
+}
+
+// swallowsFlick reports whether a wheel notch at now still belongs to the
+// flick that was arriving when focus left, and makes it the notch the next
+// gap is measured from.
+func (m *Model) swallowsFlick(now time.Time) bool {
+	last := m.mouse.flickAt
+	if last.IsZero() {
+		return false
+	}
+	if now.Sub(last) > wheelSettleGap {
+		m.mouse.flickAt = time.Time{}
+		return false
+	}
+	m.mouse.flickAt = now
+	return true
 }
 
 func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model, tea.Cmd) {

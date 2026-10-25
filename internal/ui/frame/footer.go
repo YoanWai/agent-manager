@@ -29,13 +29,14 @@ type Focus struct {
 // transient tier pads to, and the full screen layout has no preview box to
 // hold still.
 type Footer struct {
+	Mode       presentation.GlyphMode
 	List       []Section
 	Width      int
 	FullLayout bool
 	ArrowStep  bool
 }
 
-func (f Footer) ListLegend() Legend { return PaintLive(f.List, f.Width) }
+func (f Footer) ListLegend() Legend { return PaintLive(f.List, f.Width, f.Mode) }
 
 // Transient paints one tier at the list footer's height: the footer sets the
 // preview box, and a box that moves resizes every session's pane, which costs
@@ -43,7 +44,7 @@ func (f Footer) ListLegend() Legend { return PaintLive(f.List, f.Width) }
 // screen layout has no preview box to hold still, so a tier there takes the
 // one row it needs and hands the rest to the body.
 func (f Footer) Transient(tier Section) Legend {
-	painted := PaintLive([]Section{tier}, f.Width)
+	painted := PaintLive([]Section{tier}, f.Width, f.Mode)
 	if f.FullLayout {
 		return painted
 	}

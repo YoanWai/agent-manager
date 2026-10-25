@@ -77,8 +77,7 @@ type Legend struct {
 // a tier's name as its badge, quietTitle paints a secondary tier's, and sep
 // joins the bindings of a secondary tier.
 func PaintLegend(sections []Section, width int, cap Cap, title, quietTitle func(string) string, sep string) Legend {
-	indent := strings.Repeat(" ", RailGutter)
-	dot := sep
+	indent := strings.Repeat(" ", min(RailGutter, max(width, 0)))
 	more := cap.Muted.Render("…")
 
 	var out []string
@@ -94,18 +93,18 @@ func PaintLegend(sections []Section, width int, cap Cap, title, quietTitle func(
 				maxRows--
 			}
 		}
-		head := title(section.Title)
+		heading := title(section.Title)
 		if section.Quiet {
-			head = quietTitle(section.Title)
+			heading = quietTitle(section.Title)
 		}
-		column := max(TitleColumn, ansi.StringWidth(head)+Gap)
-		lineStart := indent + presentation.PadRight(head, column)
+		column := min(max(TitleColumn, ansi.StringWidth(heading)+Gap), max(width-ansi.StringWidth(indent)-2, 0))
+		head := indent + presentation.PadRight(heading, column)
 		cont := indent + strings.Repeat(" ", column)
-		line, lineWidth, started := lineStart, ansi.StringWidth(lineStart), false
+		line, lineWidth, started := head, ansi.StringWidth(head), false
 		cut := false
 		gap := strings.Repeat(" ", Gap)
 		if section.Quiet {
-			gap = dot
+			gap = sep
 		}
 		gapWidth := ansi.StringWidth(gap)
 		for _, part := range parts {
@@ -120,25 +119,35 @@ func PaintLegend(sections []Section, width int, cap Cap, title, quietTitle func(
 			switch {
 			case !started:
 				x = lineWidth
-				line, lineWidth, started = line+part.Text, lineWidth+partWidth, true
+				started = true
 			case lineWidth+gapWidth+partWidth <= avail:
 				x = lineWidth + gapWidth
-				line += gap + part.Text
-				lineWidth += gapWidth + partWidth
+				line += gap
 			case len(out) < maxRows-1:
 				out = append(out, line)
 				x = ansi.StringWidth(cont)
-				line, lineWidth = cont+part.Text, x+partWidth
+				line = cont
 			default:
 				cut = true
 			}
 			if cut {
 				break
 			}
-			hits = hits.Add(x, x+partWidth, len(out), part.Label)
+			// A wrapped part is the first part on its new row, too.
+			avail = width
+			if len(out) >= maxRows-1 {
+				avail = width - 1 - ansi.StringWidth(more)
+			}
+			text := ansi.Truncate(part.Text, max(avail-x, 0), "…")
+			partWidth = ansi.StringWidth(text)
+			line += text
+			lineWidth = x + partWidth
+			if partWidth > 0 {
+				hits = hits.Add(x, lineWidth, len(out), part.Label)
+			}
 		}
 		if cut {
-			line += " " + more
+			line += ansi.Truncate(" "+more, max(width-lineWidth, 0), "")
 		}
 		out = append(out, line)
 	}

@@ -103,12 +103,12 @@ func TestPresentationDependsOnNothingInTheModule(t *testing.T) {
 	}
 }
 
-func TestThemeDependsOnNothingInTheModule(t *testing.T) {
+func TestThemeDependenciesStayWithinBoundary(t *testing.T) {
 	if err := checkBoundary(themeBoundary); err != nil {
 		t.Fatal(err)
 	}
-	if err := checkBoundaryDependencies(themeBoundary, []string{module + "/internal/ui/presentation"}); err == nil {
-		t.Fatal("the palette accepted a dependency")
+	if err := checkBoundaryDependencies(themeBoundary, []string{module + "/internal/tmux"}); err == nil {
+		t.Fatal("the palette accepted a runtime dependency")
 	}
 }
 

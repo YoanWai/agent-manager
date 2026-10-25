@@ -442,6 +442,13 @@ func (d *Form) handleModelKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, bool) {
 		return nil, true
 	case "shift+tab":
 		return nil, false
+	case "ctrl+o":
+		if ch.sugg.open {
+			ch.sugg = modelSuggest{}
+		} else {
+			ch.openModelList(h, toolName)
+		}
+		return nil, true
 	case "left", "right":
 		ch.filter, cmd = ch.filter.Update(msg)
 		return cmd, true
@@ -488,6 +495,10 @@ func (d *Form) Click(h FormHost, line int) FormRequest {
 		return d.cycleTool(h, 1)
 	case FieldWorktree:
 		return FormRequest{Toggle: true}
+	case FieldModel:
+		if !ch.sugg.open {
+			ch.openModelList(h, toolName)
+		}
 	default:
 		d.stepChoice(h, 1)
 	}
@@ -563,7 +574,6 @@ func (d *Form) FocusField(h FormHost, field Field) {
 		d.name.Focus()
 	case FieldModel:
 		d.choice.filter.Focus()
-		d.choice.openModelList(h, d.Tool())
 	case FieldEffort:
 		d.choice.typedEffort.Focus()
 	case FieldDir:

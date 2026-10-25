@@ -534,15 +534,7 @@ func (m *Model) attachDone(msg attachDoneMsg) tea.Cmd {
 // this machine has and to observe the launch instead of running it.
 var (
 	lookPath    = exec.LookPath
-	startEditor = func(cmd *exec.Cmd) error {
-		if err := cmd.Start(); err != nil {
-			return err
-		}
-		// The manager runs for days at a time; without this every o would
-		// leave the finished editor process behind holding its pipes.
-		go func() { _ = cmd.Wait() }()
-		return nil
-	}
+	startEditor = uiterminal.StartReaped
 )
 
 type editorDoneMsg struct {

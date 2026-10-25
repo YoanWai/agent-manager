@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -129,5 +130,5 @@ func (r renderer) menuGlyph(action ActionKind) string {
 	if binding == "" {
 		return ""
 	}
-	return r.ctx.ListKeys.Binding(binding).Glyph("/")
+	return presentation.KeyLabel(r.ctx.GlyphMode, r.ctx.ListKeys.Binding(binding).Glyph("/"))
 }
