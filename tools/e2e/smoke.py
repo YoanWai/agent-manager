@@ -245,7 +245,7 @@ def feature_flows(sandbox, pane):
                  lambda frame: 'terminal-' not in rail_text(frame))
     sandbox.key('Escape')
     sandbox.wait('rail-search-cleared', sandbox.capture,
-                 lambda frame: 'terminal-' in rail_text(frame) and 'Group' in frame and '⌕ zz' not in frame)
+                 lambda frame: 'terminal-' in rail_text(frame) and 'Root' in frame and '⌕ zz' not in frame)
     sandbox.key('Down')
     sandbox.wait('rail-group-selected', sandbox.capture,
                  lambda frame: 'e2e-group' in '\n'.join(line[35:] for line in frame.splitlines()))

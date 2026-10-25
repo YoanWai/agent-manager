@@ -2,12 +2,12 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"strings"
+
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
-	"strings"
 )
 
 // shellPromptHint refuses to write into a shell. SendText pastes and then
@@ -67,14 +67,14 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		m.reportErr(shellPromptHint(sess.Name))
 		return m, nil
 	}
-	engine, driver := m.services.engine, m.services.tmux
+	engine, driver, st := m.services.engine, m.services.tmux, m.services.store
 	return m, func() tea.Msg {
 		// No caller context reaches a command, so one Driver call's bound
 		// covers the probe and the capture together.
 		ctx, cancel := context.WithTimeout(context.Background(), tmux.CommandTimeout)
 		defer cancel()
 		if !driver.ExistsContext(ctx, sess.ID) {
-			return errMsg{errors.New(deadSessionHint)}
+			return errMsg{deadSessionError(st, sess.ID)}
 		}
 		pane, err := driver.CapturePaneHistoryContext(ctx, sess.ID, quoteHistoryLines)
 		if err != nil {

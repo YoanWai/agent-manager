@@ -256,6 +256,14 @@ func (s *Store) deleteGroups(groups []Group, selected func(Group) bool) ([]strin
 	return removed, nil
 }
 
+func ArchivedGroups(groups []Group) map[string]bool {
+	archived := make(map[string]bool, len(groups))
+	for _, group := range groups {
+		archived[group.Name] = group.Archived
+	}
+	return archived
+}
+
 // EffectivelyArchived reports whether a group path counts as archived,
 // either directly or because an ancestor group was archived as a whole.
 func EffectivelyArchived(archived map[string]bool, path string) bool {
@@ -346,7 +354,8 @@ func (s *Store) SetGroupEnvironment(name, environment string) error {
 }
 
 // SetGroupArchived flips the archived flag on a group, every descendant
-// group, and every session in the subtree, in one transaction.
+// group, and every session in the subtree. Restoring also clears ancestor
+// group flags so restored rows have a visible home.
 func (s *Store) SetGroupArchived(path string, archived bool) error {
 	if path == "" {
 		return fmt.Errorf("cannot archive the root group")
@@ -368,5 +377,19 @@ func (s *Store) SetGroupArchived(path string, archived bool) error {
 		flag, path, likePath); err != nil {
 		return err
 	}
+	if !archived {
+		if err := unarchiveGroupAncestors(tx, path); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+func unarchiveGroupAncestors(tx *sql.Tx, path string) error {
+	var err error
+	eachAncestor(path, func(ancestor string) bool {
+		_, err = tx.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, ancestor)
+		return err == nil
+	})
+	return err
 }

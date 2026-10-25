@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/deps"
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
@@ -487,7 +488,7 @@ func (m *Model) handleReviewPreferences(msg reviewPreferencesMsg) (tea.Model, te
 }
 
 func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	ctx := uireview.KeyContext{CodeHeight: m.diffCodeHeight(), PersistenceAvailable: m.services.store != nil}
+	ctx := uireview.KeyContext{CodeHeight: m.diffCodeHeight(), PersistenceAvailable: m.services.store != nil, HelpKey: m.services.listKeys.Binding(keybind.Help)}
 	if sess, ok := m.diffSession(); ok && m.isShell(sess.Tool) {
 		ctx.IsShell = true
 		ctx.SendError = shellPromptHint(sess.Name)

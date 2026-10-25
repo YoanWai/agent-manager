@@ -43,14 +43,15 @@ type Styles struct {
 
 // Context is the copied presentation state Help needs to build its content.
 type Context struct {
-	SessionKeys  keybind.Table
-	ListKeys     keybind.Table
-	ArrowStep    bool
-	Width        int
-	Glyphs       Glyphs
-	QuickKeys    QuickKeys
-	Styles       Styles
-	CursorMarker string
+	SessionKeys   keybind.Table
+	ListKeys      keybind.Table
+	ReviewHelpKey keybind.Binding
+	ArrowStep     bool
+	Width         int
+	Glyphs        Glyphs
+	QuickKeys     QuickKeys
+	Styles        Styles
+	CursorMarker  string
 }
 
 // Content is the feature-owned dialog body. The root owns viewport geometry
@@ -158,7 +159,7 @@ func (s State) Content(ctx Context) Content {
 		Title:  title,
 		Head:   head,
 		Lines:  lines,
-		Hints:  s.hints(),
+		Hints:  s.hints(ctx.ListKeys.Binding(keybind.Help)),
 		Offset: s.scroll,
 	}
 }
@@ -178,16 +179,22 @@ func (s State) searchLine(sections []helpSection, ctx Context) string {
 	return line + ctx.Styles.Subtle.Render(fmt.Sprintf("   %d%s", count, label))
 }
 
-func (s State) hints() [][2]string {
+func (s State) hints(binding keybind.Binding) [][2]string {
+	closeKeys := "q"
+	for _, key := range closeBinding(binding).Keys() {
+		if key.Tea() != "q" {
+			closeKeys += "/" + key.Glyph()
+		}
+	}
 	if s.searching {
 		return [][2]string{{"type", "search"}, {"↵", "done"}, {"↑↓", "scroll"}, {"esc", "clear"}}
 	}
 	docs := [2]string{"o", "docs"}
 	if s.query != "" {
-		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {"q", "close"}}
+		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {closeKeys, "close"}}
 	}
 	return [][2]string{
 		{"↑↓/jk", "scroll"}, {"pgup/pgdn", "page"}, {"g/G", "top/bottom"},
-		{"/", "search"}, docs, {"esc/q", "close"},
+		{"/", "search"}, docs, {"esc/" + closeKeys, "close"},
 	}
 }

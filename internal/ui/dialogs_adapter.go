@@ -63,6 +63,7 @@ const (
 type lifecycleSelection struct {
 	kind         lifecycleSelectionKind
 	rootID       string
+	members      []store.Session
 	archivedOnly bool
 }
 
@@ -140,13 +141,17 @@ func (m *Model) openMove() {
 	}
 	if row.isGroup {
 		m.move.Move = uidialogs.MoveGroup(row.group)
-		m.rebuildGroupOptions(parentGroup(row.group))
+		m.rebuildGroupOptionsFor(parentGroup(row.group), m.rail.ShowArchived())
 		m.pruneMoveTargets(row.group)
 	} else {
 		m.move.Move = uidialogs.MoveSession(row.sess.ID)
-		m.rebuildGroupOptions(row.sess.Group)
+		m.rebuildGroupOptionsFor(row.sess.Group, m.rail.ShowArchived())
 		if m.isShell(row.sess.Tool) {
-			m.appendAgentMoveTargets()
+			parentID := ""
+			if row.sess.Archived {
+				parentID = row.sess.ParentID
+			}
+			m.appendAgentMoveTargets(parentID)
 		}
 	}
 	m.gens.dialog++
@@ -154,13 +159,13 @@ func (m *Model) openMove() {
 	m.clearErr()
 }
 
-func (m *Model) appendAgentMoveTargets() {
+func (m *Model) appendAgentMoveTargets(parentID string) {
 	selected := m.form.groups[m.form.groupIndex].path
 	var options []groupOption
 	for _, opt := range m.form.groups {
 		options = append(options, opt)
 		for _, sess := range m.workspace.sessions {
-			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.path {
+			if sess.Archived && sess.ID != parentID || m.isShell(sess.Tool) || sess.Group != opt.path {
 				continue
 			}
 			options = append(options, groupOption{
@@ -174,7 +179,7 @@ func (m *Model) appendAgentMoveTargets() {
 	m.form.groups = options
 	m.form.groupIndex = 0
 	for i, opt := range options {
-		if opt.path == selected && opt.sessID == "" {
+		if parentID != "" && opt.sessID == parentID || parentID == "" && opt.path == selected && opt.sessID == "" {
 			m.form.groupIndex = i
 			return
 		}
@@ -258,6 +263,9 @@ func (m *Model) configuredTool(name string) (config.Tool, bool) {
 }
 
 func (m *Model) openFork() {
+	if m.rail.ShowArchived() {
+		return
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
 		return

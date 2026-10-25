@@ -126,6 +126,14 @@ func (s effectServices) runInstallStart(request installStartRequest) (effectResu
 	if !ok {
 		return result, fmt.Errorf("shell tool %s is no longer configured", request.toolName)
 	}
+	groups, err := s.store.Groups()
+	if err != nil {
+		return result, err
+	}
+	archived := store.ArchivedGroups(groups)
+	for store.EffectivelyArchived(archived, request.group) {
+		request.group = parentGroup(request.group)
+	}
 	sess := store.Session{
 		ID:     request.id,
 		Name:   "install-" + request.binary,
@@ -295,7 +303,8 @@ func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
 		m.quick.attachments = nil
 		m.quick.saved = nil
 	}
-	m.rail.ClearStatusFilter()
+	sess, _ := m.sessionByID(sessionID)
+	m.applyRailStateDecision(m.rail.RevealGroup(sess.Group))
 	m.focusSession(sessionID)
 	return cleanup
 }

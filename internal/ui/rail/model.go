@@ -314,15 +314,36 @@ func (m Model) row() (treeRow, bool) {
 }
 
 func (m Model) listedSessions() []Session {
-	return m.listed("", m.snapshot.Sessions)
+	// Folding hides rows without narrowing a group's logical action scope.
+	m.collapsed = nil
+	var sessions []Session
+	for _, row := range m.treeRows("", m.snapshot.Sessions, m.snapshot.Groups, m.snapshot.ArchivedGroups, 0) {
+		if row.kind == SessionRow {
+			sessions = append(sessions, row.sess)
+		}
+	}
+	return sessions
 }
 
-// listed is what the view and the status filter keep of one host's
-// sessions; the selected session stays while the filter is on.
 func (m Model) listed(host string, sessions []Session) []Session {
+	archivedGroups := m.snapshot.ArchivedGroups
+	if host != "" {
+		for _, remote := range m.snapshot.Hosts {
+			if remote.Name == host {
+				archivedGroups = remote.ArchivedGroups
+				break
+			}
+		}
+	}
+	return m.eligibleSessions(host, sessions, archivedGroups)
+}
+
+// eligibleSessions is what the view and the status filter keep of one host's
+// sessions; the selected session stays while the filter is on.
+func (m Model) eligibleSessions(host string, sessions []Session, archivedGroups map[string]bool) []Session {
 	visible := make([]Session, 0, len(sessions))
 	for _, session := range sessions {
-		if session.Archived == m.showArchived {
+		if session.Archived == m.showArchived && (m.showArchived || !effectivelyArchived(archivedGroups, session.Group)) {
 			visible = append(visible, session)
 		}
 	}
@@ -387,7 +408,7 @@ func (m Model) honorFolds() bool { return !m.pruned() && !m.showArchived }
 // local host's under the root row, a connection's under its own row.
 func (m Model) treeRows(host string, all []Session, groups []string, archivedGroups map[string]bool, depth int) []treeRow {
 	query := strings.ToLower(strings.TrimSpace(m.search))
-	listed := m.listed(host, all)
+	listed := m.eligibleSessions(host, all, archivedGroups)
 	listedIDs := make(map[string]bool, len(listed))
 	for _, session := range listed {
 		listedIDs[session.ID] = true

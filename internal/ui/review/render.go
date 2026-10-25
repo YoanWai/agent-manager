@@ -7,6 +7,7 @@ import (
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 	git "github.com/YoanWai/agent-manager/internal/git/value"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -391,7 +392,7 @@ func (m *Model) Status(ctx RenderContext, width int) string {
 	return ""
 }
 
-func (m *Model) Legend() []LegendSection {
+func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
 	if m.annotationOpen {
 		return []LegendSection{{Title: "Comment", Pairs: [][2]string{
 			{"↵", "save"}, {"esc", "cancel"},
@@ -409,17 +410,21 @@ func (m *Model) Legend() []LegendSection {
 	if m.codeOnly {
 		filter = "all files"
 	}
+	movePairs := [][2]string{
+		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
+		{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
+		{"u", "layout"}, {"f", filter}, {"o/f3", "open file"},
+	}
+	if glyph := EffectiveHelpBinding(helpKey).Glyph("/"); glyph != "" {
+		movePairs = append(movePairs, [2]string{glyph, "keys"})
+	}
+	movePairs = append(movePairs, [2]string{"esc/q", "close"}, [2]string{"ctrl+c", "quit"})
 	return []LegendSection{
 		{Title: "Review", Pairs: [][2]string{
 			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
 			{"s", "scope: " + m.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
 		}},
-		{Title: "Move", Quiet: true, Pairs: [][2]string{
-			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
-			{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
-			{"u", "layout"}, {"f", filter}, {"o/f3", "open file"}, {"?", "keys"},
-			{"esc/q", "close"}, {"ctrl+c", "quit"},
-		}},
+		{Title: "Move", Quiet: true, Pairs: movePairs},
 	}
 }
 

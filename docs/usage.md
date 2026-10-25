@@ -384,7 +384,7 @@ The footer offers `ctrl+r review mode` on every agent row, filled like quick pro
 | `c` / `d` | Write or drop a draft; mark feedback from a sent round handled or open |
 | `C` | Send the current drafts to the agent as one review prompt (`enter` or `y` confirms, `esc` cancels) |
 | `o` / `F3` | Open the current file in your editor |
-| `?` | Review bindings only; `esc` returns to the review |
+| Help binding (default `?`) | Review bindings only; `esc` returns to the review |
 | `esc` / `q` | Close the review |
 
 Each changeable value in the header wears its own key, so the scope, layout, repo, and target pills read as `s`, `u`, `r`, `B` legends at a glance.
@@ -397,11 +397,17 @@ Each point sent to the agent carries a stable comment id. After addressing it, a
 
 ![review mode: scrolling a changed file, switching to unified, jumping to the next file, then a line comment sent back to the agent](demo-diff.gif)
 
+In Review, local action keys take precedence over a conflicting Help binding. For example, if Help is bound to both `b` and `H`, `b` still opens the branch picker and `H` opens Help. The Review footer and key map show only the available Help keys.
+
 ## Groups
 
 ![folding the tree, creating a nested group, reordering, and archiving one](demo-groups.gif)
 
-Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree with `F`, hide or restore empty groups visually with `e`, and edit a group's name, default path, worktree choice, base and environment profile with `r`. On a session, `r` renames it and `tab` cycles the tool. Quitting one CLI in a session's pane and starting another there moves the row onto that CLI on the next poll, with the status rules and the revive command that come with it. The move needs one answer: exactly one built-in CLI has to run the binary the pane is running, so a CLI whose process name is its runtime rather than itself (one installed as a node script, say) leaves the row where it is and `tab` sets it by hand.
+Groups are paths (`backend/api/auth`) forming a tree of unlimited depth. Sessions can live at any node, including the root. Create subgroups inline with `g`, reorder both groups and sessions with `K` / `J` (or `shift+↑↓`; the order persists), fold a subtree with `enter` on its row, fold or unfold the whole tree in the active view with `F`, hide or restore empty groups visually with `e`, and edit a group's name, default path, worktree choice, base and environment profile with `r`. On a session, `r` renames it and `tab` cycles the tool. Quitting one CLI in a session's pane and starting another there moves the row onto that CLI on the next poll, with the status rules and the revive command that come with it. The move needs one answer: exactly one built-in CLI has to run the binary the pane is running, so a CLI whose process name is its runtime rather than itself (one installed as a node script, say) leaves the row where it is and `tab` sets it by hand.
+
+Group archive and restore apply to the whole subtree, including sessions hidden by search or status filters. The archive card counts every session it touches, including those already archived. Restore counts archived sessions and leaves intentionally stopped active sessions stopped. Restoring a subgroup also reveals its ancestor groups without restoring their other sessions. Group kill/revive and `X`/`V` use the filtered list instead.
+
+The archived view offers management and Restore actions. Revive, restart, kill, contextual creation, group folding and Fold All are inactive there. CLI/MCP archive can leave a pane running: Restore returns that row to active controls while keeping its current pane and conversation, then Kill stops it. Delete also removes the row and is not a substitute for Kill. Fold All (`F`) is available in the active view.
 
 ## SSH connections
 

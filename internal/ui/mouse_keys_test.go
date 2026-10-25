@@ -56,7 +56,7 @@ func TestClickOnHelpFootCloses(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	m.openHelp()
-	if m = clickLabel(t, m, "esc/q close"); m.mode != modeList {
+	if m = clickLabel(t, m, "esc/q/? close"); m.mode != modeList {
 		t.Fatalf("close in the foot should leave help, mode = %v", m.mode)
 	}
 }

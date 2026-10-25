@@ -43,3 +43,24 @@ func TestViewLegendCarriesTheUnreadAlert(t *testing.T) {
 		t.Fatalf("unread messages should lead the tier, got %+v", legend.Alerts)
 	}
 }
+
+func TestRootLegendOnlyOffersApplicableActions(t *testing.T) {
+	model := rail.New(nil)
+	ctx := rail.LegendContext{ListKeys: keybind.DefaultList(), RowOK: true, Row: rail.Selection{Kind: rail.GroupRow}}
+	for _, archived := range []bool{false, true} {
+		model.SetArchived(archived)
+		legend := model.RowLegend(ctx)
+		for _, pair := range legend.Pairs {
+			switch pair[1] {
+			case "rename", "move", "delete", "fold", "unfold", "archive", "restore", "close / open":
+				t.Fatalf("archived=%v root offers %v", archived, pair)
+			}
+		}
+	}
+	model.SetArchived(true)
+	for _, pair := range model.ViewLegend(ctx).Pairs {
+		if pair[1] == "terminal" {
+			t.Fatal("archived view offers terminal")
+		}
+	}
+}

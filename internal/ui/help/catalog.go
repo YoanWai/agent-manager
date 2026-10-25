@@ -59,7 +59,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("filter to what needs attention (waiting, finished, errored)", keybind.Filter)
 	h.action("archived view", keybind.Archived)
 	h.action("hide / show empty groups", keybind.EmptyGroups)
-	h.action("fold / unfold every group", keybind.FoldAll)
+	h.action("fold / unfold every group (active view)", keybind.FoldAll)
 	h.action("resize the split (←→ or hl, or drag; ↵ commits, esc cancels)", keybind.Resize)
 	h.action("settings (also in the root row menu)", keybind.Settings)
 	h.action("messages", keybind.Messages)
@@ -172,7 +172,7 @@ func helpSections(ctx Context) []helpSection {
 			{"click", "focused: open the link under it, else a tracking agent gets it"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
 		})},
-		reviewHelpSection(list),
+		reviewHelpSection(list, ctx.ReviewHelpKey),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
 			{"click unread", "in the key legend, shown while any remain"},
 			{"click", "select a title, click it again to open its link"},
@@ -277,8 +277,8 @@ func titledWith(name string, list keybind.Table, actions ...string) string {
 	return name + " (" + strings.Join(glyphs, ", ") + ")"
 }
 
-func reviewHelpSection(list keybind.Table) helpSection {
-	return helpSection{title: titledWith("review", list, keybind.Review), rows: [][2]string{
+func reviewHelpSection(list keybind.Table, helpKey keybind.Binding) helpSection {
+	rows := [][2]string{
 		{"", "Tell your agent what to review in Agent Manager; they set it up."},
 		{"click", "open a file, move to a code line, or run a header key"},
 		{"c", "comment on the line"},
@@ -298,14 +298,17 @@ func reviewHelpSection(list keybind.Table) helpSection {
 		{"n / N", "next / previous change"},
 		{"u", "unified / split layout"},
 		{"o / f3", "open the current file in your editor"},
-		{"?", "this key map"},
-		{"esc / q", "close the review"},
-	}}
+	}
+	if label := helpKey.Label(); label != "" {
+		rows = append(rows, [2]string{label, "this key map"})
+	}
+	rows = append(rows, [2]string{"esc / q", "close the review"})
+	return helpSection{title: titledWith("review", list, keybind.Review), rows: rows}
 }
 
 func (s State) visibleSections(ctx Context) []helpSection {
 	if s.scope == Review {
-		return formatSections([]helpSection{reviewHelpSection(ctx.ListKeys)}, ctx.Glyphs.Mode)
+		return formatSections([]helpSection{reviewHelpSection(ctx.ListKeys, ctx.ReviewHelpKey)}, ctx.Glyphs.Mode)
 	}
 	return helpSections(ctx)
 }

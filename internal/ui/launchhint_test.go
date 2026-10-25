@@ -346,6 +346,9 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
+	if err := m.services.store.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
 	m.confirm.confirmTarget = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
 	m.mode = modeConfirmDelete
 
@@ -642,8 +645,16 @@ func TestLaunchHintStrayKeysKeepTheDialog(t *testing.T) {
 		t.Fatalf("mode = %v, want the dialog kept", m.mode)
 	}
 	pressInLaunchHint(t, m, 'q')
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want unadvertised q to keep the dialog", m.mode)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeLaunchHint {
+		t.Fatal("unadvertised Enter closed launch hint")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.mode != modeList {
-		t.Fatalf("mode = %v, want q to close", m.mode)
+		t.Fatal("Escape did not close launch hint")
 	}
 }
 

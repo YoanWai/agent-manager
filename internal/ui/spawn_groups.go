@@ -19,9 +19,13 @@ type groupOption struct {
 // rebuildGroupOptions flattens the group tree into picker rows.
 // Index 0 is always the root; selectPath moves the highlight when given.
 func (m *Model) rebuildGroupOptions(selectPath string) {
+	m.rebuildGroupOptionsFor(selectPath, false)
+}
+
+func (m *Model) rebuildGroupOptionsFor(selectPath string, includeArchived bool) {
 	paths := groupClosure(m.workspace.groups, m.workspace.sessions)
 	for path := range paths {
-		if m.groupEffectivelyArchived(path) {
+		if m.groupEffectivelyArchived(path) && (!includeArchived || !inGroupSubtree(selectPath, path)) {
 			delete(paths, path)
 		}
 	}
