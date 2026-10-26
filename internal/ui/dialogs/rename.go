@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -305,6 +306,7 @@ func (d Rename) Hints() [][2]string {
 // styles, its field renderer, the open path suggestions, the worktree
 // choice labels and the rendered base choice.
 type GroupFieldsView struct {
+	GlyphMode   presentation.GlyphMode
 	Width       int
 	Label       lipgloss.Style
 	Focused     lipgloss.Style
@@ -319,6 +321,7 @@ type GroupFieldsView struct {
 // GroupFields draws the path, worktree and base rows under a group's head,
 // the focused row's label in the accent.
 func (d *Rename) GroupFields(view GroupFieldsView) string {
+	chrome := presentation.ChromeFor(view.GlyphMode)
 	label := func(field int) lipgloss.Style {
 		if d.focus == field {
 			return view.Focused
@@ -333,7 +336,7 @@ func (d *Rename) GroupFields(view GroupFieldsView) string {
 		out += "\n" + view.Suggestions()
 	}
 	out += "\n" + label(RenameWorktreeField).Width(10).Render("worktree") +
-		view.Subtle.Render("◂ ") + view.Value.Render(view.Worktrees[d.worktree]) + view.Subtle.Render(" ▸")
+		view.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + view.Value.Render(view.Worktrees[d.worktree]) + view.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	out += "\n" + label(RenameBaseField).Width(10).Render("base") + view.Base
 	return out
 }

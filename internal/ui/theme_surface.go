@@ -89,6 +89,9 @@ func (m *Model) railTopRow(paneWidth, width int) string {
 // half a cell wide, so it takes a quadrant instead of a half block and the
 // pane tone stops at the corner instead of jutting past it.
 func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic {
+		return paint(hrule(width), width, backdropHex())
+	}
 	if paneWidth < 2 || paneWidth >= width {
 		return paint(hrule(width), width, backdropHex())
 	}
@@ -125,7 +128,12 @@ func (m *Model) vruleColumn(height int) []string {
 // bleedColumn finishes a pane's right edge: a half block in the pane's
 // tone on the backdrop, extending the fill half a cell past the seam.
 func (m *Model) bleedColumn(height int) []string {
-	cell := paint(lipgloss.NewStyle().Foreground(colorBg()).Render("▐"), 1, panelHex())
+	background := panelHex()
+	cell := paint(lipgloss.NewStyle().Foreground(colorBg()).Render("▐"), 1, background)
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic {
+		background = backdropHex()
+		cell = paint(lipgloss.NewStyle().Foreground(lipgloss.Color(ruleHex())).Render("│"), 1, background)
+	}
 	lines := make([]string, height)
 	for i := range lines {
 		lines[i] = cell
@@ -135,8 +143,8 @@ func (m *Model) bleedColumn(height int) []string {
 	// top corner sits on the rule row just above the capture.
 	box := m.focus.pane.FrameBox()
 	if m.mode == modeFocus && box.Valid {
-		edge := paint(focusEdgeStyle().Render("│"), 1, panelHex())
-		corner := paint(focusEdgeStyle().Render("╭"), 1, panelHex())
+		edge := paint(focusEdgeStyle().Render("│"), 1, background)
+		corner := paint(focusEdgeStyle().Render(m.chrome().TopLeftGlyph), 1, background)
 		top := box.Y - m.listChromeRows()
 		if top-1 >= 0 && top-1 < len(lines) {
 			lines[top-1] = corner
@@ -158,6 +166,10 @@ func (m *Model) focusBottomRule(paneWidth, width int) string {
 	if tail < 1 || paneWidth < 2 {
 		return m.boundedRuleRow(paneWidth, width, "▄")
 	}
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic {
+		return paint(hrule(paneWidth), paneWidth, backdropHex()) +
+			paint(focusEdgeStyle().Render(m.chrome().BottomLeftGlyph+strings.Repeat("─", tail)), tail+1, backdropHex())
+	}
 	first := plain(lipgloss.NewStyle().Foreground(lipgloss.Color(panelHex())).Render("▀"), 1)
 	interior := lipgloss.NewStyle().Foreground(colorBg()).Render(strings.Repeat("▄", paneWidth-1))
 	corner := focusEdgeStyle().Render("╰")
@@ -175,7 +187,7 @@ func (m *Model) seamCell(railRule bool) string {
 		if m.layout.split.dragging {
 			color = colorAccent2()
 		}
-		return paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, panelHex())
+		return paint(lipgloss.NewStyle().Foreground(color).Render(m.chrome().ResizeGlyph), 1, panelHex())
 	}
 	if railRule {
 		return paint(hrule(1), 1, panelHex())

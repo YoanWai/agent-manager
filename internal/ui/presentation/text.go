@@ -48,8 +48,8 @@ func Fill(s, bg string) string {
 }
 
 // Divider renders a labeled section rule with styles supplied by its caller.
-func Divider(label string, width int, section, rule lipgloss.Style) string {
-	head := section.Render("▍"+label) + " "
+func Divider(label string, width int, section, rule lipgloss.Style, marker string) string {
+	head := section.Render(marker+label) + " "
 	dashes := width - ansi.StringWidth(label) - 2
 	if dashes < 0 {
 		dashes = 0

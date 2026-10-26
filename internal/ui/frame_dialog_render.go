@@ -28,7 +28,7 @@ func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2
 		return paint(border.Render(left+strings.Repeat("─", width-2)+right), width, blockHex())
 	}
 
-	lines := []string{cardTitleRow(width, title, border), row("")}
+	lines := []string{cardTitleRow(width, title, border, ctx.glyphMode), row("")}
 	if body != "" {
 		for _, line := range strings.Split(body, "\n") {
 			lines = append(lines, row(line))
@@ -49,7 +49,7 @@ func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2
 			lines = append(lines, row(line))
 		}
 	}
-	lines = append(lines, rule("╰", "╯"))
+	lines = append(lines, rule(presentation.ChromeFor(ctx.glyphMode).BottomLeftGlyph, presentation.ChromeFor(ctx.glyphMode).BottomRightGlyph))
 	return lines, hits
 }
 
