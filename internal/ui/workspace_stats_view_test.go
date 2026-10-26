@@ -269,3 +269,13 @@ func TestFullFootDiskAvailable(t *testing.T) {
 		t.Fatalf("disk reading = %q", line)
 	}
 }
+
+// Every odd multiple of 5% lands a 10-cell meter exactly on a half cell,
+// which must draw the cap on every architecture.
+func TestGaugeDrawsTheHalfCellOnExactHalves(t *testing.T) {
+	for percent := 5.0; percent < 100; percent += 10 {
+		if got := strings.Count(ansi.Strip(gauge(percent, 10, false)), gaugeHalf); got != 1 {
+			t.Errorf("%.0f%%: %d half caps, want 1", percent, got)
+		}
+	}
+}
