@@ -220,19 +220,14 @@ func padRight(s string, width int) string {
 	return presentation.PadRight(s, width)
 }
 
-// gaugeGlyph is the meter's bar unit: a heavy rule reads as a slim
-// continuous line rather than a row of stacked blocks.
-const (
-	gaugeGlyph = "━"
-	gaugeHalf  = "╸"
-)
+const gaugeHalf = "╸"
 
 // gauge renders a meter for a 0-100 percentage: a colored run over a muted
 // track, the color ramping from calm to alarming as it fills, with a
-// half-width cap so small changes still move the bar. invert flips which
-// end of the scale reads as alarming — a full disk is bad, but a full
+// half-width cap in Advanced mode. Compatible rounds to whole cells.
+// invert flips which end reads as alarming — a full disk is bad, but a full
 // battery is exactly what you want, so battery colors off how empty it is.
-func gauge(percent float64, width int, invert bool) string {
+func gauge(percent float64, width int, invert bool, mode presentation.GlyphMode) string {
 	if width < 1 {
 		width = 1
 	}
@@ -249,18 +244,26 @@ func gauge(percent float64, width int, invert bool) string {
 	}
 	half := units-float64(filled) >= 0.5
 
+	glyph := presentation.ChromeFor(mode).RuleGlyph
+	if mode.Effective() == presentation.GlyphModeBasic {
+		if half {
+			filled = min(filled+1, width)
+		}
+		half = false
+	}
+
 	colorPercent := percent
 	if invert {
 		colorPercent = 100 - percent
 	}
 	color := lipgloss.Color(gaugeRamp(colorPercent))
-	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat(gaugeGlyph, filled))
+	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat(glyph, filled))
 	rest := width - filled
 	if half && rest > 0 {
 		bar += lipgloss.NewStyle().Foreground(color).Render(gaugeHalf)
 		rest--
 	}
-	track := lipgloss.NewStyle().Foreground(colorOverlay()).Render(strings.Repeat(gaugeGlyph, rest))
+	track := lipgloss.NewStyle().Foreground(colorOverlay()).Render(strings.Repeat(glyph, rest))
 	return bar + track
 }
 

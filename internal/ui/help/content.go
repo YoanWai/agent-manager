@@ -98,7 +98,7 @@ func helpBodyLines(sections []helpSection, ctx Context, query string) []string {
 		if i > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, presentation.Divider(section.title, ctx.Width, ctx.Styles.Section, ctx.Styles.Rule))
+		lines = append(lines, presentation.Divider(section.title, ctx.Width, ctx.Styles.Section, ctx.Styles.Rule, presentation.ChromeFor(ctx.Glyphs.Mode).SectionGlyph))
 		for _, row := range section.rows {
 			// A row with no key is a note about the one above it, so it
 			// recedes into the description column instead of claiming a
@@ -167,7 +167,7 @@ func (s State) Content(ctx Context) Content {
 func (s State) searchLine(sections []helpSection, ctx Context) string {
 	line := ctx.Styles.Key.Render("search ") + ctx.Styles.Value.Render(s.query)
 	if s.searching {
-		line += ctx.CursorMarker + ctx.Styles.Cursor.Render("▏")
+		line += ctx.CursorMarker + ctx.Styles.Cursor.Render(presentation.ChromeFor(ctx.Glyphs.Mode).CursorGlyph)
 	}
 	count := helpRowCount(sections)
 	label := " keys"

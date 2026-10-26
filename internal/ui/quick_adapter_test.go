@@ -1281,7 +1281,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			if i > 0 && i < len(rows)-keysHeight {
 				tone = blockHex()
 			}
-			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
+			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), m.chrome().QuickEdgeGlyph) || ansi.StringWidth(line) != m.layout.width {
 				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
 			}
 		}

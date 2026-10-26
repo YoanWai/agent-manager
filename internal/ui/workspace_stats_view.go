@@ -2,9 +2,10 @@ package ui
 
 import (
 	"fmt"
+	"strings"
+
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/charmbracelet/x/ansi"
-	"strings"
 )
 
 // computerLines is the machine block docked at the rail's foot: a label
@@ -32,7 +33,7 @@ func (m *Model) computerLines(width int) []string {
 		if !ok {
 			return pad + labelStyle().Width(5).Render(label) + subtleStyle().Render("n/a")
 		}
-		return render(label, percent, extra, gauge(percent, barWidth, false))
+		return render(label, percent, extra, gauge(percent, barWidth, false, m.prefs.glyphMode))
 	}
 
 	lines := []string{pad + subtleStyle().Render("computer")}
@@ -64,7 +65,7 @@ func (m *Model) computerLines(width int) []string {
 			extra = "charging"
 		}
 		lines = append(lines, render("batt", snap.BatteryPercent, extra,
-			gauge(snap.BatteryPercent, barWidth, true)))
+			gauge(snap.BatteryPercent, barWidth, true, m.prefs.glyphMode)))
 	}
 	if temps := tempReadings(snap); temps != "" {
 		lines = append(lines, pad+labelStyle().Width(5).Render("temp")+temps)

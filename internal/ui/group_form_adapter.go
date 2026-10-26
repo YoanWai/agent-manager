@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -157,7 +158,7 @@ func (m *Model) viewGroupForm() string {
 		Subtle:    subtleStyle(),
 		Value:     valueStyle(),
 		Worktrees: groupWorktreeOptions,
-		Base:      groupBaseChoice(m.groupForm.base, m.groupBase(parent)),
+		Base:      groupBaseChoice(m.groupForm.base, m.groupBase(parent), m.prefs.glyphMode),
 	}
 	if m.groupForm.paths.active() {
 		view.Suggestions = func() string { return m.groupForm.paths.view(m.prefs.glyphMode) }
@@ -168,8 +169,9 @@ func (m *Model) viewGroupForm() string {
 
 // groupBaseChoice renders a group's base picker: its own ref, or auto and
 // the parent's choice that auto inherits.
-func groupBaseChoice(base, inherited string) string {
-	choice := subtleStyle().Render("◂ ") + valueStyle().Render(cmp.Or(base, "auto")) + subtleStyle().Render(" ▸")
+func groupBaseChoice(base, inherited string, mode presentation.GlyphMode) string {
+	g := presentation.ChromeFor(mode)
+	choice := subtleStyle().Render(g.ChoiceLeftGlyph+" ") + valueStyle().Render(cmp.Or(base, "auto")) + subtleStyle().Render(" "+g.ChoiceRightGlyph)
 	if base == "" && inherited != "" {
 		choice += subtleStyle().Render("  " + inherited + " from parent")
 	}

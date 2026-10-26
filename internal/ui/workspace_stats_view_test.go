@@ -1,11 +1,13 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/sysstat"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestComputerLinesTemperatures(t *testing.T) {
@@ -101,14 +103,14 @@ func TestComputerLinesBattery(t *testing.T) {
 func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
 	forceANSI256(t)
 
-	lowCharge := sgrOf(gauge(5, 10, true))
-	highUsage := sgrOf(gauge(95, 10, false))
+	lowCharge := sgrOf(gauge(5, 10, true, presentation.DefaultGlyphMode))
+	highUsage := sgrOf(gauge(95, 10, false, presentation.DefaultGlyphMode))
 	if lowCharge != highUsage {
 		t.Fatalf("5%% inverted = %q, want the same alarm color as 95%% uninverted %q", lowCharge, highUsage)
 	}
 
-	highCharge := sgrOf(gauge(95, 10, true))
-	lowUsage := sgrOf(gauge(5, 10, false))
+	highCharge := sgrOf(gauge(95, 10, true, presentation.DefaultGlyphMode))
+	lowUsage := sgrOf(gauge(5, 10, false, presentation.DefaultGlyphMode))
 	if highCharge != lowUsage {
 		t.Fatalf("95%% inverted = %q, want the same calm color as 5%% uninverted %q", highCharge, lowUsage)
 	}

@@ -312,7 +312,7 @@ func (m *Model) handleQuickClick(hit quickHit) tea.Cmd {
 const quickModeTitle = "Quick prompt mode"
 
 func (m *Model) quickFooter() legend {
-	edge := keyStyle().Render(quickEdge)
+	edge := keyStyle().Render(m.chrome().QuickEdgeGlyph)
 	gutter := strings.Repeat(" ", quickGutter-1)
 	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1), m.prefs.glyphMode)
 	keys := splitLines(painted.text)
@@ -331,7 +331,7 @@ func (m *Model) quickFooter() legend {
 		}
 		lines = append(lines, paint(edge+gutter+line, m.layout.width, tone))
 	}
-	hits := painted.hits.moved(lipgloss.Width(quickEdge), len(lines))
+	hits := painted.hits.moved(lipgloss.Width(edge), len(lines))
 	for _, line := range keys {
 		lines = append(lines, paint(edge+line, m.layout.width, quickModeHex()))
 	}
@@ -340,7 +340,6 @@ func (m *Model) quickFooter() legend {
 }
 
 const (
-	quickEdge   = "▌"
 	quickGutter = 3
 )
 

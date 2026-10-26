@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -44,21 +45,21 @@ func innerWidth(notices []Notice, terminalWidth int) int {
 }
 
 // bodyLayout gives a body that overflows narrower rows, leaving room for the scrollbar.
-func bodyLayout(n Notice, inner, room int, t Theme) (body []string, scrolls bool) {
-	body = renderBody(n, inner, t)
+func bodyLayout(n Notice, inner, room int, t Theme, mode presentation.GlyphMode) (body []string, scrolls bool) {
+	body = renderBody(n, inner, t, mode)
 	if len(body) <= room {
 		return body, false
 	}
-	return renderBody(n, max(inner-scrollbarWidth, 1), t), true
+	return renderBody(n, max(inner-scrollbarWidth, 1), t, mode), true
 }
 
-func scrollWindow(body []string, room, offset, inner int, t Theme) []string {
+func scrollWindow(body []string, room, offset, inner int, t Theme, mode presentation.GlyphMode) []string {
 	lastOffset := len(body) - room
 	offset = min(max(offset, 0), lastOffset)
 	thumb := max(1, room*room/len(body))
 	thumbTop := offset * (room - thumb) / lastOffset
 	track := t.Subtle.Render("│")
-	grip := lipgloss.NewStyle().Foreground(t.Accent).Render("┃")
+	grip := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.ChromeFor(mode).ScrollThumbGlyph)
 	rows := make([]string, room)
 	for index := range rows {
 		cell := track
@@ -100,7 +101,7 @@ func measure(n Notice) []string {
 	return lines
 }
 
-func renderBody(n Notice, width int, t Theme) []string {
+func renderBody(n Notice, width int, t Theme, mode presentation.GlyphMode) []string {
 	var body []string
 	if n.Headline != "" {
 		body = appendWrapped(body, []textRun{{text: n.Headline}}, width, headingStyle(t), t)
@@ -108,7 +109,7 @@ func renderBody(n Notice, width int, t Theme) []string {
 		for _, row := range body {
 			rule = max(rule, lipgloss.Width(row))
 		}
-		body = append(body, lipgloss.NewStyle().Foreground(t.Accent).Render(strings.Repeat("━", rule)))
+		body = append(body, lipgloss.NewStyle().Foreground(t.Accent).Render(strings.Repeat(presentation.ChromeFor(mode).RuleGlyph, rule)))
 		if !n.ReleaseNotes {
 			body = append(body, "")
 		}

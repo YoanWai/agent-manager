@@ -35,3 +35,23 @@ func TestCompatibleRailMeasuresRemappedKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestCompatibleMenuCornersKeepLayout(t *testing.T) {
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		ctx := hostsContext(40, 24)
+		ctx.GlyphMode = mode
+		r := renderer{ctx: ctx, palette: newPalette(ctx.Theme)}
+		r.model.menu = rowMenu{title: "root", items: []menuItem{{label: "Settings", action: OpenSettings}}}
+		rows := r.renderMenu()
+		top, bottom := "+", "+"
+		if mode == presentation.GlyphModeAdvanced {
+			top, bottom = "╭", "╰"
+		}
+		if !strings.HasPrefix(ansi.Strip(rows[0]), top) || !strings.HasPrefix(ansi.Strip(rows[len(rows)-1]), bottom) {
+			t.Fatal("menu corners did not follow mode")
+		}
+		if len(rows) != 3 || ansi.StringWidth(rows[0]) != menuMinWidth {
+			t.Fatal("menu geometry changed")
+		}
+	}
+}
