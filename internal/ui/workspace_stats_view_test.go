@@ -276,7 +276,7 @@ func TestFullFootDiskAvailable(t *testing.T) {
 // which must draw the cap on every architecture.
 func TestGaugeDrawsTheHalfCellOnExactHalves(t *testing.T) {
 	for percent := 5.0; percent < 100; percent += 10 {
-		if got := strings.Count(ansi.Strip(gauge(percent, 10, false)), gaugeHalf); got != 1 {
+		if got := strings.Count(ansi.Strip(gauge(percent, 10, false, presentation.GlyphModeAdvanced)), gaugeHalf); got != 1 {
 			t.Errorf("%.0f%%: %d half caps, want 1", percent, got)
 		}
 	}
