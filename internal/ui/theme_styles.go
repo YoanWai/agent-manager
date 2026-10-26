@@ -237,7 +237,8 @@ func gauge(percent float64, width int, invert bool, mode presentation.GlyphMode)
 	if percent > 100 {
 		percent = 100
 	}
-	units := percent / 100 * float64(width)
+	// The explicit conversion rounds here, so arm64 cannot fuse this into the half check below.
+	units := float64(percent / 100 * float64(width))
 	filled := int(units)
 	if filled > width {
 		filled = width
