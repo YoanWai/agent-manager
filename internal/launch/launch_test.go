@@ -334,8 +334,12 @@ func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	}
 
 	shell := config.Tool{Command: "", MCP: mcpreg.StyleNone}
-	if command, env, err := Environment(manager, "terminal", shell, shell.Command, "abcd1234", t.TempDir(), time.Time{}, nil); err != nil || command != "" || env[hooks.EnvSessionID] != "abcd1234" {
-		t.Fatalf("shell launch = %q, %v, %v; want no command and the session env", command, env, err)
+	if command, env, err := Environment(manager, "terminal", shell, shell.Command, "abcd1234", t.TempDir(), time.Time{}, nil); err != nil || command != "" || env != nil {
+		t.Fatalf("shell launch = %q, %v, %v; want no command and no env, so tmux keeps its login shell", command, env, err)
+	}
+	profile := map[string]string{"AM_SECRET": "s3cret"}
+	if command, env, err := Environment(manager, "terminal", shell, shell.Command, "abcd1234", t.TempDir(), time.Time{}, profile); err != nil || command != "" || env[hooks.EnvSessionID] != "abcd1234" || env["AM_SECRET"] != "s3cret" {
+		t.Fatalf("profiled shell launch = %q, %v, %v; want no command and the session and profile env", command, env, err)
 	}
 }
 

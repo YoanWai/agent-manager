@@ -404,12 +404,16 @@ func (d *Driver) RunInPane(id string, env map[string]string, command string) err
 }
 
 // exportLines sets the session environment in the pane's shell, so it
-// outlives the launch command.
+// outlives the launch command. The keys the previous launch in the pane set
+// go first, so one a profile has dropped since is not kept at its old value.
 func exportLines(env map[string]string) string {
 	var lines strings.Builder
-	for _, key := range sortedKeys(env) {
+	lines.WriteString("foreach ($key in -split $env:" + envKeysVar + ") { if ($key) { Remove-Item -LiteralPath \"Env:$key\" -ErrorAction Ignore } }\n")
+	keys := sortedKeys(env)
+	for _, key := range keys {
 		lines.WriteString("$env:" + key + " = " + ShellQuote(env[key]) + "\n")
 	}
+	lines.WriteString("$env:" + envKeysVar + " = " + ShellQuote(strings.Join(keys, " ")) + "\n")
 	return lines.String()
 }
 
@@ -426,7 +430,8 @@ func launchScriptPath(id string) string {
 
 // writeLaunchScript writes the PowerShell script the pane shell runs with
 // -NoExit: once the agent exits, that shell stays as the user's prompt,
-// the way the POSIX script execs $SHELL.
+// the way the POSIX script execs $SHELL. With no command, as for a
+// terminal, the shell reaches its prompt once env is set.
 func writeLaunchScript(id string, env map[string]string, command, colorFgBg string) (string, error) {
 	path := launchScriptPath(id)
 	var header string
@@ -435,8 +440,10 @@ func writeLaunchScript(id string, env map[string]string, command, colorFgBg stri
 	}
 	// The script removes itself once PowerShell has read it, so the
 	// environment it sets, a profile's tokens among it, is not left on disk.
-	body := "Remove-Item -LiteralPath $PSCommandPath\n" + standardArgumentPassing + header + exportLines(env) + command + "\n" +
-		"Write-Host " + ShellQuote(relaunchHint) + "\n"
+	body := "Remove-Item -LiteralPath $PSCommandPath\n" + standardArgumentPassing + header + exportLines(env)
+	if command != "" {
+		body += command + "\nWrite-Host " + ShellQuote(relaunchHint) + "\n"
+	}
 	if err := os.WriteFile(path, pwsh.ScriptFile(body), 0o600); err != nil {
 		return "", fmt.Errorf("launch script: %w", err)
 	}

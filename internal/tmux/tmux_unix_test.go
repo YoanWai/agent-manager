@@ -479,30 +479,59 @@ func TestPaneSendLockHoldsAcrossOpens(t *testing.T) {
 	again()
 }
 
-// The relaunch hands its environment over in a file the shell sources, so
-// no value is typed into the pane; the file is gone once it has been read,
-// even under a profile whose PATH holds no rm.
-func TestEnvFileExportsAndRemovesItself(t *testing.T) {
-	rm, _, err := relaunchTools()
+// Each launch unsets what the previous one in the pane exported, so a key
+// dropped from the profile since is gone, while the user's own variables
+// and the values still in it stay quoted whole.
+func TestExportLinesDropsTheKeysThePreviousLaunchExported(t *testing.T) {
+	script := exportLines(map[string]string{"B": "it's second", "A": "fir st"})
+	cmd := exec.Command("sh", "-c", script+`printf '%s|%s|%s|%s|%s' "$A" "$B" "${AM_SECRET-unset}" "$MINE" "$`+envKeysVar+`"`)
+	cmd.Env = append(os.Environ(), envKeysVar+"=AM_SECRET B", "AM_SECRET=old", "B=old", "MINE=kept")
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("relaunchTools: %v", err)
+		t.Fatalf("sh: %v", err)
 	}
-	path, err := writeEnvFile("probe", rm, map[string]string{"B": "it's second", "A": "fir st", "PATH": "/nonexistent-am"})
-	if err != nil {
-		t.Fatalf("writeEnvFile: %v", err)
+	if got, want := string(out), "fir st|it's second|unset|kept|A B"; got != want {
+		t.Fatalf("exported env = %q, want %q", got, want)
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("env file mode = %v, %v; want 0600", info, err)
+}
+
+// The review's case: a key removed from the profile between launches must
+// not reach the relaunched agent through the shell the first launch left.
+func TestRunInPaneDropsAKeyTheProfileNoLongerHas(t *testing.T) {
+	driver := requireTmux(t)
+	id := "drop" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "true", map[string]string{"AM_SECRET": "old-value", "AM_KEEP": "one"}, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-	out, err := exec.Command("sh", "-c", ". "+ShellQuote(path)+"; printf '%s|%s' \"$A\" \"$B\"").Output()
-	if err != nil {
-		t.Fatalf("source: %v", err)
+	t.Cleanup(func() { driver.Kill(id) })
+	waitForPane(t, driver, id, relaunchHint)
+	marker := filepath.Join(t.TempDir(), "ran")
+	command := `printf '%s|%s' "${AM_SECRET-unset}" "$AM_KEEP" > ` + ShellQuote(marker+".part") + " && mv " + ShellQuote(marker+".part") + " " + ShellQuote(marker)
+	if err := driver.RunInPane(id, map[string]string{"AM_KEEP": "two"}, command); err != nil {
+		t.Fatalf("RunInPane: %v", err)
 	}
-	if got := string(out); got != "fir st|it's second" {
-		t.Fatalf("sourced env = %q", got)
+	if got := waitForFile(t, driver, id, marker); got != "unset|two" {
+		t.Fatalf("relaunched agent saw %q, want the dropped key unset and the kept one updated", got)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Fatalf("env file left behind: %v", err)
+}
+
+// A terminal has no command, but a profile still reaches its shell, and the
+// script that carried it is gone.
+func TestCreateExportsAProfileIntoATerminal(t *testing.T) {
+	driver := requireTmux(t)
+	id := "term" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", map[string]string{"AM_SECRET": "s3cret-value"}, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	marker := filepath.Join(t.TempDir(), "ran")
+	if err := driver.SendKeys(id, `printf %s "$AM_SECRET" > `+ShellQuote(marker+".part")+" && mv "+ShellQuote(marker+".part")+" "+ShellQuote(marker), "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	if got := waitForFile(t, driver, id, marker); got != "s3cret-value" {
+		t.Fatalf("terminal shell saw AM_SECRET = %q", got)
+	}
+	if _, err := os.Stat(launchScriptPath(id)); !os.IsNotExist(err) {
+		t.Fatalf("launch script left behind: %v", err)
 	}
 }

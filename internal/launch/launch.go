@@ -171,8 +171,9 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 }
 
 // Environment resolves the shell command and environment a session
-// launches with. Every session carries its id so the rename subcommand
-// can find it, and the launch it belongs to, which is the agent_launched_at
+// launches with. Every session but a shell with no profile carries its id
+// so the rename subcommand can find it, and the launch it belongs to, which
+// is the agent_launched_at
 // the caller stamps for it (zero for a row's first launch), so a
 // conversation the agent reports lands on this launch only. The agent runs
 // under the pid its line exports and records, so only it can report and the
@@ -199,8 +200,10 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	}
 	stamp := store.LaunchStamp(launchedAt)
 	launch := strconv.FormatInt(stamp, 10)
-	env := make(map[string]string, len(profile)+len(tool.Env)+2)
-	maps.Copy(env, profile)
+	env := maps.Clone(profile)
+	if env == nil {
+		env = map[string]string{}
+	}
 	env[hooks.EnvSessionID], env[hooks.EnvLaunch] = id, launch
 	maps.Copy(env, tool.Env)
 	if toolName == "grok" {
@@ -212,6 +215,11 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		baseCommand += " --no-leader"
 	}
 	if baseCommand == "" {
+		// Exporting into a shell launch replaces tmux's login shell with a
+		// non-login one, worth it only to carry a profile.
+		if len(profile) == 0 {
+			return "", nil, nil
+		}
 		return "", env, nil
 	}
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
