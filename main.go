@@ -332,8 +332,12 @@ func run() (resultErr error) {
 		tea.WithFPS(120),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(model.CursorOutput(os.Stdout)),
+		tea.WithFilter(ui.ColorSchemeFilter),
 	)
 	if err := ui.DisableAlternateScroll(); err != nil {
+		return err
+	}
+	if err := ui.EnableColorSchemeReports(); err != nil {
 		return err
 	}
 	// The terminal's own text and background colors follow the theme while
@@ -361,6 +365,7 @@ func run() (resultErr error) {
 	final, runErr := program.Run()
 	catalog.StopAll()
 	ui.ResetTerminalColors()
+	_ = ui.DisableColorSchemeReports()
 	stopRuntime()
 	if abandoned := model.AbandonedEffects(); len(abandoned) > 0 && runErr == nil {
 		runErr = fmt.Errorf("quit before these finished, so check their result: %s", strings.Join(abandoned, "; "))
