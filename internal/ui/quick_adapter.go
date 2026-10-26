@@ -245,14 +245,14 @@ func (q *quickBar) clearAfterSend() {
 }
 
 // toggleQuickWorktree flips the worktree choice, or probes the target first
-// when its repo verdict is not cached.
+// when its repo verdict is unknown or stale.
 func (m *Model) toggleQuickWorktree() tea.Cmd {
 	if _, remote := m.remoteTarget(); remote {
 		m.quick.SetWorktree(!m.quick.WorktreeTouched() || !m.quick.Worktree())
 		return nil
 	}
 	dir := m.quickTargetDir()
-	capable, known := m.cachedWorktreeCapability(dir)
+	capable, known := m.freshWorktreeCapability(dir)
 	if !known {
 		return m.quickWorktreeProbeCmd(true)
 	}

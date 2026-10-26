@@ -17,7 +17,7 @@ func (m *Model) formWorktreeOn() bool {
 // directory rules a worktree out.
 func (m *Model) toggleFormWorktree() tea.Cmd {
 	dir := m.formSpawnDir()
-	capable, known := m.cachedWorktreeCapability(dir)
+	capable, known := m.freshWorktreeCapability(dir)
 	if !known {
 		return m.formWorktreeProbeCmd(true)
 	}
@@ -31,6 +31,14 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 }
 
 func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
+	answer, ok := m.ledger.worktreeRepos[dir]
+	if !ok || answer.at.IsZero() {
+		return false, false
+	}
+	return answer.capable, true
+}
+
+func (m *Model) freshWorktreeCapability(dir string) (bool, bool) {
 	answer, ok := m.ledger.worktreeRepos[dir]
 	if !ok || answer.at.IsZero() || time.Since(answer.at) >= worktreeLookupTTL {
 		return false, false
@@ -108,10 +116,9 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 // directory cannot host one.
 const worktreeUnavailable = "unavailable (not a git repo)"
 
-// worktreeLookupTTL bounds how long a directory's repo answer is reused.
-// The quick bar stays open across prompts, so a directory git-initialised
-// meanwhile has to be seen without closing it, while a frame that repaints
-// on every keystroke must not shell out to git each time.
+// worktreeLookupTTL bounds reuse for explicit toggles, so repository changes
+// are discovered while a composer stays open. Paint keeps the last observation
+// until a probe replaces it; time passing alone is not a new repo verdict.
 const worktreeLookupTTL = 2 * time.Second
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.
