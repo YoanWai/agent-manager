@@ -29,6 +29,8 @@ type GroupForm struct {
 	gen int
 	// lines is the field each painted body line belongs to, for clicks.
 	lines presentation.Lines[fieldLine]
+	// envShown says the last frame drew the environment row.
+	envShown bool
 }
 
 // fieldLine is a body line's field, and its entry or -1: a path
@@ -70,8 +72,11 @@ func (d GroupForm) Remote() string { return d.remote }
 
 // fieldCount is how many rows the focus cycles through.
 func (d GroupForm) fieldCount() int {
-	if d.remote != "" {
+	switch {
+	case d.remote != "":
 		return GroupFormWorktreeField
+	case !d.envShown:
+		return GroupFormEnvField
 	}
 	return groupFormFieldCount
 }
@@ -306,7 +311,8 @@ func (d GroupForm) Submit(parent string) GroupFormKey {
 // GroupFormView is what the form draws with: the root's field renderer,
 // input view and group badge, the selected parent, the picker under the
 // parent row, the open path suggestions and their hints, the worktree
-// choice labels and the rendered base and environment choices.
+// choice labels and the rendered base and environment choices. An empty
+// environment choice leaves its row off.
 type GroupFormView struct {
 	GlyphMode    presentation.GlyphMode
 	Field        func(label, value string, focused bool) string
@@ -353,7 +359,9 @@ func (d *GroupForm) View(view GroupFormView) Card {
 		worktree := view.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + view.Value.Render(view.Worktrees[d.worktreeIndex]) + view.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 		field("worktree", worktree, GroupFormWorktreeField)
 		field("base", view.Base, GroupFormBaseField)
-		field("env", view.Env, GroupFormEnvField)
+		if d.envShown = view.Env != ""; d.envShown {
+			field("env", view.Env, GroupFormEnvField)
+		}
 		if d.focus == GroupFormParentField {
 			add("\n", GroupFormParentField, -1)
 			for i, line := range strings.Split(view.Picker(), "\n") {

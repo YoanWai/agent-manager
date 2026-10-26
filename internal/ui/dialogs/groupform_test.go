@@ -89,7 +89,6 @@ func TestGroupFormPathSuggestionsTakeTheKeys(t *testing.T) {
 	d.Key(tea.KeyMsg{Type: tea.KeyShiftTab}, paths, "", 3)
 	d.Key(tea.KeyMsg{Type: tea.KeyShiftTab}, paths, "", 3)
 	d.Key(tea.KeyMsg{Type: tea.KeyShiftTab}, paths, "", 3)
-	d.Key(tea.KeyMsg{Type: tea.KeyShiftTab}, paths, "", 3)
 	if d.Focus() != GroupFormPathField {
 		t.Fatalf("shift+tab wraps to %d, want the path field", d.Focus())
 	}
@@ -222,5 +221,30 @@ func TestGroupFormClicksFollowThePaintedLines(t *testing.T) {
 	}
 	if got := d.Wheel(1); got.Action != GroupFormStay {
 		t.Fatalf("the wheel off the parent field = %+v", got)
+	}
+}
+
+// With no environment choice to show, the env row is left off and the focus
+// wraps from base to the name.
+func TestGroupFormLeavesTheEnvRowOffWithNothingToPick(t *testing.T) {
+	d := NewGroupForm("", 1)
+	paths := &fakePaths{}
+	card := d.View(GroupFormView{
+		Field: func(label, value string, _ bool) string { return label + "=" + value + "\n" },
+		Input: func(textinput.Model) string { return "input" }, Badge: func(s string) string { return s },
+		Picker: func() string { return "picker" }, Subtle: lipgloss.NewStyle(), Value: lipgloss.NewStyle(),
+		Worktrees: []string{"inherit"}, Base: "auto",
+	})
+	if strings.Contains(card.Body, "env=") {
+		t.Fatalf("body = %q, want no env row", card.Body)
+	}
+	for range 4 {
+		d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 1)
+	}
+	if d.Focus() != GroupFormBaseField {
+		t.Fatalf("four tabs focused %d, want base", d.Focus())
+	}
+	if d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 1); d.Focus() != GroupFormNameField {
+		t.Fatalf("tab past base focused %d, want the name", d.Focus())
 	}
 }

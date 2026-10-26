@@ -174,11 +174,11 @@ func (m *Model) viewGroupForm() string {
 }
 
 // groupEnvChoice renders a group's environment picker: its own profile, or
-// none and the parent's that none inherits. With no profile defined it says
-// where one comes from, since the picker has nothing to step to.
+// none and the parent's that none inherits. With no profile defined and
+// none chosen it is empty, which leaves the row off the form.
 func groupEnvChoice(env, inherited string, defined bool, mode presentation.GlyphMode) string {
 	if !defined && env == "" {
-		return subtleStyle().Render("none · define one from a shell")
+		return ""
 	}
 	g := presentation.ChromeFor(mode)
 	choice := subtleStyle().Render(g.ChoiceLeftGlyph+" ") + valueStyle().Render(cmp.Or(env, "none")) + subtleStyle().Render(" "+g.ChoiceRightGlyph)

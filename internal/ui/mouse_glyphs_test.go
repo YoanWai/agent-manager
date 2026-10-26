@@ -29,7 +29,8 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
 				t.Fatal("revealed symbols row was not clickable")
 			}
-			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+			// The environments row between them waits for a profile.
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs - 1 {
 				m = wheelOnCard(m, tea.MouseButtonWheelDown)
 			}
 			if m.settings.dialog.Field != uisettings.FieldDocs || !paints(m, "docs") {
@@ -43,7 +44,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			if opened != docsURL {
 				t.Fatal("docs click did not follow the scrolled row")
 			}
-			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs - 1 {
 				m = wheelOnCard(m, tea.MouseButtonWheelUp)
 			}
 			if m.settings.dialog.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {

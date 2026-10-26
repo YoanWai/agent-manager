@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -46,6 +47,7 @@ func TestRenameSessionKeepsAMissingTool(t *testing.T) {
 func TestRenameGroupWalksItsFields(t *testing.T) {
 	d := RenameGroup("work/old", "", 0)
 	paths := &fakePaths{}
+	d.GroupFields(groupFieldsView("none"))
 	d.input.SetValue("")
 	if got := d.Key(tea.KeyMsg{Type: tea.KeyEnter}, paths, 3); got.Action != RenameInvalid || got.Err != "name cannot be empty" {
 		t.Fatalf("enter on an empty name = %+v", got)
@@ -124,13 +126,7 @@ func TestRenameHints(t *testing.T) {
 func TestRenameGroupFieldsFollowTheirClicks(t *testing.T) {
 	d := RenameGroup("work/old", "/", 0)
 	paths := &fakePaths{}
-	view := GroupFieldsView{
-		Width:     60,
-		Input:     func(textinput.Model) string { return "input" },
-		Worktrees: []string{"inherit", "on", "off"},
-		Base:      "auto",
-		Env:       "none",
-	}
+	view := groupFieldsView("none")
 	d.GroupFields(view)
 	if got := d.Click(3, paths, 3); got.Action != RenameStay || d.Focus() != RenameEnvField {
 		t.Fatalf("first click on env = %+v, focus %d", got, d.Focus())
@@ -150,5 +146,34 @@ func TestRenameGroupFieldsFollowTheirClicks(t *testing.T) {
 	}
 	if got := d.Click(9, paths, 3); got.Action != RenameStay {
 		t.Fatalf("a click past the fields = %+v", got)
+	}
+}
+
+func groupFieldsView(env string) GroupFieldsView {
+	return GroupFieldsView{
+		Width:     60,
+		Input:     func(textinput.Model) string { return "input" },
+		Worktrees: []string{"inherit", "on", "off"},
+		Base:      "auto",
+		Env:       env,
+	}
+}
+
+// With no environment choice to show, the group edit leaves the env row off
+// and the focus wraps from base to the name.
+func TestRenameGroupLeavesTheEnvRowOffWithNothingToPick(t *testing.T) {
+	d := RenameGroup("work/old", "/", 0)
+	paths := &fakePaths{}
+	if out := d.GroupFields(groupFieldsView("")); strings.Contains(out, "env") {
+		t.Fatalf("group fields = %q, want no env row", out)
+	}
+	for range 3 {
+		d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3)
+	}
+	if d.Focus() != RenameBaseField {
+		t.Fatalf("three downs focused %d, want base", d.Focus())
+	}
+	if d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3); d.Focus() != RenameNameField {
+		t.Fatalf("down past base focused %d, want the name", d.Focus())
 	}
 }

@@ -22,8 +22,10 @@ type Rename struct {
 	dir       textinput.Model
 	worktree  int
 	focus     int
-	// lines is the field each line of the group fields shows, for clicks.
+	// lines is the field each line of the group fields shows, for clicks;
+	// envShown says they drew the environment row.
 	lines     presentation.Lines[fieldLine]
+	envShown  bool
 	tools     []string
 	toolIndex int
 }
@@ -143,7 +145,10 @@ type PathSuggestions interface {
 func (d *Rename) focusField(paths PathSuggestions, delta int) {
 	fields := 2
 	if d.group {
-		fields = 5
+		fields = RenameEnvField
+		if d.envShown {
+			fields++
+		}
 	}
 	d.focusOn(paths, (d.focus+delta+fields)%fields)
 }
@@ -321,7 +326,8 @@ func (d Rename) Hints() [][2]string {
 
 // GroupFieldsView is what the group edit's fields draw with: the root's
 // styles, its field renderer, the open path suggestions, the worktree
-// choice labels and the rendered base and environment choices.
+// choice labels and the rendered base and environment choices. An empty
+// environment choice leaves its row off.
 type GroupFieldsView struct {
 	GlyphMode   presentation.GlyphMode
 	Width       int
@@ -361,9 +367,11 @@ func (d *Rename) GroupFields(view GroupFieldsView) string {
 	out += "\n" + label(RenameWorktreeField).Width(10).Render("worktree") +
 		view.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + view.Value.Render(view.Worktrees[d.worktree]) + view.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	out += "\n" + label(RenameBaseField).Width(10).Render("base") + view.Base
-	out += "\n" + label(RenameEnvField).Width(10).Render("env") + view.Env
-	for _, field := range []int{RenameWorktreeField, RenameBaseField, RenameEnvField} {
-		d.lines.Show(fieldLine{field: field, entry: -1}, 1)
+	d.lines.Show(fieldLine{field: RenameWorktreeField, entry: -1}, 1)
+	d.lines.Show(fieldLine{field: RenameBaseField, entry: -1}, 1)
+	if d.envShown = view.Env != ""; d.envShown {
+		out += "\n" + label(RenameEnvField).Width(10).Render("env") + view.Env
+		d.lines.Show(fieldLine{field: RenameEnvField, entry: -1}, 1)
 	}
 	return out
 }

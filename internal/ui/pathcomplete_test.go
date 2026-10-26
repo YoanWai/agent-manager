@@ -239,12 +239,8 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 		t.Fatalf("down past worktree should move to base, focus=%d", m.rename.Focus())
 	}
 	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
-	if m.rename.Focus() != 4 {
-		t.Fatalf("down past base should move to env, focus=%d", m.rename.Focus())
-	}
-	m.handleRenameKey(tea.KeyMsg{Type: tea.KeyDown})
 	if m.rename.Focus() != 0 {
-		t.Fatalf("down past env should wrap to name, focus=%d", m.rename.Focus())
+		t.Fatalf("down past base should wrap to name, focus=%d", m.rename.Focus())
 	}
 }
 
