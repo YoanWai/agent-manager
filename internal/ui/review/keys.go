@@ -80,6 +80,16 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 		result.Navigation = NavigationBranchPicker
 	case "B":
 		result.Navigation = NavigationBasePicker
+	case "L":
+		result.Navigation = NavigationCommitPicker
+	case "[":
+		result.Requests = m.stepCommit(1)
+	case "]":
+		result.Requests = m.stepCommit(-1)
+	case "{":
+		result.Requests = m.stepCommit(len(m.commits))
+	case "}":
+		result.Requests = m.stepCommit(-len(m.commits))
 	case "u":
 		m.ToggleSideBySide(height)
 	case "f":
@@ -89,6 +99,12 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 			result.Error = "review state is unavailable"
 		} else {
 			result.Requests = m.ToggleReviewed()
+		}
+	case "A":
+		if !ctx.PersistenceAvailable {
+			result.Error = "review state is unavailable"
+		} else {
+			result.Requests = m.MarkAll()
 		}
 	case "c":
 		m.OpenAnnotation()
@@ -126,4 +142,12 @@ func (m *Model) ApplyFileCheck(result FileCheckResult) (string, bool) {
 		return "", false
 	}
 	return req.Path, true
+}
+
+func (m *Model) stepCommit(delta int) Requests {
+	request, ok := m.StepCommit(delta)
+	if !ok {
+		return Requests{}
+	}
+	return Requests{Load: &request, StartupTick: true}
 }

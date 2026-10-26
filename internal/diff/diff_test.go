@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"testing"
@@ -63,7 +64,7 @@ func TestUntrackedFileGetsLineCount(t *testing.T) {
 	write(t, dir, "new.go", "package a\n\nfunc B() {}\n")
 	write(t, dir, "empty.go", "")
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestUntrackedFileOverLineCapCountsTrueLines(t *testing.T) {
 	const total = maxWholeFileLines + 2000
 	write(t, dir, "huge.txt", linesOf(total))
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +144,7 @@ func TestUntrackedFileOverByteThresholdStillCounts(t *testing.T) {
 	total := (maxWholeFileBytes / len(line)) + 500
 	write(t, dir, "wide.txt", strings.Repeat(line, total))
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +185,7 @@ func TestHunkModelKeepsNumstat(t *testing.T) {
 	}
 	write(t, dir, "big.txt", changed)
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +224,7 @@ func TestUntrackedStatsFillAtBuildWithoutLoadingContents(t *testing.T) {
 		write(t, dir, fmt.Sprintf("untracked%03d.txt", i), linesOf(linesEach))
 	}
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +265,7 @@ func TestUntrackedStatErrorIsRecorded(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,7 +299,7 @@ func TestUnreadableUntrackedFileDoesNotAbortSet(t *testing.T) {
 	}
 	t.Cleanup(func() { os.Chmod(locked, 0o644) })
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatalf("BuildSet aborted on one unreadable file: %v", err)
 	}
@@ -354,7 +355,7 @@ func TestBuildSetBranchBaseOverride(t *testing.T) {
 	write(t, dir, "a.go", "package a\n\nfunc A() int { return 2 }\n")
 	commit(t, dir, "c2")
 
-	auto, err := BuildSet(driver, dir, git.ScopeBranch, "")
+	auto, err := BuildSet(driver, dir, git.ScopeBranch, "", "")
 	if err != nil {
 		t.Fatalf("auto BuildSet: %v", err)
 	}
@@ -362,7 +363,7 @@ func TestBuildSetBranchBaseOverride(t *testing.T) {
 		t.Fatalf("auto base (main == HEAD) should show no changes, got %d files", len(auto.Files))
 	}
 
-	over, err := BuildSet(driver, dir, git.ScopeBranch, "feature")
+	over, err := BuildSet(driver, dir, git.ScopeBranch, "feature", "")
 	if err != nil {
 		t.Fatalf("override BuildSet: %v", err)
 	}
@@ -390,11 +391,55 @@ func TestBuildSetBranchBaseOverrideInvalid(t *testing.T) {
 	write(t, dir, "a.go", "package a\n")
 	commit(t, dir, "c1")
 
-	_, err := BuildSet(driver, dir, git.ScopeBranch, "no-such-ref")
+	_, err := BuildSet(driver, dir, git.ScopeBranch, "no-such-ref", "")
 	if err == nil {
 		t.Fatal("invalid base should error, not fall back to main")
 	}
 	if !strings.Contains(err.Error(), "no-such-ref") {
 		t.Errorf("error must name the ref, got %q", err)
+	}
+}
+
+// A past commit renders its own change, not what later commits did to the
+// same file.
+func TestBuildSetCommitScope(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "one\n")
+	commit(t, dir, "c1")
+	write(t, dir, "a.txt", "one\ntwo\n")
+	commit(t, dir, "c2")
+	write(t, dir, "a.txt", "one\ntwo\nthree\n")
+	commit(t, dir, "c3")
+	past, err := driver.CommitSHA(dir, "HEAD~1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	set, err := BuildSet(driver, dir, git.ScopeCommit, "", past)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.Commit != past || len(set.Files) != 1 {
+		t.Fatalf("set = %+v, want one file at %s", set, past)
+	}
+	fd := LoadFile(driver, set, 0)
+	want := []Line{
+		{Kind: Same, OldNum: 1, NewNum: 1, Text: "one", Pair: -1},
+		{Kind: Add, NewNum: 2, Text: "two", Pair: -1},
+	}
+	if !reflect.DeepEqual(fd.Lines, want) {
+		t.Fatalf("lines = %+v, want %+v", fd.Lines, want)
+	}
+
+	head, err := BuildSet(driver, dir, git.ScopeCommit, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := driver.CommitSHA(dir, "HEAD"); head.Commit != want {
+		t.Fatalf("empty commit = %s, want HEAD %s", head.Commit, want)
+	}
+
+	if _, err := BuildSet(driver, dir, git.ScopeCommit, "", "0123456789012345678901234567890123456789"); err == nil {
+		t.Fatal("a commit that does not resolve must fail")
 	}
 }

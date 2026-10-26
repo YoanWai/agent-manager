@@ -71,7 +71,7 @@ func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, generation int,
 
 func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
 	state := m.review.Snapshot()
-	return m.reviewProbeCmd(uireview.ProbeRequest{Target: reviewTarget(sess), Scope: scope, RepoSelected: state.RepoSelected, GitRoot: state.Set.Repo.Root})
+	return m.reviewProbeCmd(uireview.ProbeRequest{Target: reviewTarget(sess), Scope: scope, RepoSelected: state.RepoSelected, GitRoot: state.Set.Repo.Root, Commit: state.Set.Commit})
 }
 
 func seedReviewForTest(m *Model, target uireview.Target, scope git.Scope, repo string, set diff.Set, apply bool) uireview.LoadRequest {
