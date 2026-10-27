@@ -73,7 +73,7 @@ The manager runs its sessions on a dedicated tmux socket (`-L`), so a developmen
 
 ## Checks
 
-CI runs these on every pull request, plus gitleaks, govulncheck and shellcheck on `install.sh`. Run them locally first:
+CI runs these on every pull request. The other jobs in `.github/workflows/ci.yml` are gitleaks, govulncheck, shellcheck on `install.sh`, the test suite on Windows and on macOS (all but one echo-latency test), the real-terminal e2e scenarios, the Windows ssh client against a WSL host, and a goreleaser snapshot build of every release target. Run these locally first:
 
 ```bash
 gofmt -l .          # must print nothing
