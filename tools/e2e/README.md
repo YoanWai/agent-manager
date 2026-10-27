@@ -15,9 +15,9 @@ records every observed transition. Keep the smoke separate from the fast Go suit
 transition; a successful cached-build run should take less than 30 seconds.
 
 The harness creates its own HOME (the default profile therefore belongs to this
-run), XDG directories, and shell configuration directory. When the startup feed
-opens the messages panel, the smoke closes it with esc after the screen stops
-saying the feed check has not landed. It removes inherited
+run), XDG directories, and shell configuration directory. It routes every HTTP
+request to a closed port, so the message feed and the release check fail at
+once and nothing lands mid-scenario. It removes inherited
 TMUX and uses a short, unique, precreated `/tmp/ame-*` socket directory. Every
 tmux command uses an absolute `-S` socket path within the fixture. Cleanup kills only these two
 servers within that directory, including on failure. A failed cleanup still
