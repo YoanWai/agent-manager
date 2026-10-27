@@ -54,6 +54,13 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - name: Shellcheck install script
         run: shellcheck install.sh
+      - name: Run install.sh
+        env:
+          AGENT_MANAGER_INSTALL_DIR: ${{ runner.temp }}/am-install
+          AGENT_MANAGER_INSTALL_DEPS: '0'
+        run: |
+          sh install.sh
+          "$AGENT_MANAGER_INSTALL_DIR/agent-manager" --version
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
@@ -111,6 +118,13 @@ jobs:
           go-version-file: go.mod
       - name: Install tmux
         run: brew install tmux
+      - name: Run install.sh
+        env:
+          AGENT_MANAGER_INSTALL_DIR: ${{ runner.temp }}/am-install
+          AGENT_MANAGER_INSTALL_DEPS: '0'
+        run: |
+          sh install.sh
+          "$AGENT_MANAGER_INSTALL_DIR/agent-manager" --version
       # The echo-latency budget holds on the Linux job and on a Mac. On this
       # runner the median echo lands at 80 to 160ms against a 60ms budget,
       # with or without -p 2, so the test would measure the runner here.
@@ -227,6 +241,14 @@ jobs:
       - name: Vet
         if: matrix.suite == 'rest'
         run: go vet ./...
+      - name: Run install.ps1
+        if: matrix.suite == 'rest'
+        env:
+          AGENT_MANAGER_INSTALL_DIR: ${{ runner.temp }}\am-install
+          AGENT_MANAGER_INSTALL_DEPS: '0'
+        run: |
+          .\install.ps1
+          & "$env:AGENT_MANAGER_INSTALL_DIR\agent-manager.exe" --version
       # -race needs cgo on Windows. Each psmux session is its own server and
       # each pane a PowerShell, so a shard can run past go test's default
       # ten minutes. -p 2 keeps the heavy packages from starving the
