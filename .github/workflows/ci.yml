@@ -109,12 +109,14 @@ jobs:
           go-version-file: go.mod
       - name: Install tmux
         run: brew install tmux
+      # The runner has three cores. -p 2 keeps the heavy packages from
+      # starving the echo-latency tests that would otherwise run beside them.
       - name: Test
         run: |
           fixture_root=$(mktemp -d /tmp/am-ci-race.XXXXXX)
           mkdir -p "$fixture_root/zsh"
           env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$fixture_root" ZDOTDIR="$fixture_root/zsh" SHELL=/bin/sh \
-            go test -race -timeout 20m ./...
+            go test -race -p 2 -timeout 20m ./...
 
   # Every target the release ships, built the way release.yml builds it.
   cross-build:
