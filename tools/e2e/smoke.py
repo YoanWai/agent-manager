@@ -42,6 +42,13 @@ class Sandbox:
             if key.startswith('GIT_'):
                 self.env.pop(key)
         self.env.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL='/dev/null')
+        # The manager fetches its message feed and release list after the first
+        # frame. A reply landing mid-scenario pops the messages panel over the
+        # list, so every HTTP request goes to a closed port and fails at once.
+        for key in ('NO_PROXY', 'no_proxy'):
+            self.env.pop(key, None)
+        closed = 'http://127.0.0.1:1'
+        self.env.update(HTTP_PROXY=closed, HTTPS_PROXY=closed, http_proxy=closed, https_proxy=closed)
         self.log = self.artifacts / 'commands.jsonl'
 
     def run(self, args, check=True):
@@ -141,27 +148,6 @@ class Sandbox:
         return errors
 
 
-feed_pending_text = 'checking messages\u2026'
-
-
-def feed_settled(frame):
-    if feed_pending_text in frame:
-        return False
-    return '─ messages' in frame or 'A G E N T' in frame
-
-
-def settle_messages(sandbox, target):
-    def capture():
-        return sandbox.tmux('capture-pane', '-p', '-t', target).stdout
-
-    frame = sandbox.wait('messages-settled', capture, feed_settled, timeout=45)
-    if '─ messages' not in frame:
-        return
-    sandbox.tmux('send-keys', '-t', target, 'Escape')
-    sandbox.wait('messages-closed', capture,
-                 lambda current: feed_settled(current) and '─ messages' not in current)
-
-
 def smoke(sandbox, binary):
     repo = sandbox.artifacts / 'fixture-repo'
     repo.mkdir()
@@ -174,7 +160,6 @@ def smoke(sandbox, binary):
                  'commit', '-m', 'fixture baseline'])
     changed.write_text('after_review_e2e\n')
     sandbox.start_manager('smoke', repo, binary)
-    settle_messages(sandbox, 'smoke:0.0')
     sandbox.frame('startup', 'A G E N T')
     sandbox.key('Escape')
     sandbox.key('?')
