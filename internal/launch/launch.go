@@ -6,6 +6,8 @@
 package launch
 
 import (
+	"errors"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -266,7 +268,14 @@ func Executable() string {
 	if err != nil {
 		return "agent-manager"
 	}
-	invoked, err := exec.LookPath(os.Args[0])
+	return stableExecutable(exe, os.Args[0])
+}
+
+// stableExecutable prefers the path the shell found exe by, arg0, when it
+// still names exe, or when exe is gone from where it ran and the path is
+// what remains of it.
+func stableExecutable(exe, arg0 string) string {
+	invoked, err := exec.LookPath(arg0)
 	if err != nil {
 		return exe
 	}
@@ -278,8 +287,8 @@ func Executable() string {
 		return exe
 	}
 	exeInfo, err := os.Stat(exe)
-	if err != nil || !os.SameFile(invokedInfo, exeInfo) {
-		return exe
+	if errors.Is(err, fs.ErrNotExist) || (err == nil && os.SameFile(invokedInfo, exeInfo)) {
+		return invoked
 	}
-	return invoked
+	return exe
 }
