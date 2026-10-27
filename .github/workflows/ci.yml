@@ -56,6 +56,8 @@ jobs:
         run: shellcheck install.sh
       - name: Vet
         run: go vet ./...
+      - name: Staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...
       - name: Test
         run: |
           fixture_root=$(mktemp -d /tmp/am-ci-race.XXXXXX)
