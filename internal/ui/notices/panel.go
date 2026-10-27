@@ -208,7 +208,8 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 		return 0
 	}
 	inner := innerWidth(notices, f.Width)
-	room := bodyRoom(f.Height, len(notices), len(p.tail(notices, f, inner))+1)
+	_, stack := footLayout(notices, p.cursor, inner, f.GlyphMode, f.CloseKey)
+	room := bodyRoom(f.Height, len(notices), len(p.tail(notices, f, inner))+1+len(stack))
 	body, _ := bodyLayout(notices[p.cursor], inner, room, f.Theme, f.GlyphMode)
 	return max(0, len(body)-room)
 }
@@ -255,10 +256,18 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	t := f.Theme
 	inner := innerWidth(notices, f.Width)
 	p.lines.Reset()
+	edge, stack := footLayout(notices, p.cursor, inner, f.GlyphMode, f.CloseKey)
+	var footRows []string
+	for _, pairs := range stack {
+		footRows = append(footRows, renderFoot(pairs, t, f.GlyphMode))
+	}
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode), t, f.GlyphMode)
+		if len(footRows) > 0 {
+			rows = append(rows, "")
+		}
+		frame := cardFrame(rows, footRows, inner, legend(t), renderFoot(edge, t, f.GlyphMode), t, f.GlyphMode)
 		return frame
 	}
 	var rows []string
@@ -280,7 +289,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	tail := p.tail(notices, f, inner)
 	tail = append(tail, "")
 
-	room := bodyRoom(f.Height, len(notices), len(tail))
+	room := bodyRoom(f.Height, len(notices), len(tail)+len(footRows))
 	body, scrolls := bodyLayout(selected, inner, room, t, f.GlyphMode)
 	if scrolls {
 		body = scrollWindow(body, room, p.scroll, inner, t, f.GlyphMode)
@@ -288,9 +297,9 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	rows = append(rows, body...)
 	rows = append(rows, tail...)
 
-	frame := cardFrame(rows, inner,
+	frame := cardFrame(rows, footRows, inner,
 		legend(t),
-		renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode), t, f.GlyphMode)
+		renderFoot(edge, t, f.GlyphMode), t, f.GlyphMode)
 	return frame
 }
 
@@ -300,57 +309,109 @@ const footStart = 2
 
 const footSep = " · "
 
-// Foot is where each key the bottom edge names was painted, the ones the
-// edge's truncation cut left out.
+// Foot is where each footer key was painted. Y counts rows from the
+// bottom edge, so a key stacked above it has a negative Y.
 func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	inner := innerWidth(notices, f.Width)
+	edge, stack := footLayout(notices, p.cursor, inner, f.GlyphMode, f.CloseKey)
 	var keys []presentation.PaintedKey
 	x := footStart
-	for i, pair := range footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey) {
+	for i, pair := range edge {
 		if i > 0 {
 			x += lipgloss.Width(footSep)
 		}
 		width := lipgloss.Width(footPart(pair, f.GlyphMode))
-		if x+width > footStart+inner+1 {
-			break
-		}
 		keys = append(keys, presentation.PaintedKey{X0: x, X1: x + width, Label: pair[0]})
 		x += width
+	}
+	for row, pairs := range stack {
+		x := footStart
+		for i, pair := range pairs {
+			if i > 0 {
+				x += lipgloss.Width(footSep)
+			}
+			width := lipgloss.Width(footPart(pair, f.GlyphMode))
+			// cardFrame cuts a key wider than the card at its inner edge.
+			keys = append(keys, presentation.PaintedKey{X0: x, X1: min(x+width, footStart+inner), Y: row - len(stack), Label: pair[0]})
+			x += width
+		}
 	}
 	return keys
 }
 
-func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode, binding keybind.Binding) [][2]string {
+// footLayout is the bottom edge's pairs or, once the actions overflow the
+// edge, those actions stacked into rows inside the card above it, so every
+// key a click can run stays painted. The actions keep their words until one
+// of them alone is wider than the card. One of the two is empty.
+func footLayout(notices []Notice, cursor, inner int, mode presentation.GlyphMode, binding keybind.Binding) ([][2]string, [][][2]string) {
+	if edge := footPairs(notices, cursor, inner, mode, binding); edge != nil {
+		return edge, nil
+	}
+	keys := [][2]string{{"r", "refresh"}, {noticeCloseKeys(binding), ""}}
+	if len(notices) > 0 {
+		keys = footActions(notices, cursor, binding)
+	}
+	for _, key := range keys {
+		if lipgloss.Width(footPart(key, mode)) > inner {
+			for i := range keys {
+				keys[i][1] = ""
+			}
+			break
+		}
+	}
+	var stack [][][2]string
+	var row [][2]string
+	for _, key := range keys {
+		if row != nil && lipgloss.Width(footText(append(row, key), mode)) > inner {
+			stack = append(stack, row)
+			row = nil
+		}
+		row = append(row, key)
+	}
+	return nil, append(stack, row)
+}
+
+func noticeCloseKeys(binding keybind.Binding) string {
 	closeKeys := "esc/q"
 	for _, key := range closeBinding(binding).Keys() {
 		if key.Tea() != "q" {
 			closeKeys += "/" + key.Glyph()
 		}
 	}
-	if len(notices) == 0 {
-		return [][2]string{{"r", "refresh"}, {closeKeys, ""}}
-	}
+	return closeKeys
+}
+
+func footActions(notices []Notice, cursor int, binding keybind.Binding) [][2]string {
 	var update [][2]string
 	if notices[cursor].IsUpdate() {
 		update = [][2]string{{"u", "update"}}
 	}
-	actions := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {closeKeys, ""}}...)
-	// Navigation shrinks, then drops, then the actions lose their words, so
-	// every key a click can run stays on the edge.
-	bare := [][2]string{{"↑↓", ""}}
-	for _, action := range actions {
-		bare = append(bare, [2]string{action[0], ""})
+	return append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {noticeCloseKeys(binding), ""}}...)
+}
+
+// footPairs is the widest tier that fits the bottom edge, or nil when none
+// does.
+func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode, binding keybind.Binding) [][2]string {
+	fits := func(pairs [][2]string) bool { return lipgloss.Width(footText(pairs, mode)) <= inner+1 }
+	if len(notices) == 0 {
+		if pairs := [][2]string{{"r", "refresh"}, {noticeCloseKeys(binding), ""}}; fits(pairs) {
+			return pairs
+		}
+		return nil
 	}
+	actions := footActions(notices, cursor, binding)
+	// Navigation shrinks, then drops; the actions keep their words, and once
+	// they overflow the edge footLayout stacks them inside the card.
 	for _, pairs := range [][][2]string{
 		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
 		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
 		actions,
 	} {
-		if lipgloss.Width(footText(pairs, mode)) <= inner+1 {
+		if fits(pairs) {
 			return pairs
 		}
 	}
-	return bare
+	return nil
 }
 
 func footPart(pair [2]string, mode presentation.GlyphMode) string {
@@ -385,8 +446,9 @@ func legend(t Theme) string {
 
 // cardFrame wraps content rows in the notices fieldset: a rounded
 // yellow border with legends set into the top and bottom edges and the
-// card fill behind every row. inner is the content column's width.
-func cardFrame(rows []string, inner int, topLegend, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {
+// card fill behind the body. Footer rows stay on the backdrop like the
+// bottom legend. inner is the content column's width.
+func cardFrame(rows, footRows []string, inner int, topLegend, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {
 	g := presentation.ChromeFor(mode)
 	border := t.Border
 	edge := border.Render("│")
@@ -406,6 +468,10 @@ func cardFrame(rows []string, inner int, topLegend, bottomLegend string, t Theme
 	for _, row := range rows {
 		row = ansi.Truncate(row, inner, "…")
 		lines = append(lines, edge+t.Fill(" "+row, inner+2)+edge)
+	}
+	for _, row := range footRows {
+		row = ansi.Truncate(row, inner, "…")
+		lines = append(lines, edge+padRight(" "+row, inner+2)+edge)
 	}
 	return append(lines, legend(g.BottomLeftGlyph, bottomLegend, g.BottomRightGlyph))
 }

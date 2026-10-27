@@ -86,16 +86,38 @@ func (m *Model) footer() legend {
 func (m *Model) listFooter() string { return m.listLegend().text }
 
 func (m *Model) listLegend() legend {
-	return paintLegend([]legendSection{m.rowLegend(), m.viewLegend()}, m.layout.width, m.prefs.glyphMode)
+	sections := []legendSection{m.rowLegend(), m.viewLegend()}
+	mode, rows := m.listLegendLayout()
+	if mode == legendTitled {
+		bar, _ := paintTitledLegend(sections, m.layout.width, m.prefs.glyphMode)
+		return bar
+	}
+	bar := paintUntitledLegend(sections, m.layout.width, m.prefs.glyphMode, mode, rows)
+	bar.text = presentation.PadToHeight(bar.text, rows)
+	return bar
+}
+
+// listLegendLayout reads the list footer's mode and height off every footer
+// the cursor or an alert can bring, so neither resizes the preview box. An
+// untitled footer may take up to half the rows below the header.
+func (m *Model) listLegendLayout() (legendMode, int) {
+	room := max(legendMaxRows, (m.layout.height-m.listChromeRows()-1)/2)
+	return legendLayout(m.legendReference(), m.layout.width, room, m.prefs.glyphMode)
 }
 
 // transientFooter renders one tier at the list footer's height: the footer
 // sets the preview box, and a box that moves resizes every session's pane,
 // which costs an agent drawing on the normal screen a full transcript redraw.
 // The full screen layout has no preview box to hold still, so a tier there
-// takes the one row it needs and hands the rest to the body.
+// takes the one row it needs and hands the rest to the body. The tier
+// narrows the way the list footer does, within the same rows.
 func (m *Model) transientFooter(section legendSection) legend {
-	bar := paintLegend([]legendSection{section}, m.layout.width, m.prefs.glyphMode)
+	var bar legend
+	if mode, rows := m.listLegendLayout(); mode == legendTitled {
+		bar, _ = paintTitledLegend([]legendSection{section}, m.layout.width, m.prefs.glyphMode)
+	} else {
+		bar = paintNarrowLegend([]legendSection{section}, m.layout.width, m.prefs.glyphMode, mode, rows)
+	}
 	if !m.prefs.fullLayout {
 		bar.text = presentation.PadToHeight(bar.text, lipgloss.Height(m.listFooter()))
 	}

@@ -1600,18 +1600,32 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				m.layout.width, m.layout.height, m.prefs.fullLayout = width, 34, full
 				m.prefs.hideStats = true
 				m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, binding))
-				x, y := messagesCell(t, m)
-				if _, ok := m.layout.keyHits.at(x, y); !ok {
-					t.Fatalf("full=%v width=%d binding=%s: painted messages entry misses its hit box %+v", full, width, binding, m.layout.keyHits)
-				}
-				if m = leftClick(m, x, y); m.mode != modeNotices {
-					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
-				}
-				m.handleNoticesKey(key("esc"))
 				msg := key(binding)
 				if binding == "alt+m" {
 					msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
 				}
+				// A footer too narrow for words paints the entry as its key
+				// alone, so the entry is found by the hit that presses it and
+				// read back from the cells under that hit.
+				rows := strings.Split(ansi.Strip(preparedView(m)), "\n")
+				found := false
+				var entry keyHit
+				for _, hit := range m.layout.keyHits {
+					if hit.key.String() == msg.String() && (!found || hit.y > entry.y) {
+						entry, found = hit, true
+					}
+				}
+				if !found {
+					t.Fatalf("full=%v width=%d binding=%s: no hit opens messages %+v", full, width, binding, m.layout.keyHits)
+				}
+				if painted := strings.TrimSpace(ansi.Cut(rows[entry.y], entry.x0, entry.x1)); !strings.HasPrefix(painted, m.listGlyph(keybind.Messages)) {
+					t.Fatalf("full=%v width=%d binding=%s: the messages hit covers %q, not its key %q", full, width, binding, painted, m.listGlyph(keybind.Messages))
+				}
+				x, y := entry.x0, entry.y
+				if m = leftClick(m, x, y); m.mode != modeNotices {
+					t.Fatalf("click on messages should open notices, mode=%v", m.mode)
+				}
+				m.handleNoticesKey(key("esc"))
 				m.handleKey(msg)
 				if m.mode != modeNotices {
 					t.Fatalf("%s should open notices, mode=%v", binding, m.mode)
@@ -1624,8 +1638,18 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
-				if m = leftClick(m, x, y); m.mode != modeList {
-					t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
+				for _, hit := range m.layout.keyHits {
+					if hit.key.String() == msg.String() {
+						t.Fatalf("full=%v width=%d binding=%s: with nothing unread a hit still opens messages: %+v", full, width, binding, hit)
+					}
+				}
+				// An untitled footer slides the next key into the freed cell;
+				// that key is checked above to be another, and clicking it
+				// would run its own action.
+				if _, taken := m.layout.keyHits.at(x, y); !taken {
+					if m = leftClick(m, x, y); m.mode != modeList {
+						t.Fatalf("a click where the entry was must not open Messages, mode=%v", m.mode)
+					}
 				}
 				m.handleKey(msg)
 				if m.mode != modeNotices {

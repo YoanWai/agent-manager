@@ -1,6 +1,7 @@
 package notices
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -49,4 +50,20 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyHome}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+func footerLegend(row string, mode presentation.GlyphMode) string {
+	left, right := "╰", "╯"
+	if mode == presentation.GlyphModeBasic {
+		left, right = "+", "+"
+	}
+	return strings.TrimRight(strings.TrimSuffix(strings.TrimPrefix(row, left+"─"), right), "─")
+}
+
+func plainFooter(width int, mode presentation.GlyphMode) string {
+	left, right := "╰", "╯"
+	if mode == presentation.GlyphModeBasic {
+		left, right = "+", "+"
+	}
+	return left + strings.Repeat("─", max(width-6, 0)) + right
 }
