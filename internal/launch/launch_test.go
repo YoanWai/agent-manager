@@ -582,23 +582,6 @@ func TestStableExecutableIgnoresAnUnrelatedArgv(t *testing.T) {
 	}
 }
 
-// An upgrade that removed the running binary's directory leaves the link
-// pointing at its replacement, and a launch from the old manager names
-// the link rather than the path that is gone.
-func TestStableExecutableKeepsTheLinkOnceTheBinaryIsGone(t *testing.T) {
-	exe, link := executableBehindLink(t)
-	if err := os.Remove(exe); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(exe, []byte("replacement"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	gone := filepath.Join(filepath.Dir(exe), "0.1.0", filepath.Base(exe))
-	if got := stableExecutable(gone, link); got != link {
-		t.Fatalf("stableExecutable() = %q, want the link %q", got, link)
-	}
-}
-
 // executableBehindLink lays out a versioned binary and a link to it, the
 // way a package manager installs one. The names carry the test binary's
 // extension so LookPath takes them on Windows.

@@ -6,8 +6,6 @@
 package launch
 
 import (
-	"errors"
-	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -259,11 +257,19 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	return asAgentProcess(agentFile, stamp, command+" --settings "+tmux.ShellQuote(settingsPath)), env, nil
 }
 
+// executablePath is settled as the process starts, while the binary it
+// runs from is still where it was: a package upgrade later may remove it.
+var executablePath = resolveExecutable()
+
 // Executable names the binary generated MCP configs and hooks point at: the
 // running manager, through the link it was started by when there is one.
 // Linux resolves the link to its target, which for a Homebrew Cellar path
 // is gone after the next upgrade while the link lives on.
 func Executable() string {
+	return executablePath
+}
+
+func resolveExecutable() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return "agent-manager"
@@ -272,8 +278,7 @@ func Executable() string {
 }
 
 // stableExecutable prefers the path the shell found exe by, arg0, when it
-// still names exe, or when exe is gone from where it ran and the path is
-// what remains of it.
+// names exe.
 func stableExecutable(exe, arg0 string) string {
 	invoked, err := exec.LookPath(arg0)
 	if err != nil {
@@ -287,8 +292,8 @@ func stableExecutable(exe, arg0 string) string {
 		return exe
 	}
 	exeInfo, err := os.Stat(exe)
-	if errors.Is(err, fs.ErrNotExist) || (err == nil && os.SameFile(invokedInfo, exeInfo)) {
-		return invoked
+	if err != nil || !os.SameFile(invokedInfo, exeInfo) {
+		return exe
 	}
-	return exe
+	return invoked
 }
