@@ -423,9 +423,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("the image file must outlive the refusal, stat err = %v", err)
 	}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m.drainEffects(t)
-	m = updated.(*Model)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("the image file should be gone, stat err = %v", err)
 	}
@@ -883,8 +882,7 @@ func TestLaunchHintQuitsOnCtrlC(t *testing.T) {
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	m = updated.(*Model)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("ctrl+c in the dialog should quit")
 	}
