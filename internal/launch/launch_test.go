@@ -562,3 +562,46 @@ func TestAntigravityLaunchAndRevive(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// A manager started through a link, as Homebrew on Linux starts it, names
+// the link in what it generates: the versioned target the link points at
+// is gone after the next upgrade, while the link lives on.
+func TestStableExecutableKeepsTheLinkItWasStartedThrough(t *testing.T) {
+	exe, link := executableBehindLink(t)
+	if got := stableExecutable(exe, link); got != link {
+		t.Fatalf("stableExecutable() = %q, want the link %q", got, link)
+	}
+}
+
+// A path that names something other than the running binary, as a test
+// runner or a wrapper leaves argv, still gives the binary itself.
+func TestStableExecutableIgnoresAnUnrelatedArgv(t *testing.T) {
+	exe, _ := executableBehindLink(t)
+	if got := stableExecutable(exe, filepath.Join(t.TempDir(), "missing")); got != exe {
+		t.Fatalf("stableExecutable() = %q, want %q", got, exe)
+	}
+}
+
+// executableBehindLink lays out a versioned binary and a link to it, the
+// way a package manager installs one. The names carry the test binary's
+// extension so LookPath takes them on Windows.
+func executableBehindLink(t *testing.T) (exe, link string) {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	exe = filepath.Join(dir, "0.1.0", "agent-manager"+filepath.Ext(self))
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link = filepath.Join(dir, "agent-manager"+filepath.Ext(self))
+	if err := os.Symlink(exe, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	return exe, link
+}
