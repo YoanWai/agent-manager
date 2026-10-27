@@ -5,16 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/charmbracelet/x/ansi"
 )
 
 func testSources(latest string) Sources {
 	return Sources{
-		Store:       true,
-		Update:      Update{Version: "v0.2.0", Latest: latest},
-		SessionKeys: keybind.DefaultSession(),
-		ListKeys:    keybind.DefaultList(),
+		Store:  true,
+		Update: Update{Version: "v0.2.0", Latest: latest},
 	}
 }
 
@@ -44,12 +41,12 @@ func TestPanelRunsOnCopiedSources(t *testing.T) {
 	src := testSources("v0.3.0")
 	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
-	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", Welcome, ArrowStep}) {
+	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", ArrowStep}) {
 		t.Fatalf("notices = %v", got)
 	}
-	p.Open(notices, Welcome)
+	p.Open(notices, ArrowStep)
 	if p.Cursor() != 1 {
-		t.Fatalf("open selected %d, want the welcome", p.Cursor())
+		t.Fatalf("open selected %d, want the arrow step notice", p.Cursor())
 	}
 
 	if out := p.Key(key("u"), notices, testFrame()); out.Action != Stay {
@@ -107,7 +104,7 @@ func TestUpdateNoticeHighlightsPressU(t *testing.T) {
 
 func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 	src := testSources("")
-	p := NewPanel(map[string]bool{Welcome: true})
+	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
 	p.Open(notices, ArrowStep)
 	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != ArrowStep || !out.Close {

@@ -22,11 +22,11 @@ func TestEnvironmentsRowWaitsForAProfile(t *testing.T) {
 		t.Fatalf("an environments row with no profile:\n%s", body)
 	}
 	s.Field = FieldPrompts
-	if s.Key(key("down"), ctx); s.Field != FieldDocs {
-		t.Fatalf("down from saved prompts landed on %d, want docs", s.Field)
+	if s.Key(key("down"), ctx); s.Field != FieldSetup {
+		t.Fatalf("down from saved prompts landed on %d, want the setup", s.Field)
 	}
 	if s.Key(key("up"), ctx); s.Field != FieldPrompts {
-		t.Fatalf("up from docs landed on %d, want saved prompts", s.Field)
+		t.Fatalf("up from the setup landed on %d, want saved prompts", s.Field)
 	}
 	view.Envs = []Env{{Name: "work"}}
 	if body := s.View(view).Body; !strings.Contains(body, "environments") {

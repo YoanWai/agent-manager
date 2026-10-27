@@ -67,7 +67,7 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 34
 	m.openNotices("")
 	if len(m.activeNotices()) == 0 {
-		t.Fatal("test setup: a fresh model shows the welcome notice")
+		t.Fatal("test setup: a fresh model lists the built-in notices")
 	}
 	for _, key := range []string{"↑↓ pick", "pgup/pgdn"} {
 		x, y := paintedCell(t, m, key)

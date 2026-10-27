@@ -48,6 +48,8 @@ const (
 	// the list and live preview stay on screen.
 	modeFocus
 	modeConnection
+	// modeOnboarding is the first-run setup, over the whole terminal.
+	modeOnboarding
 )
 
 type Model struct {
@@ -283,7 +285,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	} else {
 		model.prefs.glyphMode = presentation.GlyphMode(glyph.Value)
 	}
-	model.openStartupNotice()
+	model.openStartupGreeting()
 	model.indexReleaseRanges()
 	model.review = uireview.New(model.defaultSplitLayout())
 	model.prepareFrame()
@@ -292,5 +294,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkStartupFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.setupOnLaunch(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkStartupFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
 }

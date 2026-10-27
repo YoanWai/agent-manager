@@ -30,6 +30,8 @@ type startupState struct {
 	startupAnimating bool
 	booting          bool
 	pendingTyped     map[string]typedPromptCandidate
+	// setup is the first-run setup, open in modeOnboarding.
+	setup onboardingFeature
 }
 
 func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
@@ -47,6 +49,9 @@ func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case bannerShimmerMsg:
 		m.startup.bannerPhase = 0
 		return routed(m, m.bannerTick())
+
+	case setupProbedMsg:
+		return routed(m, m.applySetupProbe(msg))
 
 	case startupTickMsg:
 		if !m.needsLoaderTick() {

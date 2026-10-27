@@ -8,6 +8,12 @@ Sessions run inside tmux (`am_*` namespace), so they survive the manager quittin
 
 Agent sessions live on a private tmux server named `agentmgr`, so they never mix with the tmux you run yourself and a `kill-server` on your own socket leaves them alone. To reach one from a plain shell, name that server: `tmux -L agentmgr ls`, then `tmux -L agentmgr attach -t am_<id>`.
 
+## First run
+
+The first launch of a fresh install opens a setup over the whole terminal. Four steps set what most people change first: which agent CLIs the session pickers offer (the ones found on your `PATH` start checked), the sessions layout, the list density, and the theme, with "follow the OS" beside the palettes. A window beside each step draws the list the way the choice on screen would, and the theme step repaints the whole screen as you move. Three short cards follow: starting an agent from the quick prompt, answering, focusing and attaching a session and coming back, and where Settings and Messages live. The cards name the keys as they are bound now.
+
+`↵` confirms a step and saves it, `⌫` goes back, and `esc` leaves at any point. A step is saved when you confirm it, the same as its Settings row would save it, so leaving early keeps the defaults for the rest. The setup runs once; the **first-run setup** row in Settings (`s`) opens it again on your current choices.
+
 ## Keys
 
 Tell your agent what you want to review in Agent Manager. Your agent will set up the repository or worktree, target and scope for you to view in the review panel. You can also tell your agent to manage sessions and terminals in Agent Manager; it can set them up and control them for you.
@@ -48,11 +54,11 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `ctrl+r` | Review the selected session's changes: full-screen whole-file diffs, with `c` to comment a line and `C` to send the comments to the agent |
 | `F` | Fold / unfold every group |
-| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, saved prompts, environments, docs, report a bug, suggest a change, and the version row that updates in place) |
+| `s` | Settings (default tool, theme, theme follows OS, background, list density, sessions layout, header and computer stats visibility, review layout, after quick send, session keys, ←→ step in/out, mouse, spawn in worktree, fetch on spawn, coordination, notifications, notify on finish, editor, keybindings, CLIs, saved prompts, environments, first-run setup, docs, report a bug, suggest a change, and the version row that updates in place) |
 | `\|` | Resize the split: `←→` nudge the divider, `enter` commits, `esc` cancels |
 | `t` | Toggle archived view |
 | `w` | Filter to sessions that need attention (`waiting`, `finished`, `errored`); press again to show all |
-| `M` | Messages (the update notice with a release's highlights and thanks, maintainer messages, and tips, where `x` dismisses one for good). New notices open automatically. A long message scrolls with the wheel, `pgup`/`pgdn`, and `home`/`end`. While any message is left, the key legend leads with `messages`, and a click on it reopens them in either layout. The welcome message points at Settings for a bug or an idea. |
+| `M` | Messages (the update notice with a release's highlights and thanks, maintainer messages, and tips, where `x` dismisses one for good). New notices open automatically. A long message scrolls with the wheel, `pgup`/`pgdn`, and `home`/`end`. While any message is left, the key legend leads with `messages`, and a click on it reopens them in either layout. |
 | `e` | Hide / show empty groups |
 | `/` | Search the list by name. The field takes an accent fill while it is open, and the query lights up inside every matching session and group name |
 | `?` | The key map for the current screen. From the list it shows every group; from review it shows only review bindings. It scrolls (`↑↓`/`jk`, `pgup`/`pgdn`, `g`/`G`) and `/` searches it down to one line. |

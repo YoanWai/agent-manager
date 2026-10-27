@@ -18,6 +18,7 @@ const (
 	OpenDocs
 	OpenFeatureRequest
 	RequestCLISupport
+	OpenSetup
 )
 
 // Notice is what a key leaves on the status bar: nothing, a cleared bar,
@@ -98,6 +99,8 @@ func (s *State) Key(msg tea.KeyMsg, ctx Context) Result {
 		return s.Cycle(1)
 	case "enter":
 		switch s.Field {
+		case FieldSetup:
+			return Result{Exit: OpenSetup}
 		case FieldDocs:
 			return Result{Exit: OpenDocs}
 		case FieldBugReport:

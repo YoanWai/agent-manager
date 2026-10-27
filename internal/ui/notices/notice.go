@@ -13,9 +13,8 @@ import (
 
 // IDs of the notices that ship in the binary.
 const (
-	Welcome = "welcome"
 	// ArrowStep introduces the beta ←→ pair; it ships in the binary and
-	// stays listed until dismissed, like the welcome.
+	// stays listed until dismissed.
 	ArrowStep         = "arrow-step-beta"
 	ConfigNotImported = "config-not-imported"
 )

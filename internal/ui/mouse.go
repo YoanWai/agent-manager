@@ -254,6 +254,8 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 		return m, m.launchHint.handleClick(m, line+m.launchHintDroppedRows(body, hints))
 	case modeFocus:
 		return m, m.handleFocusSavedClick(line)
+	case modeOnboarding:
+		return m.applySetupOutcome(m.startup.setup.Click(line))
 	}
 	return m, nil
 }
@@ -284,6 +286,8 @@ func (m *Model) wheelCard(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	case modeFocus:
 		cmd, _ := m.focus.saved.list.Key(arrow)
 		return m, cmd
+	case modeOnboarding:
+		return m.applySetupOutcome(m.startup.setup.Wheel(step))
 	}
 	return m, nil
 }

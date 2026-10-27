@@ -64,6 +64,8 @@ func (m *Model) renderFrame() string {
 		frame = m.viewDiffFull()
 	case modeNotices:
 		frame = m.viewNoticesCard()
+	case modeOnboarding:
+		frame = m.viewSetup()
 	default:
 		frame = m.overlayRowMenu(m.titleTopRowWithUpdate(m.viewListFrame()))
 		if m.mode == modeFocus && m.focus.saved.list.Open() {

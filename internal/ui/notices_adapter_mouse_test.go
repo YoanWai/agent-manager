@@ -3,16 +3,19 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/feed"
 )
 
 func TestClickOnAMessageTitleSelectsIt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
+	m.notices.feedMessages = []feed.Message{{ID: "feed-first", Title: "Hold off on v0.2.0", Body: []string{"details"}}}
 	m.openNotices("")
 	notices := m.activeNotices()
 	if len(notices) < 2 {
-		t.Fatalf("test setup: a fresh model shows two notices, has %d", len(notices))
+		t.Fatalf("test setup: a feed message and the built-in notice make two, has %d", len(notices))
 	}
 	x, y := paintedCell(t, m, notices[1].Title)
 	if m = leftClick(m, x, y); m.notices.Cursor() != 1 || m.mode != modeNotices {
