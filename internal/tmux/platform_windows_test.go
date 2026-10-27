@@ -187,21 +187,19 @@ func TestPsmuxSessionOfPaneUsesTheServerPid(t *testing.T) {
 	}
 }
 
-// Kill takes the session's server down and its launch script with it.
+// The launch script is gone once PowerShell has run it, and Kill takes the
+// session's server down.
 func TestPsmuxKillRemovesSessionAndScript(t *testing.T) {
 	driver := requireTmux(t)
 	id := psmuxSession(t, driver, "kill", "Write-Output started", "started")
-	if _, err := os.Stat(launchScriptPath(id)); err != nil {
-		t.Fatalf("launch script: %v", err)
+	if _, err := os.Stat(launchScriptPath(id)); !os.IsNotExist(err) {
+		t.Fatalf("launch script left behind: %v", err)
 	}
 	if err := driver.Kill(id); err != nil {
 		t.Fatalf("Kill: %v", err)
 	}
 	if driver.Exists(id) {
 		t.Fatal("session should be gone after Kill")
-	}
-	if _, err := os.Stat(launchScriptPath(id)); !os.IsNotExist(err) {
-		t.Fatalf("launch script should be removed, stat err = %v", err)
 	}
 }
 
