@@ -20,7 +20,6 @@ type focusRequest struct {
 func (focusRequest) effectRequest() {}
 
 type focusEffectResult struct {
-	fatal error
 }
 
 func (focusEffectResult) effectResult() {}

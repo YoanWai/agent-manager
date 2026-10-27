@@ -65,7 +65,6 @@ func storedPreview(st *store.Store, driver *tmux.Driver, id string) (string, err
 
 const quoteHistoryLines = 300
 
-func oneLine(name string) string  { return strings.Join(strings.Fields(name), " ") }
 func paneBooted(pane string) bool { return strings.TrimSpace(ansi.Strip(pane)) != "" }
 func ignoreDeletedSession(err error) error {
 	if errors.Is(err, store.ErrSessionGone) {

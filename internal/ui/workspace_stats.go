@@ -2,7 +2,6 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
-	"hash/fnv"
 	"time"
 )
 
@@ -33,10 +32,4 @@ func (m *Model) updateNetRates(snap sysstat.Snapshot) {
 	m.workspace.net.prevRecv = snap.NetRecv
 	m.workspace.net.prevAt = now
 	m.workspace.net.prevOK = snap.NetOK
-}
-
-func hashString(s string) uint64 {
-	h := fnv.New64a()
-	h.Write([]byte(s))
-	return h.Sum64()
 }

@@ -185,12 +185,6 @@ func bind[Layer any](open func(configDir string) Layer, run func(io.Writer, Laye
 	}
 }
 
-func configCommand(run func(out io.Writer, args []string, sessionID, configDir string) error) Command {
-	return func(args []string, caller func() string, configDir string) error {
-		return run(os.Stdout, args, caller(), configDir)
-	}
-}
-
 // The set's name carries its usage line, so -h, an unknown flag and a
 // miscounted operand all print the same words.
 func newFlagSet(usage string) *flag.FlagSet {
