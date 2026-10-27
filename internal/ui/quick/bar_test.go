@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -53,7 +55,7 @@ func (h *fakeHost) Target() (Target, bool)              { return h.target, h.sel
 func TestQuickBarThroughAFakeHost(t *testing.T) {
 	h := &fakeHost{prompt: &fakePrompt{}, settings: map[string]string{}}
 	q := NewBar(h, []string{"claude"}, 0, false)
-	if _, request := q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEnter}); request != (Request{}) || len(h.errs) != 1 {
+	if _, request := q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEnter}); request != (Request{}) || len(h.errs) != 0 {
 		t.Fatalf("enter with nothing selected asked for %+v: %v", request, h.errs)
 	}
 	q.HandleKey(h, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("ship it"), Paste: true})
@@ -83,6 +85,60 @@ func TestQuickBarThroughAFakeHost(t *testing.T) {
 	if _, request = q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEsc}); request != (Request{Close: true}) || !h.prompt.released {
 		t.Fatalf("esc asked for %+v", request)
 	}
+}
+
+func TestEmptyEnterClosesAfterDebounce(t *testing.T) {
+	for _, target := range []struct {
+		name     string
+		target   Target
+		selected bool
+	}{
+		{name: "session", selected: true},
+		{name: "group", target: Target{IsGroup: true}, selected: true},
+		{name: "no selection"},
+	} {
+		t.Run(target.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				h := &fakeHost{prompt: &fakePrompt{text: " \n\t"}, target: target.target, selected: target.selected}
+				q := NewBar(h, []string{"claude"}, 0, false)
+				enter := tea.KeyMsg{Type: tea.KeyEnter}
+				for range 3 {
+					time.Sleep(emptyEnterDebounce - time.Millisecond)
+					if _, request := q.HandleKey(h, enter); request != (Request{}) || h.prompt.released {
+						t.Fatalf("repeated Enter closed the prompt: %+v", request)
+					}
+				}
+				time.Sleep(emptyEnterDebounce)
+				if _, request := q.HandleKey(h, enter); request != (Request{Close: true}) || !h.prompt.released {
+					t.Fatalf("empty Enter did not close and release the prompt: %+v", request)
+				}
+				if len(h.errs) != 0 {
+					t.Fatalf("empty Enter reported errors: %v", h.errs)
+				}
+			})
+		})
+	}
+}
+
+func TestEnterAfterSendKeepsQuickPromptOpen(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		h := &fakeHost{prompt: &fakePrompt{text: "ship it"}, selected: true}
+		q := NewBar(h, []string{"claude"}, 0, false)
+		if request := q.Submit(h); !request.Send || request.Text != "ship it" {
+			t.Fatalf("nonempty submit was debounced: %+v", request)
+		}
+		// Delivery may take longer than the debounce interval.
+		time.Sleep(time.Second)
+		h.prompt.text = ""
+		q.ResetEnterDebounce()
+		if request := q.Submit(h); request != (Request{}) || h.prompt.released {
+			t.Fatalf("Enter just after delivery closed the prompt: %+v", request)
+		}
+		time.Sleep(emptyEnterDebounce)
+		if request := q.Submit(h); !request.Close {
+			t.Fatalf("Enter after the debounce did not close: %+v", request)
+		}
+	})
 }
 
 // A remote spawn that leaves the worktree to the host names it in the

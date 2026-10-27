@@ -75,7 +75,7 @@ Press `space` to enter quick prompt mode, which takes over the footer: the targe
 
 `ctrl+v` pastes an image from the system clipboard as an `[Image #1]` chip at the caret. The image is saved under `agent-manager-pastes` in your temp directory, and on send each chip is swapped back for its path, so the paths reach the agent in the order and the places you pasted them. `backspace` next to a chip removes the whole chip, and an edit that swallows one releases its image. A clipboard holding text rather than an image pastes as text. Pasted images older than seven days are cleared at startup and once a day while the manager runs, so an agent can still open one from an earlier session while temp stays tidy.
 
-`esc` closes the bar.
+`esc` closes the bar. `enter` on an empty prompt closes it too.
 
 The new-session form's optional `prompt` field launches an agent the same way, and its `↑↓` move the caret between rows the same way, `↑` leaving the field only from its top row and `↓` only from its bottom row. It takes `ctrl+v` and its chips too, since a first task is often the screenshot that explains it: paste the design to match or the crash to read, and the agent opens the file on its first turn. Leaving the form without creating the session releases the images it was holding, the way closing the bar does. How the prompt reaches the agent depends on the CLI: most take it as a launch argument, and a persistent CLI that accepts none has it typed into its composer as soon as that composer is ready.
 
