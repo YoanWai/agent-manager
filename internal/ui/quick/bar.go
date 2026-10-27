@@ -5,6 +5,8 @@
 package quick
 
 import (
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -66,6 +68,7 @@ const (
 // the selection. The tool is the spawn CLI for group targets, cycled with
 // tab.
 type Bar struct {
+	lastEnter time.Time
 	toolNames []string
 	toolIndex int
 	worktree  bool
@@ -87,6 +90,7 @@ type Bar struct {
 // NewBar opens on names[index], its worktree toggle at the target's default.
 func NewBar(h spawn.ChoiceHost, names []string, index int, worktree bool) Bar {
 	return Bar{
+		lastEnter: time.Now(),
 		toolNames: names,
 		toolIndex: index,
 		worktree:  worktree,
@@ -223,14 +227,17 @@ func savedRequest(pick spawn.SavedPick) Request {
 	return Request{InsertSaved: &pick.Saved}
 }
 
-// Submit answers the selected session, or spawns a new session with the
-// prompt embedded when a group is selected.
+const emptyEnterDebounce = 500 * time.Millisecond
+
+// ResetEnterDebounce protects a freshly cleared prompt from a repeated Enter.
+func (q *Bar) ResetEnterDebounce() { q.lastEnter = time.Now() }
+
+// Submit closes an empty prompt, answers the selected session, or spawns
+// a new session with the prompt embedded when a group is selected.
 func (q *Bar) Submit(h Host) Request {
-	target, ok := h.Target()
-	if !ok {
-		h.ReportErr("nothing selected")
-		return Request{}
-	}
+	now := time.Now()
+	debounced := now.Sub(q.lastEnter) < emptyEnterDebounce
+	q.lastEnter = now
 	prompt := h.Prompt()
 	if prompt.Pasting() {
 		h.ReportErr("still reading the pasted image - try again in a moment")
@@ -238,7 +245,15 @@ func (q *Bar) Submit(h Host) Request {
 	}
 	text := prompt.Message()
 	if text == "" {
-		h.ReportErr("prompt cannot be empty")
+		if debounced {
+			return Request{}
+		}
+		prompt.Release()
+		return Request{Close: true}
+	}
+	target, ok := h.Target()
+	if !ok {
+		h.ReportErr("nothing selected")
 		return Request{}
 	}
 	if target.IsGroup {

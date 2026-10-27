@@ -5,11 +5,43 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+func TestClearingQuickPromptDebouncesEmptyEnter(t *testing.T) {
+	for _, clear := range []struct {
+		name string
+		run  func(*quickBar)
+	}{
+		{"spawn", func(q *quickBar) { q.clearAfterSend() }},
+		{"send", func(q *quickBar) {
+			q.clearAccepted(quickSendRequest{composerGen: q.gen, draft: q.input.Value()})
+		}},
+	} {
+		t.Run(clear.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				m := &Model{}
+				m.quick = quickBar{active: true, composer: composer{input: textarea.New()}}
+				m.quick.input.SetValue("ship it")
+				clear.run(&m.quick)
+				m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+				if !m.quick.active || m.quick.input.Value() != "" {
+					t.Fatal("Enter just after clearing should leave the empty prompt open")
+				}
+				time.Sleep(time.Second)
+				m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+				if m.quick.active {
+					t.Fatal("Enter after the debounce should close the empty prompt")
+				}
+			})
+		})
+	}
+}
 
 func quickSendTestServices(m *Model) effectServices {
 	return effectServices{

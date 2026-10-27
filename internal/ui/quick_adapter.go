@@ -226,6 +226,7 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 // entirely when the settings toggle asks for that.
 func (q *quickBar) clearAfterSend() {
 	q.input.SetValue("")
+	q.ResetEnterDebounce()
 	q.attachments = nil
 	q.saved = nil
 	if q.closeAfterSend {
