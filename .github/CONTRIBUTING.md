@@ -73,7 +73,7 @@ The manager runs its sessions on a dedicated tmux socket (`-L`), so a developmen
 
 ## Checks
 
-CI runs these on every pull request, plus gitleaks, govulncheck and shellcheck on `install.sh`. Run them locally first:
+CI runs these on every pull request, plus gitleaks, govulncheck, shellcheck on `install.sh`, the test suite on macOS and Windows, and a goreleaser snapshot build of every release target. Run them locally first:
 
 ```bash
 gofmt -l .          # must print nothing

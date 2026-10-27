@@ -8,9 +8,16 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the run its last push started.
+# Pushes to main keep every run, so coverage lands for each commit.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gitleaks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -23,6 +30,7 @@ jobs:
 
   govulncheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
         with:
@@ -32,6 +40,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -66,6 +75,7 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment: codecov
     permissions:
       contents: read
@@ -85,8 +95,46 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  # The darwin-only files (notify, clipboard, sysstat, systheme) compile and
+  # run nowhere else. gofmt, vet, shellcheck and coverage stay on the Linux job.
+  test-macos:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install tmux
+        run: brew install tmux
+      - name: Test
+        run: |
+          fixture_root=$(mktemp -d /tmp/am-ci-race.XXXXXX)
+          mkdir -p "$fixture_root/zsh"
+          env -u TMUX -u TMUX_PANE TMUX_TMPDIR="$fixture_root" ZDOTDIR="$fixture_root/zsh" SHELL=/bin/sh \
+            go test -race -timeout 20m ./...
+
+  # Every target the release ships, built the way release.yml builds it.
+  cross-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: "~> v2"
+          args: build --snapshot --clean
+
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -141,6 +189,7 @@ jobs:
   test-windows:
     name: test-windows (${{ matrix.shard }})
     runs-on: windows-latest
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
