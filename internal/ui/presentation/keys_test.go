@@ -19,3 +19,21 @@ func TestKeyLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestNavigationLabelFormatsOnlyFixedDirections(t *testing.T) {
+	for _, tc := range []struct{ fixed, basic string }{
+		{"↑↓", "up/down"}, {"←→", "left/right"}, {"tab/↑↓", "tab/up/down"},
+		{"↑↓/jk", "up/down/jk"}, {"shift+↑", "shift+up"}, {"← →", "left right"},
+		{"drag / ↑↓ / wheel", "drag / up/down / wheel"}, {"↕", "up/down"},
+	} {
+		for _, mode := range []GlyphMode{GlyphModeBasic, GlyphModeAdvanced, ""} {
+			want := tc.fixed
+			if mode.Effective() == GlyphModeBasic {
+				want = tc.basic
+			}
+			if got := NavigationLabel(mode, tc.fixed); got != want {
+				t.Fatalf("%s: %q != %q", mode, got, want)
+			}
+		}
+	}
+}

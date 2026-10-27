@@ -99,6 +99,6 @@ func MoveTitle(mode presentation.GlyphMode) string {
 	return presentation.GlyphsFor(mode).MoveGlyph + " Move"
 }
 
-func MoveHints() [][2]string {
-	return [][2]string{{"↑↓", "pick"}, {"↵", "move"}, {"esc", "cancel"}}
+func MoveHints(mode presentation.GlyphMode) [][2]string {
+	return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵", "move"}, {"esc", "cancel"}}
 }

@@ -4,6 +4,7 @@
 package presentation
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -58,7 +59,7 @@ func Divider(label string, width int, section, rule lipgloss.Style, marker strin
 }
 
 // Window returns a bounded slice and marks content hidden above or below it.
-func Window(lines []string, rows, offset int, overflow lipgloss.Style) []string {
+func Window(lines []string, rows, offset int, overflow lipgloss.Style, mode GlyphMode) []string {
 	if rows < 1 {
 		rows = 1
 	}
@@ -71,14 +72,14 @@ func Window(lines []string, rows, offset int, overflow lipgloss.Style) []string 
 	above := offset > 0
 	below := offset+rows < len(lines)
 	if len(window) == 1 && above && below {
-		window[0] = overflow.Render("↕ more…")
+		window[0] = overflow.Render(NavigationFor(mode).UpDownGlyph + " more…")
 		return window
 	}
 	if above {
-		window[0] = overflow.Render("↑ more above…")
+		window[0] = overflow.Render(NavigationFor(mode).UpGlyph + " more above…")
 	}
 	if below {
-		window[len(window)-1] = overflow.Render("↓ more below…")
+		window[len(window)-1] = overflow.Render(NavigationFor(mode).DownGlyph + " more below…")
 	}
 	return window
 }
@@ -153,4 +154,16 @@ func PadToHeight(s string, height int) string {
 		s += strings.Repeat("\n", missing)
 	}
 	return s
+}
+
+// OverflowLabel names the hidden rows without resembling a foldable group in Compatible.
+func OverflowLabel(mode GlyphMode, count int, above bool) string {
+	direction, glyph := "below", "↓"
+	if above {
+		direction, glyph = "above", "↑"
+	}
+	if mode.Effective() == GlyphModeBasic {
+		return fmt.Sprintf("%d more %s", count, direction)
+	}
+	return fmt.Sprintf("%s %d more", glyph, count)
 }

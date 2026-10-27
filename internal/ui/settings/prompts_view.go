@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -24,7 +23,7 @@ func (p *Prompts) view(ctx ViewContext) Frame {
 	}
 	show := func(text string, holds int) { p.lines.Show(holds, add(text)) }
 	note := func(text string) { p.lines.Skip(add(text)) }
-	hint := [][2]string{{"↑↓", "select"}, {"n", "new"}, {"↵", "edit"}, {"d", "delete"}, {"esc", "back"}}
+	hint := [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "select"}, {"n", "new"}, {"↵", "edit"}, {"d", "delete"}, {"esc", "back"}}
 	switch {
 	case p.editing:
 		p.name.Width = max(1, inner-3)
@@ -56,7 +55,7 @@ func (p *Prompts) view(ctx ViewContext) Frame {
 		first, last := promptsWindow(p.first, len(p.rows), p.cursor, max(1, ctx.Height-12))
 		p.first = first
 		if first > 0 {
-			show(fmt.Sprintf("↑ %d more", first), first-1)
+			show(presentation.OverflowLabel(ctx.GlyphMode, first, true), first-1)
 		}
 		for i := first; i < last; i++ {
 			if i == p.cursor {
@@ -66,7 +65,7 @@ func (p *Prompts) view(ctx ViewContext) Frame {
 			}
 		}
 		if last < len(p.rows) {
-			show(fmt.Sprintf("↓ %d more", len(p.rows)-last), last)
+			show(presentation.OverflowLabel(ctx.GlyphMode, len(p.rows)-last, false), last)
 		}
 		note("agents add these with agent-manager prompts add")
 		if p.refreshFailed && !p.loading {

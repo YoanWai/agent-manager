@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -104,5 +105,61 @@ func TestCompatibleLegendClipsOnlyThePaintedPart(t *testing.T) {
 	}
 	if len(painted.hits) != 1 || painted.hits[0].x0 != 13 || painted.hits[0].x1 != 24 || painted.hits[0].key.String() != "backspace" {
 		t.Fatalf("clipped hit=%+v", painted.hits)
+	}
+}
+
+func TestNavigationLegendPreservesNonClickableMovement(t *testing.T) {
+	for _, label := range []string{"↑↓", "up/down", "tab/up/down", "up/k down/j", "shift+up/K/shift+down/J", "left/right", "left", "right", "up/down/jk", "drag / up/down / wheel"} {
+		if _, ok := legendKey(label); ok {
+			t.Errorf("movement hint %q became clickable", label)
+		}
+	}
+	for _, label := range []string{"^", "v", "<", ">", "/", "space/↵", "↵ / release", "esc"} {
+		if _, ok := legendKey(label); !ok {
+			t.Errorf("action %q lost click", label)
+		}
+	}
+	for _, width := range []int{24, 40, 100} {
+		pairs := [][2]string{{presentation.NavigationLabel(presentation.GlyphModeBasic, "↑↓"), "move"}, {"↵", "save"}, {"esc", "cancel"}}
+		for _, bar := range []legend{paintInline(pairs, width, presentation.GlyphModeBasic), paintLegend([]legendSection{{title: "Keys", pairs: pairs}}, width, presentation.GlyphModeBasic)} {
+			rows := strings.Split(ansi.Strip(bar.text), "\n")
+			for _, hit := range bar.hits {
+				if hit.key.String() != "enter" && hit.key.String() != "esc" {
+					t.Fatalf("movement hit: %+v", hit)
+				}
+				if hit.x1 > ansi.StringWidth(rows[hit.y]) {
+					t.Fatal("hit beyond painted row")
+				}
+				if _, ok := bar.hits.at(hit.x1-1, hit.y); !ok {
+					t.Fatal("visible action lost its hit")
+				}
+			}
+		}
+	}
+}
+
+func TestNavigationConfiguredFooterLabelsKeepLiteralKeys(t *testing.T) {
+	m := helpModel()
+	for _, tc := range []struct{ key, basic string }{{"left", "left"}, {"shift+up", "shift+up"}, {"←", "←"}, {"↑", "↑"}, {"↕", "↕"}, {"v", "v"}, {"<", "<"}} {
+		key, err := keybind.Parse(tc.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.services.listKeys = m.services.listKeys.With(keybind.Prompt, keybind.Keys(key))
+		for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+			m.prefs.glyphMode = mode
+			want := key.Glyph()
+			if mode == presentation.GlyphModeBasic {
+				want = tc.basic
+			}
+			label := m.listGlyph(keybind.Prompt)
+			if label != want {
+				t.Fatalf("%s %q label=%q want=%q", mode, tc.key, label, want)
+			}
+			bar := paintLegend([]legendSection{{title: "Keys", pairs: [][2]string{{label, "prompt"}}}}, 100, mode)
+			if !strings.Contains(ansi.Strip(bar.text), want+" prompt") {
+				t.Fatal("second pass changed binding")
+			}
+		}
 	}
 }

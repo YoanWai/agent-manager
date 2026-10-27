@@ -1,0 +1,30 @@
+              +── ? Keys ────────────────────────────────────────────────────────────────────────────────+
+              │                                                                                          │
+              │   │list ──────────────────────────────────────────────────────────────────────────────   │
+              │                    Tell your agent to manage sessions and terminals in Agent Manager.    │
+              │   up / k           move the cursor up                                                    │
+              │   down / j         move the cursor down                                                  │
+              │   click            focus from a row or the preview in the split, select otherwise        │
+              │   double click     fold or unfold a group, focus a session full screen                   │
+              │   […]              the row's actions, or right click                                     │
+              │   drag =           move the row, into another group too, or click it for up/down         │
+              │   click a key      in a footer or a card's foot, run it as if typed                      │
+              │   right            step in: focus the session, open the group                            │
+              │   left             step out: close the group                                             │
+              │   shift+up / K     reorder the row up among its siblings                                 │
+              │   shift+down / J   reorder the row down among its siblings                               │
+              │   n                new session                                                           │
+              │   T                new terminal tab: a shell under the selected agent, or in the group   │
+              │   g                new group (name, parent, default path, worktree)                      │
+              │   C                new SSH connection: another machine's sessions in this list           │
+              │   /                search the list by name                                               │
+              │   w                filter to what needs attention (waiting, finished, errored)           │
+              │   t                archived view                                                         │
+              │   e                hide / show empty groups                                              │
+              │   F                fold / unfold every group (active view)                               │
+              │   |                resize the split (left/right or hl, or drag; enter commits, esc ca…   │
+              │   v more below…                                                                          │
+              │                                                                                          │
+              ├──────────────────────────────────────────────────────────────────────────────────────────┤
+              │   up/down/jk scroll  pgup/pgdn page  g/G top/bottom  / search   o docs   esc/q/? close   │
+              +──────────────────────────────────────────────────────────────────────────────────────────+

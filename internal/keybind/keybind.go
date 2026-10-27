@@ -213,9 +213,18 @@ func (b Binding) Label() string {
 }
 
 func (b Binding) Glyph(separator string) string {
+	return b.Text(separator, true)
+}
+
+// Text joins canonical key names or their display glyphs without rewriting literal keys.
+func (b Binding) Text(separator string, drawn bool) string {
 	names := make([]string, 0, len(b.keys))
 	for _, key := range b.keys {
-		names = append(names, key.Glyph())
+		name := key.Tea()
+		if drawn {
+			name = key.Glyph()
+		}
+		names = append(names, name)
 	}
 	return strings.Join(names, separator)
 }

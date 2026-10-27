@@ -234,7 +234,7 @@ func (m *Model) applyRepoPick(result uireview.PickerResult) tea.Cmd {
 func (m *Model) viewRepoPick() string {
 	picker := &m.reviewNav.picker
 	body := picker.Body(m.reviewRenderContext(), m.cardWidth()-2*cardPaddingX, m.layout.height)
-	return m.card(m.glyphs().ReviewGlyph+" "+picker.Title(), body, picker.Hints())
+	return m.card(m.glyphs().ReviewGlyph+" "+picker.Title(), body, picker.Hints(m.prefs.glyphMode))
 }
 
 func (m *Model) selectRepo(root string) tea.Cmd {

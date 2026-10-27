@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -72,8 +73,8 @@ func (m *Model) computerLines(width int) []string {
 	}
 	if m.workspace.net.rates {
 		lines = append(lines, pad+labelStyle().Width(5).Render("net")+
-			valueStyle().Render("↓ "+humanBytes(m.workspace.net.down)+"/s")+
-			subtleStyle().Render("  ↑ "+humanBytes(m.workspace.net.up)+"/s"))
+			valueStyle().Render(presentation.NavigationFor(m.prefs.glyphMode).DownGlyph+" "+humanBytes(m.workspace.net.down)+"/s")+
+			subtleStyle().Render("  "+presentation.NavigationFor(m.prefs.glyphMode).UpGlyph+" "+humanBytes(m.workspace.net.up)+"/s"))
 	}
 	return append(lines, "")
 }
@@ -129,7 +130,7 @@ func (m *Model) fullFootLine(width int) []string {
 		parts = append(parts, labelStyle().Render("temp ")+temps)
 	}
 	if m.workspace.net.rates {
-		parts = append(parts, reading("net", "↓ "+humanBytes(m.workspace.net.down)+"/s ↑ "+humanBytes(m.workspace.net.up)+"/s", true))
+		parts = append(parts, reading("net", presentation.NavigationFor(m.prefs.glyphMode).DownGlyph+" "+humanBytes(m.workspace.net.down)+"/s "+presentation.NavigationFor(m.prefs.glyphMode).UpGlyph+" "+humanBytes(m.workspace.net.up)+"/s", true))
 	}
 	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
 	return []string{ansi.Truncate(line, max(width-railInset, 0), "…")}

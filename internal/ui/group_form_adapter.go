@@ -168,7 +168,7 @@ func (m *Model) viewGroupForm() string {
 	}
 	if m.groupForm.paths.active() {
 		view.Suggestions = func() string { return m.groupForm.paths.view(m.prefs.glyphMode) }
-		view.SuggestHints = pathSuggestHint(m.groupForm.paths.chosen)
+		view.SuggestHints = pathSuggestHint(m.groupForm.paths.chosen, m.prefs.glyphMode)
 	}
 	return m.drawCard(m.groupForm.View(view))
 }

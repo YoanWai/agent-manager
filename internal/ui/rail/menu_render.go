@@ -131,5 +131,5 @@ func (r renderer) menuGlyph(action ActionKind) string {
 	if binding == "" {
 		return ""
 	}
-	return presentation.KeyLabel(r.ctx.GlyphMode, r.ctx.ListKeys.Binding(binding).Glyph("/"))
+	return presentation.KeyLabel(r.ctx.GlyphMode, r.ctx.ListKeys.Binding(binding).Text("/", r.ctx.GlyphMode.Effective() == presentation.GlyphModeAdvanced))
 }

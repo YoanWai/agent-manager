@@ -10,6 +10,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -166,6 +167,8 @@ func TestHelpContentAndLayout(t *testing.T) {
 		{name: "search_ime", model: helpModel(), assertCursor: true},
 		{name: "review", model: helpModel()},
 		{name: "narrow_error", model: helpModel()},
+		{name: "global_compatible", model: helpModel()},
+		{name: "search_ime_compatible", model: helpModel(), assertCursor: true},
 	}
 	tests[1].model.layout.width, tests[1].model.layout.height = 100, 28
 	tests[1].model.focus.runtime.imeCursor = &cursorAnchor{}
@@ -175,6 +178,12 @@ func TestHelpContentAndLayout(t *testing.T) {
 	tests[3].model.layout.width, tests[3].model.layout.height = 60, 14
 	tests[3].model.errBar = errBar{text: "refresh failed"}
 	typeHelpSearch(tests[3].model, "zzzz", true)
+
+	tests[4].model.prefs.glyphMode = presentation.GlyphModeBasic
+	tests[5].model.prefs.glyphMode = presentation.GlyphModeBasic
+	tests[5].model.layout.width, tests[5].model.layout.height = 100, 28
+	tests[5].model.focus.runtime.imeCursor = &cursorAnchor{}
+	typeHelpSearch(tests[5].model, "中文", false)
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

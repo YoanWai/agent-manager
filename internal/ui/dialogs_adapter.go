@@ -246,7 +246,7 @@ func (m *Model) handleMoveClick(line int) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewMove() string {
-	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints())
+	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints(m.prefs.glyphMode))
 }
 
 // forkDialog keeps the captured source row the fork request carries; the

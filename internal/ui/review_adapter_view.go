@@ -189,7 +189,7 @@ func (m *Model) viewDiffFooter() string { return m.diffFooter().text }
 
 func (m *Model) diffFooter() legend {
 	var sections []legendSection
-	for _, section := range m.review.Legend(m.services.listKeys.Binding(keybind.Help)) {
+	for _, section := range m.review.Legend(m.services.listKeys.Binding(keybind.Help), m.prefs.glyphMode) {
 		sections = append(sections, legendSection{title: section.Title, quiet: section.Quiet, pairs: section.Pairs})
 	}
 	return paintLegend(sections, m.layout.width, m.prefs.glyphMode)

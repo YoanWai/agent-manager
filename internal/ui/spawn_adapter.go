@@ -143,7 +143,7 @@ func (p pathField) Suggest(typed string) tea.Cmd {
 
 func (p pathField) View() string { return p.pc.view(p.mode) }
 
-func (p pathField) Hint() [][2]string { return pathSuggestHint(p.pc.chosen) }
+func (p pathField) Hint() [][2]string { return pathSuggestHint(p.pc.chosen, p.mode) }
 
 // spawnStyles copies the active theme for one paint.
 func (m *Model) spawnStyles() spawn.Styles {
@@ -191,11 +191,11 @@ func groupBadge(path string) string {
 	return lipgloss.NewStyle().Foreground(colorAccent2()).Render(path)
 }
 
-func pathSuggestHint(chosen bool) [][2]string {
+func pathSuggestHint(chosen bool, mode presentation.GlyphMode) [][2]string {
 	if chosen {
-		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
+		return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
 	}
-	return [][2]string{{"↑↓", "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
+	return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
 }
 
 // formValueWidth is the columns a field value can occupy inside the card.

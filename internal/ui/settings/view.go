@@ -174,44 +174,48 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, versionRow(ctx, lead, actionRow))
 		default:
 			setting := byField[field]
-			line := row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s))))
+			name := setting.Row
+			if field == FieldArrowStep && ctx.GlyphMode.Effective() == presentation.GlyphModeBasic {
+				name = "arrow step in/out"
+			}
+			line := row(field, name, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s))))
 			if setting.Beta {
 				line += betaTag
 			}
 			lines = append(lines, line)
 		}
 	}
-	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save and close"}}
+	hint := [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {presentation.NavigationLabel(ctx.GlyphMode, "←→"), "change"}, {"↵/esc", "save and close"}}
 	switch s.Field {
 	case FieldGlyphs:
-		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save and close"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {presentation.NavigationLabel(ctx.GlyphMode, "←→/click"), "symbols"}, {"↵/esc", "save and close"}}
 	case FieldDocs:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save and close"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵", "open the docs"}, {"esc", "save and close"}}
 	case FieldBugReport, FieldFeatureRequest:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save and close"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵", "open form"}, {"esc", "save and close"}}
 	case FieldCLIs:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save and close"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵", "manage CLIs"}, {"esc", "save and close"}}
 	case FieldPrompts:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save and close"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵", "saved prompts"}, {"esc", "save and close"}}
 	case FieldEnvs:
-		hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵/esc", "save and close"}}
 	case FieldKeybindings:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save and close"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵", "change the keys"}, {"esc", "save and close"}}
 	case FieldEditor:
 		switch {
 		case s.Editor.typing:
 			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
 		case s.Editor.custom:
-			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save and close"}}
+			hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {presentation.NavigationLabel(ctx.GlyphMode, "←→"), "change"}, {"↵", "type the command"}, {"esc", "save and close"}}
 		}
 	case FieldUpdate:
 		switch {
 		case ctx.Applying:
-			hint = [][2]string{{"↑↓", "field"}, {"esc", "save and close"}}
+			hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"esc", "save and close"}}
 		case ctx.Latest != "":
-			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save and close"}}
+			hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵", "update"}, {"esc", "save and close"}}
 		default:
-			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
+			hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "field"}, {"↵/esc", "save and close"}}
 		}
 	}
 	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Settings", Body: s.fitRows(ctx, fields, lines, hint), Hints: hint}
@@ -245,7 +249,7 @@ func versionRow(ctx ViewContext, lead func(int, string) string, actionRow func(i
 		if label == "" {
 			label = "update"
 		}
-		return lead(FieldUpdate, "version") + ctx.Styles.Marker.Render("↓ downloading "+label+"…")
+		return lead(FieldUpdate, "version") + ctx.Styles.Marker.Render(presentation.GlyphsFor(ctx.GlyphMode).DownloadGlyph+" downloading "+label+"…")
 	}
 	if ctx.Latest != "" {
 		return actionRow(FieldUpdate, "version "+ctx.Version, "update to "+ctx.Latest)
@@ -291,9 +295,9 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 	b.WriteString(st.Subtle.Render("  * more will be supported soon!"))
 	s.lines.Skip(1)
 	s.lines.Show(len(s.CLINames), 1)
-	hint := [][2]string{{"↑↓", "move"}, {"space/↵", "toggle"}, {"esc", "back"}}
+	hint := [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "move"}, {"space/↵", "toggle"}, {"esc", "back"}}
 	if reqFocused {
-		hint = [][2]string{{"↑↓", "move"}, {"↵", "open request issue"}, {"esc", "back"}}
+		hint = [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "move"}, {"↵", "open request issue"}, {"esc", "back"}}
 	}
 	// Fixed card width: short checkbox rows must not stretch a wide empty panel.
 	return Frame{Card: Fixed, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " CLIs", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}

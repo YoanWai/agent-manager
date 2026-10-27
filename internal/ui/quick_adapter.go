@@ -325,7 +325,7 @@ const quickModeTitle = "Quick prompt mode"
 func (m *Model) quickFooter() legend {
 	edge := keyStyle().Render(m.chrome().QuickEdgeGlyph)
 	gutter := strings.Repeat(" ", quickGutter-1)
-	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1), m.prefs.glyphMode)
+	painted := paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost(), m.prefs.glyphMode)}}, max(m.layout.width-1, 1), m.prefs.glyphMode)
 	keys := splitLines(painted.text)
 	rows := quickBarMaxRows + 1
 	if m.quick.Picking() != uiquick.PickNone {
