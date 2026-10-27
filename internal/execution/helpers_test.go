@@ -368,9 +368,9 @@ func seedRepo(t *testing.T) string {
 	return dir
 }
 
-// waitForPaneChild waits for a pane to run a named program, which is a
-// step past waitForAgent: a shell counts as busy from the moment it forks,
-// before the child has exec'd the program it was asked for.
+// waitForPaneChild waits for a pane to run a named program, a step past
+// the pane holding an agent: a shell counts as busy from the moment it
+// forks, before the child has exec'd the program it was asked for.
 func waitForPaneChild(t *testing.T, m *harness, sessID, name string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
