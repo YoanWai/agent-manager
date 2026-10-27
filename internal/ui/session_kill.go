@@ -94,14 +94,6 @@ func (m *Model) sessionWindowProjectedLive(id string) bool {
 	return launched
 }
 
-// unwatch stops the focus watcher before a session is killed on purpose:
-// the client going away then is the plan, not a loss to report.
-func (m *Model) unwatch(id string) {
-	if m.focus.runtime.watch != nil {
-		m.focus.runtime.watch.Unwatch(id)
-	}
-}
-
 // killSession ends one session's tmux window, freeing everything its agent
 // held, while the store row keeps the name, group, history and conversation
 // id that revive needs. The pane is captured first so the preview still

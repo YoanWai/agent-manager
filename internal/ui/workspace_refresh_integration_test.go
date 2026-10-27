@@ -5,7 +5,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
-	"github.com/charmbracelet/x/ansi"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -99,95 +98,6 @@ func TestRefreshReplacesTheQueuedCountsWholesale(t *testing.T) {
 	if count, stale := m.workspace.queuedMessages[sess.ID]; stale {
 		t.Fatalf("a delivered message left a badge of %d behind", count)
 	}
-}
-
-// pollUntilQueued drives the poller's own loop so delivery passes the gate a
-// live manager applies rather than a hand-picked pane and status. The budget
-// is generous because that gate waits for the tool to echo the message just
-// typed, which takes as long as the runner needs.
-func pollUntilQueued(t *testing.T, m *Model, sessionID string, want int) {
-	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		queued, err := m.services.store.QueuedCount(sessionID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if queued == want {
-			return
-		}
-		if !time.Now().Before(deadline) {
-			t.Fatalf("queue held %d messages, want %d", queued, want)
-		}
-		m.applyCmd(t, m.refreshCmd())
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-// settledPane waits for the pane to hold every marker and stop changing.
-// The markers come from the tty echo of what was pasted; the fixture tools
-// consume their input and print only a fresh prompt.
-func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) string {
-	t.Helper()
-	// Two waits, not one. A paste still landing resets the quiet run, so
-	// requiring the markers and the quiet in the same capture can burn
-	// the whole deadline on a loaded runner: first wait for every marker
-	// to have rendered, then for the pane to stop changing.
-	deadline := time.Now().Add(60 * time.Second)
-	var previous string
-	for {
-		pane, err := m.services.tmux.CapturePane(sessionID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		previous = pane
-		if containsAll(pane, markers) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("pane never showed %v:\n%s", markers, previous)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	// The quiet run gets its own budget: markers rendering can eat most
-	// of the first deadline on a loaded runner, and the few captures the
-	// settle needs should not have to fit in whatever is left.
-	settleDeadline := time.Now().Add(20 * time.Second)
-	repeats := 0
-	for time.Now().Before(settleDeadline) {
-		pane, err := m.services.tmux.CapturePane(sessionID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if pane == previous {
-			repeats++
-		} else {
-			repeats = 0
-		}
-		previous = pane
-		if repeats >= 3 {
-			if !containsAll(previous, markers) {
-				t.Fatalf("pane settled without %v:\n%s", markers, previous)
-			}
-			return previous
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("pane never settled holding %v:\n%s", markers, previous)
-	return ""
-}
-
-// The envelope wraps at the pane width, and tmux wraps without inserting
-// anything, so the unwrapped text is the joined rows. The escapes go first:
-// psmux closes every captured row with an SGR reset.
-func containsAll(pane string, markers []string) bool {
-	flat := strings.ReplaceAll(ansi.Strip(pane), "\n", "")
-	for _, marker := range markers {
-		if !strings.Contains(flat, marker) {
-			return false
-		}
-	}
-	return true
 }
 
 // Quitting one CLI in a pane and starting another there is a real thing to

@@ -236,12 +236,3 @@ func linesOf(count int) string {
 	}
 	return b.String()
 }
-
-func hasLine(fd FileDiff, kind LineKind, text string) bool {
-	for _, line := range fd.Lines {
-		if line.Kind == kind && line.Text == text {
-			return true
-		}
-	}
-	return false
-}

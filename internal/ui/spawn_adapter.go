@@ -277,8 +277,6 @@ func (m *Model) applyCachedFormDefaults() tea.Cmd {
 	return m.ensureCatalog(toolName)
 }
 
-func (m *Model) formTool() string { return m.form.Tool() }
-
 func (m *Model) selectedGroupPath() string { return m.form.groupPath() }
 
 // groupPath is the group the picker highlights. The group form and the
