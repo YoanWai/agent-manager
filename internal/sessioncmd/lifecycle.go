@@ -181,7 +181,12 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 			l.discardWorktree(sess)
 		}
 	}
-	command, env, err := launch.Environment(l.runtime.Hooks, sess.Tool, request.Tool, request.BaseCommand, sess.ID, sess.Cwd, time.Time{})
+	profile, err := l.runtime.Store.LaunchEnv(sess.Environment)
+	if err != nil {
+		discard()
+		return LaunchResult{}, err
+	}
+	command, env, err := launch.Environment(l.runtime.Hooks, sess.Tool, request.Tool, request.BaseCommand, sess.ID, sess.Cwd, time.Time{}, profile)
 	if err != nil {
 		discard()
 		return LaunchResult{}, err
@@ -341,7 +346,11 @@ func (l *Lifecycle) Restart(sess store.Session, pane PaneSize) (RelaunchResult, 
 
 func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (RelaunchResult, error) {
 	launchedAt := time.Now()
-	command, env, err := launch.Environment(l.runtime.Hooks, sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, launchedAt)
+	profile, err := l.runtime.Store.LaunchEnv(sess.Environment)
+	if err != nil {
+		return RelaunchResult{}, err
+	}
+	command, env, err := launch.Environment(l.runtime.Hooks, sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, launchedAt, profile)
 	if err != nil {
 		return RelaunchResult{}, err
 	}

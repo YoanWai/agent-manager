@@ -189,6 +189,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 		WorktreeRepo:   request.source.WorktreeRepo,
 		WorktreeBranch: request.source.WorktreeBranch,
 		Choice:         request.source.Choice,
+		Environment:    request.source.Environment,
 	}
 	launched, err := s.lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:     forked,

@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -26,8 +27,11 @@ type Styles struct {
 // the root's text-field renderer, which marks the IME cursor. Chrome is the
 // rows the card spends around a body with this hint.
 type ViewContext struct {
-	GlyphMode       presentation.GlyphMode
-	Session, List   keybind.Table
+	GlyphMode     presentation.GlyphMode
+	Session, List keybind.Table
+	// Envs are the environment profiles the shell defined, which the
+	// dialog lists and never edits.
+	Envs            []Env
 	Version, Latest string
 	Applying        bool
 	Height          int
@@ -130,8 +134,19 @@ func (s *State) View(ctx ViewContext) Frame {
 		symbolsRow = style.Render(label(FieldGlyphs) + " <" + glyphLabel + ">")
 	}
 	palette := uitheme.Palettes[s.ThemeIndex]
+	// The environments row appears once a profile exists: most people never
+	// define one, and every row they never use crowds the ones they do.
+	s.envsHidden = len(ctx.Envs) == 0
+	if s.envsHidden && s.Field == FieldEnvs {
+		s.Field = FieldDocs
+	}
+	fields := make([]int, 0, FieldCount)
 	lines := make([]string, 0, FieldCount)
 	for field := range FieldCount {
+		if field == FieldEnvs && s.envsHidden {
+			continue
+		}
+		fields = append(fields, field)
 		switch field {
 		case FieldTool:
 			lines = append(lines, row(FieldTool, label(FieldTool), toolValue))
@@ -147,6 +162,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, actionRow(FieldCLIs, label(FieldCLIs), "show or hide for new sessions"))
 		case FieldPrompts:
 			lines = append(lines, actionRow(FieldPrompts, "saved prompts", "manage named instructions"))
+		case FieldEnvs:
+			lines = append(lines, lead(FieldEnvs, "environments")+st.Muted.Render(envSummary(ctx.Envs)))
 		case FieldDocs:
 			lines = append(lines, ctaRow(FieldDocs, "docs", "open the docs"))
 		case FieldBugReport:
@@ -176,6 +193,8 @@ func (s *State) View(ctx ViewContext) Frame {
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save and close"}}
 	case FieldPrompts:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save and close"}}
+	case FieldEnvs:
+		hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
 	case FieldKeybindings:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save and close"}}
 	case FieldEditor:
@@ -195,19 +214,20 @@ func (s *State) View(ctx ViewContext) Frame {
 			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
 		}
 	}
-	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Settings", Body: s.fitRows(ctx, lines, hint), Hints: hint}
+	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Settings", Body: s.fitRows(ctx, fields, lines, hint), Hints: hint}
 }
 
 // fitRows windows the rows that fit, held still while the focused row stays
-// on screen, and records what each painted line shows.
-func (s *State) fitRows(ctx ViewContext, rows []string, hint [][2]string) string {
+// on screen, and records what each painted line shows. fields names the
+// field each row paints.
+func (s *State) fitRows(ctx ViewContext, fields []int, rows []string, hint [][2]string) string {
 	room := max(ctx.Height-ctx.Chrome(hint), 1)
-	s.first = presentation.Follow(s.first, s.Field, len(rows), min(room, len(rows)))
+	s.first = presentation.Follow(s.first, slices.Index(fields, s.Field), len(rows), min(room, len(rows)))
 	rows = rows[s.first:min(s.first+room, len(rows))]
 	s.glyphWidth = 0
 	s.lines.Reset()
 	for i, row := range rows {
-		field := s.first + i
+		field := fields[s.first+i]
 		s.lines.Show(field, 1)
 		if field == FieldGlyphs {
 			s.glyphWidth = ansi.StringWidth(row)

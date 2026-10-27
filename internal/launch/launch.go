@@ -171,16 +171,18 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 }
 
 // Environment resolves the shell command and environment a session
-// launches with. Every session carries its id so the rename subcommand
-// can find it, and the launch it belongs to, which is the agent_launched_at
+// launches with. Every session but a shell with no profile carries its id
+// so the rename subcommand can find it, and the launch it belongs to, which
+// is the agent_launched_at
 // the caller stamps for it (zero for a row's first launch), so a
 // conversation the agent reports lands on this launch only. The agent runs
 // under the pid its line exports and records, so only it can report and the
 // poller can read what its CLI keeps for that pid. cwd is where the agent
 // starts. Tools backed by hooks additionally get the generated settings file
 // and their status-file path, plus a clean slate from any earlier files under
-// the same id.
-func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
+// the same id. profile is the session's environment profile, under the
+// manager's own variables so it cannot unhook the session.
+func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time, profile map[string]string) (string, map[string]string, error) {
 	if err := config.CheckSupported(toolName); err != nil {
 		return "", nil, err
 	}
@@ -198,7 +200,11 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	}
 	stamp := store.LaunchStamp(launchedAt)
 	launch := strconv.FormatInt(stamp, 10)
-	env := map[string]string{hooks.EnvSessionID: id, hooks.EnvLaunch: launch}
+	env := maps.Clone(profile)
+	if env == nil {
+		env = map[string]string{}
+	}
+	env[hooks.EnvSessionID], env[hooks.EnvLaunch] = id, launch
 	maps.Copy(env, tool.Env)
 	if toolName == "grok" {
 		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
@@ -209,6 +215,11 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		baseCommand += " --no-leader"
 	}
 	if baseCommand == "" {
+		// Exporting into a shell launch replaces tmux's login shell with a
+		// non-login one, worth it only to carry a profile.
+		if len(profile) == 0 {
+			return "", nil, nil
+		}
 		return "", env, nil
 	}
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {

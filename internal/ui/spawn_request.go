@@ -28,6 +28,7 @@ func (m *Model) formSpawnRequest(request spawn.Request) spawnRequest {
 		autoNamed:    autoNamed,
 		pickWorktree: request.Worktree,
 		choice:       config.Choice(request.Pick),
+		environment:  request.Env,
 		base:         defaults.base,
 		pane:         defaults.pane,
 		composerGen:  m.form.prompt.gen,

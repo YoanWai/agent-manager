@@ -414,7 +414,7 @@ func pickGroup(t *testing.T, m *Model, path string) {
 // focusGroupField tabs the open group form to field.
 func focusGroupField(t *testing.T, m *Model, field int) {
 	t.Helper()
-	for range 5 {
+	for range 6 {
 		if m.groupForm.Focus() == field {
 			return
 		}

@@ -182,10 +182,10 @@ func TestGroupWorktreeRoundtrip(t *testing.T) {
 
 func TestAddGroupStoresSettingsWithoutReplacingExistingGroup(t *testing.T) {
 	st := newTestStore(t)
-	if err := st.AddGroup("backend", "/first", "off", "develop"); err != nil {
+	if err := st.AddGroup("backend", "/first", "off", "develop", ""); err != nil {
 		t.Fatalf("add: %v", err)
 	}
-	if err := st.AddGroup("backend", "/second", "on", "main"); !errors.Is(err, ErrGroupExists) {
+	if err := st.AddGroup("backend", "/second", "on", "main", ""); !errors.Is(err, ErrGroupExists) {
 		t.Fatalf("duplicate add error = %v, want ErrGroupExists", err)
 	}
 

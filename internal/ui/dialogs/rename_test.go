@@ -1,8 +1,10 @@
 package dialogs
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -45,6 +47,7 @@ func TestRenameSessionKeepsAMissingTool(t *testing.T) {
 func TestRenameGroupWalksItsFields(t *testing.T) {
 	d := RenameGroup("work/old", "", 0)
 	paths := &fakePaths{}
+	d.GroupFields(groupFieldsView("none"))
 	d.input.SetValue("")
 	if got := d.Key(tea.KeyMsg{Type: tea.KeyEnter}, paths, 3); got.Action != RenameInvalid || got.Err != "name cannot be empty" {
 		t.Fatalf("enter on an empty name = %+v", got)
@@ -63,12 +66,19 @@ func TestRenameGroupWalksItsFields(t *testing.T) {
 	if got := d.Key(tea.KeyMsg{Type: tea.KeyLeft}, paths, 3); got.Action != RenameStepBase || got.Delta != -1 {
 		t.Fatalf("left on base = %+v, want the root asked to step it", got)
 	}
+	d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3)
+	if got := d.Key(tea.KeyMsg{Type: tea.KeyRight}, paths, 3); got.Action != RenameStepEnv || got.Delta != 1 {
+		t.Fatalf("right on env = %+v, want the root asked to step it", got)
+	}
+	if d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3); d.Focus() != RenameNameField {
+		t.Fatalf("down past env focused %d, want the name again", d.Focus())
+	}
 	got := d.Key(tea.KeyMsg{Type: tea.KeyEnter}, paths, 3)
 	want := RenameRequest{Group: true, OldGroup: "work/old", NewGroup: "work/new", Dir: "/", Worktree: 1, Name: "new"}
 	if got.Action != RenameSubmit || got.Request != want {
 		t.Fatalf("enter = %+v, want %+v", got.Request, want)
 	}
-	if paths.resets != 3 {
+	if paths.resets != 5 {
 		t.Fatalf("resets = %d, want one per focus change", paths.resets)
 	}
 	if got := d.Key(tea.KeyMsg{Type: tea.KeyEsc}, paths, 3); got.Action != RenameCancel {
@@ -108,5 +118,62 @@ func TestRenameHints(t *testing.T) {
 	}
 	if got := RenameSession("s", "n", "zsh", []string{"zsh"}).Hints(); got[0] != [2]string{"tab", "tool: zsh"} {
 		t.Fatalf("session hints = %v", got)
+	}
+}
+
+// Each painted line of the group fields answers for its row: a click
+// focuses a row, a second click steps it, and a suggestion line picks it.
+func TestRenameGroupFieldsFollowTheirClicks(t *testing.T) {
+	d := RenameGroup("work/old", "/", 0)
+	paths := &fakePaths{}
+	view := groupFieldsView("none")
+	d.GroupFields(view)
+	if got := d.Click(3, paths, 3); got.Action != RenameStay || d.Focus() != RenameEnvField {
+		t.Fatalf("first click on env = %+v, focus %d", got, d.Focus())
+	}
+	if got := d.Click(3, paths, 3); got.Action != RenameStepEnv || got.Delta != 1 {
+		t.Fatalf("second click on env = %+v", got)
+	}
+	d.Click(1, paths, 3)
+	if d.Click(1, paths, 3); d.Worktree() != 1 {
+		t.Fatalf("second click on worktree left it at %d", d.Worktree())
+	}
+	d.Click(0, paths, 3)
+	view.Suggestions = func() string { return "/a\n/b" }
+	d.GroupFields(view)
+	if got := d.Click(2, paths, 3); got.Action != RenamePickPath || got.Entry != 1 {
+		t.Fatalf("a click on the second suggestion = %+v", got)
+	}
+	if got := d.Click(9, paths, 3); got.Action != RenameStay {
+		t.Fatalf("a click past the fields = %+v", got)
+	}
+}
+
+func groupFieldsView(env string) GroupFieldsView {
+	return GroupFieldsView{
+		Width:     60,
+		Input:     func(textinput.Model) string { return "input" },
+		Worktrees: []string{"inherit", "on", "off"},
+		Base:      "auto",
+		Env:       env,
+	}
+}
+
+// With no environment choice to show, the group edit leaves the env row off
+// and the focus wraps from base to the name.
+func TestRenameGroupLeavesTheEnvRowOffWithNothingToPick(t *testing.T) {
+	d := RenameGroup("work/old", "/", 0)
+	paths := &fakePaths{}
+	if out := d.GroupFields(groupFieldsView("")); strings.Contains(out, "env") {
+		t.Fatalf("group fields = %q, want no env row", out)
+	}
+	for range 3 {
+		d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3)
+	}
+	if d.Focus() != RenameBaseField {
+		t.Fatalf("three downs focused %d, want base", d.Focus())
+	}
+	if d.Key(tea.KeyMsg{Type: tea.KeyDown}, paths, 3); d.Focus() != RenameNameField {
+		t.Fatalf("down past base focused %d, want the name", d.Focus())
 	}
 }

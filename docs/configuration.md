@@ -14,6 +14,10 @@ The poll interval is fixed at two seconds, so a `poll_interval` line in that fil
 
 One list in Settings, shared by the new-session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, and `saved` on `create_session` and `send_session`. Names are unique, up to 60 characters, with no brackets. The text is up to 64 KiB. `agent-manager prompts list`, `add` and `rm` edit the list from a shell. See [Saved prompts](usage.md#saved-prompts).
 
+## Environment profiles
+
+Named sets of environment variables a session launches under, kept in `state.db` and edited from a shell with `agent-manager env list`, `show`, `set`, `unset` and `rm`. Settings lists their names and variables, never their values. Names are up to 60 characters. See [Environment profiles](usage.md#environment-profiles).
+
 ## Agent CLIs
 
 Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI, plus the shell `T` opens. OpenCode means OpenCode 2 (`@opencode/cli`), which the manager runs with `--standalone` so each session has a server of its own. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity, Oh My Pi and Cursor CLI have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).

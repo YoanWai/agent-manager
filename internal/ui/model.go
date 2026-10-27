@@ -127,6 +127,9 @@ type mouseCapture struct {
 	// belong to the session just left, so the list swallows them until the
 	// first gap wider than wheelSettleGap.
 	flickAt time.Time
+	// renamePress is a left press on the group edit's fields, which a
+	// release reported without its button needs before it clicks.
+	renamePress bool
 }
 
 type settingsFeature struct {

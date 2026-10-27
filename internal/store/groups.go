@@ -35,14 +35,14 @@ func (s *Store) CreateGroup(name, path string) error {
 	return err
 }
 
-func (s *Store) AddGroup(name, path, worktree, base string) error {
+func (s *Store) AddGroup(name, path, worktree, base, environment string) error {
 	if name == "" {
 		return errors.New("group name cannot be empty")
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO groups (name, path, worktree, base, sort_order)
-		 VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
-		 ON CONFLICT(name) DO NOTHING`, name, path, worktree, base)
+		`INSERT INTO groups (name, path, worktree, base, environment, sort_order)
+		 VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name, path, worktree, base, environment)
 	if err != nil {
 		return err
 	}
@@ -300,10 +300,13 @@ type Group struct {
 	// diffs against, or "" to inherit from the nearest ancestor with one,
 	// else to detect the repo's default branch.
 	Base string
+	// Environment is the environment profile the group's spawns preselect,
+	// or "" to inherit from the nearest ancestor with one.
+	Environment string
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path, archived, worktree, base FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived, worktree, base, environment FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +315,7 @@ func (s *Store) Groups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var archived int
-		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree, &g.Base); err != nil {
+		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree, &g.Base, &g.Environment); err != nil {
 			return nil, err
 		}
 		g.Archived = archived != 0
@@ -332,6 +335,13 @@ func (s *Store) SetGroupWorktree(name, worktree string) error {
 // "" to inherit.
 func (s *Store) SetGroupBase(name, base string) error {
 	_, err := s.db.Exec(`UPDATE groups SET base = ? WHERE name = ?`, base, name)
+	return err
+}
+
+// SetGroupEnvironment stores the environment profile a group's spawns
+// preselect, or "" to inherit.
+func (s *Store) SetGroupEnvironment(name, environment string) error {
+	_, err := s.db.Exec(`UPDATE groups SET environment = ? WHERE name = ?`, environment, name)
 	return err
 }
 
