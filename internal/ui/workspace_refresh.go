@@ -158,13 +158,19 @@ func (m *Model) refreshCmd() tea.Cmd {
 	}
 }
 
+// listingFenced reports a listing no newer than the last committed mutation,
+// whose rows would show the store as it was before that mutation.
+func (m *Model) listingFenced(listedAt time.Time) bool {
+	return !listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !listedAt.After(m.effects.latestObservation)
+}
+
 func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case refreshMsg:
 		// A listing older than a committed mutation or a newer listing keeps
 		// its rows out, but still carries focus consumed from a notification,
 		// the turns it saw end and its pane facts.
-		fenced := !msg.listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !msg.listedAt.After(m.effects.latestObservation)
+		fenced := m.listingFenced(msg.listedAt)
 		staleListing := fenced || (!msg.listedAt.IsZero() && msg.listedAt.Before(m.workspace.lastListedAt))
 		if !staleListing && !msg.listedAt.IsZero() {
 			m.workspace.lastListedAt = msg.listedAt

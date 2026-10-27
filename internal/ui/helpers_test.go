@@ -252,8 +252,30 @@ func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 		m.drainEffects(t)
 		cmd = m.refreshCmd()
 	}
-	m.applyTestMsg(t, cmd())
+	msg := cmd()
+	m.applyTestMsg(t, msg)
 	m.drainEffects(t)
+	m.applyRequestedRefresh(t, msg)
+}
+
+// applyRequestedRefresh runs the pass a fenced listing asks the poller for.
+// Windows advances the monotonic clock once per interrupt, so a listing taken
+// in the tick an effect finished in compares equal to it and is fenced.
+func (m *Model) applyRequestedRefresh(t *testing.T, msg tea.Msg) {
+	t.Helper()
+	for attempt := 0; ; attempt++ {
+		listing, ok := msg.(refreshMsg)
+		if !ok || !m.listingFenced(listing.listedAt) {
+			return
+		}
+		if attempt == 100 {
+			t.Fatal("listing stayed fenced after 100 passes")
+		}
+		time.Sleep(time.Millisecond)
+		msg = m.refreshCmd()()
+		m.applyTestMsg(t, msg)
+		m.drainEffects(t)
+	}
 }
 
 // drainEffects drives only finite UI effects; recurring preview/poll timers stay idle.
