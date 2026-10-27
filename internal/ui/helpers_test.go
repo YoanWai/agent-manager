@@ -273,6 +273,9 @@ func (m *Model) applyRequestedRefresh(t *testing.T, msg tea.Msg) {
 		}
 		time.Sleep(time.Millisecond)
 		msg = m.refreshCmd()()
+		if failed, ok := msg.(errMsg); ok {
+			t.Fatalf("refresh after a fenced listing: %v", failed.err)
+		}
 		m.applyTestMsg(t, msg)
 		m.drainEffects(t)
 	}
