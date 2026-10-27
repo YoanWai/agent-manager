@@ -144,3 +144,36 @@ func TestReconcileCopiesSnapshotValues(t *testing.T) {
 		t.Fatalf("rows = %+v; want copied session name", rows)
 	}
 }
+
+func TestListedInventoryHonorsSearchArchiveAncestryAndNotFolds(t *testing.T) {
+	model := rail.New([]string{"work"})
+	model.Reconcile(rail.Snapshot{Groups: []string{"work", "hidden/deep"}, ArchivedGroups: map[string]bool{"hidden": true}, Sessions: []rail.Session{
+		{ID: "match", Name: "needle", Group: "work"}, {ID: "other", Name: "other", Group: "work"}, {ID: "hidden", Name: "needle", Group: "hidden/deep"},
+	}})
+	if ids := model.ListedSessionIDs(); len(ids) != 2 {
+		t.Fatalf("folded inventory = %v", ids)
+	}
+	model.SetSearch("needle", false)
+	if ids := model.ListedSessionIDs(); len(ids) != 1 || ids[0] != "match" {
+		t.Fatalf("searched inventory = %v", ids)
+	}
+}
+
+func TestListedInventoryIncludesCarriedParentAndAttentionScope(t *testing.T) {
+	model := rail.New(nil)
+	model.Reconcile(rail.Snapshot{Groups: []string{"work"}, Sessions: []rail.Session{
+		{ID: "parent", Name: "parent", Group: "work", Status: "idle"},
+		{ID: "child", Name: "needle", Group: "work", ParentID: "parent", Status: "waiting"},
+		{ID: "other", Name: "other", Group: "work", Status: "idle"},
+	}})
+	model.SetSearch("needle", false)
+	if ids := model.ListedSessionIDs(); len(ids) != 2 || ids[0] != "parent" || ids[1] != "child" {
+		t.Fatalf("searched family=%v", ids)
+	}
+	model.SetSearch("", false)
+	model.Focus(rail.Selection{Kind: rail.GroupRow, Group: "work"})
+	model.SetFilteringAttention(true)
+	if ids := model.ListedSessionIDs(); len(ids) != 1 || ids[0] != "child" {
+		t.Fatalf("attention inventory=%v", ids)
+	}
+}

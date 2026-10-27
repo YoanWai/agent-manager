@@ -30,7 +30,9 @@ func TestSpecsKeepTheirOrder(t *testing.T) {
 // two-way row reads, writes and restores through the table.
 func TestTableCoversEveryRow(t *testing.T) {
 	s := openState(testContext())
-	lines := strings.Split(s.View(viewContext()).Body, "\n")
+	view := viewContext()
+	view.Envs = []Env{{Name: "work"}}
+	lines := strings.Split(s.View(view).Body, "\n")
 	if len(lines) != FieldCount {
 		t.Fatalf("the dialog paints %d lines for %d fields", len(lines), FieldCount)
 	}

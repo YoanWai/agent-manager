@@ -63,12 +63,6 @@ const attachGateSlots int64 = 1 << 20
 
 var attachGate = semaphore.NewWeighted(attachGateSlots)
 
-// enterGate lets a tmux command run beside others until release. Exclusive,
-// it holds off every agent-manager command on the server instead.
-func enterGate(socket string, exclusive bool) (release func(), err error) {
-	return enterGateContext(context.Background(), socket, exclusive)
-}
-
 func enterGateContext(ctx context.Context, socket string, exclusive bool) (release func(), err error) {
 	weight := int64(1)
 	if exclusive {

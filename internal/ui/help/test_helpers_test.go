@@ -18,17 +18,18 @@ func namedKey(t tea.KeyType) tea.KeyMsg { return tea.KeyMsg{Type: t} }
 
 func testContext(width int) Context {
 	return Context{
-		SessionKeys: keybind.DefaultSession(),
-		ListKeys:    keybind.DefaultList(),
-		ArrowStep:   true,
-		Width:       width,
+		SessionKeys:   keybind.DefaultSession(),
+		ListKeys:      keybind.DefaultList(),
+		ReviewHelpKey: keybind.DefaultList().Binding(keybind.Help),
+		ArrowStep:     true,
+		Width:         width,
 		Glyphs: Glyphs{
 			RowMenu:          "[…]",
 			Reorder:          "⠿",
 			AfterTurnArchive: "↓",
 			AfterTurnKill:    "■",
 		},
-		QuickKeys:    QuickKeys{Model: "ctrl+l", Effort: "ctrl+x", Profile: "ctrl+y"},
+		QuickKeys:    QuickKeys{Model: "ctrl+l", Effort: "ctrl+x", Profile: "ctrl+y", Env: "ctrl+g"},
 		CursorMarker: testCursorMarker,
 		Styles: Styles{
 			Section: lipgloss.NewStyle().Bold(true),

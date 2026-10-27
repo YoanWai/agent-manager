@@ -44,6 +44,7 @@ const (
 	quickModelKey   = uiquick.ModelKey
 	quickEffortKey  = uiquick.EffortKey
 	quickProfileKey = uiquick.ProfileKey
+	quickEnvKey     = uiquick.EnvKey
 )
 
 // quickBarHost is the root as the quick bar sees it.
@@ -57,13 +58,13 @@ func (h quickBarHost) Prompt() spawn.Prompt {
 
 func (h quickBarHost) Target() (uiquick.Target, bool) {
 	if row, ok := h.m.remoteQuickTarget(); ok {
-		return uiquick.Target{Group: row.Group, IsGroup: row.Kind != uiconnections.SessionRow}, true
+		return uiquick.Target{Group: row.Group, IsGroup: row.Kind != uiconnections.SessionRow, Remote: true}, true
 	}
 	entry, ok := h.m.selectedRow()
 	if !ok {
 		return uiquick.Target{}, false
 	}
-	return uiquick.Target{Group: entry.group, IsGroup: entry.isGroup}, true
+	return uiquick.Target{Group: entry.group, IsGroup: entry.isGroup, Env: h.m.groupEnv(entry.group)}, true
 }
 
 func (m *Model) openQuickMode() tea.Cmd {
@@ -71,6 +72,9 @@ func (m *Model) openQuickMode() tea.Cmd {
 }
 
 func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
+	if m.rail.ShowArchived() {
+		return nil
+	}
 	names, index := m.cachedSpawnToolSelection()
 	if len(names) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
@@ -101,6 +105,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	// The bar is active before its choice starts, so a bar aimed at a
 	// connection starts on the host's defaults.
 	m.quick.Bar = uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
+	m.quick.Env().Seed(m.workspace.envProfiles, "")
 	catalog := m.ensureCatalog(names[index])
 	if m.settings.pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
@@ -202,6 +207,10 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 	if request.WorktreeSet {
 		pickWorktree = request.Worktree
 	}
+	env := m.groupEnv(request.Group)
+	if request.EnvSet {
+		env = request.Env
+	}
 	return spawnRequest{
 		kind:         spawnQuick,
 		toolName:     request.Tool,
@@ -211,6 +220,7 @@ func (m *Model) quickSpawnRequest(request spawn.Request) spawnRequest {
 		autoNamed:    true,
 		pickWorktree: pickWorktree,
 		choice:       config.Choice(request.Pick),
+		environment:  env,
 		base:         defaults.base,
 		pane:         defaults.pane,
 		composerGen:  m.quick.gen,

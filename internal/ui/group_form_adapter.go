@@ -6,12 +6,14 @@ import (
 
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // groupFormDialog keeps what the root shares with the New Group form: the
-// path completion under its path field and the group base choice, which the
-// root probes. The fields, focus, keys and validation are uidialogs.GroupForm.
+// path completion under its path field, the group base choice, which the
+// root probes, and the environment choice. The fields, focus, keys and
+// validation are uidialogs.GroupForm.
 type groupFormDialog struct {
 	uidialogs.GroupForm
 	paths pathComplete
@@ -19,6 +21,7 @@ type groupFormDialog struct {
 	// remote is the connection and parent group the form creates under,
 	// when a connection's row opened it.
 	remote formRemote
+	env    string
 }
 
 // groupWorktreeOptions are the picker states for a group's spawn-in-worktree
@@ -98,6 +101,8 @@ func (m *Model) runGroupFormKey(key uidialogs.GroupFormKey, reader directoryPref
 		var cmd tea.Cmd
 		m.groupForm.base, cmd = m.stepGroupBase(groupBaseForm, uint64(m.groupForm.Gen()), m.groupFormDir(), m.groupForm.base, key.Delta)
 		return cmd
+	case uidialogs.GroupFormStepEnv:
+		m.groupForm.env = spawn.StepEnv(m.workspace.envProfiles, m.groupForm.env, key.Delta)
 	case uidialogs.GroupFormInvalid:
 		m.reportErr(key.Err)
 	case uidialogs.GroupFormSubmit:
@@ -108,7 +113,7 @@ func (m *Model) runGroupFormKey(key uidialogs.GroupFormKey, reader directoryPref
 				groupDir: strings.TrimSpace(request.Dir), composerGen: request.Gen})
 		}
 		m.dispatchGroup(groupRequest{
-			path: request.Path, worktree: groupWorktreeValue(request.Worktree), base: m.groupForm.base, gen: request.Gen,
+			path: request.Path, worktree: groupWorktreeValue(request.Worktree), base: m.groupForm.base, env: m.groupForm.env, gen: request.Gen,
 			rawDir: request.Dir, fallbacks: m.groupDirCandidates(request.Parent), dirReader: reader,
 		})
 		return m.nextEffectCmd()
@@ -159,12 +164,28 @@ func (m *Model) viewGroupForm() string {
 		Value:     valueStyle(),
 		Worktrees: groupWorktreeOptions,
 		Base:      groupBaseChoice(m.groupForm.base, m.groupBase(parent), m.prefs.glyphMode),
+		Env:       groupEnvChoice(m.groupForm.env, m.groupEnv(parent), len(m.workspace.envProfiles) > 0, m.prefs.glyphMode),
 	}
 	if m.groupForm.paths.active() {
 		view.Suggestions = func() string { return m.groupForm.paths.view(m.prefs.glyphMode) }
 		view.SuggestHints = pathSuggestHint(m.groupForm.paths.chosen)
 	}
 	return m.drawCard(m.groupForm.View(view))
+}
+
+// groupEnvChoice renders a group's environment picker: its own profile, or
+// none and the parent's that none inherits. With no profile defined and
+// none chosen it is empty, which leaves the row off the form.
+func groupEnvChoice(env, inherited string, defined bool, mode presentation.GlyphMode) string {
+	if !defined && env == "" {
+		return ""
+	}
+	g := presentation.ChromeFor(mode)
+	choice := subtleStyle().Render(g.ChoiceLeftGlyph+" ") + valueStyle().Render(cmp.Or(env, "none")) + subtleStyle().Render(" "+g.ChoiceRightGlyph)
+	if env == "" && inherited != "" {
+		choice += subtleStyle().Render("  " + inherited + " from parent")
+	}
+	return choice
 }
 
 // groupBaseChoice renders a group's base picker: its own ref, or auto and

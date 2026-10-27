@@ -73,7 +73,7 @@ func (s effectServices) runQuickSend(request quickSendRequest) (effectResult, er
 		return result, fmt.Errorf("check quick-send target %s: %w", current.Name, err)
 	}
 	if !exists {
-		return result, errors.New(deadSessionHint)
+		return result, deadSessionError(s.store, current.ID)
 	}
 	sent, sendErr := s.quickSendText(s.driver, current.ID, request.text)
 	if sendErr != nil {

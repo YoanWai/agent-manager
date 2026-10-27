@@ -17,7 +17,7 @@ func TestLaunchHintKeysNeedACommand(t *testing.T) {
 		}
 	}
 	fix := LaunchHint{Text: "x is not installed.", Command: "brew install x"}
-	cases := map[string]LaunchHintAction{"c": LaunchHintCopy, "i": LaunchHintInstall, "q": LaunchHintClose, "j": LaunchHintStay}
+	cases := map[string]LaunchHintAction{"c": LaunchHintCopy, "i": LaunchHintInstall, "q": LaunchHintStay, "j": LaunchHintStay}
 	for key, want := range cases {
 		if got := fix.Key(runes(key)); got != want {
 			t.Fatalf("%s = %v, want %v", key, got, want)
@@ -66,5 +66,19 @@ func TestLaunchHintClickCopiesTheCommandParagraph(t *testing.T) {
 	}
 	if got := (LaunchHint{Text: "x is not installed."}).Click(0, 80); got != LaunchHintStay {
 		t.Fatalf("a dialog without a recipe copies nothing, got %v", got)
+	}
+}
+
+func TestLaunchHintClosesOnlyOnAdvertisedEscape(t *testing.T) {
+	for _, command := range []string{"", "install tool"} {
+		hint := LaunchHint{Text: "missing", Command: command}
+		for _, msg := range []tea.KeyMsg{runes("q"), {Type: tea.KeyEnter}} {
+			if got := hint.Key(msg); got != LaunchHintStay {
+				t.Errorf("command=%q key=%s: %v", command, msg.String(), got)
+			}
+		}
+		if got := hint.Key(tea.KeyMsg{Type: tea.KeyEsc}); got != LaunchHintClose {
+			t.Errorf("Escape: %v", got)
+		}
 	}
 }

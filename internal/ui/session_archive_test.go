@@ -2,14 +2,16 @@ package ui
 
 import (
 	"errors"
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestArchiveConfirmationUsesLoadedSessionTree(t *testing.T) {
@@ -140,7 +142,7 @@ func TestRestoreGroupBringsBackOnlyItsArchivedSessions(t *testing.T) {
 	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != stash.ID {
 		t.Errorf("restore targets %d sessions, want stash alone", len(m.confirm.sessions))
 	}
-	if want := "restore group zone (1 archived sessions)? brings them back."; m.confirm.label != want {
+	if want := "restore whole group zone (1 archived sessions)? includes sessions hidden by filters."; m.confirm.label != want {
 		t.Errorf("label = %q, want %q", m.confirm.label, want)
 	}
 	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
@@ -692,5 +694,241 @@ func TestConfirmedGroupArchiveHidesTheSubtreeAtOnce(t *testing.T) {
 		if got.ID == sess.ID {
 			t.Fatalf("archived session still on the active tree before the next poll")
 		}
+	}
+}
+
+func TestRestoreArchivedGroupRecoversLegacyHiddenRowsWithoutRevivingDead(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "legacy/deep")
+	if err := m.services.store.SetGroupArchived("legacy", true); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	live := store.Session{ID: newID(), Name: "hidden-live", Tool: "claude", Cwd: dir, Group: "legacy/deep", Status: status.Idle}
+	dead := store.Session{ID: newID(), Name: "hidden-dead", Tool: "claude", Cwd: dir, Group: "legacy/deep", Status: status.Dead}
+	stash := store.Session{ID: newID(), Name: "archived", Tool: "claude", Cwd: dir, Group: "legacy/deep", Status: status.Dead, Archived: true}
+	// Legacy rows bypassed active placement validation when they were created.
+	for _, sess := range []store.Session{live, dead, stash} {
+		if err := m.services.store.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.services.tmux.Create(live.ID, dir, m.services.cfg.Tools[live.Tool].Command, nil, 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	if m.focusSession(live.ID) || m.focusSession(dead.ID) {
+		t.Fatal("legacy hidden rows unexpectedly listed in active view")
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "legacy")
+	m.restoreSelected()
+	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != stash.ID {
+		t.Fatalf("restore targets=%+v", m.confirm.sessions)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	m.drainEffects(t)
+	if !m.services.tmux.Exists(live.ID) || !m.services.tmux.Exists(stash.ID) || m.services.tmux.Exists(dead.ID) {
+		t.Fatalf("live=%v stash=%v dead=%v err=%s", m.services.tmux.Exists(live.ID), m.services.tmux.Exists(stash.ID), m.services.tmux.Exists(dead.ID), m.errBar.text)
+	}
+	m.rail.SetArchived(false)
+	m.applyCmd(t, m.refreshCmd())
+	for _, sess := range []store.Session{live, dead, stash} {
+		if !m.focusSession(sess.ID) {
+			t.Fatalf("restored group still hides %s", sess.Name)
+		}
+	}
+}
+
+func TestNestedGroupRestoreIsVisibleAcrossPolls(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "a/b/deep", "a/sibling", "outside")
+	restored := store.Session{ID: newID(), Name: "restored", Tool: "claude", Cwd: t.TempDir(), Group: "a/b", Status: status.Dead}
+	live := store.Session{ID: newID(), Name: "already-live", Tool: "claude", Cwd: t.TempDir(), Group: "a/b/deep", Status: status.Idle}
+	parent := store.Session{ID: newID(), Name: "parent-stash", Tool: "claude", Cwd: t.TempDir(), Group: "a", Status: status.Dead}
+	sibling := store.Session{ID: newID(), Name: "sibling-stash", Tool: "claude", Cwd: t.TempDir(), Group: "a/sibling", Status: status.Dead}
+	sleeper := store.Session{ID: newID(), Name: "outside-dead", Tool: "claude", Cwd: t.TempDir(), Group: "outside", Status: status.Dead}
+	for _, sess := range []store.Session{restored, live, parent, sibling, sleeper} {
+		if err := m.services.store.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.services.store.SetGroupArchived("a", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.tmux.Create(live.ID, live.Cwd, m.services.cfg.Tools[live.Tool].Command, nil, 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	beforePID, err := m.services.tmux.PanePID(live.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "a/b")
+	stalePoll := m.refreshCmd()()
+	staleAt := time.Now()
+	m.restoreSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+	if !m.services.tmux.Exists(restored.ID) {
+		t.Fatalf("restore did not launch: %s", m.errBar.text)
+	}
+	if pid, err := m.services.tmux.PanePID(live.ID); err != nil || pid != beforePID {
+		t.Fatalf("live restore replaced pane: %d %v", pid, err)
+	}
+	m.applyTestMsg(t, stalePoll)
+	m.rail.SetArchived(false)
+	for _, sess := range []store.Session{restored, live} {
+		if !m.focusSession(sess.ID) {
+			t.Fatalf("restored row invisible before poll: %s", sess.Name)
+		}
+	}
+	stale := refreshMsg{listedAt: staleAt, archivedGroups: map[string]bool{"a": true, "a/b": true, "a/b/deep": true, "a/sibling": true}}
+	stripDeletedGroups(&stale, m.ledger.goneGroups)
+	if stale.archivedGroups["a"] || stale.archivedGroups["a/b"] || stale.archivedGroups["a/b/deep"] || !stale.archivedGroups["a/sibling"] {
+		t.Fatalf("stale poll restored archive flags: %+v", stale.archivedGroups)
+	}
+	for poll := 0; poll < 3; poll++ {
+		m.applyCmd(t, m.refreshCmd())
+		for _, sess := range []store.Session{restored, live} {
+			if !m.focusSession(sess.ID) {
+				t.Fatalf("restored row invisible after poll %d: %s", poll, sess.Name)
+			}
+		}
+	}
+	m.rail.SetArchived(true)
+	for _, sess := range []store.Session{parent, sibling} {
+		if !m.focusSession(sess.ID) || m.services.tmux.Exists(sess.ID) {
+			t.Fatalf("unrelated archived row changed: %s", sess.Name)
+		}
+	}
+	if m.services.tmux.Exists(sleeper.ID) {
+		t.Fatal("restore revived a deliberately killed active session")
+	}
+	fresh := refreshMsg{listedAt: time.Now().Add(time.Second)}
+	stripDeletedGroups(&fresh, m.ledger.goneGroups)
+	if len(m.ledger.goneGroups) != 0 {
+		t.Fatalf("new poll did not retire group ledger: %+v", m.ledger.goneGroups)
+	}
+}
+
+func TestRestoreEmptyNestedGroupClearsAncestors(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "a", "a/b")
+	if err := m.services.store.SetGroupArchived("a", true); err != nil {
+		t.Fatal(err)
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "a/b")
+	m.restoreSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+	m.rail.SetArchived(false)
+	if m.groupEffectivelyArchived("a/b") {
+		t.Fatal("empty subgroup restore left archived ancestry")
+	}
+	m.selectGroupRow(t, "a/b")
+}
+
+func TestWholeGroupArchiveRestoreIncludesFilteredAndArchivedRows(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "zone")
+	for _, name := range []string{"match", "hidden", "stash"} {
+		createSession(t, m, name, t.TempDir(), "zone")
+	}
+	var rows []store.Session
+	for _, sess := range m.workspace.sessions {
+		if sess.Group == "zone" {
+			rows = append(rows, sess)
+			if sess.Name == "stash" {
+				if err := m.services.store.SetArchived(sess.ID, true); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.rail.SetSearch("match", false)
+	m.selectGroupRow(t, "zone")
+	m.archiveSelected()
+	if len(m.confirm.sessions) != 3 || !strings.Contains(m.confirm.label, "whole group zone (3 sessions, 1 already archived)") {
+		t.Fatalf("archive scope: %s %+v", m.confirm.label, m.confirm.sessions)
+	}
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+	for _, sess := range rows {
+		stored, err := m.services.store.Get(sess.ID)
+		if err != nil || !stored.Archived || m.services.tmux.Exists(sess.ID) {
+			t.Fatalf("archive omitted row: %+v %v", stored, err)
+		}
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.rail.SetSearch("match", false)
+	m.selectGroupRow(t, "zone")
+	m.restoreSelected()
+	if len(m.confirm.sessions) != 3 || !strings.Contains(m.confirm.label, "whole group zone (3 archived sessions)") {
+		t.Fatalf("restore scope: %s %+v", m.confirm.label, m.confirm.sessions)
+	}
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+	for _, sess := range rows {
+		stored, err := m.services.store.Get(sess.ID)
+		if err != nil || stored.Archived || !m.services.tmux.Exists(sess.ID) {
+			t.Fatalf("restore omitted row: %+v %v", stored, err)
+		}
+	}
+}
+
+func TestLivePublicArchiveRestoresWithoutRelaunchBeforeKill(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "live", t.TempDir(), "")
+	sess := m.workspace.sessions[0]
+	if err := m.services.store.SetAgentSessionID(sess.ID, "conversation-proof"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := m.services.tmux.PanePID(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.services.lifecycle.SetArchivedForSession("", sess.ID, true, sessioncmd.Vocabulary{}); err != nil {
+		t.Fatal(err)
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, sess.Name)
+	m.killSelected()
+	m.killAllLive()
+	if m.mode == modeConfirmDelete {
+		t.Fatal("archived kill opened a card")
+	}
+	m.restoreSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+	after, err := m.services.store.Get(sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current, err := m.services.tmux.PanePID(sess.ID); err != nil || current != pid || after.AgentSessionID != before.AgentSessionID || !after.AgentLaunchedAt.Equal(before.AgentLaunchedAt) {
+		t.Fatalf("restore relaunched archived pane: %+v PID=%d %v", after, current, err)
+	}
+	m.rail.SetArchived(false)
+	m.focusSession(sess.ID)
+	m.killSelected()
+	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.drainEffects(t)
+	if m.services.tmux.Exists(sess.ID) {
+		t.Fatal("active Kill did not stop restored pane")
+	}
+	if stored, err := m.services.store.Get(sess.ID); err != nil || stored.Archived || stored.Status != status.Dead {
+		t.Fatalf("Kill removed/restored wrong state: %+v %v", stored, err)
 	}
 }

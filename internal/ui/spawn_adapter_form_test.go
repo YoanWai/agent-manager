@@ -280,7 +280,7 @@ func TestGroupFormRejectsDuplicateWithoutChangingIt(t *testing.T) {
 	m := buildModel(t)
 	first := t.TempDir()
 	second := t.TempDir()
-	if err := m.services.store.AddGroup("backend", first, "on", ""); err != nil {
+	if err := m.services.store.AddGroup("backend", first, "on", "", ""); err != nil {
 		t.Fatalf("seed group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())

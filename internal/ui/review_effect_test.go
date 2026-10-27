@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -67,6 +68,9 @@ func reviewSendRequest(request *uireview.SendRequest, session store.Session) rev
 
 func TestReviewSendDeadSessionWritesNothing(t *testing.T) {
 	st := openReviewTestStore(t)
+	if err := st.SetKeys(keybind.DefaultList().With(keybind.Revive, bindingOf(t, "U")).With(keybind.Restart, bindingOf(t))); err != nil {
+		t.Fatal(err)
+	}
 	session := createReviewSendSession(t, st, "dead1")
 	writer := &scriptedReviewWriter{alive: false}
 	req := reviewSendRequest(&uireview.SendRequest{
@@ -81,7 +85,7 @@ func TestReviewSendDeadSessionWritesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := effect.(reviewEffectResult)
-	if result.send.Outcome != uireview.SendRefused || result.send.Err == nil || result.send.Err.Error() != deadSessionHint {
+	if result.send.Outcome != uireview.SendRefused || result.send.Err == nil || result.send.Err.Error() != "session is dead - press U to revive" {
 		t.Fatalf("dead session outcome = %+v", result.send)
 	}
 	state, err := st.ReviewState("dead1", "/repo")

@@ -12,7 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 )
 
-// ErrSessionGone reports a write against a session row that is no longer
+// ErrSessionGone reports an operation against a session row that is no longer
 // there. Deleting a session is normal, so a caller holding a session
 // listed a moment earlier can tell that race apart from a real failure.
 var ErrSessionGone = errors.New("session no longer exists")
@@ -68,6 +68,9 @@ type Session struct {
 	TmuxSocket string
 	// Choice rides every launch: restart, revive and fork.
 	Choice config.Choice
+	// Environment names the environment profile every launch exports, or
+	// "" for the manager's own environment alone.
+	Environment string
 	// AfterTurn is what the session asked the manager to do to it once the
 	// turn that asked ends: AfterTurnArchive, AfterTurnKill, or empty.
 	AfterTurn   string
@@ -93,18 +96,19 @@ func (sess Session) LaunchTime() time.Time {
 	return sess.AgentLaunchedAt
 }
 
+// CreateSession preserves imported or legacy state; live launches use CreateActiveSession.
 func (s *Store) CreateSession(sess Session) error {
-	return s.createSession(sess, "")
+	return s.createSession(sess, "", false)
 }
 
 // CreateSessionBeside reads the anchor inside the write transaction, so a
 // placement that lands first decides where the new row goes rather than
-// leaving it behind.
+// leaving it behind. It preserves legacy state; live launches use CreateActiveSessionBeside.
 func (s *Store) CreateSessionBeside(sess Session, anchorID string) error {
-	return s.createSession(sess, anchorID)
+	return s.createSession(sess, anchorID, false)
 }
 
-func (s *Store) createSession(sess Session, anchorID string) error {
+func (s *Store) createSession(sess Session, anchorID string, requireActive bool) error {
 	if sess.CreatedAt.IsZero() {
 		sess.CreatedAt = time.Now()
 	}
@@ -141,14 +145,19 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 		}
 		sess.Group = parentGroup
 	}
+	if requireActive {
+		if err := validateActivePlacement(tx, sess, anchorID); err != nil {
+			return err
+		}
+	}
 	_, err = tx.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, environment, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
 		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.ParentID, sess.LaunchPrompt, sess.TmuxSocket,
-		sess.Choice.Provider, sess.Choice.Model, sess.Choice.Effort, sess.Choice.Profile, boolToInt(sess.OpenedWithoutSession),
+		sess.Choice.Provider, sess.Choice.Model, sess.Choice.Effort, sess.Choice.Profile, boolToInt(sess.OpenedWithoutSession), sess.Environment,
 		sess.Group, sess.ParentID,
 	)
 	if err != nil {
@@ -166,7 +175,7 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -189,7 +198,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
 			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
 			&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession); err != nil {
+			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment); err != nil {
 			return nil, err
 		}
 		if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
@@ -217,13 +226,13 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched, afterTurnAt int64
 	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
 		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
 		&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession)
+		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment)
 	if err != nil {
 		return Session{}, err
 	}
@@ -242,6 +251,15 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.AfterTurnAt = decodeTime(afterTurnAt)
 	sess.OpenedWithoutSession = openedWithoutSession != 0
 	return sess, nil
+}
+
+// RequireSession gives an operation holding a stale row the same gone error as a write.
+func (s *Store) RequireSession(id string) (Session, error) {
+	sess, err := s.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sess, fmt.Errorf("session %s: %w", id, ErrSessionGone)
+	}
+	return sess, err
 }
 
 func (s *Store) Children(parentID string) ([]Session, error) {
@@ -561,11 +579,7 @@ func (s *Store) SetArchived(id string, archived bool) error {
 		if err := tx.QueryRow(`SELECT group_name FROM sessions WHERE id = ?`, id).Scan(&group); err != nil {
 			return err
 		}
-		eachAncestor(group, func(ancestor string) bool {
-			_, err = tx.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, ancestor)
-			return err == nil
-		})
-		if err != nil {
+		if err := unarchiveGroupAncestors(tx, group); err != nil {
 			return err
 		}
 	}

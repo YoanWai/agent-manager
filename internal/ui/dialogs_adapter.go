@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -62,6 +63,7 @@ const (
 type lifecycleSelection struct {
 	kind         lifecycleSelectionKind
 	rootID       string
+	members      []store.Session
 	archivedOnly bool
 }
 
@@ -139,13 +141,17 @@ func (m *Model) openMove() {
 	}
 	if row.isGroup {
 		m.move.Move = uidialogs.MoveGroup(row.group)
-		m.rebuildGroupOptions(parentGroup(row.group))
+		m.rebuildGroupOptionsFor(parentGroup(row.group), m.rail.ShowArchived())
 		m.pruneMoveTargets(row.group)
 	} else {
 		m.move.Move = uidialogs.MoveSession(row.sess.ID)
-		m.rebuildGroupOptions(row.sess.Group)
+		m.rebuildGroupOptionsFor(row.sess.Group, m.rail.ShowArchived())
 		if m.isShell(row.sess.Tool) {
-			m.appendAgentMoveTargets()
+			parentID := ""
+			if row.sess.Archived {
+				parentID = row.sess.ParentID
+			}
+			m.appendAgentMoveTargets(parentID)
 		}
 	}
 	m.gens.dialog++
@@ -153,13 +159,13 @@ func (m *Model) openMove() {
 	m.clearErr()
 }
 
-func (m *Model) appendAgentMoveTargets() {
+func (m *Model) appendAgentMoveTargets(parentID string) {
 	selected := m.form.groups[m.form.groupIndex].path
 	var options []groupOption
 	for _, opt := range m.form.groups {
 		options = append(options, opt)
 		for _, sess := range m.workspace.sessions {
-			if sess.Archived || m.isShell(sess.Tool) || sess.Group != opt.path {
+			if sess.Archived && sess.ID != parentID || m.isShell(sess.Tool) || sess.Group != opt.path {
 				continue
 			}
 			options = append(options, groupOption{
@@ -173,7 +179,7 @@ func (m *Model) appendAgentMoveTargets() {
 	m.form.groups = options
 	m.form.groupIndex = 0
 	for i, opt := range options {
-		if opt.path == selected && opt.sessID == "" {
+		if parentID != "" && opt.sessID == parentID || parentID == "" && opt.path == selected && opt.sessID == "" {
 			m.form.groupIndex = i
 			return
 		}
@@ -257,6 +263,9 @@ func (m *Model) configuredTool(name string) (config.Tool, bool) {
 }
 
 func (m *Model) openFork() {
+	if m.rail.ShowArchived() {
+		return
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
 		return
@@ -306,12 +315,14 @@ func (m *Model) viewFork() string {
 }
 
 // renameDialog keeps what the root shares with the rename: the path
-// completion under its path field and the group base choice, which the
-// root probes. The fields, focus and keys are uidialogs.Rename.
+// completion under its path field, the group base choice, which the
+// root probes, and the environment choice. The fields, focus and keys are
+// uidialogs.Rename.
 type renameDialog struct {
 	uidialogs.Rename
 	paths pathComplete
 	base  string
+	env   string
 }
 
 // dialogPaths hands the rename and the group form the root's path completion.
@@ -349,6 +360,7 @@ func (m *Model) openRename() {
 			Rename: uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])),
 			paths:  m.rename.paths.fresh(),
 			base:   m.workspace.groupBases[entry.group],
+			env:    m.workspace.groupEnvs[entry.group],
 		}
 	} else {
 		tools := m.services.cfg.AgentToolNames()
@@ -370,17 +382,34 @@ func (m *Model) openRename() {
 }
 
 func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.rename.Key(msg, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions))
+	return m.runRenameKey(m.rename.Key(msg, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions)))
+}
+
+// handleRenameClick acts on a click on line of the group edit's fields.
+func (m *Model) handleRenameClick(line int) (tea.Model, tea.Cmd) {
+	return m.runRenameKey(m.rename.Click(line, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions)))
+}
+
+// runRenameKey executes what a rename key or click asked of the root.
+func (m *Model) runRenameKey(key uidialogs.RenameKey) (tea.Model, tea.Cmd) {
 	switch key.Action {
 	case uidialogs.RenameCancel:
 		m.mode = modeList
 		return m, nil
 	case uidialogs.RenameComplete:
 		return m, m.applyPathSuggestion()
+	case uidialogs.RenamePickPath:
+		if m.rename.paths.pick(key.Entry) {
+			return m, m.applyPathSuggestion()
+		}
+		return m, nil
 	case uidialogs.RenameStepBase:
 		var cmd tea.Cmd
 		m.rename.base, cmd = m.stepRenameBase(m.rename.base, key.Delta)
 		return m, cmd
+	case uidialogs.RenameStepEnv:
+		m.rename.env = spawn.StepEnv(m.workspace.envProfiles, m.rename.env, key.Delta)
+		return m, nil
 	case uidialogs.RenameInvalid:
 		m.reportErr(key.Err)
 		return m, nil
@@ -395,6 +424,7 @@ func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				draftDir: request.Dir,
 				worktree: groupWorktreeValue(request.Worktree),
 				base:     m.rename.base,
+				env:      m.rename.env,
 				name:     request.Name,
 			})
 		}
@@ -430,6 +460,7 @@ func (m *Model) viewRenameGroupFields(group string, width int) string {
 		Input:     textInputView,
 		Worktrees: groupWorktreeOptions,
 		Base:      groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group)), m.prefs.glyphMode),
+		Env:       groupEnvChoice(m.rename.env, m.groupEnv(parentGroup(group)), len(m.workspace.envProfiles) > 0, m.prefs.glyphMode),
 	}
 	if m.rename.paths.active() {
 		view.Suggestions = m.viewPathSuggestions

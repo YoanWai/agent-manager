@@ -3,10 +3,12 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -29,7 +31,7 @@ func (m *Model) openHelp() {
 
 func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	layout := m.helpLayout()
-	viewport := uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines)}
+	viewport := uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines), CloseKey: m.services.listKeys.Binding(keybind.Help)}
 	switch m.help.state.Update(msg, viewport) {
 	case uihelp.Quit:
 		return m.requestQuit()
@@ -46,10 +48,11 @@ func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) helpContext(width int) uihelp.Context {
 	return uihelp.Context{
-		SessionKeys: m.services.keys,
-		ListKeys:    m.services.listKeys,
-		ArrowStep:   m.prefs.arrowStep,
-		Width:       width,
+		SessionKeys:   m.services.keys,
+		ListKeys:      m.services.listKeys,
+		ReviewHelpKey: uireview.EffectiveHelpBinding(m.services.listKeys.Binding(keybind.Help)),
+		ArrowStep:     m.prefs.arrowStep,
+		Width:         width,
 		Glyphs: uihelp.Glyphs{
 			Mode:             m.prefs.glyphMode,
 			RowMenu:          uirail.MenuGlyph,
@@ -57,7 +60,7 @@ func (m *Model) helpContext(width int) uihelp.Context {
 			AfterTurnArchive: m.afterTurnGlyph(store.AfterTurnArchive),
 			AfterTurnKill:    m.afterTurnGlyph(store.AfterTurnKill),
 		},
-		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey},
+		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey, Env: quickEnvKey},
 		CursorMarker: cursorAnchorMarker,
 		Styles: uihelp.Styles{
 			Section: sectionStyle(),

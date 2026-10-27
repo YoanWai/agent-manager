@@ -1029,6 +1029,155 @@ func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 	}
 }
 
+// A pass can run on a snapshot read before the previous pass's bind landed.
+// A's refused rebind must still keep A's conversation from B.
+func TestCaptureAgentSessionIDsKeepsABoundConversationFromAStaleSnapshot(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	base := time.Now().Add(-time.Minute)
+	aLaunch := base.Add(100 * time.Millisecond)
+	bLaunch := base.Add(600 * time.Millisecond)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, aLaunch)
+
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: aLaunch},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: bLaunch},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessA, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := []store.Session{sessA, sessB}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
+	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+		t.Fatal(err)
+	}
+
+	gotA, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotA.AgentSessionID != "A-id" {
+		t.Fatalf("session A captured %q, want A-id", gotA.AgentSessionID)
+	}
+	gotB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotB.AgentSessionID != "" {
+		t.Fatalf("session B captured %q, want nothing until its own conversation appears", gotB.AgentSessionID)
+	}
+}
+
+func TestCaptureAgentSessionIDsSkipsASessionDeletedDuringThePass(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	launch := time.Now().Add(-time.Minute)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, launch)
+	if err := st.CreateSession(store.Session{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launch}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Delete("sess-A"); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess-A": {PID: 123}})
+	if err != nil || captured != 0 {
+		t.Fatalf("captured %d, err %v; want 0 and no error", captured, err)
+	}
+}
+
+// A bound then restarted after the snapshot keeps its retired conversation
+// from B, the way the snapshot's own retired ids do.
+func TestCaptureAgentSessionIDsKeepsAConversationRetiredDuringThePass(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	base := time.Now().Add(-time.Minute)
+	aLaunch := base.Add(100 * time.Millisecond)
+	bLaunch := base.Add(600 * time.Millisecond)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, base.Add(time.Second))
+
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: aLaunch},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: bLaunch},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessA, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BindAgentSessionID("sess-A", "A-id", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RestartAgent("sess-A", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	stale := []store.Session{sessA, sessB}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
+	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+		t.Fatal(err)
+	}
+
+	gotB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotB.AgentSessionID != "" {
+		t.Fatalf("session B captured %q, want nothing: that conversation is A's retired one", gotB.AgentSessionID)
+	}
+}
+
 // A restarted codex session still has its old rollout sitting in the same
 // directory, written moments before the restart and so inside the capture
 // window. Capture must bind the fresh conversation, not walk the session
