@@ -562,3 +562,40 @@ func TestAntigravityLaunchAndRevive(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+// A manager started through a link, as Homebrew on Linux starts it, names
+// the link in what it generates: the versioned target the link points at
+// is gone after the next upgrade, while the link lives on.
+func TestExecutableKeepsTheLinkItWasStartedThrough(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "agent-manager")
+	if err := os.Symlink(self, link); err != nil {
+		t.Skipf("no symlinks here: %v", err)
+	}
+	arg0 := os.Args[0]
+	os.Args[0] = link
+	t.Cleanup(func() { os.Args[0] = arg0 })
+
+	if got := Executable(); got != link {
+		t.Fatalf("Executable() = %q, want the link %q", got, link)
+	}
+}
+
+// A process whose argv names something other than the running binary, as
+// a test runner or a wrapper leaves it, still names the binary itself.
+func TestExecutableIgnoresAnUnrelatedArgv(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	arg0 := os.Args[0]
+	os.Args[0] = filepath.Join(t.TempDir(), "missing")
+	t.Cleanup(func() { os.Args[0] = arg0 })
+
+	if got := Executable(); got != self {
+		t.Fatalf("Executable() = %q, want %q", got, self)
+	}
+}
