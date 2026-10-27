@@ -217,6 +217,8 @@ type RemoteRow struct {
 	Host     string
 	Terminal bool
 	Dead     bool
+	// Installable offers installing agent-manager on the connection.
+	Installable bool
 }
 
 // RemoteLegend is the tier for a connection's rows: only the keys the
@@ -230,9 +232,13 @@ func (m Model) RemoteLegend(ctx LegendContext, row RemoteRow, collapsed bool) Le
 	leads := [][2]string{ctx.quickModeLead()}
 	switch row.Kind {
 	case ConnectionRow:
-		return Legend{Title: "SSH connection", Leads: leads, Pairs: boundPairs([][2]string{
+		pairs := [][2]string{
 			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Rename), "edit"}, {k(keybind.Delete), "remove"},
-		})}
+		}
+		if row.Installable {
+			pairs = append([][2]string{{k(keybind.Restore), "install agent-manager"}}, pairs...)
+		}
+		return Legend{Title: "SSH connection", Leads: leads, Pairs: boundPairs(pairs)}
 	case GroupRow:
 		return Legend{Title: "Group", Leads: leads, Pairs: boundPairs([][2]string{
 			{k(keybind.Open), fold}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"},

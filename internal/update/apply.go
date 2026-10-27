@@ -65,23 +65,11 @@ func Apply(ctx context.Context, tag, execPath string) error {
 	ctx, cancel := context.WithTimeout(ctx, applyBudget)
 	defer cancel()
 
-	version := strings.TrimPrefix(tag, "v")
-	asset := fmt.Sprintf("agent-manager_%s_%s_%s%s", version, runtime.GOOS, runtime.GOARCH, archiveExt)
-
-	wantSum, err := fetchChecksum(ctx, tag, asset)
-	if err != nil {
-		return err
-	}
-
-	archive, err := fetchAsset(ctx, tag, asset)
+	archive, err := verifiedArchive(ctx, tag, assetName(tag, runtime.GOOS, runtime.GOARCH, archiveExt))
 	if err != nil {
 		return err
 	}
 	defer os.Remove(archive)
-
-	if err := verifyChecksum(archive, wantSum); err != nil {
-		return err
-	}
 
 	target, err := filepath.EvalSymlinks(execPath)
 	if err != nil {
@@ -92,6 +80,54 @@ func Apply(ctx context.Context, tag, execPath string) error {
 		return err
 	}
 	return swapBinary(staged, target)
+}
+
+// FetchRelease downloads the archive tag publishes for goos and goarch,
+// verifies it against the release's checksums.txt, and extracts its
+// agent-manager binary into dir, which the caller owns. A host reached over
+// SSH takes the build this one runs through it; those hosts run a POSIX
+// shell, so only the tar.gz platforms are offered.
+func FetchRelease(ctx context.Context, tag, goos, goarch, dir string) (string, error) {
+	if _, ok := parseVersion(tag); !ok || !strings.HasPrefix(tag, "v") {
+		return "", fmt.Errorf("update: %q is not a release tag", tag)
+	}
+	if goos != "linux" && goos != "darwin" {
+		return "", fmt.Errorf("update: no tar.gz release for %s", goos)
+	}
+	ctx, cancel := context.WithTimeout(ctx, applyBudget)
+	defer cancel()
+	archive, err := verifiedArchive(ctx, tag, assetName(tag, goos, goarch, ".tar.gz"))
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(archive)
+	binary := filepath.Join(dir, "agent-manager")
+	if err := extractTar(archive, binary, "agent-manager"); err != nil {
+		return "", err
+	}
+	return binary, nil
+}
+
+func assetName(tag, goos, goarch, ext string) string {
+	return fmt.Sprintf("agent-manager_%s_%s_%s%s", strings.TrimPrefix(tag, "v"), goos, goarch, ext)
+}
+
+// verifiedArchive returns the downloaded asset only once it matches the
+// release's checksum, and removes it otherwise.
+func verifiedArchive(ctx context.Context, tag, asset string) (string, error) {
+	wantSum, err := fetchChecksum(ctx, tag, asset)
+	if err != nil {
+		return "", err
+	}
+	archive, err := fetchAsset(ctx, tag, asset)
+	if err != nil {
+		return "", err
+	}
+	if err := verifyChecksum(archive, wantSum); err != nil {
+		os.Remove(archive)
+		return "", err
+	}
+	return archive, nil
 }
 
 func fetchChecksum(ctx context.Context, tag, asset string) (string, error) {
@@ -178,10 +214,10 @@ func extractBinary(archive, staged string) error {
 	if archiveExt == ".zip" {
 		return extractZip(archive, staged)
 	}
-	return extractTar(archive, staged)
+	return extractTar(archive, staged, binaryName)
 }
 
-func extractTar(archive, staged string) error {
+func extractTar(archive, staged, name string) error {
 	file, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -201,7 +237,7 @@ func extractTar(archive, staged string) error {
 		if err != nil {
 			return err
 		}
-		if filepath.Base(header.Name) != binaryName || header.Typeflag != tar.TypeReg {
+		if filepath.Base(header.Name) != name || header.Typeflag != tar.TypeReg {
 			continue
 		}
 		return writeStaged(staged, entries)

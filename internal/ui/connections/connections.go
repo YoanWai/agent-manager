@@ -24,9 +24,13 @@ type Host struct {
 	// Attempted is when the last refresh ran, successful or not.
 	Attempted    time.Time
 	ManagerAwake bool
-	Groups       []Group
-	Sessions     []Session
-	Terminals    []Session
+	// Installable is a refresh that found no agent-manager this one can
+	// drive, missing or too old, which installing this build's release
+	// there fixes.
+	Installable bool
+	Groups      []Group
+	Sessions    []Session
+	Terminals   []Session
 }
 
 type Group struct {
@@ -48,8 +52,12 @@ type Connections struct {
 	gen     uint64
 	hosts   map[string]Host
 	polling map[string]bool
-	Preview Preview
-	Dialog  Dialog
+	// installing names the hosts an install of agent-manager is running
+	// on, and installFailed why the last one on a host failed.
+	installing    map[string]bool
+	installFailed map[string]string
+	Preview       Preview
+	Dialog        Dialog
 }
 
 // SetList adopts the stored connections. A host no longer listed, or
@@ -123,4 +131,38 @@ func (c *Connections) Offline(host string) (string, bool) {
 		return "", false
 	}
 	return state.Err, true
+}
+
+// Installable reports a host whose last refresh found no agent-manager this
+// one can drive. A connection with its own path is left alone: the install
+// lands in ~/.local/bin, which that path does not look at.
+func (c *Connections) Installable(host string) bool {
+	state, seen := c.hosts[host]
+	conn, _ := c.Connection(host)
+	return seen && !state.OK && state.Installable && conn.Binary == ""
+}
+
+func (c *Connections) Installing(host string) bool { return c.installing[host] }
+
+// InstallFailed is why the last install on host failed, or "".
+func (c *Connections) InstallFailed(host string) string { return c.installFailed[host] }
+
+func (c *Connections) StartInstall(host string) {
+	if c.installing == nil {
+		c.installing, c.installFailed = map[string]bool{}, map[string]string{}
+	}
+	c.installing[host] = true
+	delete(c.installFailed, host)
+}
+
+// FinishInstall ends the install on host: failed says why it did not take,
+// and otherwise the refresh it ran lands, unless the list changed since gen.
+func (c *Connections) FinishInstall(host string, gen uint64, failed string, state Host) {
+	delete(c.installing, host)
+	switch {
+	case failed != "":
+		c.installFailed[host] = failed
+	case gen == c.gen:
+		c.hosts[host] = state
+	}
 }

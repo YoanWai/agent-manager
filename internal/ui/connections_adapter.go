@@ -75,6 +75,8 @@ func (c *connectionsFeature) railHosts() []uirail.Host {
 			host.State = uirail.HostOffline
 			host.Trouble = uiconnections.TroubleLabel(state.Trouble)
 		}
+		host.Installable = c.Installable(conn.Name)
+		host.Installing = c.Installing(conn.Name)
 		for _, group := range state.Groups {
 			host.Groups = append(host.Groups, group.Path)
 			if group.Archived {
@@ -107,7 +109,7 @@ const remoteTerminalTool = "terminal"
 func hostFacts(state remote.HostState) uiconnections.Host {
 	host := uiconnections.Host{
 		OK: state.OK, Failures: state.Failures, Attempted: state.Attempted,
-		ManagerAwake: state.Snapshot.ManagerAwake,
+		ManagerAwake: state.Snapshot.ManagerAwake, Installable: remote.Installable(state.Err),
 	}
 	if state.Err != nil {
 		host.Err, host.Trouble = state.Err.Error(), remote.TroubleOf(state.Err)
@@ -335,6 +337,9 @@ func (m *Model) connectionDetail(host string, width int) []string {
 			lines = append(lines, labelStyle().Render(padRight("error", detailLabelWidth))+errStyle().Render(line))
 		}
 	}
+	if fact, ok := m.installFact(host); ok {
+		lines = append(lines, factRow("install", trimmedValue(mutedStyle().Render(fact)), "", width))
+	}
 	return lines
 }
 
@@ -362,6 +367,7 @@ func (m *Model) remoteRowLegend() legendSection {
 	}
 	return legendOf(m.rail.RemoteLegend(m.railLegendContext(), uirail.RemoteRow{
 		Kind: selection.Kind, Host: row.Host, Terminal: row.Terminal, Dead: row.Status == "dead",
+		Installable: row.Kind == uiconnections.ConnectionRow && m.ssh.Installable(row.Host) && !m.ssh.Installing(row.Host),
 	}, m.rail.SelectionCollapsed(selection)))
 }
 

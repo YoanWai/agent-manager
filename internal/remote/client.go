@@ -4,10 +4,12 @@ package remote
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote/value"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/update"
 )
 
 const (
@@ -30,7 +33,8 @@ const (
 
 type Client struct {
 	controlDir string
-	run        Runner
+	run        InputRunner
+	fetch      Fetcher
 	now        func() time.Time
 	inFlight   chan struct{}
 
@@ -46,7 +50,20 @@ type Option func(*Client)
 
 // WithRunner replaces ssh, so a test sees the exact argv.
 func WithRunner(run Runner) Option {
+	return func(c *Client) {
+		c.run = func(ctx context.Context, argv []string, _ io.Reader) ([]byte, []byte, error) { return run(ctx, argv) }
+	}
+}
+
+// WithInputRunner replaces ssh for a test that reads what a call sends the
+// host on stdin.
+func WithInputRunner(run InputRunner) Option {
 	return func(c *Client) { c.run = run }
+}
+
+// WithFetcher replaces the release download an install streams to a host.
+func WithFetcher(fetch Fetcher) Option {
+	return func(c *Client) { c.fetch = fetch }
 }
 
 func WithClock(now func() time.Time) Option {
@@ -59,6 +76,7 @@ func New(profileDir string, opts ...Option) *Client {
 	c := &Client{
 		controlDir: ControlDir(profileDir),
 		run:        runSSH,
+		fetch:      update.FetchRelease,
 		now:        time.Now,
 		inFlight:   make(chan struct{}, maxInFlight),
 		hostSlots:  map[string]chan struct{}{},
@@ -146,6 +164,13 @@ func (c *Client) hostSlot(host string) chan struct{} {
 // before the global one, so a call queued behind its own host never holds
 // a slot another host could use. stdout comes back on failure too.
 func (c *Client) call(ctx context.Context, host string, timeout time.Duration, args ...string) ([]byte, error) {
+	return c.exec(ctx, host, timeout, nil, "", args)
+}
+
+// exec runs name with args through host's login shell, with stdin on the
+// remote command's input when it is not nil. An empty name is the
+// connection's agent-manager.
+func (c *Client) exec(ctx context.Context, host string, timeout time.Duration, stdin io.Reader, name string, args []string) ([]byte, error) {
 	conn, err := c.connection(host)
 	if err != nil {
 		return nil, err
@@ -168,8 +193,12 @@ func (c *Client) call(ctx context.Context, host string, timeout time.Duration, a
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	argv := c.sshArgv(conn.Destination, false, remoteCommand(program(conn), args))
-	stdout, stderr, err := c.run(ctx, argv)
+	command := program(conn)
+	if name != "" {
+		command = quote(name)
+	}
+	argv := c.sshArgv(conn.Destination, false, remoteCommand(command, args))
+	stdout, stderr, err := c.run(ctx, argv, stdin)
 	out, marked := answer(stdout)
 	if err != nil {
 		failed := classify(ctx, conn, stderr, err)
@@ -177,7 +206,7 @@ func (c *Client) call(ctx context.Context, host string, timeout time.Duration, a
 		return out, failed
 	}
 	if !marked {
-		return nil, &Error{Host: host, Err: errors.New("the login shell there exited before it ran agent-manager")}
+		return nil, &Error{Host: host, Err: fmt.Errorf("the login shell there exited before it ran %s", cmp.Or(name, "agent-manager"))}
 	}
 	return out, nil
 }
@@ -306,6 +335,14 @@ func (c *Client) decode(ctx context.Context, host string, timeout time.Duration,
 
 func outdated(host string) error {
 	return &Error{Host: host, Err: errors.New("agent-manager there is too old for SSH connections; update agent-manager on that host"), trouble: TroubleOutdated}
+}
+
+// Installable reports a host that answered but has no agent-manager this
+// one can drive: none on its login PATH, or one too old to know the
+// snapshot. Installing this build's release there fixes either.
+func Installable(err error) bool {
+	trouble := TroubleOf(err)
+	return err != nil && (trouble == TroubleMissing || trouble == TroubleOutdated)
 }
 
 func newer(host string) error {

@@ -66,3 +66,32 @@ func TestAnUnseenHostIsNotOffline(t *testing.T) {
 		t.Fatal("a host never refreshed refused calls")
 	}
 }
+
+func TestAnInstallLeavesAConnectionWithItsOwnPathAlone(t *testing.T) {
+	var c Connections
+	lab := remote.Connection{Name: "lab", Destination: "me@lab", Binary: "~/bin/agent-manager"}
+	c.SetList([]remote.Connection{box, lab})
+	c.Refreshed("box", c.Gen(), Host{Installable: true})
+	c.Refreshed("lab", c.Gen(), Host{Installable: true})
+	if !c.Installable("box") || c.Installable("lab") {
+		t.Fatalf("installable: box %v, lab %v; want only box", c.Installable("box"), c.Installable("lab"))
+	}
+}
+
+func TestAnInstallsRefreshLandsOnlyOnItsList(t *testing.T) {
+	var c Connections
+	c.SetList([]remote.Connection{box})
+	c.Refreshed("box", c.Gen(), Host{Installable: true})
+	gen := c.Gen()
+	c.StartInstall("box")
+	c.FinishInstall("box", gen, "checksum mismatch", Host{})
+	if c.Installing("box") || c.InstallFailed("box") != "checksum mismatch" || !c.Installable("box") {
+		t.Fatalf("after a failed install: installing %v failed %q", c.Installing("box"), c.InstallFailed("box"))
+	}
+	c.StartInstall("box")
+	c.SetList([]remote.Connection{box})
+	c.FinishInstall("box", gen, "", Host{OK: true})
+	if host, _ := c.Host("box"); host.OK || c.InstallFailed("box") != "" {
+		t.Fatalf("an install for an earlier list landed: %+v", host)
+	}
+}

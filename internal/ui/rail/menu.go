@@ -45,7 +45,8 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		return menuSections(append(create, editor, menuItem{label: "Settings", action: OpenSettings}), []menuItem{connection})
 	}
 	if row.host != "" {
-		return remoteMenuItems(row, create, connection)
+		host, _ := m.host(row.host)
+		return remoteMenuItems(row, host.Installable && !host.Installing, create, connection)
 	}
 	if row.kind == GroupRow {
 		live, dead := m.groupLiveAndDead(row.group)
@@ -88,11 +89,17 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 
 // remoteMenuItems offers on a connection's rows only what reaches the
 // remote host's CLI.
-func remoteMenuItems(row treeRow, create []menuItem, connection menuItem) []menuItem {
+// An installable connection offers the install on the restore key, the
+// one that brings a row back.
+func remoteMenuItems(row treeRow, installable bool, create []menuItem, connection menuItem) []menuItem {
 	group := menuItem{label: "New group", action: NewGroup}
 	switch row.kind {
 	case ConnectionRow:
-		return menuSections(append(create, group),
+		var install []menuItem
+		if installable {
+			install = []menuItem{{label: "Install agent-manager", action: Restore}}
+		}
+		return menuSections(install, append(create, group),
 			[]menuItem{{label: "Edit connection", action: RenameAction}, connection},
 			[]menuItem{{label: "Remove connection", action: Delete, danger: true}})
 	case GroupRow:
