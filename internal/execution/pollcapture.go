@@ -145,7 +145,8 @@ cands:
 			// The session was restarted (or bound elsewhere) while this pass
 			// was reading the tool's store, so this id answers a launch that
 			// is over. The next pass captures the one now in the pane. A bind
-			// that landed after this pass's snapshot still claims its id.
+			// or restart that landed after this pass's snapshot still claims
+			// its ids.
 			current, err := p.store.Get(sess.ID)
 			if errors.Is(err, sql.ErrNoRows) {
 				continue
@@ -155,6 +156,9 @@ cands:
 			}
 			if current.AgentSessionID != "" {
 				claimed[current.AgentSessionID] = true
+			}
+			if current.RetiredAgentSessionID != "" {
+				claimed[current.RetiredAgentSessionID] = true
 			}
 			continue
 		}
