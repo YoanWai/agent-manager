@@ -53,6 +53,9 @@ func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case setupProbedMsg:
 		return routed(m, m.applySetupProbe(msg))
 
+	case setupTickMsg:
+		return routed(m, m.applySetupTick())
+
 	case startupTickMsg:
 		if !m.needsLoaderTick() {
 			m.startup.startupAnimating = false

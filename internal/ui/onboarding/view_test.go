@@ -59,6 +59,7 @@ func TestNarrowTerminalsDropThePreview(t *testing.T) {
 
 func TestClickActsOnThePaintedOption(t *testing.T) {
 	m := New(agents, defaults(), false)
+	walkTo(t, &m, Agents)
 	frame := m.View(viewContext(120, 33))
 	row := rowOf(t, frame, "codex")
 	m.Click(row)

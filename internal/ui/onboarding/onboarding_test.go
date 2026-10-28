@@ -40,6 +40,7 @@ func walkTo(t *testing.T, m *Model, step Step) {
 
 func TestConfirmingAStepSavesItsChoiceAlone(t *testing.T) {
 	m := New(agents, defaults(), false)
+	walkTo(t, &m, Agents)
 	m.Key(press("down"))
 	m.Key(press("space"))
 	if out := m.Key(press("enter")); out.Action != Save || !out.Choices.Hidden["codex"] || len(out.Choices.Hidden) != 1 {
@@ -117,6 +118,7 @@ func TestPickingAPaletteStopsFollowingTheOS(t *testing.T) {
 
 func TestOneAgentStaysChecked(t *testing.T) {
 	m := New([]string{"claude", "codex"}, defaults(), false)
+	walkTo(t, &m, Agents)
 	m.Key(press("space"))
 	m.Key(press("down"))
 	m.Key(press("space"))
@@ -142,6 +144,7 @@ func TestFirstRunChecksTheInstalledAgents(t *testing.T) {
 	}
 
 	touched := New(agents, defaults(), true)
+	walkTo(t, &touched, Agents)
 	touched.Key(press("space"))
 	touched.SetInstalled(map[string]bool{"codex": true})
 	if got := touched.Enabled(); !slices.Equal(got, []string{"codex", "gemini"}) {
@@ -180,8 +183,12 @@ func TestHintsFollowTheStep(t *testing.T) {
 		}
 		return out
 	}
-	if got := labels(); !slices.Equal(got, []string{"move", "check", "next", "skip setup"}) {
-		t.Fatalf("first step hints = %v", got)
+	if got := labels(); !slices.Equal(got, []string{"set it up", "skip setup"}) {
+		t.Fatalf("welcome hints = %v", got)
+	}
+	walkTo(t, &m, Agents)
+	if got := labels(); !slices.Equal(got, []string{"move", "check", "next", "back", "skip setup"}) {
+		t.Fatalf("agents step hints = %v", got)
 	}
 	walkTo(t, &m, Places)
 	if got := labels(); !slices.Equal(got, []string{"start", "back"}) {
@@ -191,6 +198,7 @@ func TestHintsFollowTheStep(t *testing.T) {
 
 func TestSavedChoicesAreCopies(t *testing.T) {
 	m := New(agents, defaults(), false)
+	walkTo(t, &m, Agents)
 	m.Key(press("space"))
 	out := m.Key(press("enter"))
 	before := maps.Clone(out.Choices.Hidden)

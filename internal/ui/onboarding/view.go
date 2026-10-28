@@ -13,7 +13,7 @@ import (
 // Keys are the bindings the guide names, as the key tables hold them now.
 // An empty one is an action turned off, and its line is left out.
 type Keys struct {
-	Prompt, Focus, Attach, Detach, Settings, Messages, Help string
+	Prompt, Focus, Attach, Detach, Review, Settings, Messages, Help string
 }
 
 // ViewContext is what a frame reads from the root. Height leaves out the
@@ -37,6 +37,9 @@ type Preview struct {
 	Choices       Choices
 	Agents        []string
 	Width, Height int
+	// Scene is the guide line an animated step is acting out, and Frame how
+	// many beats into it the animation is.
+	Scene, Frame int
 }
 
 // Frame is the setup's rows and the column its content starts at, which
@@ -93,8 +96,9 @@ func (m *Model) View(ctx ViewContext) Frame {
 	column, items := m.column(ctx, p, columnWidth, bodyRows)
 	var preview []string
 	if previewWidth > 0 {
+		scene, frame := m.scene()
 		preview = ctx.Preview(Preview{Step: m.Step(), Choices: m.chosen.clone(), Agents: m.Enabled(),
-			Width: previewWidth, Height: min(bodyRows, previewMaxRows)})
+			Width: previewWidth, Height: min(bodyRows, previewMaxRows), Scene: scene, Frame: frame})
 	}
 	block := max(len(column), len(preview))
 	top := bandRows + max((bodyRows-block)/2, 0)
@@ -174,7 +178,7 @@ func (m Model) progress(p palette) string {
 			b.WriteString(p.subtle.Render(ahead))
 		}
 	}
-	return b.String() + p.subtle.Render(fmt.Sprintf("   %d of %d", m.at+1, len(m.steps)))
+	return p.dim.Render("quick setup   ") + b.String() + p.subtle.Render(fmt.Sprintf("   %d of %d", m.at+1, len(m.steps)))
 }
 
 // column is the step's own text and options, with the option each line
@@ -215,7 +219,11 @@ func (m *Model) column(ctx ViewContext, p palette, width, rows int) ([]string, [
 			add(m.themeRow(p, i, width), i+1)
 		}
 	default:
-		for _, line := range guideRows(p, step, ctx.Keys) {
+		active := -1
+		if m.Animating() {
+			active, _ = m.scene()
+		}
+		for _, line := range guideRows(p, step, ctx.Keys, active) {
 			add(line, -1)
 		}
 	}
@@ -233,6 +241,8 @@ func (m *Model) column(ctx ViewContext, p palette, width, rows int) ([]string, [
 // copyFor is a step's title and the line under it.
 func copyFor(step Step) (string, string) {
 	switch step {
+	case Welcome:
+		return "Welcome to agent-manager", "Every coding agent you run, in one list. A few quick choices and a short tour, about a minute. Everything can change later."
 	case Agents:
 		return "Which agents do you use?", "Checked ones show up when you start a session."
 	case Layout:
@@ -245,6 +255,10 @@ func copyFor(step Step) (string, string) {
 		return "Start an agent in one line", "Pick a group, type the task, done."
 	case Sessions:
 		return "Talk to your agents", "Answer from the list, or step inside."
+	case Review:
+		return "Review what changed", "Read an agent's diff, comment on a line, and hand the notes back."
+	case AskAgent:
+		return "Or just ask your agent", "Every agent here can run the manager for you: groups, sessions, review, the lot."
 	}
 	return "Change anything later", "Every choice here lives in Settings, and so does this setup."
 }
@@ -323,12 +337,14 @@ func (m Model) themeRow(p palette, index, width int) string {
 	return selectable(p, on, presentation.PadRight(name.Render(t.Name), 20)+chip+tag, width)
 }
 
-// guideRows are a guide step's keys, each a cap beside what it does. A key
-// the tables leave unbound drops its line; a typed row names no key.
-func guideRows(p palette, step Step, keys Keys) []string {
+// guideRows are a guide step's lines, each a cap beside what it does. A key
+// the tables leave unbound drops its line; a typed row names no key, and a
+// spoken row is something to say to an agent. active is the line the
+// preview is acting out, or -1.
+func guideRows(p palette, step Step, keys Keys, active int) []string {
 	type row struct {
-		key, does string
-		typed     bool
+		key, does     string
+		typed, spoken bool
 	}
 	var rows []row
 	switch step {
@@ -337,19 +353,29 @@ func guideRows(p palette, step Step, keys Keys) []string {
 	case Sessions:
 		rows = []row{{key: keys.Prompt, does: "answer the selected agent"}, {key: keys.Focus, does: "focus it and type right in"},
 			{key: keys.Attach, does: "attach it full screen"}, {key: keys.Detach, does: "come back to the list"}}
+	case Review:
+		rows = []row{{key: keys.Review, does: "open the agent's diff"}, {key: "c", does: "comment on a line"}, {key: "C", does: "send the comments to the agent"}}
+	case AskAgent:
+		rows = []row{{does: askGroups, spoken: true}, {does: askSpawn, spoken: true}, {does: askReview, spoken: true}}
 	case Places:
 		rows = []row{{key: keys.Settings, does: "Settings: every choice, and this setup"},
 			{key: keys.Messages, does: "Messages: news and tips"}, {key: keys.Help, does: "every key, searchable"}}
 	}
 	typed := p.cap.Foreground(lipgloss.Color(p.theme.Dim)).Bold(false)
+	lit := p.cap.Foreground(lipgloss.Color(p.theme.Bg)).Background(lipgloss.Color(p.theme.Accent))
 	caps := make([]string, len(rows))
 	capWidth := 0
 	for i, r := range rows {
+		label := presentation.KeyLabel(p.mode, r.key)
 		switch {
+		case r.spoken:
+			caps[i] = p.accent.Render(presentation.GlyphsFor(p.mode).PromptGlyph)
+		case i == active && r.key != "":
+			caps[i] = lit.Render(label)
 		case r.typed:
-			caps[i] = typed.Render(r.key)
+			caps[i] = typed.Render(label)
 		case r.key != "":
-			caps[i] = p.cap.Render(presentation.KeyLabel(p.mode, r.key))
+			caps[i] = p.cap.Render(label)
 		}
 		capWidth = max(capWidth, ansi.StringWidth(caps[i]))
 	}
@@ -358,7 +384,29 @@ func guideRows(p palette, step Step, keys Keys) []string {
 		if caps[i] == "" {
 			continue
 		}
-		lines = append(lines, "  "+presentation.PadRight(caps[i], capWidth)+"  "+p.text.Render(r.does), "")
+		does := p.text
+		switch {
+		case i == active:
+			does = p.bright
+		case active >= 0:
+			does = p.dim
+		}
+		text := r.does
+		if r.spoken {
+			text = "“" + text + "”"
+		}
+		lines = append(lines, "  "+presentation.PadRight(caps[i], capWidth)+"  "+does.Render(text), "")
 	}
 	return lines
 }
+
+// What the ask-your-agent step suggests saying; the preview acts out the
+// same words.
+const (
+	askGroups = "make a group for each repo in ~/code"
+	askSpawn  = "start an agent on the flaky test"
+	askReview = "set up review on your branch"
+)
+
+// Asks are the ask-your-agent step's lines, in scene order.
+var Asks = []string{askGroups, askSpawn, askReview}

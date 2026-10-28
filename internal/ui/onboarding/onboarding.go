@@ -16,18 +16,21 @@ import (
 type Step uint8
 
 const (
-	Agents Step = iota
+	Welcome Step = iota
+	Agents
 	Layout
 	Density
 	Theme
 	QuickPrompt
 	Sessions
+	Review
+	AskAgent
 	Places
 )
 
 // Steps is the walk, in order. A step a later release adds, such as
 // importing existing sessions, takes its place in this list.
-var Steps = []Step{Agents, Layout, Density, Theme, QuickPrompt, Sessions, Places}
+var Steps = []Step{Welcome, Agents, Layout, Density, Theme, QuickPrompt, Sessions, Review, AskAgent, Places}
 
 // Choosing reports a step that sets a preference; the others teach.
 func (s Step) Choosing() bool {
@@ -93,6 +96,8 @@ type Model struct {
 	notice                  string
 	done                    bool
 	lines                   presentation.Lines[int]
+	// beat counts the animation ticks since the open step came on screen.
+	beat int
 }
 
 // New opens the setup on the current choices. A first run checks the
@@ -160,6 +165,7 @@ func (m *Model) Key(msg tea.KeyMsg) Outcome {
 	case "backspace", "left", "shift+tab":
 		if m.at > 0 {
 			m.at--
+			m.beat = 0
 		}
 	case "up", "k":
 		m.move(-1)
@@ -217,6 +223,7 @@ func (m *Model) next() Outcome {
 		out = Outcome{Action: Save, Choices: m.saved.clone()}
 	}
 	m.at++
+	m.beat = 0
 	return out
 }
 
@@ -300,9 +307,12 @@ func (m Model) Hints() [][2]string {
 	case step.Choosing():
 		hints = [][2]string{{"↑↓", "choose"}}
 	}
-	if m.at == len(m.steps)-1 {
+	switch {
+	case step == Welcome:
+		hints = append(hints, [2]string{"↵", "set it up"})
+	case m.at == len(m.steps)-1:
 		hints = append(hints, [2]string{"↵", "start"})
-	} else {
+	default:
 		hints = append(hints, [2]string{"↵", "next"})
 	}
 	if m.at > 0 {

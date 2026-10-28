@@ -18,6 +18,7 @@ func setupModel(t *testing.T) *Model {
 	m.layout.width, m.layout.height = 120, 36
 	m.openSetup(true)
 	m.Update(setupProbedMsg{installed: map[string]bool{"claude": true, "codex": true}})
+	pressKeys(m, enterKey)
 	return m
 }
 
@@ -105,7 +106,7 @@ func TestSettingsReopensTheSetup(t *testing.T) {
 	if m.mode != modeOnboarding {
 		t.Fatalf("the setup row opened mode %v", m.mode)
 	}
-	if m.startup.setup.Step() != uionboarding.Agents {
+	if m.startup.setup.Step() != uionboarding.Welcome {
 		t.Fatalf("a reopened setup starts on %v", m.startup.setup.Step())
 	}
 }
@@ -144,6 +145,60 @@ func TestSetupFillsTheTerminal(t *testing.T) {
 			if width := ansi.StringWidth(line); width != size[0] {
 				t.Fatalf("%dx%d row %d is %d wide", size[0], size[1], i, width)
 			}
+		}
+	}
+}
+
+func TestSetupAnimatesOnlyTheGuide(t *testing.T) {
+	m := setupModel(t)
+	if m.keepSetupAnimating() != nil {
+		t.Fatal("the agents step asked for ticks")
+	}
+	_, cmd := m.applySetupOutcome(m.startup.setup.Key(enterKey))
+	for m.startup.setup.Step() != uionboarding.QuickPrompt {
+		_, cmd = m.applySetupOutcome(m.startup.setup.Key(enterKey))
+	}
+	if cmd == nil || !m.startup.setup.ticking {
+		t.Fatal("reaching the quick prompt step started no ticks")
+	}
+	if m.keepSetupAnimating() != nil {
+		t.Fatal("a second tick chain started while one runs")
+	}
+	if m.applySetupTick() == nil {
+		t.Fatal("a tick on an animated step did not ask for the next")
+	}
+	m.mode = modeList
+	if m.applySetupTick() != nil || m.startup.setup.ticking {
+		t.Fatal("ticks kept coming after the setup closed")
+	}
+}
+
+// Every beat of every guide scene fits the window it is drawn in, in both
+// layouts.
+func TestSetupScenesFitTheTerminal(t *testing.T) {
+	for _, full := range []bool{false, true} {
+		m := setupModel(t)
+		m.layout.width, m.layout.height = 120, 36
+		if full {
+			pressKeys(m, enterKey, downKey)
+		} else {
+			pressKeys(m, enterKey)
+		}
+		pressKeys(m, enterKey, enterKey, enterKey)
+		for m.startup.setup.Step() != uionboarding.Places {
+			for range 140 {
+				lines := strings.Split(preparedView(m), "\n")
+				if len(lines) != 36 {
+					t.Fatalf("%v painted %d rows", m.startup.setup.Step(), len(lines))
+				}
+				for i, line := range lines {
+					if width := ansi.StringWidth(line); width != 120 {
+						t.Fatalf("%v row %d is %d wide:\n%s", m.startup.setup.Step(), i, width, ansi.Strip(line))
+					}
+				}
+				m.startup.setup.Tick()
+			}
+			pressKeys(m, enterKey)
 		}
 	}
 }

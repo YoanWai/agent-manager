@@ -18,6 +18,8 @@ type onboardingFeature struct {
 	uionboarding.Model
 	scheme systheme.Scheme
 	probed bool
+	// ticking is a tick of the guide's animation on its way.
+	ticking bool
 }
 
 // setupProbedMsg is the PATH and OS lookup the setup opened with.
@@ -95,7 +97,7 @@ func (m *Model) applySetupOutcome(out uionboarding.Outcome) (tea.Model, tea.Cmd)
 	case uionboarding.Close:
 		m.mode = modeList
 	}
-	return m, tea.Batch(save, m.syncSetupPalette())
+	return m, tea.Batch(save, m.syncSetupPalette(), m.keepSetupAnimating())
 }
 
 // saveSetup writes the confirmed choices down the Settings save path, so
@@ -163,6 +165,7 @@ func (m *Model) setupKeys() uionboarding.Keys {
 		Focus:    focus,
 		Attach:   attach,
 		Detach:   first(m.services.keys, keybind.Detach),
+		Review:   first(list, keybind.Review),
 		Settings: first(list, keybind.Settings),
 		Messages: first(list, keybind.Messages),
 		Help:     first(list, keybind.Help),
