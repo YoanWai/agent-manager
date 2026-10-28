@@ -205,11 +205,7 @@ func (b Binding) Has(name string) bool {
 }
 
 func (b Binding) Label() string {
-	names := make([]string, 0, len(b.keys))
-	for _, key := range b.keys {
-		names = append(names, key.tea)
-	}
-	return strings.Join(names, " / ")
+	return b.Text(" / ", false)
 }
 
 func (b Binding) Glyph(separator string) string {

@@ -95,7 +95,7 @@ func sessionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2]st
 
 func markHelpRows(list keybind.Table, glyphs Glyphs) [][2]string {
 	mode := glyphs.Mode
-	g := presentation.GlyphsFor(glyphs.Mode)
+	g := presentation.GlyphsFor(mode)
 	rows := [][2]string{
 		{g.WorkingGlyph + " working", "the agent is busy on a turn"},
 		{g.WaitingGlyph + " waiting", "blocked on you: a dialog, a permission ask, a question"},
@@ -147,10 +147,10 @@ func helpSections(ctx Context) []helpSection {
 	list := ctx.ListKeys
 	sections := []helpSection{
 		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.Glyphs)},
-		{title: "session under the cursor", rows: sessionRowHelpRows(list, ctx.Glyphs.Mode)},
+		{title: "session under the cursor", rows: sessionRowHelpRows(list, mode)},
 		{title: "the mark on a session row", rows: markHelpRows(list, ctx.Glyphs)},
-		{title: "group under the cursor", rows: groupRowHelpRows(list, ctx.Glyphs.Mode)},
-		{title: "SSH connection under the cursor", rows: connectionRowHelpRows(list, ctx.Glyphs.Mode)},
+		{title: "group under the cursor", rows: groupRowHelpRows(list, mode)},
+		{title: "SSH connection under the cursor", rows: connectionRowHelpRows(list, mode)},
 		{title: titledWith("quick prompt mode", list, mode, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{presentation.NavigationLabel(mode, "↑↓"), "switch the target session, or step the caret in a taller prompt"},

@@ -194,12 +194,13 @@ func (src Sources) arrowStepNotice(g presentation.GlyphSet) Notice {
 	if src.GlyphMode.Effective() == presentation.GlyphModeBasic {
 		beta.Title = "New in beta: step in and out with the arrow keys"
 		beta.Body = []string{
-			"The right arrow on a list row steps in: it focuses the session, or opens the group.",
-			"The left arrow steps out: it closes the group, and inside a focused session it",
-			"returns here - only while the caret sits at the start of the agent's",
-			"prompt, where the left arrow would do nothing. Anywhere else in the prompt it",
-			"moves the caret as always.", "",
-			"We are testing this. If the left arrow ever lands somewhere you did not expect,",
+			"The right arrow on a list row steps in: it focuses the session, or",
+			"opens the group. The left arrow steps out: it closes the group, and",
+			"inside a focused session it returns here - only while the caret sits",
+			"at the start of the agent's prompt, where the left arrow would do",
+			"nothing. Anywhere else in the prompt it moves the caret as always.",
+			"",
+			"We are testing this. If the left arrow lands somewhere unexpected,",
 			"Enter here opens a prefilled report, and Settings (s) has an",
 			"\"arrow step in/out\" row that turns the pair off.",
 		}
