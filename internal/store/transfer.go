@@ -192,22 +192,18 @@ func checkConfigurationKeys(scope, raw string) error {
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return err
 	}
-	written := make(map[string]keybind.Binding, len(stored))
-	for name, specs := range stored {
-		var keys []keybind.Key
-		for _, spec := range specs {
-			key, err := keybind.Parse(spec)
-			if err != nil {
-				return err
-			}
-			keys = append(keys, key)
+	if scope == keybind.ScopeSession {
+		written, err := knownKeys(keybind.DefaultSession(), stored)
+		if err != nil {
+			return err
 		}
-		written[name] = keybind.Keys(keys...)
-	}
-	if scope == "session" {
-		_, err := keybind.SessionTable(written)
+		_, err = keybind.SessionTable(written)
 		return err
 	}
-	_, err := keybind.ListTable(written)
+	written, err := knownKeys(keybind.DefaultList(), stored)
+	if err != nil {
+		return err
+	}
+	_, err = keybind.ListTable(written)
 	return err
 }

@@ -75,6 +75,16 @@ func (s *Store) writtenKeys(table keybind.Table) (map[string]keybind.Binding, er
 	if err != nil {
 		return nil, err
 	}
+	written, err := knownKeys(table, stored)
+	if err != nil {
+		return nil, fmt.Errorf("stored %w", err)
+	}
+	return written, nil
+}
+
+// knownKeys parses the stored keys of the table's actions. A name the
+// table does not hold belongs to a newer release and is skipped.
+func knownKeys(table keybind.Table, stored map[string][]string) (map[string]keybind.Binding, error) {
 	written := make(map[string]keybind.Binding, len(stored))
 	for _, action := range table.Actions() {
 		specs, named := stored[action.Name]
@@ -85,7 +95,7 @@ func (s *Store) writtenKeys(table keybind.Table) (map[string]keybind.Binding, er
 		for _, spec := range specs {
 			key, err := keybind.Parse(spec)
 			if err != nil {
-				return nil, fmt.Errorf("stored %s key for %s: %w", table.Scope(), action.Name, err)
+				return nil, fmt.Errorf("%s key for %s: %w", table.Scope(), action.Name, err)
 			}
 			keys = append(keys, key)
 		}

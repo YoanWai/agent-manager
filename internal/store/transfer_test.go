@@ -113,6 +113,26 @@ func TestConfigurationRoundTripAndMerge(t *testing.T) {
 	}
 }
 
+func TestConfigurationKeepsKeysOfANewerRelease(t *testing.T) {
+	stored := `{"detach":["ctrl+s"],"from_a_newer_release":["f12"]}`
+	source := reopen(t, t.TempDir())
+	if err := source.SetSetting(keysSetting("session"), stored); err != nil {
+		t.Fatal(err)
+	}
+	exported, err := source.ExportConfiguration(allConfiguration, transferSpecs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := reopen(t, t.TempDir())
+	if err := target.ImportConfiguration(exported, transferSpecs); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := target.Setting(keysSetting("session"))
+	if err != nil || raw != stored {
+		t.Fatalf("imported keys = %s, %v", raw, err)
+	}
+}
+
 func TestConfigurationImportRejectsInvalidDataWithoutWriting(t *testing.T) {
 	cases := []struct {
 		name string
