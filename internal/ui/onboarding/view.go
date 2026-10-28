@@ -136,7 +136,7 @@ func (m *Model) View(ctx ViewContext) Frame {
 	return Frame{Lines: lines, Left: left}
 }
 
-// columns sizes the step's column and the preview beside it; a terminal
+// columns sizes the step's column and the preview beside it. A terminal
 // too narrow for both keeps the column alone.
 func columns(width int, preview bool) (column, window int) {
 	room := width - 2*margin
@@ -168,7 +168,7 @@ func (m Model) progress(p palette) string {
 	for i, step := range m.steps {
 		if i > 0 {
 			b.WriteString(" ")
-			if m.steps[i-1].Choosing() && !step.Choosing() {
+			if m.steps[i-1].choosing() && !step.choosing() {
 				b.WriteString("  ")
 			}
 		}
@@ -350,7 +350,7 @@ func (m Model) themeRow(p palette, index, width int) string {
 }
 
 // guideRows are a guide step's lines, each a cap beside what it does. A key
-// the tables leave unbound drops its line; a typed row names no key, and a
+// the tables leave unbound drops its line. A typed row names no key, and a
 // spoken row is something to say to an agent. active is the line the
 // preview is acting out, or -1.
 func guideRows(p palette, step Step, keys Keys, active int) []string {
@@ -443,6 +443,6 @@ func alsoLines(p palette, step Step, keys Keys) []string {
 	return lines
 }
 
-// OrchestrateAsk is what the lead agent is asked; the preview acts out the
+// OrchestrateAsk is what the lead agent is asked. The preview acts out the
 // same words.
 const OrchestrateAsk = "rebuild checkout, split it across agents"

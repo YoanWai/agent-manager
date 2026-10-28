@@ -30,8 +30,7 @@ type startupState struct {
 	startupAnimating bool
 	booting          bool
 	pendingTyped     map[string]typedPromptCandidate
-	// setup is the first-run setup, open in modeOnboarding.
-	setup onboardingFeature
+	setup            onboardingFeature
 }
 
 func (m *Model) routeStartupMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

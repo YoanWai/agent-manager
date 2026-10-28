@@ -33,7 +33,6 @@ func (m Model) Animating() bool {
 	return !m.done && ok
 }
 
-// Tick advances the open step's animation by one beat.
 func (m *Model) Tick() { m.beat++ }
 
 // scene is the scene on screen and how many beats into it the animation is.

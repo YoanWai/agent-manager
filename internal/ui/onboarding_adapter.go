@@ -73,7 +73,7 @@ func (m *Model) setupProbeCmd() tea.Cmd {
 	}
 }
 
-// applySetupProbe takes the lookup into the open setup; a setup closed
+// applySetupProbe takes the lookup into the open setup. A setup closed
 // before it answered has no use for it.
 func (m *Model) applySetupProbe(probe setupProbedMsg) tea.Cmd {
 	if m.mode != modeOnboarding {

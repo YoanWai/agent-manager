@@ -100,7 +100,7 @@ func (m *Model) quickPromptScene(scene *previewScene, p uionboarding.Preview, wi
 	scene.selected = uirail.Selection{Kind: uirail.GroupRow, Group: "web"}
 	target := lipgloss.NewStyle().Foreground(colorAccent2()).Render("web")
 	launch := valueStyle().Render(p.Agents[0]) + subtleStyle().Render(" · "+m.glyphs().WorktreeGlyph+" off ")
-	// Scene 1, 3 and 5 type a task; 2, 4 and 6 start it.
+	// Scene 1, 3 and 5 type a task, and 2, 4 and 6 start it.
 	typing, started := (p.Scene-1)/2, p.Scene/2
 	typed := ""
 	if p.Scene%2 == 1 {

@@ -66,13 +66,13 @@ func TestSkipKeepsOnlyTheConfirmedSteps(t *testing.T) {
 	m := New(agents, defaults(), false)
 	walkTo(t, &m, Layout)
 	m.Key(press("down"))
-	if out := m.Key(press("esc")); out.Action != Stay || m.Skipping() {
-		t.Fatalf("esc on a choice = %+v, skipping %v", out, m.Skipping())
+	if out := m.Key(press("esc")); out.Action != Stay || m.skipping {
+		t.Fatalf("esc on a choice = %+v, skipping %v", out, m.skipping)
 	}
 	m.Key(press("enter"))
 	walkTo(t, &m, Sessions)
-	if out := m.Key(press("esc")); out.Action != Stay || !m.Skipping() {
-		t.Fatalf("a first esc on the tour = %+v, skipping %v", out, m.Skipping())
+	if out := m.Key(press("esc")); out.Action != Stay || !m.skipping {
+		t.Fatalf("a first esc on the tour = %+v, skipping %v", out, m.skipping)
 	}
 	out := m.Key(press("esc"))
 	if out.Action != Close || !out.Choices.FullLayout || out.Choices.Theme != uitheme.Palettes[0].Name {
@@ -83,7 +83,7 @@ func TestSkipKeepsOnlyTheConfirmedSteps(t *testing.T) {
 func TestAnyOtherKeyKeepsGoing(t *testing.T) {
 	m := New(agents, defaults(), false)
 	m.Key(press("esc"))
-	if out := m.Key(press("enter")); out.Action != Stay || m.Skipping() || m.Step() != Welcome {
+	if out := m.Key(press("enter")); out.Action != Stay || m.skipping || m.Step() != Welcome {
 		t.Fatalf("enter after esc = %+v on %v", out, m.Step())
 	}
 	if out := m.Key(press("enter")); out.Action != Stay || m.Step() != Agents {

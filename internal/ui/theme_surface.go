@@ -126,7 +126,7 @@ func (m *Model) bleedColumn(height int) []string {
 }
 
 // tracedBleedColumn is bleedColumn with the focus edge beside rows lines
-// from top on, its corner on the rule row just above them; no rows draws
+// from top on, its corner on the rule row just above them. No rows draws
 // no edge.
 func (m *Model) tracedBleedColumn(height, top, rows int) []string {
 	background := panelHex()

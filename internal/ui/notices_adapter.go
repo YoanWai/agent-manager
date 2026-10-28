@@ -174,7 +174,7 @@ const setupGreeting = "setup"
 // startupGreeting decides what greets this launch: the setup the first time
 // the manager ever runs, the what's-new notice the first run after an
 // update, nothing otherwise. It advances the stored version as a side
-// effect, so each greeting fires exactly once; the what's-new notice stays
+// effect, so each greeting fires exactly once. The what's-new notice stays
 // listed until dismissed.
 func (m *Model) startupGreeting() string {
 	seen, err := m.services.store.Setting(lastSeenVersionSetting)

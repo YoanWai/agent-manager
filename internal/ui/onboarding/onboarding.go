@@ -1,6 +1,6 @@
 // Package onboarding is the first-run setup: a few choices, each shown
 // live, then a short guide to the keys that matter. It receives copied facts
-// and returns what to save; the root writes the settings, applies the
+// and returns what to save. The root writes the settings, applies the
 // palette and draws the live preview.
 package onboarding
 
@@ -32,8 +32,8 @@ const (
 // importing existing sessions, takes its place in this list.
 var Steps = []Step{Welcome, Agents, Layout, Density, Theme, QuickPrompt, Sessions, Review, Orchestrate, Places}
 
-// Choosing reports a step that sets a preference; the others teach.
-func (s Step) Choosing() bool {
+// choosing reports a step that sets a preference. The others teach.
+func (s Step) choosing() bool {
 	switch s {
 	case Agents, Layout, Density, Theme:
 		return true
@@ -85,8 +85,8 @@ type Model struct {
 	// preselect checks the installed agents when the probe lands, unless an
 	// agent was toggled first.
 	preselect, touched bool
-	// chosen is what the screen shows; saved is what the confirmed steps
-	// wrote, and what skipping keeps.
+	// chosen is what the screen shows, and saved is what the confirmed
+	// steps wrote and what skipping keeps.
 	chosen, saved Choices
 	agentCursor   int
 	// themeCursor is the theme step's palette row, from 1: row 0 is the
@@ -156,7 +156,6 @@ func (m *Model) SetInstalled(installed map[string]bool) {
 	m.chosen.Hidden = hidden
 }
 
-// Key runs one key.
 func (m *Model) Key(msg tea.KeyMsg) Outcome {
 	m.notice = ""
 	if m.skipping {
@@ -168,7 +167,7 @@ func (m *Model) Key(msg tea.KeyMsg) Outcome {
 	}
 	switch msg.String() {
 	case "esc":
-		m.skipping = !m.Step().Choosing()
+		m.skipping = !m.Step().choosing()
 	case "enter", "right", "tab":
 		return m.next()
 	case "backspace", "left", "shift+tab":
@@ -227,7 +226,7 @@ func (m *Model) next() Outcome {
 		return m.close()
 	}
 	out := Outcome{}
-	if m.Step().Choosing() {
+	if m.Step().choosing() {
 		m.confirm()
 		out = Outcome{Action: Save, Choices: m.saved.clone()}
 	}
@@ -236,7 +235,6 @@ func (m *Model) next() Outcome {
 	return out
 }
 
-// confirm saves the open step's choice.
 func (m *Model) confirm() {
 	switch m.Step() {
 	case Agents:
@@ -304,12 +302,9 @@ func (m *Model) toggleAgent(name string) {
 	m.chosen.Hidden[name] = true
 }
 
-// Skipping reports a first esc waiting to be confirmed.
-func (m Model) Skipping() bool { return m.skipping }
-
-// Hints are the footer's keys for the open step. Skipping is offered on
-// the welcome alone; the choices are required, and the tour takes an esc
-// it does not advertise.
+// Hints are the footer's keys for the open step. Only the welcome offers
+// a skip. The choices are required, and the tour takes an esc it does not
+// name.
 func (m Model) Hints() [][2]string {
 	if m.skipping {
 		return [][2]string{{"esc", "skip setup"}, {"↵", "keep going"}}
@@ -321,7 +316,7 @@ func (m Model) Hints() [][2]string {
 		hints = [][2]string{{"↑↓", "move"}, {"space", "check"}}
 	case step == Theme:
 		hints = [][2]string{{"↑↓", "theme"}, {"space", "follow OS"}}
-	case step.Choosing():
+	case step.choosing():
 		hints = [][2]string{{"↑↓", "choose"}}
 	}
 	switch {
