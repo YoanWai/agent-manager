@@ -3,6 +3,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -273,38 +275,81 @@ func forEachIndex(count int, work func(i int)) {
 // BaseRef finds the merge base against the repo's default base for the
 // branch scope, returning the resolved ref and a short description.
 func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
-	candidate := d.DefaultBase(root)
+	candidate, err := d.DefaultBase(root)
+	if err != nil {
+		return "", "", err
+	}
 	if candidate == "" {
-		return "", "", errors.New("no default branch found on upstream, origin, or as a local main or master")
+		return "", "", errors.New("no default branch found on a remote, or as a local main or master")
 	}
 	return d.baseRefFor(root, candidate)
 }
 
 // DefaultBase is the branch work in the repo merges into: the default
 // branch on upstream, which GitHub's fork layout names the parent, else on
-// origin, else the local branch. "" when the repo names no default branch.
-func (d *Driver) DefaultBase(dir string) string {
-	name := d.defaultBranchName(dir)
-	if name == "" {
-		return ""
+// origin, else on any other remote, else the local branch. "" when the repo
+// names no default branch.
+func (d *Driver) DefaultBase(dir string) (string, error) {
+	remotes, err := d.baseRemotes(dir)
+	if err != nil {
+		return "", err
 	}
-	for _, remoteRef := range []string{"upstream/" + name, "origin/" + name} {
-		if d.ResolveRef(dir, "refs/remotes/"+remoteRef) == nil {
-			return remoteRef
+	name := d.defaultBranchName(dir, remotes)
+	if name == "" {
+		return "", nil
+	}
+	candidates := make([]string, 0, len(remotes)+1)
+	for _, remote := range remotes {
+		candidates = append(candidates, "refs/remotes/"+remote+"/"+name)
+	}
+	for _, full := range append(candidates, "refs/heads/"+name) {
+		if d.ResolveRef(dir, full) == nil {
+			return d.shortRef(dir, full)
 		}
 	}
-	if d.ResolveRef(dir, "refs/heads/"+name) == nil {
-		return name
+	return "", nil
+}
+
+// shortRef names full the shortest way git resolves back to it, so a local
+// branch or tag sharing the short name cannot stand in for it.
+func (d *Driver) shortRef(dir, full string) (string, error) {
+	return d.run(dir, "rev-parse", "--abbrev-ref", full)
+}
+
+// baseRemotes lists the repo's remotes in the order a base is looked for on
+// them: upstream, then origin, then the rest by name.
+func (d *Driver) baseRemotes(dir string) ([]string, error) {
+	out, err := d.run(dir, "remote")
+	if err != nil {
+		return nil, err
 	}
-	return ""
+	rank := func(name string) int {
+		switch name {
+		case "upstream":
+			return 0
+		case "origin":
+			return 1
+		}
+		return 2
+	}
+	remotes := strings.Fields(out)
+	slices.SortFunc(remotes, func(a, b string) int {
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(a, b))
+	})
+	return remotes, nil
 }
 
 // defaultBranchName reads the default branch a clone or fetch recorded as
 // a remote's HEAD, or takes a local main or master when no remote names one.
-func (d *Driver) defaultBranchName(dir string) string {
-	for _, remote := range []string{"upstream", "origin"} {
-		if target, err := d.run(dir, "symbolic-ref", "-q", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
-			return strings.TrimPrefix(target, remote+"/")
+// A HEAD naming a branch its remote no longer has, as a removed or renamed
+// remote leaves behind, names nothing.
+func (d *Driver) defaultBranchName(dir string, remotes []string) string {
+	for _, remote := range remotes {
+		// The full target, since --short keeps it whole when a local branch
+		// shares the short name.
+		target, err := d.run(dir, "symbolic-ref", "-q", "refs/remotes/"+remote+"/HEAD")
+		if err == nil && d.ResolveRef(dir, target) == nil {
+			return strings.TrimPrefix(target, "refs/remotes/"+remote+"/")
 		}
 	}
 	for _, name := range []string{"main", "master"} {
