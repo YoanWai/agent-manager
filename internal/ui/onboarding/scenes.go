@@ -1,13 +1,30 @@
 package onboarding
 
 // sceneBeats is how many ticks each scene of an animated guide step holds,
-// in order. Scene i acts out the step's guide line i, and the step loops.
+// in order. Scene i acts out the step's guide line i, unless sceneLines
+// says otherwise, and the step loops.
 var sceneBeats = map[Step][]int{
-	Welcome:     {70},
-	QuickPrompt: {14, 34, 30},
+	Welcome: {70},
+	// The quick prompt types and starts three agents, one after another.
+	QuickPrompt: {8, 12, 6, 10, 6, 10, 20},
 	Sessions:    {36, 40, 18},
 	Review:      {18, 40, 30},
 	Orchestrate: {54, 60, 80},
+}
+
+// sceneLines is the guide line each scene acts out, for a step that acts a
+// line out more than once.
+var sceneLines = map[Step][]int{
+	QuickPrompt: {0, 1, 2, 1, 2, 1, 2},
+}
+
+// line is the guide line the scene on screen acts out.
+func (m Model) line() int {
+	scene, _ := m.scene()
+	if lines, ok := sceneLines[m.Step()]; ok {
+		return lines[scene]
+	}
+	return scene
 }
 
 // Animating reports a guide step that acts itself out, which needs ticks.

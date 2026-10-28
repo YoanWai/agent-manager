@@ -121,12 +121,12 @@ func TestChoicesCannotBeSkipped(t *testing.T) {
 func TestSessionsCardNamesTheArrowKeys(t *testing.T) {
 	m := setupModel(t)
 	m.prefs.arrowStep = true
-	if keys := m.setupKeys(); keys.Focus != "→" || keys.Back != "←" {
-		t.Fatalf("with the pair on: focus %q back %q", keys.Focus, keys.Back)
+	if keys := m.setupKeys(); keys.Focus != "→" || keys.Back != "←" || keys.OtherFocus != "↵" || keys.OtherBack != "ctrl+q" {
+		t.Fatalf("with the pair on: %+v", keys)
 	}
 	m.prefs.arrowStep = false
-	if keys := m.setupKeys(); keys.Focus != "↵" || keys.Back != "ctrl+q" {
-		t.Fatalf("with the pair off: focus %q back %q", keys.Focus, keys.Back)
+	if keys := m.setupKeys(); keys.Focus != "↵" || keys.Back != "ctrl+q" || keys.OtherFocus != "" || keys.OtherBack != "" {
+		t.Fatalf("with the pair off: %+v", keys)
 	}
 }
 

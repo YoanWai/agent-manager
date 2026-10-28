@@ -20,13 +20,13 @@ func TestGuideStepsActOutEachLineInTurn(t *testing.T) {
 	}
 	var seen []int
 	for range 120 {
-		if scene, _ := m.scene(); len(seen) == 0 || seen[len(seen)-1] != scene {
-			seen = append(seen, scene)
+		if line := m.line(); len(seen) == 0 || seen[len(seen)-1] != line {
+			seen = append(seen, line)
 		}
 		m.Tick()
 	}
-	if !slices.Equal(seen[:4], []int{0, 1, 2, 0}) {
-		t.Fatalf("scenes played %v, want each line in turn and then again", seen)
+	if want := []int{0, 1, 2, 1, 2, 1, 2, 0}; !slices.Equal(seen[:len(want)], want) {
+		t.Fatalf("lines lit %v, want space, then type and enter for each of three agents, then again", seen)
 	}
 	m.Key(press("enter"))
 	if scene, frame := m.scene(); scene != 0 || frame != 0 {

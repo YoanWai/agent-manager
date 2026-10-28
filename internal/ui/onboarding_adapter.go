@@ -156,22 +156,27 @@ func (m *Model) setupKeys() uionboarding.Keys {
 		return keys[0].Glyph()
 	}
 	list := m.services.listKeys
-	focus, back := first(list, keybind.StepIn), first(list, keybind.StepOut)
-	if !m.prefs.arrowStep || focus == "" || back == "" {
-		focus, back = first(list, keybind.Open), first(m.services.keys, keybind.Detach)
-		if !m.enterFocuses() {
-			focus = first(list, keybind.Attach)
-		}
+	enter, detach := first(list, keybind.Open), first(m.services.keys, keybind.Detach)
+	if !m.enterFocuses() {
+		enter = first(list, keybind.Attach)
 	}
-	return uionboarding.Keys{
-		Prompt:   first(list, keybind.Prompt),
-		Focus:    focus,
-		Back:     back,
-		Review:   first(list, keybind.Review),
-		Settings: first(list, keybind.Settings),
-		Messages: first(list, keybind.Messages),
-		Help:     first(list, keybind.Help),
+	keys := uionboarding.Keys{
+		Prompt:     first(list, keybind.Prompt),
+		Focus:      first(list, keybind.StepIn),
+		Back:       first(list, keybind.StepOut),
+		OtherFocus: enter,
+		OtherBack:  detach,
+		NewSession: first(list, keybind.NewSession),
+		NewGroup:   first(list, keybind.NewGroup),
+		Review:     first(list, keybind.Review),
+		Settings:   first(list, keybind.Settings),
+		Messages:   first(list, keybind.Messages),
+		Help:       first(list, keybind.Help),
 	}
+	if !m.prefs.arrowStep || keys.Focus == "" || keys.Back == "" {
+		keys.Focus, keys.Back, keys.OtherFocus, keys.OtherBack = enter, detach, "", ""
+	}
+	return keys
 }
 
 // setupMargin is the footer's inset when the setup's content is narrower.

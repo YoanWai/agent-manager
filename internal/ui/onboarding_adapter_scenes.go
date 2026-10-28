@@ -39,7 +39,6 @@ func (m *Model) applySetupTick() tea.Cmd {
 }
 
 const (
-	sampleTask    = "fix the flaky checkout test"
 	sampleAnswer  = "yes, go ahead"
 	sampleFocus   = "also cover the logout path"
 	sampleComment = "keep the #hash on the way back"
@@ -83,30 +82,44 @@ func sessionSelection(id, group string) uirail.Selection {
 	return uirail.Selection{Kind: uirail.SessionRow, SessionID: id, Group: group}
 }
 
-// quickPromptScene: space on a group opens the bar, the task is typed, and
-// enter starts an agent that joins the group.
+// quickTasks are the agents the quick prompt starts in the web group, one
+// after another.
+var quickTasks = []struct{ name, task, line string }{
+	{"flaky checkout", "fix the flaky checkout test", "Reading tests/checkout.spec.ts"},
+	{"coupon field", "add a coupon field", "Adding the coupon input"},
+	{"cart query", "speed up the cart query", "Profiling the cart query"},
+}
+
+// quickTyping is the characters typed per beat, quick enough that three
+// agents start inside one loop.
+const quickTyping = 3
+
+// quickPromptScene: space on a group opens the bar, then each task is
+// typed and enter starts its agent in the group, three times over.
 func (m *Model) quickPromptScene(scene *previewScene, p uionboarding.Preview, width int) {
 	scene.selected = uirail.Selection{Kind: uirail.GroupRow, Group: "web"}
-	scene.content = m.groupSummary(2)
 	target := lipgloss.NewStyle().Foreground(colorAccent2()).Render("web")
 	launch := valueStyle().Render(p.Agents[0]) + subtleStyle().Render(" · "+m.glyphs().WorktreeGlyph+" off ")
-	switch p.Scene {
-	case 0:
-		if p.Frame >= 7 {
-			scene.foot = m.previewBar(width, "new", target, launch, "")
-		}
-	case 1:
-		scene.foot = m.previewBar(width, "new", target, launch, typedOut(sampleTask, p.Frame-2))
-	default:
-		scene.foot = m.previewBar(width, "new", target, launch, "")
-		started := uirail.Session{ID: "preview-new", Name: "flaky checkout", Group: "web", Tool: p.Agents[0],
-			Status: status.Starting, Prompt: sampleTask, CreatedAt: time.Now(), LastStatusAt: time.Now()}
-		if p.Frame >= 10 {
-			started.Status, started.PaneLine = status.Working, "Reading tests/checkout.spec.ts"
-		}
-		scene.sessions = append(scene.sessions, started)
-		scene.content = m.groupSummary(3)
+	// Scene 1, 3 and 5 type a task; 2, 4 and 6 start it.
+	typing, started := (p.Scene-1)/2, p.Scene/2
+	typed := ""
+	if p.Scene%2 == 1 {
+		typed = typedOut(quickTasks[typing].task, p.Frame*quickTyping)
 	}
+	if p.Scene > 0 || p.Frame >= 3 {
+		scene.foot = m.previewBar(width, "new", target, launch, typed)
+	}
+	now := time.Now()
+	for i := range started {
+		quick := quickTasks[i]
+		agent := uirail.Session{ID: "preview-quick-" + quick.name, Name: quick.name, Group: "web", Tool: p.Agents[i%len(p.Agents)],
+			Status: status.Working, Prompt: quick.task, PaneLine: quick.line, CreatedAt: now, LastStatusAt: now}
+		if i == started-1 && p.Scene%2 == 0 && p.Frame < 4 {
+			agent.Status, agent.PaneLine = status.Starting, ""
+		}
+		scene.sessions = append(scene.sessions, agent)
+	}
+	scene.content = m.groupSummary(2 + started)
 }
 
 // sessionsScene: answer a waiting agent from the bar, focus one and type

@@ -14,6 +14,9 @@ import (
 // An empty one is an action turned off, and its line is left out.
 type Keys struct {
 	Prompt, Focus, Back, Review, Settings, Messages, Help string
+	// The other ways in, named under a card's main flow: the New Session
+	// and New Group forms, and the focus and back keys besides the arrows.
+	NewSession, NewGroup, OtherFocus, OtherBack string
 }
 
 // ViewContext is what a frame reads from the root. Height leaves out the
@@ -221,9 +224,12 @@ func (m *Model) column(ctx ViewContext, p palette, width, rows int) ([]string, [
 	default:
 		active := -1
 		if m.Animating() {
-			active, _ = m.scene()
+			active = m.line()
 		}
 		for _, line := range guideRows(p, step, ctx.Keys, active) {
+			add(line, -1)
+		}
+		for _, line := range alsoLines(p, step, ctx.Keys) {
 			add(line, -1)
 		}
 	}
@@ -407,6 +413,32 @@ func guideRows(p palette, step Step, keys Keys, active int) []string {
 			text = "“" + text + "”"
 		}
 		lines = append(lines, "  "+presentation.PadRight(caps[i], capWidth)+"  "+does.Render(text), "")
+	}
+	return lines
+}
+
+// alsoLines name the other keys that do what a card's main flow does,
+// quieter than the flow itself, one to a line. An unbound key is left out.
+func alsoLines(p palette, step Step, keys Keys) []string {
+	var pairs [][2]string
+	switch step {
+	case QuickPrompt:
+		pairs = [][2]string{{keys.NewSession, "the full new-session form"}, {keys.NewGroup, "a new group"}}
+	case Sessions:
+		pairs = [][2]string{{keys.OtherFocus, "focuses too"}, {keys.OtherBack, "comes back from anywhere"}}
+	}
+	labels := make([]string, 0, len(pairs))
+	width := 0
+	for _, pair := range pairs {
+		label := presentation.KeyLabel(p.mode, pair[0])
+		labels = append(labels, label)
+		width = max(width, ansi.StringWidth(label))
+	}
+	var lines []string
+	for i, pair := range pairs {
+		if pair[0] != "" {
+			lines = append(lines, "  "+p.subtle.Render("or ")+p.accent.Render(presentation.PadRight(labels[i], width))+"  "+p.dim.Render(pair[1]))
+		}
 	}
 	return lines
 }
