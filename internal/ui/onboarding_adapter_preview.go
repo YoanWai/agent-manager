@@ -23,6 +23,9 @@ type previewScene struct {
 	content  []contentLine
 	foot     []string
 	body     []string
+	// focused draws the selected agent focused: its row marked and the
+	// focus edge traced around its pane, as focus mode does.
+	focused bool
 }
 
 // setupPreview draws the workspace the setup's choices give: the real rail
@@ -122,6 +125,7 @@ func (m *Model) previewBody(choices uionboarding.Choices, scene previewScene, wi
 		ListKeys:        m.services.listKeys,
 		ComfortableRows: choices.Comfortable,
 		MouseDisabled:   true,
+		Focused:         scene.focused,
 		EnterFocuses:    m.enterFocuses(),
 	}, uirail.Frame{})
 	railRows := railContentLines(frame.Lines)
@@ -141,10 +145,14 @@ func (m *Model) previewBody(choices uionboarding.Choices, scene previewScene, wi
 		return append(out, m.boundedRuleRow(railWidth, width, "▄"))
 	}
 	contentWidth := width - railWidth - 3
+	bleed, bottom := m.bleedColumn(height), m.boundedRuleRow(railWidth+2, width, "▄")
+	if scene.focused {
+		bleed, bottom = m.tracedBleedColumn(height, 1, height-1), m.focusBottomRule(railWidth+2, width)
+	}
 	out := []string{m.railTopRow(railWidth+2, width)}
 	out = append(out, joinColumns(edge, paintContent(railRows, railWidth, height, panelHex()), seam,
-		m.bleedColumn(height), paintContent(m.fitTranscript(scene.content, contentWidth, height), contentWidth, height, backdropHex()))...)
-	return append(out, m.boundedRuleRow(railWidth+2, width, "▄"))
+		bleed, paintContent(m.fitTranscript(scene.content, contentWidth, height), contentWidth, height, backdropHex()))...)
+	return append(out, bottom)
 }
 
 // fitTranscript keeps the newest lines of a live view that outgrew its

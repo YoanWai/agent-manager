@@ -138,6 +138,7 @@ func (m *Model) sessionsScene(scene *previewScene, p uionboarding.Preview, width
 		}
 		scene.foot = m.previewBar(width, "answer", target, "", typed)
 	case 1:
+		scene.focused = true
 		scene.content = append(m.loginTranscript(), contentLine{}, m.promptLine(typedOut(sampleFocus, p.Frame-4), true))
 		if p.Choices.FullLayout {
 			scene.body = m.paneBody(scene.content, width, height)
