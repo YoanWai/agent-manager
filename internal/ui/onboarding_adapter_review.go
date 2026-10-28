@@ -40,7 +40,9 @@ function safe(to) {
 
 // previewReview is Review on a sample diff of the login agent's work,
 // drawn by Review's own renderer, with comment on one line when it is set.
-func (m *Model) previewReview(width, height int, comment string) []string {
+// Once sent, the comment belongs to round 1, Review has moved on to the
+// next file, and its status row says the agent has the comment.
+func (m *Model) previewReview(width, height int, comment string, sent bool) []string {
 	review := uireview.New(false)
 	target := uireview.Target{ID: previewLogin, Name: "login redirect"}
 	scope := gitvalue.ScopeBranch
@@ -62,16 +64,27 @@ func (m *Model) previewReview(width, height int, comment string) []string {
 	}
 	saved := uireview.SavedState{}
 	if comment != "" {
-		saved.Comments = []uireview.Comment{{ID: "preview-comment", File: source.Path, Line: sampleCommentLine,
-			Text: comment, ContentHash: uireview.ContentHash(&file), Scope: scope.String()}}
+		note := uireview.Comment{ID: "preview-comment", File: source.Path, Line: sampleCommentLine,
+			Text: comment, ContentHash: uireview.ContentHash(&file), Scope: scope.String()}
+		if sent {
+			note.Round, saved.Round = 1, uireview.Round{Number: 1, Scope: scope.String()}
+		}
+		saved.Comments = []uireview.Comment{note}
 	}
 	review.ApplyLoad(uireview.LoadResult{TargetID: target.ID, Scope: scope, Generation: request.Generation, Set: set,
 		RepoRoots: []string{sampleRepo}, RepoRoot: sampleRepo, Saved: saved, SavedLoaded: true})
 	review.ApplyFile(uireview.FileResult{TargetID: target.ID, Scope: scope, Generation: request.Generation,
 		RepoRoot: sampleRepo, Index: 0, Path: source.Path, File: file})
+	if sent {
+		review.SwitchFile(1)
+	}
 
 	ctx := m.reviewRenderContext()
-	bodyHeight := max(height-3, 4)
+	statusRows := 0
+	if sent {
+		statusRows = 1
+	}
+	bodyHeight := max(height-3-statusRows, 4)
 	fileWidth := max(previewFileWidth, width/4)
 	codeWidth := width - fileWidth - 2
 	review.PrepareLayout(ctx, max(codeWidth-2*contentGutter, 1), bodyHeight-2)
@@ -89,5 +102,10 @@ func (m *Model) previewReview(width, height int, comment string) []string {
 	}
 	out = append(out, joinColumns(edge, paintRows(files, fileWidth-1, bodyHeight, panelHex()), m.vruleColumn(bodyHeight),
 		m.bleedColumn(bodyHeight), paintRows(code, codeWidth, bodyHeight, backdropHex()))...)
-	return append(out, m.boundedRuleRow(fileWidth+1, width, "▄"))
+	out = append(out, m.boundedRuleRow(fileWidth+1, width, "▄"))
+	if sent {
+		done := doneStyle().Render(" " + m.glyphs().DiffDoneGlyph + " sent 1 comment to login redirect")
+		out = append(out, paint(done+mutedStyle().Render(" · it works on it while you read on"), width, backdropHex()))
+	}
+	return out
 }

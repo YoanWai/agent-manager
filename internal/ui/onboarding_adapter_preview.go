@@ -14,8 +14,8 @@ import (
 
 // previewScene is one frame of the window beside a step: the sample agents
 // and the selected row, the live view beside the rail, rows under the list
-// such as the quick bar, or a body that takes the whole window, such as an
-// attached agent or Review.
+// such as the quick bar, or a body that takes the whole window, such as a
+// focused agent in the full layout or Review.
 type previewScene struct {
 	sessions []uirail.Session
 	groups   []string
@@ -23,9 +23,6 @@ type previewScene struct {
 	content  []contentLine
 	foot     []string
 	body     []string
-	// attached hands the whole window to body, the manager's own header
-	// included, the way attach hands over the terminal.
-	attached bool
 }
 
 // setupPreview draws the workspace the setup's choices give: the real rail
@@ -35,10 +32,7 @@ func (m *Model) setupPreview(p uionboarding.Preview) []string {
 	inner := p.Width - 2
 	rows := p.Height - 2
 	scene := m.setupScene(p, inner, rows-1)
-	var out []string
-	if !scene.attached {
-		out = append(out, m.previewHeader(scene.sessions, inner))
-	}
+	out := []string{m.previewHeader(scene.sessions, inner)}
 	if scene.body != nil {
 		out = append(out, scene.body...)
 	} else {
@@ -66,9 +60,8 @@ func (m *Model) previewWindow(rows []string, width int) []string {
 }
 
 const (
-	previewLogin  = "preview-login"
-	previewDark   = "preview-dark"
-	previewTriage = "preview-triage"
+	previewLogin = "preview-login"
+	previewDark  = "preview-dark"
 )
 
 // previewSessions are the sample agents, spread over the agents left checked.
@@ -84,7 +77,7 @@ func previewSessions(agents []string) []uirail.Session {
 			Prompt: "add tests for the rate limiter", PaneLine: "All 12 tests pass.", CreatedAt: now.Add(-40 * time.Minute), LastStatusAt: now.Add(-12 * time.Minute)},
 		{ID: "preview-pg", Name: "pg 17 upgrade", Group: "api", Tool: tool(3), Status: status.Idle,
 			Prompt: "plan the postgres 17 upgrade", PaneLine: "The plan is in docs/pg17.md.", CreatedAt: now.Add(-3 * time.Hour), LastStatusAt: now.Add(-time.Hour)},
-		{ID: previewTriage, Name: "triage issues", Tool: tool(4), Status: status.Finished,
+		{ID: "preview-triage", Name: "triage issues", Tool: tool(4), Status: status.Finished,
 			Prompt: "sort this week's issues", PaneLine: "Sorted 14 issues into 3 labels.", CreatedAt: now.Add(-5 * time.Hour), LastStatusAt: now.Add(-2 * time.Hour)},
 	}
 }

@@ -24,13 +24,13 @@ const (
 	QuickPrompt
 	Sessions
 	Review
-	AskAgent
+	Orchestrate
 	Places
 )
 
 // Steps is the walk, in order. A step a later release adds, such as
 // importing existing sessions, takes its place in this list.
-var Steps = []Step{Welcome, Agents, Layout, Density, Theme, QuickPrompt, Sessions, Review, AskAgent, Places}
+var Steps = []Step{Welcome, Agents, Layout, Density, Theme, QuickPrompt, Sessions, Review, Orchestrate, Places}
 
 // Choosing reports a step that sets a preference; the others teach.
 func (s Step) Choosing() bool {
@@ -98,6 +98,8 @@ type Model struct {
 	lines                   presentation.Lines[int]
 	// beat counts the animation ticks since the open step came on screen.
 	beat int
+	// skipping is a first esc waiting for the second that skips the setup.
+	skipping bool
 }
 
 // New opens the setup on the current choices. A first run checks the
@@ -157,9 +159,16 @@ func (m *Model) SetInstalled(installed map[string]bool) {
 // Key runs one key.
 func (m *Model) Key(msg tea.KeyMsg) Outcome {
 	m.notice = ""
+	if m.skipping {
+		m.skipping = false
+		if msg.String() == "esc" {
+			return m.close()
+		}
+		return Outcome{}
+	}
 	switch msg.String() {
 	case "esc":
-		return m.close()
+		m.skipping = !m.Step().Choosing()
 	case "enter", "right", "tab":
 		return m.next()
 	case "backspace", "left", "shift+tab":
@@ -183,7 +192,7 @@ func (m *Model) Click(line int) Outcome {
 	if !ok {
 		return Outcome{}
 	}
-	m.notice = ""
+	m.notice, m.skipping = "", false
 	switch m.Step() {
 	case Agents:
 		m.agentCursor = row
@@ -295,8 +304,16 @@ func (m *Model) toggleAgent(name string) {
 	m.chosen.Hidden[name] = true
 }
 
-// Hints are the footer's keys for the open step.
+// Skipping reports a first esc waiting to be confirmed.
+func (m Model) Skipping() bool { return m.skipping }
+
+// Hints are the footer's keys for the open step. Skipping is offered on
+// the welcome alone; the choices are required, and the tour takes an esc
+// it does not advertise.
 func (m Model) Hints() [][2]string {
+	if m.skipping {
+		return [][2]string{{"esc", "skip setup"}, {"↵", "keep going"}}
+	}
 	step := m.Step()
 	var hints [][2]string
 	switch {
@@ -318,7 +335,7 @@ func (m Model) Hints() [][2]string {
 	if m.at > 0 {
 		hints = append(hints, [2]string{"⌫", "back"})
 	}
-	if m.at < len(m.steps)-1 {
+	if step == Welcome {
 		hints = append(hints, [2]string{"esc", "skip setup"})
 	}
 	return hints

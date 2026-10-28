@@ -60,24 +60,34 @@ func TestConfirmingAStepSavesItsChoiceAlone(t *testing.T) {
 	}
 }
 
-// Skipping keeps what the confirmed steps saved and drops the step on
-// screen, so an unconfirmed theme never sticks.
+// Skipping takes two esc presses, away from the choices, and keeps what
+// the confirmed steps saved.
 func TestSkipKeepsOnlyTheConfirmedSteps(t *testing.T) {
 	m := New(agents, defaults(), false)
 	walkTo(t, &m, Layout)
 	m.Key(press("down"))
+	if out := m.Key(press("esc")); out.Action != Stay || m.Skipping() {
+		t.Fatalf("esc on a choice = %+v, skipping %v", out, m.Skipping())
+	}
 	m.Key(press("enter"))
-	walkTo(t, &m, Theme)
-	m.Key(press("down"))
-	if shown := m.Shown(); shown.Theme != uitheme.Palettes[1].Name {
-		t.Fatalf("the theme step shows %q, want the palette under the cursor", shown.Theme)
+	walkTo(t, &m, Sessions)
+	if out := m.Key(press("esc")); out.Action != Stay || !m.Skipping() {
+		t.Fatalf("a first esc on the tour = %+v, skipping %v", out, m.Skipping())
 	}
 	out := m.Key(press("esc"))
 	if out.Action != Close || !out.Choices.FullLayout || out.Choices.Theme != uitheme.Palettes[0].Name {
-		t.Fatalf("esc = %+v", out)
+		t.Fatalf("the second esc = %+v", out)
 	}
-	if shown := m.Shown(); shown.Theme != uitheme.Palettes[0].Name {
-		t.Fatalf("a closed setup still shows %q", shown.Theme)
+}
+
+func TestAnyOtherKeyKeepsGoing(t *testing.T) {
+	m := New(agents, defaults(), false)
+	m.Key(press("esc"))
+	if out := m.Key(press("enter")); out.Action != Stay || m.Skipping() || m.Step() != Welcome {
+		t.Fatalf("enter after esc = %+v on %v", out, m.Step())
+	}
+	if out := m.Key(press("enter")); out.Action != Stay || m.Step() != Agents {
+		t.Fatalf("the next enter went to %v", m.Step())
 	}
 }
 
@@ -187,12 +197,16 @@ func TestHintsFollowTheStep(t *testing.T) {
 		t.Fatalf("welcome hints = %v", got)
 	}
 	walkTo(t, &m, Agents)
-	if got := labels(); !slices.Equal(got, []string{"move", "check", "next", "back", "skip setup"}) {
+	if got := labels(); !slices.Equal(got, []string{"move", "check", "next", "back"}) {
 		t.Fatalf("agents step hints = %v", got)
 	}
 	walkTo(t, &m, Places)
 	if got := labels(); !slices.Equal(got, []string{"start", "back"}) {
 		t.Fatalf("last step hints = %v", got)
+	}
+	m.Key(press("esc"))
+	if got := labels(); !slices.Equal(got, []string{"skip setup", "keep going"}) {
+		t.Fatalf("hints while skipping = %v", got)
 	}
 }
 

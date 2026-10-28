@@ -13,7 +13,7 @@ import (
 // Keys are the bindings the guide names, as the key tables hold them now.
 // An empty one is an action turned off, and its line is left out.
 type Keys struct {
-	Prompt, Focus, Attach, Detach, Review, Settings, Messages, Help string
+	Prompt, Focus, Back, Review, Settings, Messages, Help string
 }
 
 // ViewContext is what a frame reads from the root. Height leaves out the
@@ -231,6 +231,12 @@ func (m *Model) column(ctx ViewContext, p palette, width, rows int) ([]string, [
 		add("", -1)
 		add("  "+p.warn.Render(m.notice), -1)
 	}
+	if m.skipping {
+		add("", -1)
+		for _, line := range strings.Split(ansi.Wordwrap("Skip the setup? Settings has a first-run setup row that brings it back.", width-2, ""), "\n") {
+			add("  "+p.bright.Render(line), -1)
+		}
+	}
 	if ctx.Status != "" {
 		add("", -1)
 		add("  "+ansi.Truncate(ctx.Status, width-2, "…"), -1)
@@ -257,8 +263,8 @@ func copyFor(step Step) (string, string) {
 		return "Talk to your agents", "Answer from the list, or step inside."
 	case Review:
 		return "Review what changed", "Read an agent's diff, comment on a line, and hand the notes back."
-	case AskAgent:
-		return "Or just ask your agent", "Every agent here can run the manager for you: groups, sessions, review, the lot."
+	case Orchestrate:
+		return "Let one agent lead the rest", "Agents here can open more agents, sort them into groups, and keep them in step. Ask one to lead."
 	}
 	return "Change anything later", "Every choice here lives in Settings, and so does this setup."
 }
@@ -345,6 +351,8 @@ func guideRows(p palette, step Step, keys Keys, active int) []string {
 	type row struct {
 		key, does     string
 		typed, spoken bool
+		// outcome is what an agent does in answer to the spoken row.
+		outcome bool
 	}
 	var rows []row
 	switch step {
@@ -352,11 +360,12 @@ func guideRows(p palette, step Step, keys Keys, active int) []string {
 		rows = []row{{key: keys.Prompt, does: "on a group"}, {key: "type", does: "the task", typed: true}, {key: "↵", does: "the agent starts there"}}
 	case Sessions:
 		rows = []row{{key: keys.Prompt, does: "answer the selected agent"}, {key: keys.Focus, does: "focus it and type right in"},
-			{key: keys.Attach, does: "attach it full screen"}, {key: keys.Detach, does: "come back to the list"}}
+			{key: keys.Back, does: "come back to the list"}}
 	case Review:
 		rows = []row{{key: keys.Review, does: "open the agent's diff"}, {key: "c", does: "comment on a line"}, {key: "C", does: "send the comments to the agent"}}
-	case AskAgent:
-		rows = []row{{does: askGroups, spoken: true}, {does: askSpawn, spoken: true}, {does: askReview, spoken: true}}
+	case Orchestrate:
+		rows = []row{{does: OrchestrateAsk, spoken: true}, {does: "it opens the agents, sorted into groups", outcome: true},
+			{does: "and keeps them in step to the finish", outcome: true}}
 	case Places:
 		rows = []row{{key: keys.Settings, does: "Settings: every choice, and this setup"},
 			{key: keys.Messages, does: "Messages: news and tips"}, {key: keys.Help, does: "every key, searchable"}}
@@ -370,6 +379,8 @@ func guideRows(p palette, step Step, keys Keys, active int) []string {
 		switch {
 		case r.spoken:
 			caps[i] = p.accent.Render(presentation.GlyphsFor(p.mode).PromptGlyph)
+		case r.outcome:
+			caps[i] = p.accent.Render(presentation.GlyphsFor(p.mode).ReplyGlyph)
 		case i == active && r.key != "":
 			caps[i] = lit.Render(label)
 		case r.typed:
@@ -400,13 +411,6 @@ func guideRows(p palette, step Step, keys Keys, active int) []string {
 	return lines
 }
 
-// What the ask-your-agent step suggests saying; the preview acts out the
+// OrchestrateAsk is what the lead agent is asked; the preview acts out the
 // same words.
-const (
-	askGroups = "make a group for each repo in ~/code"
-	askSpawn  = "start an agent on the flaky test"
-	askReview = "set up review on your branch"
-)
-
-// Asks are the ask-your-agent step's lines, in scene order.
-var Asks = []string{askGroups, askSpawn, askReview}
+const OrchestrateAsk = "rebuild checkout, split it across agents"

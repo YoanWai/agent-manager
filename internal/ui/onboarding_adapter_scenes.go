@@ -63,8 +63,8 @@ func (m *Model) setupScene(p uionboarding.Preview, width, height int) previewSce
 		m.sessionsScene(&scene, p, width, height)
 	case uionboarding.Review:
 		m.reviewScene(&scene, p, width, height)
-	case uionboarding.AskAgent:
-		m.askScene(&scene, p, width, height)
+	case uionboarding.Orchestrate:
+		m.orchestrateScene(&scene, p, width)
 	case uionboarding.Places:
 		scene.foot = []string{"", m.previewLegend()}
 	}
@@ -110,7 +110,7 @@ func (m *Model) quickPromptScene(scene *previewScene, p uionboarding.Preview, wi
 }
 
 // sessionsScene: answer a waiting agent from the bar, focus one and type
-// into it, attach it full screen, and come back to the list.
+// into it, and come back to the list.
 func (m *Model) sessionsScene(scene *previewScene, p uionboarding.Preview, width, height int) {
 	switch p.Scene {
 	case 0:
@@ -127,64 +127,24 @@ func (m *Model) sessionsScene(scene *previewScene, p uionboarding.Preview, width
 	case 1:
 		scene.content = append(m.loginTranscript(), contentLine{}, m.promptLine(typedOut(sampleFocus, p.Frame-4), true))
 		if p.Choices.FullLayout {
-			scene.body = m.paneBody(scene.content, width, height, "")
+			scene.body = m.paneBody(scene.content, width, height)
 		}
-	case 2:
-		hint := subtleStyle().Render(" login redirect · "+scene.sessions[0].Tool+"   ") + keyCap(m.setupKeys().Detach, "back to the list")
-		scene.body, scene.attached = m.paneBody(m.loginTranscript(), width, height+1, hint), true
 	}
 }
 
-// reviewScene: Review opens on the agent's diff, a comment is written on a
-// line, and sending it puts the agent back to work on it.
+// reviewScene: Review opens on the agent's diff and a comment is written on
+// a line. Sending it puts the agent to work on it in the background while
+// the review goes on to the next file.
 func (m *Model) reviewScene(scene *previewScene, p uionboarding.Preview, width, height int) {
 	switch p.Scene {
 	case 0:
-		scene.body = m.previewReview(width, height, "")
+		scene.body = m.previewReview(width, height, "", false)
 	case 1:
-		scene.body = m.previewReview(width, height, typedOut(sampleComment, p.Frame-4))
+		scene.body = m.previewReview(width, height, typedOut(sampleComment, p.Frame-4), false)
 	default:
 		setStatus(scene.sessions, previewLogin, status.Working, "Keeping the #hash in the redirect")
-		scene.content = m.reviewSentTranscript()
+		scene.body = m.previewReview(width, height, sampleComment, p.Frame >= 8)
 	}
-}
-
-// askScene: the triage agent is asked, from the bar, to arrange the
-// workspace, and the list changes under it as the agent does it.
-func (m *Model) askScene(scene *previewScene, p uionboarding.Preview, width, height int) {
-	scene.selected = sessionSelection(previewTriage, "")
-	ask := uionboarding.Asks[p.Scene]
-	typed := typedOut(ask, p.Frame-3)
-	done := p.Frame >= len([]rune(ask))+8
-	target := lipgloss.NewStyle().Foreground(colorBright()).Render("triage issues")
-	scene.foot = m.previewBar(width, "answer", target, "", typed)
-	reply := ""
-	switch p.Scene {
-	case 0:
-		if done {
-			scene.groups = append(scene.groups, "docs", "mobile")
-			reply = "Made groups web, api, docs and mobile."
-		}
-	case 1:
-		if done {
-			scene.sessions = append(scene.sessions, uirail.Session{ID: "preview-flaky", Name: "flaky test", Group: "web",
-				Tool: p.Agents[len(p.Agents)-1], Status: status.Working, Prompt: "fix the flaky test",
-				PaneLine: "Running the suite 20 times", CreatedAt: time.Now(), LastStatusAt: time.Now()})
-			reply = "Started flaky test in web."
-		}
-	default:
-		if done {
-			reply = "Review is set: am/login-redirect against main."
-		}
-		if p.Frame >= len([]rune(ask))+22 {
-			scene.body = m.previewReview(width, height, "")
-			return
-		}
-	}
-	if done {
-		scene.foot = m.previewBar(width, "answer", target, "", "")
-	}
-	scene.content = m.triageTranscript(ask, done, reply)
 }
 
 func setStatus(sessions []uirail.Session, id, state, line string) {
@@ -196,22 +156,14 @@ func setStatus(sessions []uirail.Session, id, state, line string) {
 }
 
 // paneBody is an agent's pane over the whole window, the way focus takes
-// the body in the full layout and attach takes the terminal, with an
-// optional status row under it.
-func (m *Model) paneBody(lines []contentLine, width, height int, status string) []string {
-	rows := height
-	if status != "" {
-		rows--
-	}
+// the body in the full layout.
+func (m *Model) paneBody(lines []contentLine, width, height int) []string {
 	out := make([]string, 0, height)
-	for _, line := range m.fitTranscript(lines, width, rows) {
+	for _, line := range m.fitTranscript(lines, width, height) {
 		out = append(out, paint(line.text, width, backdropHex()))
 	}
-	for len(out) < rows {
+	for len(out) < height {
 		out = append(out, paint("", width, backdropHex()))
-	}
-	if status != "" {
-		out = append(out, paint(status, width, quickModeHex()))
 	}
 	return out
 }
@@ -270,31 +222,6 @@ func (m *Model) darkModeTranscript(answered bool) []contentLine {
 	}
 	if answered {
 		lines = append(lines, contentLine{}, m.promptLine(sampleAnswer, false), contentLine{}, m.stateLine(status.Working, "Editing src/theme.css…"))
-	}
-	return lines
-}
-
-func (m *Model) reviewSentTranscript() []contentLine {
-	return append(m.loginTranscript()[:5],
-		contentLine{},
-		m.promptLine("Review: src/auth/redirect.ts:4", false),
-		m.noteLine(sampleComment),
-		contentLine{},
-		m.stateLine(status.Working, "Keeping the #hash in the redirect…"),
-	)
-}
-
-func (m *Model) triageTranscript(ask string, asked bool, reply string) []contentLine {
-	lines := []contentLine{
-		{},
-		m.promptLine("sort this week's issues", false),
-		m.stepLine("Sorted 14 issues into 3 labels."),
-	}
-	if asked {
-		lines = append(lines, contentLine{}, m.promptLine(ask, false))
-	}
-	if reply != "" {
-		lines = append(lines, m.stepLine(reply))
 	}
 	return lines
 }

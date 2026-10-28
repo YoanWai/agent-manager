@@ -156,15 +156,17 @@ func (m *Model) setupKeys() uionboarding.Keys {
 		return keys[0].Glyph()
 	}
 	list := m.services.listKeys
-	focus, attach := first(list, keybind.Open), first(list, keybind.Attach)
-	if !m.enterFocuses() {
-		focus, attach = attach, focus
+	focus, back := first(list, keybind.StepIn), first(list, keybind.StepOut)
+	if !m.prefs.arrowStep || focus == "" || back == "" {
+		focus, back = first(list, keybind.Open), first(m.services.keys, keybind.Detach)
+		if !m.enterFocuses() {
+			focus = first(list, keybind.Attach)
+		}
 	}
 	return uionboarding.Keys{
 		Prompt:   first(list, keybind.Prompt),
 		Focus:    focus,
-		Attach:   attach,
-		Detach:   first(m.services.keys, keybind.Detach),
+		Back:     back,
 		Review:   first(list, keybind.Review),
 		Settings: first(list, keybind.Settings),
 		Messages: first(list, keybind.Messages),

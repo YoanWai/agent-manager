@@ -16,7 +16,7 @@ func viewContext(width, height int) ViewContext {
 		GlyphMode: presentation.GlyphModeAdvanced,
 		Theme:     uitheme.Palettes[0],
 		Wordmark:  "agent-manager",
-		Keys:      Keys{Prompt: "space", Focus: "↵", Attach: "A", Detach: "ctrl+q", Settings: "s", Messages: "M", Help: "?"},
+		Keys:      Keys{Prompt: "space", Focus: "→", Back: "←", Review: "ctrl+r", Settings: "s", Messages: "M", Help: "?"},
 		Preview: func(p Preview) []string {
 			lines := make([]string, p.Height)
 			for i := range lines {
@@ -85,10 +85,10 @@ func TestGuideReadsTheKeyTables(t *testing.T) {
 	m := New(agents, defaults(), false)
 	walkTo(t, &m, Sessions)
 	ctx := viewContext(120, 33)
-	ctx.Keys.Focus, ctx.Keys.Attach, ctx.Keys.Detach = "A", "↵", "f9"
+	ctx.Keys.Focus, ctx.Keys.Back = "↵", "f9"
 	ctx.Keys.Prompt = ""
 	text := ansi.Strip(strings.Join(m.View(ctx).Lines, "\n"))
-	for _, want := range []string{" A    focus it", " ↵    attach it", " f9   come back"} {
+	for _, want := range []string{" ↵    focus it", " f9   come back"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("guide missing %q:\n%s", want, text)
 		}

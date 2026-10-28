@@ -73,27 +73,60 @@ func TestSetupWritesWhatSettingsWrites(t *testing.T) {
 	}
 }
 
-// Skipping on the theme step keeps the theme stored and paints with it
-// again; nothing the setup did not confirm is written.
-func TestSkippingTheSetupKeepsTheDefaults(t *testing.T) {
-	m := setupModel(t)
-	before := current().Name
-	pressKeys(m, enterKey, enterKey, enterKey, downKey, downKey)
-	if current().Name == before {
-		t.Fatal("the theme step did not preview the palette under the cursor")
+// The welcome is the one place the setup offers a skip: esc, then esc
+// again, leaves with nothing written.
+func TestSkippingFromTheWelcomeWritesNothing(t *testing.T) {
+	previous := current()
+	t.Cleanup(func() { applyTheme(previous) })
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 36
+	m.openSetup(true)
+	pressKeys(m, escKey)
+	if m.mode != modeOnboarding || !strings.Contains(ansi.Strip(preparedView(m)), "Skip the setup?") {
+		t.Fatal("the first esc did not ask")
 	}
 	pressKeys(m, escKey)
 	m.drainEffects(t)
 	if m.mode != modeList {
-		t.Fatalf("esc left mode %v", m.mode)
+		t.Fatalf("the second esc left mode %v", m.mode)
 	}
-	if current().Name != before {
-		t.Fatalf("skipping kept the previewed palette %s", current().Name)
-	}
-	for _, key := range []string{uisettings.ThemeSetting, uisettings.SessionLayoutSetting, uisettings.ListDensitySetting} {
+	for _, key := range []string{uisettings.ThemeSetting, uisettings.SessionLayoutSetting, uisettings.ListDensitySetting, uisettings.HiddenToolsSetting} {
 		if got := storedSetting(t, m, key); got != "" {
 			t.Errorf("skipping wrote %s = %q", key, got)
 		}
+	}
+}
+
+// The choices are required: esc on the theme step stays, still previewing
+// the palette under the cursor, and going back shows the saved one again.
+func TestChoicesCannotBeSkipped(t *testing.T) {
+	m := setupModel(t)
+	before := current().Name
+	pressKeys(m, enterKey, enterKey, enterKey, downKey, downKey, escKey)
+	if m.mode != modeOnboarding || m.startup.setup.Step() != uionboarding.Theme || current().Name == before {
+		t.Fatalf("esc on the theme step left %v in mode %v painting %s", m.startup.setup.Step(), m.mode, current().Name)
+	}
+	pressKeys(m, tea.KeyMsg{Type: tea.KeyBackspace})
+	if current().Name != before {
+		t.Fatalf("going back kept the previewed palette %s", current().Name)
+	}
+	m.drainEffects(t)
+	if got := storedSetting(t, m, uisettings.ThemeSetting); got != "" {
+		t.Errorf("an unconfirmed theme was written: %q", got)
+	}
+}
+
+// The guide names the arrow keys for focusing and coming back while the
+// ←→ pair is on, and the enter and detach keys once it is off.
+func TestSessionsCardNamesTheArrowKeys(t *testing.T) {
+	m := setupModel(t)
+	m.prefs.arrowStep = true
+	if keys := m.setupKeys(); keys.Focus != "→" || keys.Back != "←" {
+		t.Fatalf("with the pair on: focus %q back %q", keys.Focus, keys.Back)
+	}
+	m.prefs.arrowStep = false
+	if keys := m.setupKeys(); keys.Focus != "↵" || keys.Back != "ctrl+q" {
+		t.Fatalf("with the pair off: focus %q back %q", keys.Focus, keys.Back)
 	}
 }
 
@@ -186,7 +219,7 @@ func TestSetupScenesFitTheTerminal(t *testing.T) {
 		}
 		pressKeys(m, enterKey, enterKey, enterKey)
 		for m.startup.setup.Step() != uionboarding.Places {
-			for range 140 {
+			for range 200 {
 				lines := strings.Split(preparedView(m), "\n")
 				if len(lines) != 36 {
 					t.Fatalf("%v painted %d rows", m.startup.setup.Step(), len(lines))

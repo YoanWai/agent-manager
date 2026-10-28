@@ -5,9 +5,9 @@ package onboarding
 var sceneBeats = map[Step][]int{
 	Welcome:     {70},
 	QuickPrompt: {14, 34, 30},
-	Sessions:    {36, 36, 22, 16},
+	Sessions:    {36, 40, 18},
 	Review:      {18, 40, 30},
-	AskAgent:    {44, 44, 40},
+	Orchestrate: {54, 60, 80},
 }
 
 // Animating reports a guide step that acts itself out, which needs ticks.
