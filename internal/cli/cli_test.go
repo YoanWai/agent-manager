@@ -547,7 +547,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	registered := []string{
 		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self", "prompts", "env",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
-		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "update",
+		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}
 	for _, name := range registered {
 		if table[name] == nil {

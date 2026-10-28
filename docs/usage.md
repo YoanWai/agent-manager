@@ -522,6 +522,15 @@ Eighteen palettes ship. Eleven dark: `classic`, `solarized dark`, `catppuccin mo
 
 **background** picks what fills the cells behind the UI. `theme`, the default, gives every cell that would otherwise show the terminal's own colors the palette's background and text color, so the colors hold even on a terminal that ignores the color request. Cells with colors of their own, agent output included, keep them. `terminal` leaves those cells on the terminal's own colors, for a translucent or blurred window, where painted cells would read as a solid block inside the see-through padding. The row applies as you step it.
 
+## Configuration transfer
+
+`agent-manager export [file]` writes settings, keybindings, the editor, presets,
+groups and SSH connections as JSON. `agent-manager import [file]` merges that
+configuration by matching keys and names. Both accept `--settings`, `--presets`,
+`--groups` and `--connections`. Exports may contain secrets. See
+[Export and import](configuration.md#export-and-import) for scope, conflict
+behavior and file handling.
+
 ## Settings from a shell
 
 `agent-manager settings` reads and changes the same settings the modal does, without opening the manager, for a setup script, a dotfiles repo, or a manager on a remote box. `settings list` prints every key with its current value, the Settings row it belongs to, and the values it takes. `settings get <key>` prints one value, the default when none is stored, and `settings set <key> <value>` writes one. A value is checked against the choices that row steps through (`on` or `off`, a theme name, a CLI name), and a key the manager does not know, or a value outside its choices, is refused with the choices named. An empty `default_tool` means the first CLI the picker offers, and an empty `editor` means the editor found on PATH or in `$VISUAL` and `$EDITOR`. The keybinding tables keep their picker. `--json` prints records instead of lines.

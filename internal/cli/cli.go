@@ -63,6 +63,7 @@ func sections(version string, specs settingSpecs) []section {
 		reviewSection(),
 		reportSection(version),
 		settingsSection(specs),
+		transferSection(specs),
 		updateSection(version),
 	}
 }
@@ -94,7 +95,7 @@ func CommandsWithBackend(version string, specs settingSpecs, backend *sessioncmd
 		groupSection("Shared task list", "task", "the work list every session in this manager claims from", taskVerbsWith(func(string) taskCommands { return sessions })),
 		fileSectionWith(func(string) fileCommands { return sessions }),
 		groupSection("Managed terminals", "terminal", "shells the user watches beside the agents, for work they should be able to watch, attach to or take over", terminalVerbsWith(func(string) terminalCommands { return terminals })),
-		reviewSectionWith(func(string) mailboxCommands { return backend }), reportSection(version), settingsSection(specs), updateSection(version),
+		reviewSectionWith(func(string) mailboxCommands { return backend }), reportSection(version), settingsSection(specs), transferSection(specs), updateSection(version),
 	})
 }
 
