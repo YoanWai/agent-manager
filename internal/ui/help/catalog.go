@@ -62,7 +62,11 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("archived view", keybind.Archived)
 	h.action("hide / show empty groups", keybind.EmptyGroups)
 	h.action("fold / unfold every group (active view)", keybind.FoldAll)
-	h.action(presentation.NavigationLabel(mode, "resize the split (←→ or hl, or drag; ↵ commits, esc cancels)"), keybind.Resize)
+	resize := "resize the split (←→ or hl, or drag; ↵ commits, esc cancels)"
+	if mode.Effective() == presentation.GlyphModeBasic {
+		resize = "resize split: left/right, h/l, drag; enter sets, esc cancels"
+	}
+	h.action(resize, keybind.Resize)
 	h.action("settings (also in the root row menu)", keybind.Settings)
 	h.action("messages", keybind.Messages)
 	h.action("this key map", keybind.Help)

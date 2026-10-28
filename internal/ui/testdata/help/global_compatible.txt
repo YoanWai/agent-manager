@@ -22,7 +22,7 @@
               │   t                archived view                                                         │
               │   e                hide / show empty groups                                              │
               │   F                fold / unfold every group (active view)                               │
-              │   |                resize the split (left/right or hl, or drag; enter commits, esc ca…   │
+              │   |                resize split: left/right, h/l, drag; enter sets, esc cancels          │
               │   v more below…                                                                          │
               │                                                                                          │
               ├──────────────────────────────────────────────────────────────────────────────────────────┤

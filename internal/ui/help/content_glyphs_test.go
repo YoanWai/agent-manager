@@ -64,3 +64,14 @@ func TestNavigationHelpPreservesLiteralBindingsAndSearch(t *testing.T) {
 		t.Fatalf("navigation search: %s", body)
 	}
 }
+
+func TestCompatibleResizeHelpKeepsCancelVisible(t *testing.T) {
+	for _, width := range []int{84, 100} {
+		ctx := testContext(width)
+		ctx.Glyphs.Mode = presentation.GlyphModeBasic
+		body := ansi.Strip(strings.Join(New(Global).Content(ctx).Lines, "\n"))
+		if !strings.Contains(body, "resize split: left/right, h/l, drag; enter sets, esc cancels") {
+			t.Fatalf("width %d clips resize controls: %s", width, body)
+		}
+	}
+}
