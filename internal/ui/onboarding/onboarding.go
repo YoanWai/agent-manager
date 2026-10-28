@@ -87,8 +87,8 @@ type Model struct {
 	preselect, touched bool
 	// chosen is what the screen shows, and saved is what the confirmed
 	// steps wrote and what skipping keeps.
-	chosen, saved Choices
-	agentCursor   int
+	chosen, saved           Choices
+	agentCursor, agentFirst int
 	// themeCursor is the theme step's palette row, from 1: row 0 is the
 	// follow-the-OS toggle, which space and a click reach without moving
 	// through the palettes.
@@ -108,6 +108,9 @@ func New(agents []string, current Choices, firstRun bool) Model {
 	m := Model{steps: Steps, preselect: firstRun, chosen: current.clone(), saved: current.clone()}
 	for _, name := range agents {
 		m.agents = append(m.agents, Agent{Name: name})
+	}
+	if len(m.Enabled()) == 0 {
+		m.chosen.Hidden = nil
 	}
 	m.themeCursor = uitheme.Index(current.Theme) + 1
 	return m

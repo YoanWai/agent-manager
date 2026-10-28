@@ -204,8 +204,10 @@ func (m *Model) column(ctx ViewContext, p palette, width, rows int) ([]string, [
 	add("", -1)
 	switch step {
 	case Agents:
-		for i, agent := range m.agents {
-			add(m.agentRow(p, agent, i == m.agentCursor, width), i)
+		visible := min(len(m.agents), max(rows-len(lines)-2, 3))
+		m.agentFirst = presentation.Follow(m.agentFirst, m.agentCursor, len(m.agents), visible)
+		for i := m.agentFirst; i < m.agentFirst+visible; i++ {
+			add(m.agentRow(p, m.agents[i], i == m.agentCursor, width), i)
 		}
 	case Layout:
 		add(radioRow(p, !m.chosen.FullLayout, "Split", "list beside a live view", width), 0)

@@ -223,3 +223,11 @@ func TestSavedChoicesAreCopies(t *testing.T) {
 		t.Fatal("a later toggle changed the choices already handed out")
 	}
 }
+
+func TestEveryAgentHiddenStartsWithAllChecked(t *testing.T) {
+	hidden := map[string]bool{"claude": true, "codex": true, "gemini": true}
+	m := New(agents, Choices{Hidden: hidden, Theme: uitheme.Palettes[0].Name}, false)
+	if len(m.Enabled()) != len(agents) {
+		t.Fatalf("enabled = %v, want every agent", m.Enabled())
+	}
+}

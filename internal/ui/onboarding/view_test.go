@@ -119,3 +119,16 @@ func rowOf(t *testing.T, frame Frame, text string) int {
 	t.Fatalf("no row paints %q", text)
 	return -1
 }
+
+func TestAgentsScrollOnShortTerminals(t *testing.T) {
+	many := []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12", "a13"}
+	m := New(many, defaults(), false)
+	walkTo(t, &m, Agents)
+	for range len(many) - 1 {
+		m.Key(press("down"))
+	}
+	frame := m.View(viewContext(80, 14))
+	if body := ansi.Strip(strings.Join(frame.Lines, "\n")); !strings.Contains(body, "❯ [✓] a13") {
+		t.Fatalf("the agent under the cursor is off screen:\n%s", body)
+	}
+}
