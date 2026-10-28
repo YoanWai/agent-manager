@@ -2,14 +2,17 @@ package ui
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -344,6 +347,54 @@ func (m *Model) viewLegend() legendSection {
 	return legendOf(m.rail.ViewLegend(ctx))
 }
 
+// legendReference is every footer the cursor or the messages alert can
+// bring, each row tier at its widest labels. Remote tiers go untitled, so a
+// host's name never decides the layout.
+func (m *Model) legendReference() [][]legendSection {
+	ctx := m.railLegendContext()
+	session, group := ctx, ctx
+	session.RowOK, group.RowOK = true, true
+	session.Row = uirail.Selection{Kind: uirail.SessionRow}
+	session.Session = uirail.Session{Status: "finished", AfterTurn: store.AfterTurnArchive}
+	group.Row = uirail.Selection{Kind: uirail.GroupRow, Group: "reference"}
+	groupTier := legendOf(m.rail.RowLegendInView(group, false))
+	groupTier.pairs = slices.Clone(groupTier.pairs)
+	for i := range groupTier.pairs {
+		if groupTier.pairs[i][1] == "fold" {
+			groupTier.pairs[i][1] = "unfold"
+		}
+	}
+	rows := []legendSection{legendOf(m.rail.RowLegendInView(session, false)), groupTier, legendOf(m.rail.RowLegendInView(session, true)), {}}
+	for _, row := range []uirail.RemoteRow{
+		{Kind: uirail.ConnectionRow},
+		{Kind: uirail.SessionRow, Dead: true},
+		{Kind: uirail.SessionRow, Terminal: true, Dead: true},
+	} {
+		for _, archived := range []bool{false, true} {
+			remote := legendOf(m.rail.RemoteLegendInView(ctx, row, true, archived))
+			remote.title = ""
+			rows = append(rows, remote)
+		}
+	}
+	widestView := func(ctx uirail.LegendContext) legendSection {
+		ctx.Widest = true
+		return legendOf(m.rail.ViewLegend(ctx))
+	}
+	views := []legendSection{widestView(ctx)}
+	if glyph := m.listGlyph(keybind.Messages); glyph != "" {
+		alert := ctx
+		alert.Unread = [2]string{glyph, uinotices.FeedPendingText}
+		views = append(views, widestView(alert))
+	}
+	var refs [][]legendSection
+	for _, row := range rows {
+		for _, view := range views {
+			refs = append(refs, []legendSection{row, view})
+		}
+	}
+	return refs
+}
+
 func (m *Model) reorderFooter() legend {
 	return m.transientFooter(legendOf(m.rail.ReorderLegend()))
 }
@@ -351,7 +402,7 @@ func (m *Model) reorderFooter() legend {
 func legendOf(legend uirail.Legend) legendSection {
 	return legendSection{
 		title: legend.Title, leads: legend.Leads, alerts: legend.Alerts,
-		hint: legend.Hint, pairs: legend.Pairs, quiet: legend.Quiet,
+		hint: legend.Hint, pairs: legend.Pairs, quiet: legend.Quiet, actionPairs: legend.ActionPairs,
 	}
 }
 

@@ -22,8 +22,10 @@ func TestCompatibleLegendLabelsKeepTheirKeyAndPaintedHits(t *testing.T) {
 				}
 				for _, hit := range painted.hits {
 					want := map[string]string{"enter": presentation.KeyLabel(mode, "↵/tab") + " choose", "backspace": presentation.KeyLabel(mode, "⌫") + " delete", "y": presentation.KeyLabel(mode, "y/↵") + " confirm", "esc": "esc cancel"}[hit.key.String()]
+					// A footer too narrow for the words paints the keys bare.
+					bare := map[string]string{"enter": presentation.KeyLabel(mode, "↵/tab"), "backspace": presentation.KeyLabel(mode, "⌫"), "y": presentation.KeyLabel(mode, "y/↵"), "esc": "esc"}[hit.key.String()]
 					got := ansi.Cut(rows[hit.y], hit.x0, hit.x1)
-					if got != ansi.Truncate(want, hit.x1-hit.x0, "…") {
+					if got != ansi.Truncate(want, hit.x1-hit.x0, "…") && got != bare {
 						t.Fatalf("%s/%d hit=%q want=%q", mode, width, got, want)
 					}
 					for _, x := range []int{hit.x0, hit.x1 - 1} {
@@ -97,12 +99,22 @@ func TestCompatibleLegendFitsFirstAndWrappedParts(t *testing.T) {
 	}
 }
 
+// A first key too wide for its title's column drops the title rather than
+// clip; a key wider than the whole row clips, and its hit covers only what
+// was painted.
 func TestCompatibleLegendClipsOnlyThePaintedPart(t *testing.T) {
 	painted := paintLegend([]legendSection{{title: "Keys", pairs: [][2]string{{"⌫", "delete"}}}}, 24, presentation.GlyphModeBasic)
-	if got := ansi.Strip(painted.text); got != "   Keys      backspace …" {
+	if got := ansi.Strip(painted.text); got != "  backspace delete" {
 		t.Fatalf("narrow first hint=%q", got)
 	}
-	if len(painted.hits) != 1 || painted.hits[0].x0 != 13 || painted.hits[0].x1 != 24 || painted.hits[0].key.String() != "backspace" {
+	if len(painted.hits) != 1 || painted.hits[0].x0 != 2 || painted.hits[0].x1 != 18 || painted.hits[0].key.String() != "backspace" {
+		t.Fatalf("untitled hit=%+v", painted.hits)
+	}
+	painted = paintLegend([]legendSection{{title: "Keys", pairs: [][2]string{{"⌫", "delete"}}}}, 10, presentation.GlyphModeBasic)
+	if got := ansi.Strip(painted.text); got != "  backspa…" {
+		t.Fatalf("clipped bare hint=%q", got)
+	}
+	if len(painted.hits) != 1 || painted.hits[0].x0 != 2 || painted.hits[0].x1 != 10 || painted.hits[0].key.String() != "backspace" {
 		t.Fatalf("clipped hit=%+v", painted.hits)
 	}
 }

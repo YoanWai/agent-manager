@@ -214,9 +214,9 @@ def focus_blocked(sandbox, binary):
     frame(sandbox, 'focus-returned-list', 'A G E N T', '? Keys')
     select_row(sandbox, name, 'focus-reselect')
     key(sandbox, 'Enter')
-    frame(sandbox, 'focus-reentered', READY_MARKER)
+    frame(sandbox, 'focus-reentered', 'focused · ctrl+q')
     key(sandbox, 'C-q')
-    frame(sandbox, 'focus-detached', 'A G E N T')
+    frame(sandbox, 'focus-detached', 'A G E N T', 'focused · ctrl+q')
 
 
 CASES = [
