@@ -58,6 +58,7 @@ const (
 	// bandRows are the blank row, the wordmark with the progress, and the
 	// blank row under them.
 	bandRows       = 3
+	previewMinRows = 12
 	previewMaxRows = 26
 )
 
@@ -89,13 +90,13 @@ func newPalette(t uitheme.Theme, mode presentation.GlyphMode) palette {
 // shows, for clicks.
 func (m *Model) View(ctx ViewContext) Frame {
 	p := newPalette(ctx.Theme, ctx.GlyphMode)
-	columnWidth, previewWidth := columns(ctx.Width, ctx.Preview != nil)
+	bodyRows := max(ctx.Height-bandRows-1, 1)
+	columnWidth, previewWidth := columns(ctx.Width, ctx.Preview != nil && bodyRows >= previewMinRows)
 	total := columnWidth
 	if previewWidth > 0 {
 		total += gutter + previewWidth
 	}
 	left := max((ctx.Width-total)/2, 0)
-	bodyRows := max(ctx.Height-bandRows-1, 1)
 	column, items := m.column(ctx, p, columnWidth, bodyRows)
 	var preview []string
 	if previewWidth > 0 {

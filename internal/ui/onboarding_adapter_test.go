@@ -168,7 +168,7 @@ func TestSetupTakesTheMouse(t *testing.T) {
 
 func TestSetupFillsTheTerminal(t *testing.T) {
 	m := setupModel(t)
-	for _, size := range [][2]int{{80, 24}, {120, 36}, {160, 45}, {200, 50}} {
+	for _, size := range [][2]int{{80, 24}, {120, 36}, {160, 45}, {200, 50}, {120, 8}, {200, 5}} {
 		m.layout.width, m.layout.height = size[0], size[1]
 		lines := strings.Split(preparedView(m), "\n")
 		if len(lines) != size[1] {
@@ -182,8 +182,21 @@ func TestSetupFillsTheTerminal(t *testing.T) {
 	}
 }
 
+func TestWelcomeAnimatesOnceTheLookupLands(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 36
+	m.openSetup(true)
+	m.Update(setupProbedMsg{installed: map[string]bool{"claude": true}})
+	if m.startup.setup.Step() != uionboarding.Welcome || !m.startup.setup.ticking {
+		t.Fatal("the welcome scene started no ticks")
+	}
+}
+
 func TestSetupAnimatesOnlyTheGuide(t *testing.T) {
 	m := setupModel(t)
+	if m.applySetupTick() != nil || m.startup.setup.ticking {
+		t.Fatal("the welcome's ticks went on past the agents step")
+	}
 	if m.keepSetupAnimating() != nil {
 		t.Fatal("the agents step asked for ticks")
 	}

@@ -82,7 +82,7 @@ func (m *Model) applySetupProbe(probe setupProbedMsg) tea.Cmd {
 	setup := &m.startup.setup
 	setup.SetInstalled(probe.installed)
 	setup.scheme, setup.probed = probe.scheme, true
-	return m.syncSetupPalette()
+	return tea.Batch(m.syncSetupPalette(), m.keepSetupAnimating())
 }
 
 func (m *Model) handleSetupKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
