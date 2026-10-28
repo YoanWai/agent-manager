@@ -146,13 +146,13 @@ func TestSettingsReopensTheSetup(t *testing.T) {
 
 func TestSetupTakesTheMouse(t *testing.T) {
 	m := setupModel(t)
-	if !strings.Contains(ansi.Strip(preparedView(m)), "[ ] command-code") {
-		t.Fatal("test setup: command-code is not installed, so the first run leaves it unchecked")
+	if !strings.Contains(ansi.Strip(preparedView(m)), "[ ] quietchat") {
+		t.Fatal("test setup: quietchat is not installed, so the first run leaves it unchecked")
 	}
 	m.prepareFrame()
-	m, _ = clickBody(t, m, "command-code")
-	if !strings.Contains(ansi.Strip(preparedView(m)), "[✓] command-code") {
-		t.Fatalf("a click on command-code left it unchecked:\n%s", ansi.Strip(m.View()))
+	m, _ = clickBody(t, m, "quietchat")
+	if !strings.Contains(ansi.Strip(preparedView(m)), "[✓] quietchat") {
+		t.Fatalf("a click on quietchat left it unchecked:\n%s", ansi.Strip(m.View()))
 	}
 	m = clickLabel(t, m, "↵ next")
 	if m.startup.setup.Step() != uionboarding.Layout {
