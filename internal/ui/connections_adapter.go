@@ -217,7 +217,7 @@ func (m *Model) handleConnectionKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewConnectionDialog() string {
-	return m.drawCard(m.ssh.Dialog.View(uiconnections.DialogView{Field: m.formField, Input: textInputView, Muted: mutedStyle()}))
+	return m.drawCard(m.ssh.Dialog.View(uiconnections.DialogView{GlyphMode: m.prefs.glyphMode, Field: m.formField, Input: textInputView, Muted: mutedStyle()}))
 }
 
 // remotePreviewMsg is a read of the selected remote row's screen.

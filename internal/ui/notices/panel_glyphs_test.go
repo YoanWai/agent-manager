@@ -46,3 +46,31 @@ func TestCompatibleWelcomeFormatsRemappedKeys(t *testing.T) {
 		t.Fatalf("welcome key labels=%s", body)
 	}
 }
+
+func TestCompatibleNarrowUpdateKeepsCloseMouseTarget(t *testing.T) {
+	p := NewPanel(nil)
+	notices := p.Active(testSources("v0.3.0"))
+	p.Open(notices, "update-v0.3.0")
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		for _, width := range []int{40, 42, 66, 100} {
+			f := testFrame()
+			f.Width = width
+			f.GlyphMode = mode
+			f.CloseKey = keybind.DefaultList().Binding(keybind.Messages)
+			rows := p.View(notices, f)
+			bottom := ansi.Strip(rows[len(rows)-1])
+			found := false
+			for _, hit := range p.Foot(notices, f) {
+				if hit.Label == "esc/q/M" {
+					found = true
+					if got := ansi.Cut(bottom, hit.X0, hit.X1); !strings.HasPrefix(got, "esc/q/M") {
+						t.Fatalf("%s/%d close target paints %q", mode, width, got)
+					}
+				}
+			}
+			if !found {
+				t.Fatalf("%s/%d close mouse target missing: %s", mode, width, bottom)
+			}
+		}
+	}
+}

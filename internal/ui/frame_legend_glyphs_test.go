@@ -106,3 +106,33 @@ func TestCompatibleLegendClipsOnlyThePaintedPart(t *testing.T) {
 		t.Fatalf("clipped hit=%+v", painted.hits)
 	}
 }
+
+func TestNavigationLegendPreservesNonClickableMovement(t *testing.T) {
+	for _, label := range []string{"↑↓", "up/down", "tab/up/down", "up/k down/j", "shift+up/K/shift+down/J", "left/right", "left", "right", "up/down/jk", "drag / up/down / wheel"} {
+		if _, ok := legendKey(label); ok {
+			t.Errorf("movement hint %q became clickable", label)
+		}
+	}
+	for _, label := range []string{"^", "v", "<", ">", "/", "space/↵", "↵ / release", "esc"} {
+		if _, ok := legendKey(label); !ok {
+			t.Errorf("action %q lost click", label)
+		}
+	}
+	for _, width := range []int{24, 40, 100} {
+		pairs := [][2]string{{presentation.NavigationLabel(presentation.GlyphModeBasic, "↑↓"), "move"}, {"↵", "save"}, {"esc", "cancel"}}
+		for _, bar := range []legend{paintInline(pairs, width, presentation.GlyphModeBasic), paintLegend([]legendSection{{title: "Keys", pairs: pairs}}, width, presentation.GlyphModeBasic)} {
+			rows := strings.Split(ansi.Strip(bar.text), "\n")
+			for _, hit := range bar.hits {
+				if hit.key.String() != "enter" && hit.key.String() != "esc" {
+					t.Fatalf("movement hit: %+v", hit)
+				}
+				if hit.x1 > ansi.StringWidth(rows[hit.y]) {
+					t.Fatal("hit beyond painted row")
+				}
+				if _, ok := bar.hits.at(hit.x1-1, hit.y); !ok {
+					t.Fatal("visible action lost its hit")
+				}
+			}
+		}
+	}
+}

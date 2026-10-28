@@ -5,6 +5,7 @@ import (
 
 	remote "github.com/YoanWai/agent-manager/internal/remote/value"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -164,9 +165,10 @@ func (d *Dialog) submit(list []remote.Connection) DialogKey {
 
 // DialogView is the root's field layout and styles.
 type DialogView struct {
-	Field func(label, value string, focused bool) string
-	Input func(textinput.Model) string
-	Muted lipgloss.Style
+	GlyphMode presentation.GlyphMode
+	Field     func(label, value string, focused bool) string
+	Input     func(textinput.Model) string
+	Muted     lipgloss.Style
 }
 
 func (d *Dialog) View(view DialogView) uidialogs.Card {
@@ -180,5 +182,5 @@ func (d *Dialog) View(view DialogView) uidialogs.Card {
 		view.Muted.Render("  Its sessions show under this name. The host needs agent-manager, on") + "\n" +
 		view.Muted.Render("  its login PATH or at the binary path (/… or ~/…), and a key this") + "\n" +
 		view.Muted.Render("  machine's ssh can use without a prompt.")
-	return uidialogs.Card{Title: title, Body: body, Hints: [][2]string{{"tab/↑↓", "move"}, {"↵", "save"}, {"esc", "cancel"}}}
+	return uidialogs.Card{Title: title, Body: body, Hints: [][2]string{{presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {"↵", "save"}, {"esc", "cancel"}}}
 }

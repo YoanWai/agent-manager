@@ -276,7 +276,7 @@ func TestReviewHelpNamesConfiguredHelpKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, configured := range []keybind.Binding{binding, {}} {
-		section := reviewHelpSection(keys, configured)
+		section := reviewHelpSection(keys, configured, presentation.DefaultGlyphMode)
 		found := false
 		for _, row := range section.rows {
 			if row[1] == "this key map" {

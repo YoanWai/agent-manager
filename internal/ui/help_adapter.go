@@ -99,6 +99,7 @@ func (m *Model) viewHelp() string {
 		layout.rows,
 		layout.content.Offset,
 		subtleStyle(),
+		m.prefs.glyphMode,
 	)...)
 	return m.cardSized(layout.width, layout.content.Title, strings.Join(lines, "\n"), layout.content.Hints)
 }

@@ -160,24 +160,7 @@ func (p Panel) Active(src Sources) []Notice {
 			Body:  src.welcomeBody(),
 			URL:   RepoURL + "#readme",
 		},
-		Notice{
-			ID:    ArrowStep,
-			Glyph: g.BetaGlyph,
-			Tint:  TintWarm,
-			Title: "New in beta: step in and out with ← →",
-			Body: []string{
-				"→ on a list row steps in: it focuses the session, or opens the group.",
-				"← steps out: it closes the group, and inside a focused session it",
-				"returns here - only while the caret sits at the start of the agent's",
-				"prompt, where ← would do nothing. Anywhere else in the prompt it",
-				"moves the caret as always.",
-				"",
-				"We are testing this. If a ← ever lands somewhere you did not expect,",
-				"Enter here opens a prefilled report, and Settings (s) has a",
-				"\"←→ step in/out\" row that turns the pair off.",
-			},
-			URL: arrowStepFeedbackURL(src.Update.Version),
-		},
+		src.arrowStepNotice(g),
 	)
 
 	kept := notices[:0]
@@ -187,6 +170,42 @@ func (p Panel) Active(src Sources) []Notice {
 		}
 	}
 	return kept
+}
+
+func (src Sources) arrowStepNotice(g presentation.GlyphSet) Notice {
+	beta := Notice{
+		ID:    ArrowStep,
+		Glyph: g.BetaGlyph,
+		Tint:  TintWarm,
+		Title: "New in beta: step in and out with ← →",
+		Body: []string{
+			"→ on a list row steps in: it focuses the session, or opens the group.",
+			"← steps out: it closes the group, and inside a focused session it",
+			"returns here - only while the caret sits at the start of the agent's",
+			"prompt, where ← would do nothing. Anywhere else in the prompt it",
+			"moves the caret as always.",
+			"",
+			"We are testing this. If a ← ever lands somewhere you did not expect,",
+			"Enter here opens a prefilled report, and Settings (s) has a",
+			"\"←→ step in/out\" row that turns the pair off.",
+		},
+		URL: arrowStepFeedbackURL(src.Update.Version),
+	}
+	if src.GlyphMode.Effective() == presentation.GlyphModeBasic {
+		beta.Title = "New in beta: step in and out with the arrow keys"
+		beta.Body = []string{
+			"The right arrow on a list row steps in: it focuses the session, or",
+			"opens the group. The left arrow steps out: it closes the group, and",
+			"inside a focused session it returns here - only while the caret sits",
+			"at the start of the agent's prompt, where the left arrow would do",
+			"nothing. Anywhere else in the prompt it moves the caret as always.",
+			"",
+			"We are testing this. If the left arrow lands somewhere unexpected,",
+			"Enter here opens a prefilled report, and Settings (s) has an",
+			"\"arrow step in/out\" row that turns the pair off.",
+		}
+	}
+	return beta
 }
 
 // arrowStepFeedbackURL prefills a report scoped to the beta ←→ pair, so
@@ -232,7 +251,7 @@ func (src Sources) firstListKey(action string) string {
 	if len(keys) == 0 {
 		return ""
 	}
-	return presentation.KeyLabel(src.GlyphMode, keys[0].Glyph())
+	return presentation.KeyLabel(src.GlyphMode, keybind.Keys(keys[0]).Text("", src.GlyphMode.Effective() == presentation.GlyphModeAdvanced))
 }
 
 func (src Sources) firstListKeys(actions ...string) string {

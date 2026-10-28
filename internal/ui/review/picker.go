@@ -90,8 +90,8 @@ func (p *Picker) Open(rows []PickerRow, title string, kind PickerKind, current s
 	}
 }
 
-func (p Picker) Hints() [][2]string {
-	return [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", "select"}, {"esc", "cancel"}}
+func (p Picker) Hints(mode presentation.GlyphMode) [][2]string {
+	return [][2]string{{"type", "filter"}, {presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵", "select"}, {"esc", "cancel"}}
 }
 
 func (p Picker) Title() string             { return p.title }

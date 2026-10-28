@@ -24,7 +24,7 @@ func (m *Model) footer() legend {
 	}
 	if m.layout.split.resizeMode || m.layout.split.dragging {
 		return m.transientFooter(legendSection{title: "Resize", pairs: [][2]string{
-			{"←→", "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
+			{presentation.NavigationLabel(m.prefs.glyphMode, "←→"), "nudge"}, {"drag", "divider"}, {strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "), "commit"}, {"esc", "cancel"},
 		}})
 	}
 	if m.mode == modeRename {
@@ -49,7 +49,7 @@ func (m *Model) footer() legend {
 			if m.prefs.fullLayout && pagesScrollback {
 				label = "back"
 			}
-			pairs = append(pairs, [2]string{"←", label})
+			pairs = append(pairs, [2]string{presentation.NavigationLabel(m.prefs.glyphMode, "←"), label})
 		}
 		if label := m.services.keys.Binding(keybind.Review).Label(); label != "" {
 			pairs = append(pairs, [2]string{label, "review"})
@@ -59,7 +59,7 @@ func (m *Model) footer() legend {
 		}
 		savedLabel := m.services.keys.Binding(keybind.SavedPrompt).Label()
 		if m.focus.saved.list.Open() {
-			pairs = append(m.focus.saved.list.Hint("paste", "close"), pairs...)
+			pairs = append(m.focus.saved.list.Hint("paste", "close", m.prefs.glyphMode), pairs...)
 			savedLabel = ""
 		}
 		savedAt := len(pairs)
@@ -105,7 +105,7 @@ func (m *Model) transientFooter(section legendSection) legend {
 func (m *Model) listGlyph(actions ...string) string {
 	joined := ""
 	for _, action := range actions {
-		glyph := m.services.listKeys.Binding(action).Glyph("/")
+		glyph := m.services.listKeys.Binding(action).Text("/", m.prefs.glyphMode.Effective() == presentation.GlyphModeAdvanced)
 		if glyph == "" {
 			continue
 		}

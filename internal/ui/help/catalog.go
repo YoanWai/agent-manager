@@ -16,13 +16,14 @@ type helpSection struct {
 
 type helpRows struct {
 	list keybind.Table
+	mode presentation.GlyphMode
 	rows [][2]string
 }
 
 func (h *helpRows) action(does string, actions ...string) {
 	var glyphs []string
 	for _, action := range actions {
-		if glyph := h.list.Binding(action).Glyph(" / "); glyph != "" {
+		if glyph := h.list.Binding(action).Text(" / ", h.mode.Effective() == presentation.GlyphModeAdvanced); glyph != "" {
 			glyphs = append(glyphs, glyph)
 		}
 	}
@@ -36,14 +37,15 @@ func (h *helpRows) fixed(key, does string) {
 }
 
 func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string {
-	h := helpRows{list: list}
+	mode := glyphs.Mode
+	h := helpRows{list: list, mode: mode}
 	h.fixed("", "Tell your agent to manage sessions and terminals in Agent Manager.")
 	h.action("move the cursor up", keybind.Up)
 	h.action("move the cursor down", keybind.Down)
 	h.fixed("click", "focus from a row or the preview in the split, select otherwise")
 	h.fixed("double click", "fold or unfold a group, focus a session full screen")
 	h.fixed(glyphs.RowMenu, "the row's actions, or right click")
-	h.fixed("drag "+glyphs.Reorder, "move the row, into another group too, or click it for ↑↓")
+	h.fixed("drag "+glyphs.Reorder, presentation.NavigationLabel(mode, "move the row, into another group too, or click it for ↑↓"))
 	h.fixed("click a key", "in a footer or a card's foot, run it as if typed")
 	if arrowStep {
 		h.action("step in: focus the session, open the group", keybind.StepIn)
@@ -60,7 +62,11 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("archived view", keybind.Archived)
 	h.action("hide / show empty groups", keybind.EmptyGroups)
 	h.action("fold / unfold every group (active view)", keybind.FoldAll)
-	h.action("resize the split (←→ or hl, or drag; ↵ commits, esc cancels)", keybind.Resize)
+	resize := "resize the split (←→ or hl, or drag; ↵ commits, esc cancels)"
+	if mode.Effective() == presentation.GlyphModeBasic {
+		resize = "resize split: left/right, h/l, drag; enter sets, esc cancels"
+	}
+	h.action(resize, keybind.Resize)
 	h.action("settings (also in the root row menu)", keybind.Settings)
 	h.action("messages", keybind.Messages)
 	h.action("this key map", keybind.Help)
@@ -69,8 +75,8 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	return h.rows
 }
 
-func sessionRowHelpRows(list keybind.Table) [][2]string {
-	h := helpRows{list: list}
+func sessionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2]string {
+	h := helpRows{list: list, mode: mode}
 	h.action("focus it: keys reach the agent, the list stays on screen", keybind.Open)
 	h.action("attach it: the pane takes the whole terminal", keybind.Attach)
 	h.fixed("", "settings swap what the two do")
@@ -92,7 +98,8 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 }
 
 func markHelpRows(list keybind.Table, glyphs Glyphs) [][2]string {
-	g := presentation.GlyphsFor(glyphs.Mode)
+	mode := glyphs.Mode
+	g := presentation.GlyphsFor(mode)
 	rows := [][2]string{
 		{g.WorkingGlyph + " working", "the agent is busy on a turn"},
 		{g.WaitingGlyph + " waiting", "blocked on you: a dialog, a permission ask, a question"},
@@ -106,14 +113,14 @@ func markHelpRows(list keybind.Table, glyphs Glyphs) [][2]string {
 		{g.GroupClosedGlyph + " / " + g.GroupOpenGlyph, "collapsed / expanded group"},
 		{glyphs.AfterTurnArchive + " / " + glyphs.AfterTurnKill, "the agent asked to be archived / killed once this turn ends"},
 	}
-	if filter := list.Binding(keybind.Filter).Glyph(" / "); filter != "" {
+	if filter := list.Binding(keybind.Filter).Text(" / ", mode.Effective() == presentation.GlyphModeAdvanced); filter != "" {
 		rows = append(rows, [2]string{"", filter + " filters the list down to the marks that need you"})
 	}
 	return rows
 }
 
-func groupRowHelpRows(list keybind.Table) [][2]string {
-	h := helpRows{list: list}
+func groupRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2]string {
+	h := helpRows{list: list, mode: mode}
 	h.action("fold / unfold", keybind.Open)
 	h.action("quick prompt mode: spawn a new agent in the group", keybind.Prompt)
 	h.action("edit it: name, default path, worktree", keybind.Rename)
@@ -126,8 +133,8 @@ func groupRowHelpRows(list keybind.Table) [][2]string {
 	return h.rows
 }
 
-func connectionRowHelpRows(list keybind.Table) [][2]string {
-	h := helpRows{list: list}
+func connectionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2]string {
+	h := helpRows{list: list, mode: mode}
 	h.action("fold / unfold", keybind.Open)
 	h.action("edit its name and SSH destination", keybind.Rename)
 	h.action("remove it; its sessions keep running on that host", keybind.Delete)
@@ -140,16 +147,17 @@ func connectionRowHelpRows(list keybind.Table) [][2]string {
 // helpSections is the catalog for one setting of the arrow-step pair: off,
 // the rows that pair would answer are left out rather than named as dead.
 func helpSections(ctx Context) []helpSection {
+	mode := ctx.Glyphs.Mode
 	list := ctx.ListKeys
 	sections := []helpSection{
 		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.Glyphs)},
-		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
+		{title: "session under the cursor", rows: sessionRowHelpRows(list, mode)},
 		{title: "the mark on a session row", rows: markHelpRows(list, ctx.Glyphs)},
-		{title: "group under the cursor", rows: groupRowHelpRows(list)},
-		{title: "SSH connection under the cursor", rows: connectionRowHelpRows(list)},
-		{title: titledWith("quick prompt mode", list, keybind.Prompt), rows: [][2]string{
+		{title: "group under the cursor", rows: groupRowHelpRows(list, mode)},
+		{title: "SSH connection under the cursor", rows: connectionRowHelpRows(list, mode)},
+		{title: titledWith("quick prompt mode", list, mode, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
-			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
+			{presentation.NavigationLabel(mode, "↑↓"), "switch the target session, or step the caret in a taller prompt"},
 			{"tab", "step the tool a spawn uses forward (alt+m too)"},
 			{"shift+tab", "step the tool a spawn uses back one"},
 			{ctx.QuickKeys.Model, "pick the spawn's model from the ones the tool lists; type to filter"},
@@ -160,7 +168,7 @@ func helpSections(ctx Context) []helpSection {
 			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},
 			{"⌫", "next to a chip, delete the whole chip"},
-			{"←→", "step over a chip as one token"},
+			{presentation.NavigationLabel(mode, "←→"), "step over a chip as one token"},
 			{"esc", "close"},
 		}},
 		{title: "inside a session (attached or focused)", rows: sessionHelpRows(ctx.SessionKeys, ctx.ArrowStep, [][2]string{
@@ -171,12 +179,12 @@ func helpSections(ctx Context) []helpSection {
 			{"triple click", "focused: copy the line"},
 			{"click", "focused: open the link under it, else a tracking agent gets it"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
-		})},
-		reviewHelpSection(list, ctx.ReviewHelpKey),
-		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
+		}, mode)},
+		reviewHelpSection(list, ctx.ReviewHelpKey, mode),
+		{title: titledWith("messages", list, mode, keybind.Messages), rows: [][2]string{
 			{"click unread", "in the key legend, shown while any remain"},
 			{"click", "select a title, click it again to open its link"},
-			{"↑↓", "pick a message"},
+			{presentation.NavigationLabel(mode, "↑↓"), "pick a message"},
 			{"pgup / pgdn", "scroll its body"},
 			{"wheel", "scroll its body"},
 			{"home / end", "jump to its top or bottom"},
@@ -186,9 +194,9 @@ func helpSections(ctx Context) []helpSection {
 			{"x", "dismiss it for good"},
 			{"esc", "close"},
 		}},
-		{title: titledWith("settings", list, keybind.Settings), rows: [][2]string{
-			{"↑↓ / wheel", "pick a field"},
-			{"←→", "change the value, including Compatible / Advanced symbols"},
+		{title: titledWith("settings", list, mode, keybind.Settings), rows: [][2]string{
+			{presentation.NavigationLabel(mode, "↑↓ / wheel"), "pick a field"},
+			{presentation.NavigationLabel(mode, "←→"), "change the value, including Compatible / Advanced symbols"},
 			{"click", "pick a field, click it again to change or run it"},
 			{"click once", "the docs, saved prompts and the symbols preview"},
 			{"↵", "run the field's action, like saved prompts or the docs"},
@@ -197,14 +205,14 @@ func helpSections(ctx Context) []helpSection {
 		{title: "saved prompts", rows: [][2]string{
 			{"n / ↵ / d", "new, edit, delete"},
 			{"ctrl+s", "save"},
-			{"←→", "on a new session, pick one"},
+			{presentation.NavigationLabel(mode, "←→"), "on a new session, pick one"},
 			{"ctrl+o", "open the list"},
 		}},
-		{title: titledWith("dialogs", list, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
+		{title: titledWith("dialogs", list, mode, keybind.NewSession, keybind.NewGroup, keybind.Rename, keybind.Fork, keybind.Move), rows: [][2]string{
 			{"tab", "next field"},
-			{"↑↓", "next field, or step the caret in a taller New Session prompt"},
+			{presentation.NavigationLabel(mode, "↑↓"), "next field, or step the caret in a taller New Session prompt"},
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
-			{"←→", "change a picker's value"},
+			{presentation.NavigationLabel(mode, "←→"), "change a picker's value"},
 			{"type", "in the model field, filter what the tool lists; tab fills one in"},
 			{"ctrl+o", "in the model field, open or close the whole list"},
 			{"click", "focus a field, click it again to change it, or pick a listed entry"},
@@ -234,7 +242,7 @@ func formatSections(sections []helpSection, mode presentation.GlyphMode) []helpS
 	return sections
 }
 
-func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) [][2]string {
+func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string, mode presentation.GlyphMode) [][2]string {
 	rows := [][2]string{
 		{"typing", "goes straight to the agent, q included"},
 		{"ctrl+c", "goes to the agent"},
@@ -246,7 +254,7 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	}
 	rows = append(rows, [2]string{detach[0].Tea(), back})
 	if arrowStep {
-		rows = append(rows, [2]string{"←", "focused: back to the manager, at the prompt's start"})
+		rows = append(rows, [2]string{presentation.NavigationLabel(mode, "←"), "focused: back to the manager, at the prompt's start"})
 	}
 	if label := keys.Binding(keybind.Review).Label(); label != "" {
 		rows = append(rows, [2]string{label, "review the session's diff, esc returns"})
@@ -264,10 +272,10 @@ func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) 
 	return append(rows, mouseRows...)
 }
 
-func titledWith(name string, list keybind.Table, actions ...string) string {
+func titledWith(name string, list keybind.Table, mode presentation.GlyphMode, actions ...string) string {
 	var glyphs []string
 	for _, action := range actions {
-		if glyph := list.Binding(action).Glyph(" / "); glyph != "" {
+		if glyph := list.Binding(action).Text(" / ", mode.Effective() == presentation.GlyphModeAdvanced); glyph != "" {
 			glyphs = append(glyphs, glyph)
 		}
 	}
@@ -277,7 +285,7 @@ func titledWith(name string, list keybind.Table, actions ...string) string {
 	return name + " (" + strings.Join(glyphs, ", ") + ")"
 }
 
-func reviewHelpSection(list keybind.Table, helpKey keybind.Binding) helpSection {
+func reviewHelpSection(list keybind.Table, helpKey keybind.Binding, mode presentation.GlyphMode) helpSection {
 	rows := [][2]string{
 		{"", "Tell your agent what to review in Agent Manager; they set it up."},
 		{"click", "open a file, move to a code line, or run a header key"},
@@ -290,7 +298,7 @@ func reviewHelpSection(list keybind.Table, helpKey keybind.Binding) helpSection 
 		{"r", "pick the repo when the session dir holds several"},
 		{"b", "switch to another worktree, listed by branch"},
 		{"B", "pick the target branch the branch diff compares against"},
-		{"↑↓ / jk", "move a line"},
+		{presentation.NavigationLabel(mode, "↑↓ / jk"), "move a line"},
 		{"ctrl+d / ctrl+u", "half a page"},
 		{"pgup / pgdn", "page"},
 		{"g / G", "top / bottom of the file"},
@@ -303,12 +311,12 @@ func reviewHelpSection(list keybind.Table, helpKey keybind.Binding) helpSection 
 		rows = append(rows, [2]string{label, "this key map"})
 	}
 	rows = append(rows, [2]string{"esc / q", "close the review"})
-	return helpSection{title: titledWith("review", list, keybind.Review), rows: rows}
+	return helpSection{title: titledWith("review", list, mode, keybind.Review), rows: rows}
 }
 
 func (s State) visibleSections(ctx Context) []helpSection {
 	if s.scope == Review {
-		return formatSections([]helpSection{reviewHelpSection(ctx.ListKeys, ctx.ReviewHelpKey)}, ctx.Glyphs.Mode)
+		return formatSections([]helpSection{reviewHelpSection(ctx.ListKeys, ctx.ReviewHelpKey, ctx.Glyphs.Mode)}, ctx.Glyphs.Mode)
 	}
 	return helpSections(ctx)
 }

@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -93,7 +92,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			}
 			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
 			footerHeight := lipgloss.Height(m.viewFooter())
-			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1, presentation.DefaultGlyphMode).text)
+			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost(), m.prefs.glyphMode)}}, m.layout.width-1, m.prefs.glyphMode).text)
 			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}

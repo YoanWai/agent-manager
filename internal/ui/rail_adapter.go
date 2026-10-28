@@ -307,6 +307,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 
 func (m *Model) railLegendContext() uirail.LegendContext {
 	return uirail.LegendContext{
+		GlyphMode:     m.prefs.glyphMode,
 		ListKeys:      m.services.listKeys,
 		EnterFocuses:  m.enterFocuses(),
 		MouseDisabled: m.prefs.mouseDisabled,
@@ -345,7 +346,7 @@ func (m *Model) viewLegend() legendSection {
 }
 
 func (m *Model) reorderFooter() legend {
-	return m.transientFooter(legendOf(m.rail.ReorderLegend()))
+	return m.transientFooter(legendOf(m.rail.ReorderLegend(m.prefs.glyphMode)))
 }
 
 func legendOf(legend uirail.Legend) legendSection {

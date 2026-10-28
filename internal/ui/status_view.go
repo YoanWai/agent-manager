@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 )
 
 // statusLine is the transient message: prompts, search, and self-dismissing
@@ -25,7 +27,7 @@ func (m *Model) statusLine() string {
 		return keyStyle().Render("copied ") +
 			subtleStyle().Render(fmt.Sprintf("%d chars to clipboard", focusStatus.CopiedChars))
 	case m.layout.split.resizeMode || m.layout.split.dragging:
-		hint := "←→ resize · drag divider · enter set · esc cancel"
+		hint := presentation.NavigationLabel(m.prefs.glyphMode, "←→ resize · drag divider · enter set · esc cancel")
 		if m.layout.split.dragging {
 			hint = "release to set · esc cancels"
 		}

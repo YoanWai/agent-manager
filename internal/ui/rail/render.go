@@ -181,7 +181,7 @@ func (r *renderer) entryLines(height int) []Line {
 	spare := height - len(lines)
 	if start > 0 && spare > 0 {
 		lines = append([]Line{{
-			Text:  r.palette.subtle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↑ %d more", start)),
+			Text:  r.palette.subtle.Render(strings.Repeat(" ", railInset) + presentation.OverflowLabel(r.ctx.GlyphMode, start, true)),
 			Hit:   rows[start].selection(),
 			HitOK: true,
 		}}, lines...)
@@ -189,7 +189,7 @@ func (r *renderer) entryLines(height int) []Line {
 	}
 	if end < len(rows) && spare > 0 {
 		lines = append(lines, Line{
-			Text:  r.palette.subtle.Render(strings.Repeat(" ", railInset) + fmt.Sprintf("↓ %d more", len(rows)-end)),
+			Text:  r.palette.subtle.Render(strings.Repeat(" ", railInset) + presentation.OverflowLabel(r.ctx.GlyphMode, len(rows)-end, false)),
 			Hit:   rows[end].selection(),
 			HitOK: true,
 		})
@@ -283,7 +283,7 @@ func (r renderer) emptyLines(height int) []string {
 }
 
 func (r renderer) listHint(action, label string) string {
-	glyph := r.ctx.ListKeys.Binding(action).Glyph("/")
+	glyph := r.ctx.ListKeys.Binding(action).Text("/", r.ctx.GlyphMode.Effective() == presentation.GlyphModeAdvanced)
 	if glyph == "" {
 		return ""
 	}

@@ -324,7 +324,7 @@ func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode,
 	closeKeys := "esc/q"
 	for _, key := range closeBinding(binding).Keys() {
 		if key.Tea() != "q" {
-			closeKeys += "/" + key.Glyph()
+			closeKeys += "/" + keybind.Keys(key).Text("", mode.Effective() == presentation.GlyphModeAdvanced)
 		}
 	}
 	if len(notices) == 0 {
@@ -337,18 +337,21 @@ func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode,
 	actions := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {closeKeys, ""}}...)
 	// Navigation shrinks, then drops, then the actions lose their words, so
 	// every key a click can run stays on the edge.
-	bare := [][2]string{{"↑↓", ""}}
+	bare := [][2]string{{presentation.NavigationLabel(mode, "↑↓"), ""}}
 	for _, action := range actions {
 		bare = append(bare, [2]string{action[0], ""})
 	}
 	for _, pairs := range [][][2]string{
-		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
-		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
+		append([][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
+		append([][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
 		actions,
 	} {
 		if lipgloss.Width(footText(pairs, mode)) <= inner+1 {
 			return pairs
 		}
+	}
+	if mode.Effective() == presentation.GlyphModeBasic && lipgloss.Width(footText(bare, mode)) > inner+1 {
+		return bare[1:]
 	}
 	return bare
 }
