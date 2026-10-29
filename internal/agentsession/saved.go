@@ -56,6 +56,9 @@ func (env Env) command(ctx context.Context, name string, args ...string) *exec.C
 		return cmd
 	}
 	for _, dir := range filepath.SplitList(env.get("PATH")) {
+		if !filepath.IsAbs(dir) {
+			continue
+		}
 		if path, err := exec.LookPath(filepath.Join(dir, name)); err == nil {
 			cmd.Path, cmd.Err = path, nil
 			return cmd
@@ -121,7 +124,7 @@ func grokHome(env Env) string {
 // grokSaved matches the cwd summary.json records, not its folder's encoding.
 func grokSaved(home, cwd, id string) (bool, error) {
 	if home == "" {
-		return false, nil
+		return false, errors.New("cannot find the grok home")
 	}
 	summaries, err := filepath.Glob(filepath.Join(home, "sessions", "*", id, "summary.json"))
 	if err != nil {
@@ -139,8 +142,8 @@ func grokSaved(home, cwd, id string) (bool, error) {
 				Cwd string `json:"cwd"`
 			} `json:"info"`
 		}
-		if json.Unmarshal(data, &summary) != nil {
-			continue
+		if err := json.Unmarshal(data, &summary); err != nil {
+			return false, fmt.Errorf("%s: %w", path, err)
 		}
 		if summary.Info.ID == id && resolvePath(summary.Info.Cwd) == wantCwd {
 			return true, nil

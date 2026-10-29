@@ -45,6 +45,10 @@ func TestSavedFindsAConversationOnlyWhereTheToolKeepsIt(t *testing.T) {
 			t.Errorf("%s found without the launch environment that points at its store", tc.id)
 		}
 	}
+	writeFile(t, filepath.Join(grokDir, "sessions", "x", "conv-torn", "summary.json"), "{", time.Now())
+	if _, err := Saved("", "grok", "conv-torn", Launch{Cwd: cwd, Env: env}); err == nil {
+		t.Error("a summary.json grok left unreadable reported no error")
+	}
 	if _, err := Saved("", "none", "conv-1", Launch{Cwd: cwd, Env: env}); !errors.Is(err, ErrNoStore) {
 		t.Fatalf("a tool with no store reader = %v, want ErrNoStore", err)
 	}
@@ -96,7 +100,7 @@ func TestEnvCommandRunsTheExecutableOnTheLaunchPath(t *testing.T) {
 	if err != nil || strings.TrimSpace(string(out)) != "launch" {
 		t.Fatalf("command ran %q (%v), want the launch PATH's opencode", out, err)
 	}
-	if out, err := (Env{"PATH": t.TempDir()}).command(context.Background(), "opencode").Output(); !errors.Is(err, exec.ErrNotFound) {
+	if out, err := (Env{"PATH": "relative" + string(os.PathListSeparator) + t.TempDir()}).command(context.Background(), "opencode").Output(); !errors.Is(err, exec.ErrNotFound) {
 		t.Fatalf("a launch PATH without opencode ran %q (%v), want not found", out, err)
 	}
 }

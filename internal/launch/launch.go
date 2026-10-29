@@ -192,6 +192,16 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 	return tool.Command
 }
 
+// Variables is the profile with the tool's own variables over it.
+func Variables(profile map[string]string, tool config.Tool) map[string]string {
+	env := maps.Clone(profile)
+	if env == nil {
+		env = map[string]string{}
+	}
+	maps.Copy(env, tool.Env)
+	return env
+}
+
 // Environment resolves the shell command and environment a session
 // launches with. Every session but a shell with no profile carries its id
 // so the rename subcommand can find it, and the launch it belongs to, which
@@ -222,12 +232,8 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	}
 	stamp := store.LaunchStamp(launchedAt)
 	launch := strconv.FormatInt(stamp, 10)
-	env := maps.Clone(profile)
-	if env == nil {
-		env = map[string]string{}
-	}
+	env := Variables(profile, tool)
 	env[hooks.EnvSessionID], env[hooks.EnvLaunch] = id, launch
-	maps.Copy(env, tool.Env)
 	if toolName == "grok" {
 		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 		if err := ensureGrokTerminalTheme(); err != nil {

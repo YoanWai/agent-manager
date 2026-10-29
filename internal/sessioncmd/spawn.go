@@ -3,7 +3,6 @@ package sessioncmd
 import (
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -181,11 +180,7 @@ func (r *runtime) resumable(req resumeRequest) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	env := agentsession.Env(maps.Clone(profile))
-	if env == nil {
-		env = agentsession.Env{}
-	}
-	maps.Copy(env, req.tool.Env)
+	env := agentsession.Env(launch.Variables(profile, req.tool))
 	saved, err := agentsession.Saved(req.tool.SessionStore, req.tool.SessionReport, resume, agentsession.Launch{Cwd: req.dir, Env: env, Profile: req.profile})
 	if errors.Is(err, agentsession.ErrNoStore) {
 		return resume, nil
