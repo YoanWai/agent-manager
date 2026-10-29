@@ -1,11 +1,13 @@
 package sessioncmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -40,6 +42,9 @@ type CreateSessionOptions struct {
 	// inherits the group's, then the caller's; a pointer to an empty string
 	// launches under the manager's environment alone.
 	Environment *string
+	// Resume is a conversation id of the tool's own to open instead of a new
+	// conversation; every later revive keeps it.
+	Resume string
 }
 
 func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session, error) {
@@ -85,6 +90,10 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		}
 		prompt = text
 	}
+	resume, err := runtime.resumable(toolName, opts.Resume, opts.Worktree)
+	if err != nil {
+		return Session{}, err
+	}
 	name := strings.TrimSpace(opts.Name)
 	autoNamed := name == ""
 	id := uuid.NewString()[:8]
@@ -92,9 +101,11 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		name = toolName + "-" + id[:4]
 	}
 
-	wantWorktree, err := runtime.worktreeWanted(group, opts.Worktree)
-	if err != nil {
-		return Session{}, err
+	wantWorktree := false
+	if resume == "" {
+		if wantWorktree, err = runtime.worktreeWanted(group, opts.Worktree); err != nil {
+			return Session{}, err
+		}
 	}
 	base, err := runtime.groupBase(group)
 	if err != nil {
@@ -124,13 +135,33 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	launched, err := lifecycle.Spawn(SpawnRequest{
 		Session:  store.Session{ID: id, Name: name, Tool: toolName, Cwd: dir, Group: group, Choice: choice, Environment: environment},
 		Tool:     chosen,
-		Plan:     launch.Assemble(toolName, chosen, prompt, autoNamed, proactive),
+		Plan:     launch.Assemble(toolName, chosen, prompt, resume, autoNamed, proactive),
 		Worktree: worktree,
 	})
 	if err != nil {
 		return Session{}, err
 	}
 	return runtime.sessionInfo(launched.Session, true, false), nil
+}
+
+// resumable checks a conversation id a spawn resumes. The conversation opens
+// in the directory it was saved in, which a fresh worktree would not be, and
+// one row per conversation keeps a revive from landing in another row's.
+func (r *runtime) resumable(toolName, raw string, worktree *bool) (string, error) {
+	resume := strings.TrimSpace(raw)
+	if resume == "" {
+		return "", nil
+	}
+	if !agentsession.ValidSessionID(resume) {
+		return "", fmt.Errorf("resume %q is not a conversation id", resume)
+	}
+	if worktree != nil && *worktree {
+		return "", errors.New("a resumed conversation opens in the directory it was saved in; omit worktree or pass false")
+	}
+	if err := r.store.ConversationFree(toolName, resume); err != nil {
+		return "", err
+	}
+	return resume, nil
 }
 
 // toolFor is the CLI a spawn runs when it names none. A terminal or a script

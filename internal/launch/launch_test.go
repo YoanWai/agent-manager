@@ -63,7 +63,7 @@ func TestWithPromptComposesPerToolStyle(t *testing.T) {
 
 func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 	flagged := config.Tool{Command: "claude", PromptFlag: "-p", SessionIDFlag: "--session-id"}
-	plan := Assemble("claude", flagged, "build the api", true, true)
+	plan := Assemble("claude", flagged, "build the api", "", true, true)
 	if !strings.HasPrefix(plan.Command, "claude -p '"+RenameDirective) {
 		t.Fatalf("auto-named flagged command = %q", plan.Command)
 	}
@@ -74,13 +74,13 @@ func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 		t.Fatalf("an embeddable directive needs no pending input, got %v", plan.PendingInputs)
 	}
 
-	deferred := Assemble("claude", flagged, "/compact the notes", true, true)
+	deferred := Assemble("claude", flagged, "/compact the notes", "", true, true)
 	if len(deferred.PendingInputs) != 1 || deferred.PendingInputs[0] != DeferredRenameDirective {
 		t.Fatalf("slash-command launch should defer the directive, got %v", deferred.PendingInputs)
 	}
 
 	sent := config.Tool{Command: "hermes", PromptMode: "send"}
-	typed := Assemble("hermes", sent, "build the api", false, true)
+	typed := Assemble("hermes", sent, "build the api", "", false, true)
 	if typed.Command != "hermes" {
 		t.Fatalf("send-mode command = %q", typed.Command)
 	}
@@ -101,7 +101,7 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 		{proactive: false, note: OnRequestCoordinationNote},
 	} {
 		noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
-		carried := Assemble("pi", noClient, "build the api", false, mode.proactive)
+		carried := Assemble("pi", noClient, "build the api", "", false, mode.proactive)
 		if !strings.Contains(carried.Command, mode.note) {
 			t.Fatalf("a tool with no MCP client should be pointed at the subcommands, got %q", carried.Command)
 		}
@@ -110,22 +110,22 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 		}
 
 		withClient := config.Tool{Command: "claude", PromptFlag: "-p"}
-		if plan := Assemble("claude", withClient, "build the api", false, mode.proactive); strings.Contains(plan.Command, mode.note) {
+		if plan := Assemble("claude", withClient, "build the api", "", false, mode.proactive); strings.Contains(plan.Command, mode.note) {
 			t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
 		}
 
-		commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", false, mode.proactive)
+		commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", "", false, mode.proactive)
 		if strings.Contains(commandCode.Command, mode.note) {
 			t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
 		}
 
-		deferred := Assemble("pi", noClient, "/compact the notes", true, mode.proactive)
+		deferred := Assemble("pi", noClient, "/compact the notes", "", true, mode.proactive)
 		if len(deferred.PendingInputs) != 2 ||
 			deferred.PendingInputs[0] != DeferredRenameDirective || deferred.PendingInputs[1] != mode.note {
 			t.Fatalf("a launch needing both should queue them in reading order, got %v", deferred.PendingInputs)
 		}
 
-		promptless := Assemble("pi", noClient, "", false, mode.proactive)
+		promptless := Assemble("pi", noClient, "", "", false, mode.proactive)
 		if promptless.Command != noClient.Command {
 			t.Fatalf("a promptless launch command should stay clean, got %q", promptless.Command)
 		}
@@ -507,7 +507,7 @@ func TestEnvironmentKeepsGrokOffTheSharedLeader(t *testing.T) {
 func TestAssembleCarriesTheDirectiveOverAPastedImagePath(t *testing.T) {
 	flagged := config.Tool{Command: "claude", PromptFlag: "-p"}
 	prompt := "/var/folders/_b/T/agent-manager-pastes/paste-268.png why is this session working?"
-	plan := Assemble("claude", flagged, prompt, true, true)
+	plan := Assemble("claude", flagged, prompt, "", true, true)
 	if len(plan.PendingInputs) != 0 {
 		t.Fatalf("a prompt led by an image path is no slash command, got %v", plan.PendingInputs)
 	}
@@ -525,7 +525,7 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := cfg.Tools["muse"]
-	plan := Assemble("muse", tool, "fix the bug", false, true)
+	plan := Assemble("muse", tool, "fix the bug", "", false, true)
 	// Muse carries the MCP tools, whose descriptions stand in for the note.
 	if !strings.HasPrefix(plan.Command, "muse '") || strings.Contains(plan.Command, ProactiveCoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
 		t.Fatalf("launch = %+v", plan)
@@ -547,7 +547,7 @@ func TestAntigravityLaunchAndRevive(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := cfg.Tools["antigravity"]
-	plan := Assemble("antigravity", tool, "fix the bug", false, true)
+	plan := Assemble("antigravity", tool, "fix the bug", "", false, true)
 	// agy carries the MCP tools, whose descriptions stand in for the note.
 	if !strings.HasPrefix(plan.Command, "agy -i '") || !strings.Contains(plan.Command, "fix the bug") || strings.Contains(plan.Command, ProactiveCoordinationNote) {
 		t.Fatalf("launch = %+v", plan)
@@ -604,4 +604,26 @@ func executableBehindLink(t *testing.T) (exe, link string) {
 		t.Skipf("no symlinks here: %v", err)
 	}
 	return exe, link
+}
+
+func TestAssembleResumesEveryAgentCLIByID(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range cfg.AgentToolNames() {
+		tool := cfg.Tools[name]
+		want := strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", "'conv-1'")
+		if !strings.Contains(tool.ResumeByIDCommand, "{id}") {
+			t.Fatalf("%s has no resume_by_id_command to resume with: %q", name, tool.ResumeByIDCommand)
+		}
+		quiet := Assemble(name, tool, "", "conv-1", true, true)
+		if quiet.Command != want || quiet.AgentSessionID != "conv-1" || quiet.LaunchPrompt != "" || len(quiet.PendingInputs) != 0 {
+			t.Fatalf("%s promptless resume = %+v, want %q and nothing sent", name, quiet, want)
+		}
+		prompted := Assemble(name, tool, "pick up where we left off", "conv-1", false, true)
+		if prompted.Command != want || prompted.LaunchPrompt != "" || len(prompted.PendingInputs) != 1 || !strings.HasSuffix(prompted.PendingInputs[0], "pick up where we left off") {
+			t.Fatalf("%s prompted resume = %+v, want the prompt typed in", name, prompted)
+		}
+	}
 }

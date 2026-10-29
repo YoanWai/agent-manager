@@ -201,9 +201,12 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 func TestSpawnPassesOnlyTheFlagsGiven(t *testing.T) {
 	out := &bytes.Buffer{}
 	fake := &fakeSessions{session: sampleSession()}
-	args := []string{"--name", "api-worker", "--prompt", "build the api", "--tool", "claude", "--directory", "/repo", "--model", "sonnet", "--effort", "high", "--profile", "work"}
+	args := []string{"--name", "api-worker", "--prompt", "build the api", "--tool", "claude", "--directory", "/repo", "--model", "sonnet", "--effort", "high", "--profile", "work", "--resume", "conv-1"}
 	if err := runSpawn(out, fake, args, "cafe0001"); err != nil {
 		t.Fatalf("spawn: %v", err)
+	}
+	if fake.opts.Resume != "conv-1" {
+		t.Fatalf("spawn resume = %q", fake.opts.Resume)
 	}
 	if fake.opts.Name != "api-worker" || fake.opts.Prompt != "build the api" || fake.opts.Tool != "claude" || fake.opts.Directory != "/repo" {
 		t.Fatalf("spawn opts = %+v", fake.opts)

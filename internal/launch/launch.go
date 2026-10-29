@@ -128,11 +128,15 @@ type Plan struct {
 // pane when the tool's prompt mode is "send". Tools that accept a chosen
 // session id launch with one, so a later revive resumes this exact
 // conversation rather than the directory's most recent one; tools without
-// the flag mint their own id, captured after launch by the poller.
-func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed, proactive bool) Plan {
+// the flag mint their own id, captured after launch by the poller. A
+// resumeID opens that existing conversation instead of a new one.
+func Assemble(toolName string, tool config.Tool, rawPrompt, resumeID string, autoNamed, proactive bool) Plan {
 	note := coordinationNote(toolName, tool, proactive)
 	carried := DirectiveEmbeddable(rawPrompt)
 	prompt := Prompt(note, rawPrompt, autoNamed)
+	if resumeID != "" {
+		return resumedPlan(tool, resumeID, prompt)
+	}
 	plan := Plan{Command: WithPrompt(tool, tool.Command, prompt)}
 	if tool.PromptMode != "send" {
 		plan.LaunchPrompt = prompt
@@ -149,6 +153,17 @@ func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed, pr
 	if tool.SessionIDFlag != "" {
 		plan.AgentSessionID = uuid.NewString()
 		plan.Command += " " + tool.SessionIDFlag + " " + plan.AgentSessionID
+	}
+	return plan
+}
+
+// resumedPlan types the prompt in once the agent is up rather than appending
+// it to resume_by_id_command, whose shape differs per CLI. Without a prompt
+// nothing is sent, so an imported conversation gains no turn nobody asked for.
+func resumedPlan(tool config.Tool, resumeID, prompt string) Plan {
+	plan := Plan{Command: ReviveCommand(tool, resumeID), AgentSessionID: resumeID}
+	if prompt != "" {
+		plan.PendingInputs = []string{prompt}
 	}
 	return plan
 }

@@ -61,6 +61,7 @@ func cleanSession(s sessioncmd.Session) (sessioncmd.Session, error) {
 	s.Directory = cleanText(s.Directory)
 	s.Status = cleanText(s.Status)
 	s.Branch = cleanText(s.Branch)
+	s.AgentSessionID = cleanText(s.AgentSessionID)
 	return s, nil
 }
 

@@ -149,6 +149,9 @@ func (s *Store) createSession(sess Session, anchorID string, requireActive bool)
 		if err := validateActivePlacement(tx, sess, anchorID); err != nil {
 			return err
 		}
+		if err := conversationFree(tx, sess.Tool, sess.AgentSessionID); err != nil {
+			return err
+		}
 	}
 	_, err = tx.Exec(
 		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, environment, sort_order)

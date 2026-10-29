@@ -1,6 +1,7 @@
 package sessioncmd
 
 import (
+	"fmt"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"os/exec"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
@@ -110,8 +112,8 @@ func TestSessionsCreateRejectsShellsUnknownToolsAndFlagPrompts(t *testing.T) {
 	}
 }
 
-func TestSessionsCreateOpensItsOwnWorktreeWhenAsked(t *testing.T) {
-	h := newSessionHarness(t)
+func newGitRepo(t *testing.T) string {
+	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not installed")
 	}
@@ -128,6 +130,12 @@ func TestSessionsCreateOpensItsOwnWorktreeWhenAsked(t *testing.T) {
 			t.Skipf("git %v: %v: %s", args, err, out)
 		}
 	}
+	return repo
+}
+
+func TestSessionsCreateOpensItsOwnWorktreeWhenAsked(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
 	wanted := true
 	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{
 		Name:      "worktree-worker",
@@ -149,6 +157,86 @@ func TestSessionsCreateOpensItsOwnWorktreeWhenAsked(t *testing.T) {
 	}
 	if stored.WorktreeRepo == "" || stored.WorktreeBranch != created.Branch {
 		t.Fatalf("stored worktree = %+v", stored)
+	}
+}
+
+func TestSessionsCreateResumesAConversationThroughRevive(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "imported", Tool: "reporter", Resume: "conv-saved"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.AgentSessionID != "conv-saved" {
+		t.Fatalf("created = %+v, want the resumed conversation id", created)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, "resumed conv-saved launch=0")
+	stored, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.PendingInputs) != 0 || stored.LaunchPrompt != "" {
+		t.Fatalf("a promptless resume must send nothing, got inputs %q and prompt %q", stored.PendingInputs, stored.LaunchPrompt)
+	}
+	if _, err := h.sessions.Kill(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Kill: %v", err)
+	}
+	if _, err := h.sessions.Revive(h.caller.ID, created.ID); err != nil {
+		t.Fatalf("Revive: %v", err)
+	}
+	if stored, err = h.store.Get(created.ID); err != nil {
+		t.Fatal(err)
+	}
+	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, fmt.Sprintf("resumed conv-saved launch=%d", store.LaunchStamp(stored.AgentLaunchedAt)))
+}
+
+func TestSessionsCreateTypesAResumedPromptIn(t *testing.T) {
+	h := newSessionHarness(t)
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "imported", Tool: "reporter", Resume: "conv-saved", Prompt: "say where we left off"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	stored, err := h.store.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.LaunchPrompt != "" || len(stored.PendingInputs) != 1 || !strings.HasSuffix(stored.PendingInputs[0], "say where we left off") {
+		t.Fatalf("prompt should wait to be typed in, got inputs %q and launch prompt %q", stored.PendingInputs, stored.LaunchPrompt)
+	}
+}
+
+func TestSessionsCreateResumesWhereTheConversationWasSaved(t *testing.T) {
+	h := newSessionHarness(t)
+	repo := newGitRepo(t)
+	if err := h.store.SetSetting(worktreeSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "imported", Tool: "reporter", Directory: repo, Resume: "conv-saved"})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if created.Branch != "" || !sameTerminalPath(created.Directory, repo) {
+		t.Fatalf("resumed session = %+v, want the saved directory without a worktree", created)
+	}
+}
+
+func TestSessionsCreateRefusesAResumeItCannotHonour(t *testing.T) {
+	h := newSessionHarness(t)
+	if _, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "first", Tool: "reporter", Resume: "conv-saved"}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	worktree := true
+	for _, tc := range []struct {
+		opts CreateSessionOptions
+		want string
+	}{
+		{CreateSessionOptions{Tool: "reporter", Resume: "conv; rm -rf ~"}, "not a conversation id"},
+		{CreateSessionOptions{Tool: "reporter", Resume: "conv-other", Worktree: &worktree}, "directory it was saved in"},
+		{CreateSessionOptions{Tool: "reporter", Resume: "conv-saved"}, "already session"},
+	} {
+		if _, err := h.sessions.Create(h.caller.ID, tc.opts); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("Create(%+v) error = %v, want %q", tc.opts, err, tc.want)
+		}
 	}
 }
 

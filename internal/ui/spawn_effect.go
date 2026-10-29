@@ -181,7 +181,7 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 		if err != nil {
 			return result, err
 		}
-		plan = launch.Assemble(request.toolName, tool, request.prompt, request.autoNamed, proactive)
+		plan = launch.Assemble(request.toolName, tool, request.prompt, "", request.autoNamed, proactive)
 	}
 	result.plan = &plan
 	id := request.id

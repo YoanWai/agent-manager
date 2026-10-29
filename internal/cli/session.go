@@ -16,7 +16,7 @@ import (
 const (
 	usageSessions      = "sessions [--json]"
 	usageSnapshot      = "snapshot --json"
-	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--env <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
+	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--env <name>] [--group <path>] [--directory <path>] [--worktree] [--resume <id>] [--json]"
 	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--from <name>] [--json]`
 	usageType          = `type <session-id> "<prompt>" [--json]`
 	usageRead          = "read <session-id> [--styled] [--json]"
@@ -128,6 +128,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 	group := set.String("group", "", "existing group path to file it under; pass an empty string for the root group")
 	directory := set.String("directory", "", "existing directory it works in; defaults to yours, or to the group's inherited path")
 	worktree := set.Bool("worktree", false, "give it its own git worktree and branch, which is what keeps parallel agents off each other's files")
+	resume := set.String("resume", "", "conversation id the CLI saved earlier, to open instead of a new one; pass the directory it was saved in")
 	asJSON := jsonFlag(set)
 	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
 		return err
@@ -141,6 +142,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 		Model:     *model,
 		Effort:    *effort,
 		Profile:   *profile,
+		Resume:    *resume,
 	}
 	// An omitted group inherits this session's, and an omitted worktree the
 	// group's default, so only a flag the caller actually typed is passed on.

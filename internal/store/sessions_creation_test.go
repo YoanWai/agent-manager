@@ -67,3 +67,29 @@ func TestCreateActiveSessionValidatesResolvedPlacement(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateActiveSessionKeepsAConversationOnOneRow(t *testing.T) {
+	st := newTestStore(t)
+	first := sample("first", "")
+	first.Tool, first.AgentSessionID = "codex", "conv-1"
+	if err := st.CreateActiveSession(first); err != nil {
+		t.Fatal(err)
+	}
+	second := sample("second", "")
+	second.Tool, second.AgentSessionID = "codex", "conv-1"
+	if err := st.CreateActiveSession(second); err == nil || !strings.Contains(err.Error(), "already session first") {
+		t.Fatalf("second row on the same conversation = %v", err)
+	}
+	other := sample("other", "")
+	other.Tool, other.AgentSessionID = "claude", "conv-1"
+	if err := st.CreateActiveSession(other); err != nil {
+		t.Fatalf("another CLI's conversation may share the id: %v", err)
+	}
+	for _, id := range []string{"fresh-a", "fresh-b"} {
+		fresh := sample(id, "")
+		fresh.Tool = "codex"
+		if err := st.CreateActiveSession(fresh); err != nil {
+			t.Fatalf("rows with no conversation yet: %v", err)
+		}
+	}
+}
