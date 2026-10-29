@@ -35,7 +35,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=for-the-badge&label=license&labelColor=1f2328&color=59636e" alt="licence"></a>
 </p>
 
-![five prompts to five fresh agents without moving the cursor, one per CLI, the first on Opus at high effort picked in the prompt bar, then a session's diff opened in review](docs/demo.gif)
+![three agents spawned from the quick prompt bar, one each on Claude Code, Codex and Gemini CLI, tab picking the CLI each time, each new agent landing in the list](docs/demo.gif)
 
 Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side. Each tool runs in its own persistent tmux session.
 
