@@ -40,6 +40,7 @@ func ModelNote(h ChoiceHost, toolName string, st Styles) (string, bool) {
 }
 
 func (ch *Choice) EffortRow(h ChoiceHost, toolName string, st Styles) (value string, shown, active bool) {
+	chrome := presentation.ChromeFor(st.GlyphMode)
 	state, supported := choiceAnswer(h, toolName)
 	if !supported || !h.ChoiceCaps(toolName).Efforts {
 		return st.Subtle.Render("not supported by " + toolName), true, false
@@ -61,7 +62,7 @@ func (ch *Choice) EffortRow(h ChoiceHost, toolName string, st Styles) (value str
 	if level != "" {
 		shownLevel = st.Value.Render(level)
 	}
-	value = st.Subtle.Render("◂ ") + shownLevel + st.Subtle.Render(" ▸")
+	value = st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + shownLevel + st.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	if model.DefaultEffort != "" {
 		value += "  " + st.Subtle.Render("default is "+model.DefaultEffort)
 	}
@@ -69,6 +70,7 @@ func (ch *Choice) EffortRow(h ChoiceHost, toolName string, st Styles) (value str
 }
 
 func (ch *Choice) ProfileRow(h ChoiceHost, toolName string, st Styles) (string, bool) {
+	chrome := presentation.ChromeFor(st.GlyphMode)
 	profiles := choiceProfiles(h, toolName)
 	if len(profiles) == 0 {
 		return "", false
@@ -81,7 +83,7 @@ func (ch *Choice) ProfileRow(h ChoiceHost, toolName string, st Styles) (string, 
 			value += "  " + st.Subtle.Render(profile.Detail)
 		}
 	}
-	return st.Subtle.Render("◂ ") + value + st.Subtle.Render(" ▸"), true
+	return st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + value + st.Subtle.Render(" "+chrome.ChoiceRightGlyph), true
 }
 
 func (ch *Choice) FilterView(st Styles) string { return st.Input(ch.filter) }
@@ -161,7 +163,7 @@ func scrollToShow(offset, highlight, total, visible int, entries []int) int {
 func scrollBar(offset, total, visible int, st Styles) []string {
 	thumb := max(visible*visible/total, 1)
 	start := offset * (visible - thumb) / (total - visible)
-	track, lit := st.Subtle.Render("│"), lipgloss.NewStyle().Foreground(st.Accent).Render("┃")
+	track, lit := st.Subtle.Render("│"), lipgloss.NewStyle().Foreground(st.Accent).Render(presentation.ChromeFor(st.GlyphMode).ScrollThumbGlyph)
 	bar := make([]string, visible)
 	for i := range bar {
 		bar[i] = track

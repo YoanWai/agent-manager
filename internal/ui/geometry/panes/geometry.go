@@ -115,9 +115,9 @@ func Load(st Store) float64 {
 // RatioText is a ratio as the store keeps it, fixed to four places.
 func RatioText(ratio float64) string { return strconv.FormatFloat(ratio, 'f', 4, 64) }
 
-// NoStore is the failure a ratio save reports when the manager was built
+// ErrNoStore is the failure a ratio save reports when the manager was built
 // without a settings store.
-var NoStore = errors.New("save split ratio: store is unavailable")
+var ErrNoStore = errors.New("save split ratio: store is unavailable")
 
 func SaveRatio(st Store, value string) error {
 	if err := st.SetSetting(uigeometry.SplitRatioSetting, value); err != nil {

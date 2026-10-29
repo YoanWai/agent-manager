@@ -290,16 +290,6 @@ func setRailSessionStatus(m *Model, id, state string) {
 	m.rebuildRows()
 }
 
-func setRailSessionWorktreeBranch(m *Model, id, branch string) {
-	for index := range m.workspace.sessions {
-		if m.workspace.sessions[index].ID == id {
-			m.workspace.sessions[index].WorktreeBranch = branch
-			break
-		}
-	}
-	m.rebuildRows()
-}
-
 func setRailSessionCwd(m *Model, id, cwd string) {
 	for index := range m.workspace.sessions {
 		if m.workspace.sessions[index].ID == id {

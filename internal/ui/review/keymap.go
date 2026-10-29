@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 )
 
@@ -146,12 +147,21 @@ func (b binding) helpKey() string {
 	return strings.ReplaceAll(b.legendKey(), "/", " / ")
 }
 
-func HelpRows() [][2]string {
+// HelpRows are the ? map's rows. The help row names the configured help
+// key, less any key Review already answers to.
+func HelpRows(helpKey keybind.Binding) [][2]string {
 	var rows [][2]string
 	for _, b := range keymap {
-		if b.Long != "" {
-			rows = append(rows, [2]string{b.helpKey(), b.Long})
+		if b.Long == "" {
+			continue
 		}
+		key := b.helpKey()
+		if b.Action == actHelp {
+			if key = EffectiveHelpBinding(helpKey).Label(); key == "" {
+				continue
+			}
+		}
+		rows = append(rows, [2]string{key, b.Long})
 	}
 	return rows
 }

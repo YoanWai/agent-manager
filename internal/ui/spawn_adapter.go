@@ -41,8 +41,10 @@ func (m *Model) openFormWithReader(reader uipersist.Reader) tea.Cmd {
 	m.forgetWorktreeCapability()
 	f.SetDir(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	f.SeedWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
+	f.Env().Seed(m.workspace.envProfiles, m.groupEnv(m.selectedGroupPath()))
 	if target, ok := m.remoteTarget(); ok {
 		f.AimRemote(spawn.Remote{Host: target.host, Group: target.group})
+		f.Env().Seed(nil, "")
 		f.RestartChoice(m.spawnHost())
 	}
 	catalog := m.ensureCatalog(tools[toolIndex])
@@ -130,6 +132,7 @@ func (m *Model) moveGroupCursor(delta int) tea.Cmd {
 		f.SetDir(m.capturedGroupDefaultDir(f.GroupPath()))
 	}
 	f.DefaultWorktree(m.cachedSpawnWorktreeDefault(f.GroupPath()))
+	f.Env().Default(m.groupEnv(f.GroupPath()))
 	return m.formWorktreeProbeCmd(false)
 }
 
@@ -424,6 +427,7 @@ func (m *Model) applyGroupEffect(request uilaunch.GroupRequest, result uilaunch.
 	m.workspace.groupPaths[result.Path] = result.Dir
 	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, result.Path, result.Worktree)
 	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, result.Path, request.Base)
+	m.workspace.groupEnvs = setGroupChoice(m.workspace.groupEnvs, result.Path, request.Env)
 	m.rebuildRows()
 	// Presentation (closing the form, revealing and selecting the new group)
 	// lands only when the dispatching group form is still the dialog on
@@ -433,6 +437,7 @@ func (m *Model) applyGroupEffect(request uilaunch.GroupRequest, result uilaunch.
 	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok && s.Gen() == request.Gen && s.Name() == request.DraftName && s.Dir() == request.DraftDir {
 		m.clearErr()
 		m.Pop()
+		m.rail.SetHideEmptyGroups(false)
 		m.queueRail(m.rail.RevealGroup(result.Path).Mutations, 0, true)
 	}
 	return m.refreshCmd()
@@ -530,12 +535,14 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 	// New sessions start as starting, which attention excludes; clear so the
 	// row the spawn just created is on screen.
 	m.rail.ClearStatusFilter()
+	reveal := false
 	switch request.Kind {
 	case uilaunch.Form:
 		// A form opened later is a newer dialog the completion must not
 		// close; only the one that dispatched this spawn is closed.
 		if m.formDraftHolds(request.ComposerGen, request.Draft, request.DraftName, request.DraftDir) {
 			m.closeForm()
+			reveal = true
 		}
 	case uilaunch.Quick:
 		if q, ok := m.quickFor(request.ComposerGen); ok {
@@ -543,9 +550,14 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 		}
 	}
 	m.rebuildRows()
+	if reveal {
+		m.queueRail(m.rail.RevealGroup(sess.Group).Mutations, 0, true)
+	}
+	if reveal || request.Kind == uilaunch.Shell {
+		m.focusSession(sess.ID)
+	}
 	if request.Kind == uilaunch.Shell {
 		m.ledger.lifecycle.TerminalKeyAt = time.Now()
-		m.focusSession(sess.ID)
 	}
 }
 

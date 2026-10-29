@@ -724,3 +724,20 @@ func TestLinkPageMsgHandsTheTerminalOver(t *testing.T) {
 		t.Fatal("a link page message started nothing")
 	}
 }
+
+func TestTerminalRefusesParentArchivedAfterDispatch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	createSession(t, m, "parent", dir, "")
+	m.selectSessionRow(t, "parent")
+	parent, _ := m.selected()
+	_, cmd := m.openTerminal()
+	if err := m.services.store.SetArchived(parent.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	if shellCount(m) != 0 {
+		t.Fatal("queued terminal launched beneath an archived parent")
+	}
+}

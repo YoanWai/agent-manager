@@ -149,7 +149,7 @@ func TestComposerTextPasteDroppedWhenItsBoxIsClosed(t *testing.T) {
 	gen := q.Gen
 	m.closeQuick()
 
-	m = applyMsg(t, m, composer.PasteTextMsg{
+	applyMsg(t, m, composer.PasteTextMsg{
 		Target: composer.Quick,
 		Gen:    gen,
 		Inner:  tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("late")},

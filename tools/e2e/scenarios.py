@@ -96,7 +96,6 @@ def seed_store(sandbox):
 
 def start_manager(sandbox, binary, session='scen'):
     sandbox.start_manager(session, sandbox.home, binary)
-    settle_messages(sandbox, session + ':0.0')
     frame(sandbox, 'startup', 'A G E N T')
     key(sandbox, 'Escape')
 

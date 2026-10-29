@@ -26,7 +26,7 @@ func (h quickBarHost) Target() (uiquick.Target, bool) {
 	if !ok {
 		return uiquick.Target{}, false
 	}
-	return uiquick.Target{Group: entry.group, IsGroup: entry.isGroup}, true
+	return uiquick.Target{Group: entry.group, IsGroup: entry.isGroup, Env: h.m.groupEnv(entry.group)}, true
 }
 
 func (m *Model) quickWorktreeOn() bool {

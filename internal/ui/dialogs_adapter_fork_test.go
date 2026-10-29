@@ -1489,3 +1489,61 @@ func TestForkRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 		t.Fatal("repeat submit accepted a second fork")
 	}
 }
+
+func TestForkRefusesSourceArchivedAfterDispatch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "source", t.TempDir(), "")
+	forkFileTool(t, m, "claude")
+	m.selectSessionRow(t, "source")
+	source := railSelectedSession(m)
+	if err := m.services.store.SetAgentSessionID(source.ID, "conversation"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == source.ID {
+			m.workspace.sessions[i].AgentSessionID = "conversation"
+		}
+	}
+	m.rebuildRows()
+	m, cmd := submitForkDialog(t, m, "child")
+	if err := m.services.store.SetArchived(source.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	if _, found := forkRow(m, "child"); found {
+		t.Fatal("queued fork launched from an archived source")
+	}
+}
+
+func TestForkRefusesSourceMovedIntoArchivedGroupAfterDispatch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "source", t.TempDir(), "")
+	forkFileTool(t, m, "claude")
+	m.selectSessionRow(t, "source")
+	source := railSelectedSession(m)
+	if err := m.services.store.SetAgentSessionID(source.ID, "conversation"); err != nil {
+		t.Fatal(err)
+	}
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID == source.ID {
+			m.workspace.sessions[i].AgentSessionID = "conversation"
+		}
+	}
+	m.rebuildRows()
+	m, cmd := submitForkDialog(t, m, "child")
+	if err := m.services.store.CreateGroup("closed", source.Cwd); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.store.SetGroupArchived("closed", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.store.MoveSession(source.ID, "closed"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	if _, found := forkRow(m, "child"); found {
+		t.Fatal("queued fork launched from an archived source")
+	}
+}

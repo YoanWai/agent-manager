@@ -79,7 +79,9 @@ func (m *Model) handInstallScreenTo(sessionID string) tea.Cmd {
 		q.Attachments = nil
 	}
 	m.closeLaunchHint()
-	m.rail.ClearStatusFilter()
+	if sess, ok := m.sessionByID(sessionID); ok {
+		m.queueRail(m.rail.RevealGroup(sess.Group).Mutations, 0, true)
+	}
 	m.focusSession(sessionID)
 	return cleanup
 }
@@ -191,6 +193,7 @@ func (s effectServices) install() uiinstall.Services {
 		Lifecycle: s.lifecycle,
 		Hooks:     s.hooks,
 		Driver:    s.driver,
+		Store:     s.store,
 		Tools:     s.cfg.Tools,
 	}
 }

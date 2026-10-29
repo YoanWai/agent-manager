@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -15,7 +16,7 @@ const railInset = uiframe.RailGutter - 1
 
 // ComputerLines is the machine block docked at the rail's foot: a label and
 // one thin meter per resource.
-func ComputerLines(r Readings, net Net, width int) []string {
+func ComputerLines(r Readings, net Net, width int, mode presentation.GlyphMode) []string {
 	pad := strings.Repeat(" ", railInset)
 	barWidth := MeterWidth(width)
 
@@ -31,7 +32,7 @@ func ComputerLines(r Readings, net Net, width int) []string {
 		if !ok {
 			return pad + uitheme.LabelStyle().Width(5).Render(label) + uitheme.SubtleStyle().Render("n/a")
 		}
-		return render(label, percent, extra, uitheme.Gauge(percent, barWidth, false))
+		return render(label, percent, extra, uitheme.Gauge(percent, barWidth, false, mode))
 	}
 
 	lines := []string{pad + uitheme.SubtleStyle().Render("computer")}
@@ -63,7 +64,7 @@ func ComputerLines(r Readings, net Net, width int) []string {
 			extra = "charging"
 		}
 		lines = append(lines, render("batt", r.BatteryPercent, extra,
-			uitheme.Gauge(r.BatteryPercent, barWidth, true)))
+			uitheme.Gauge(r.BatteryPercent, barWidth, true, mode)))
 	}
 	if temps := tempReadings(r); temps != "" {
 		lines = append(lines, pad+uitheme.LabelStyle().Width(5).Render("temp")+temps)

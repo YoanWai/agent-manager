@@ -106,7 +106,7 @@ func TestSpliceKeepsWidth(t *testing.T) {
 // when the column has no room for one.
 func TestToastFitsItsColumnAndGivesUpWhenItCannot(t *testing.T) {
 	tones := testTones()
-	rows := Toast("already up to date", 200, tones)
+	rows := Toast("already up to date", 200, tones, presentation.GlyphModeAdvanced)
 	if len(rows) == 0 {
 		t.Fatal("a wide column should paint the card")
 	}
@@ -119,10 +119,10 @@ func TestToastFitsItsColumnAndGivesUpWhenItCannot(t *testing.T) {
 			t.Fatalf("card row is %d wide, want %d", got, width)
 		}
 	}
-	if got := Toast("already up to date", MinWidth+Margin-1, tones); len(got) != 0 {
+	if got := Toast("already up to date", MinWidth+Margin-1, tones, presentation.GlyphModeAdvanced); len(got) != 0 {
 		t.Fatalf("a column too narrow for a card painted %d rows", len(got))
 	}
-	if got := Toast("", 200, tones); got != nil {
+	if got := Toast("", 200, tones, presentation.GlyphModeAdvanced); got != nil {
 		t.Fatalf("nothing to say painted %d rows", len(got))
 	}
 }
@@ -130,7 +130,7 @@ func TestToastFitsItsColumnAndGivesUpWhenItCannot(t *testing.T) {
 // A long message wraps inside the card's widest width instead of running
 // past the frame's right edge.
 func TestToastWrapsAtItsWidest(t *testing.T) {
-	rows := Toast(strings.Repeat("worktree kept (has work) ", 4), 200, testTones())
+	rows := Toast(strings.Repeat("worktree kept (has work) ", 4), 200, testTones(), presentation.GlyphModeAdvanced)
 	if len(rows) < 3 {
 		t.Fatalf("a long message stayed on one row: %q", rows)
 	}

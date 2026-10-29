@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -263,5 +264,32 @@ func TestHostFoldsFollowTheirConnection(t *testing.T) {
 	}
 	if got := decision.Mutations[0].Collapsed; !slices.Equal(got, []string{"work"}) {
 		t.Fatalf("local folds changed: %v", got)
+	}
+}
+
+func TestCompatibleConnectionFoldsUseTheSelectedMarks(t *testing.T) {
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		ctx := hostsContext(40, 24)
+		ctx.GlyphMode = mode
+		model := New(nil)
+		model.Reconcile(hostsSnapshot(HostOnline))
+		r := renderer{model: model, ctx: ctx, palette: newPalette(ctx.Theme)}
+		for _, folded := range []bool{false, true} {
+			r.model.hostFolds[HostFold{Host: "box"}] = folded
+			got := ansi.Strip(r.renderConnection(treeRow{host: "box", kind: ConnectionRow}, false, 40, "", "").text)
+			want := "v"
+			if folded {
+				want = ">"
+			}
+			if mode == presentation.GlyphModeAdvanced {
+				want = "▾"
+				if folded {
+					want = "▸"
+				}
+			}
+			if !strings.HasPrefix(got, want+" box") {
+				t.Fatalf("%s folded=%t connection=%q", mode, folded, got)
+			}
+		}
 	}
 }

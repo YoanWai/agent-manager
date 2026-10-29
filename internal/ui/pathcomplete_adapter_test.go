@@ -178,7 +178,7 @@ func TestRenamePathSuggestionsExitToName(t *testing.T) {
 	t.Parallel()
 	root := setupCompletionDir(t)
 	m := buildModel(t)
-	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("", "", 0), ""))
+	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("", "", 0), "", ""))
 	m.Update(tea.KeyMsg{Type: tea.KeyTab})
 	loadPathSuggestions(m, pathcomplete.Rename, filepath.Join(root, "a"))
 	openRename(m).Paths().Chosen = true

@@ -3,13 +3,14 @@ package ui
 import (
 	"errors"
 	"fmt"
-	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
@@ -359,6 +360,9 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
+	if err := m.services.store.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
 	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmRestart}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmRestart), Sessions: []store.Session{sess}}})
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
@@ -436,9 +440,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("the image file must outlive the refusal, stat err = %v", err)
 	}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m.drainEffects(t)
-	m = updated.(*Model)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("the image file should be gone, stat err = %v", err)
 	}
@@ -656,8 +659,16 @@ func TestLaunchHintStrayKeysKeepTheDialog(t *testing.T) {
 		t.Fatalf("screen = %v, want the dialog kept", m.screenID())
 	}
 	pressInLaunchHint(t, m, 'q')
+	if !hintOpen(m) {
+		t.Fatalf("screen = %v, want unadvertised q to keep the dialog", m.screenID())
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !hintOpen(m) {
+		t.Fatal("unadvertised Enter closed launch hint")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if !m.onList() {
-		t.Fatalf("screen = %v, want q to close", m.screenID())
+		t.Fatal("Escape did not close launch hint")
 	}
 }
 
@@ -896,8 +907,7 @@ func TestLaunchHintQuitsOnCtrlC(t *testing.T) {
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	m = updated.(*Model)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil || !quits(cmd()) {
 		t.Fatal("ctrl+c over the hint should quit")
 	}
@@ -1113,16 +1123,6 @@ func hintFix(m *Model) uiinstall.Fix {
 		return *fix
 	}
 	return uiinstall.Fix{}
-}
-
-// hintFixPtr is the open card's fix, for a test that sets up what a
-// completion would have attached.
-func hintFixPtr(m *Model) *uiinstall.Fix {
-	fix, ok := m.launchHintFix()
-	if !ok {
-		panic("no launch hint is open")
-	}
-	return fix
 }
 
 func hintKey(m *Model, msg tea.KeyMsg) tea.Cmd {
@@ -1746,5 +1746,32 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 	}
 	if !imageExists(t, image) {
 		t.Fatal("a start behind a closed dialog deleted the draft image")
+	}
+}
+
+func TestInstallRepairEscapesArchivedGroupAndKeepsRetry(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, group := range []string{"work", "work/closed"} {
+		if err := m.services.store.CreateGroup(group, dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.services.store.SetGroupArchived("work/closed", true); err != nil {
+		t.Fatal(err)
+	}
+	installFixture(t, m, "sleep 30")
+	retry := uilaunch.Request{ID: "original", Group: "work/closed"}
+	request := uiinstall.StartRequest{ID: newID(), Binary: "test-cli", Command: "sleep 30", Group: "work/closed", Retry: retry}
+	request.ToolName, _ = m.shellTool()
+	result, err := uiinstall.RunStart(m.captureServices().install(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Session.Group != "work" {
+		t.Fatalf("install repair group=%q, want active ancestor", result.Session.Group)
+	}
+	if result.Pending == nil || result.Pending.Retry.(uilaunch.Request).Group != "work/closed" {
+		t.Fatal("repair changed original retry placement")
 	}
 }

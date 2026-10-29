@@ -153,9 +153,9 @@ func RemoteRefusal(action string) string {
 }
 
 func (r renderer) renderConnection(row treeRow, selected bool, width int, pad, background string) renderedTreeRow {
-	marker := "▾"
+	marker := r.glyphs().GroupOpenGlyph
 	if r.model.rowFolded(row) {
-		marker = "▸"
+		marker = r.glyphs().GroupClosedGlyph
 	}
 	tint := lipgloss.Color(r.ctx.Theme.Remote)
 	nameStyle := lipgloss.NewStyle().Foreground(tint).Bold(true)

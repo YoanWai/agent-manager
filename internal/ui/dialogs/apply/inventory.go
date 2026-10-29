@@ -13,6 +13,7 @@ type Stages struct {
 	PathSet      bool
 	WorktreeSet  bool
 	BaseSet      bool
+	EnvSet       bool
 	NameRenamed  bool
 	ToolChanged  bool
 }
@@ -23,6 +24,7 @@ func (o Outcome) Stages() Stages {
 		PathSet:      o.PathSet,
 		WorktreeSet:  o.WorktreeSet,
 		BaseSet:      o.BaseSet,
+		EnvSet:       o.EnvSet,
 		NameRenamed:  o.NameRenamed,
 		ToolChanged:  o.ToolChanged,
 	}
@@ -36,12 +38,13 @@ type Inventory struct {
 	GroupPaths     map[string]string
 	GroupWorktrees map[string]string
 	GroupBases     map[string]string
+	GroupEnvs      map[string]string
 }
 
 // RenamedGroup moves a renamed subtree's groups, rows and choices to
 // newPath, keeping only the stages that committed so a failed default-dir or
 // worktree write does not leak the requested value into the local list.
-func (inv Inventory) RenamedGroup(old, newPath, dir, worktree, base string, stages Stages) Inventory {
+func (inv Inventory) RenamedGroup(old, newPath, dir, worktree, base, env string, stages Stages) Inventory {
 	moved := func(group string) (string, bool) {
 		if group == old || strings.HasPrefix(group, old+"/") {
 			return newPath + group[len(old):], true
@@ -63,6 +66,7 @@ func (inv Inventory) RenamedGroup(old, newPath, dir, worktree, base string, stag
 		GroupPaths:     rekey(inv.GroupPaths, moved),
 		GroupWorktrees: rekey(inv.GroupWorktrees, moved),
 		GroupBases:     rekey(inv.GroupBases, moved),
+		GroupEnvs:      rekey(inv.GroupEnvs, moved),
 	}
 	if stages.PathSet {
 		renamed.GroupPaths = setChoice(renamed.GroupPaths, newPath, dir)
@@ -75,6 +79,9 @@ func (inv Inventory) RenamedGroup(old, newPath, dir, worktree, base string, stag
 	}
 	if stages.BaseSet {
 		renamed.GroupBases = setChoice(renamed.GroupBases, newPath, base)
+	}
+	if stages.EnvSet {
+		renamed.GroupEnvs = setChoice(renamed.GroupEnvs, newPath, env)
 	}
 	return renamed
 }

@@ -57,6 +57,7 @@ type Chrome struct {
 	Title  lipgloss.Style
 	Block  string
 	Cap    Cap
+	Mode   presentation.GlyphMode
 }
 
 // Box is a card's own lines, before the backdrop surrounds them, and the keys
@@ -94,7 +95,8 @@ func Box(ctx Context, chrome Chrome, width int, title, body string, hint [][2]st
 			lines = append(lines, row(line))
 		}
 	}
-	lines = append(lines, rule("╰", "╯"))
+	g := presentation.ChromeFor(chrome.Mode)
+	lines = append(lines, rule(g.BottomLeftGlyph, g.BottomRightGlyph))
 	return lines, hits
 }
 
@@ -106,7 +108,8 @@ func titleRow(width int, title string, chrome Chrome, fill Fill) string {
 	if dashes < 0 {
 		dashes = 0
 	}
-	head := chrome.Border.Render("╭──") + label + chrome.Border.Render(strings.Repeat("─", dashes)+"╮")
+	g := presentation.ChromeFor(chrome.Mode)
+	head := chrome.Border.Render(g.TopLeftGlyph+"──") + label + chrome.Border.Render(strings.Repeat("─", dashes)+g.TopRightGlyph)
 	return fill(head, width, chrome.Block)
 }
 

@@ -1,10 +1,45 @@
 package session
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
 
-// DeadHint names both ways back from a dead row: revive resumes the
-// conversation, restart starts the tool over.
-const DeadHint = "session is dead - press v to revive or R to restart"
+	"github.com/YoanWai/agent-manager/internal/keybind"
+)
+
+// DeadHint names the ways back from a dead row by the keys the user bound:
+// revive resumes the conversation, restart starts the tool over.
+func DeadHint(keys keybind.Table) string {
+	revive := keys.Binding(keybind.Revive).Label()
+	restart := keys.Binding(keybind.Restart).Label()
+	switch {
+	case revive == "" && restart == "":
+		return "session is dead - choose Revive from its row menu"
+	case revive == "":
+		return fmt.Sprintf("session is dead - press %s to restart or choose Revive from its row menu", restart)
+	case restart == "":
+		return fmt.Sprintf("session is dead - press %s to revive", revive)
+	default:
+		return fmt.Sprintf("session is dead - press %s to revive or %s to restart", revive, restart)
+	}
+}
+
+// ArchivedHint names the way back from an archived row.
+func ArchivedHint(keys keybind.Table) string {
+	binding := keys.Binding(keybind.Restore).Label()
+	if binding == "" {
+		return "session is archived - choose Restore from its row menu"
+	}
+	return fmt.Sprintf("session is archived - press %s to restore", binding)
+}
+
+// DeadError is the refusal a write to a pane that is gone reports.
+func DeadError(archived bool, keys keybind.Table) error {
+	if archived {
+		return errors.New(ArchivedHint(keys))
+	}
+	return errors.New(DeadHint(keys))
+}
 
 // ShellPromptHint refuses to write into a shell. SendText pastes and then
 // presses Enter, so a sentence meant for an agent would run as a command on

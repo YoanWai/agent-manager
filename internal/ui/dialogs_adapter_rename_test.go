@@ -805,9 +805,10 @@ func TestRenameIsARowNotACard(t *testing.T) {
 	if m.layout.card != (cardRect{}) {
 		t.Fatalf("rename painted a card: %+v", m.layout.card)
 	}
-	if m.cardOpen() != true {
-		// cardOpen follows the stack; routeMouse still holds the list still.
-		t.Fatal("the stack's top is not a card")
+	if m.cardOpen() {
+		// The rename takes the mouse itself: its group fields answer clicks
+		// and the rest of the list holds still.
+		t.Fatal("the rename row counts as a card")
 	}
 	if m = leftClick(m, 0, 0); !renameOpen(m) {
 		t.Fatal("a click closed the rename draft")
@@ -1078,7 +1079,7 @@ func TestRenameGroupPartialFailureReconcilesCommittedStages(t *testing.T) {
 		Gen:      7,
 	}}
 	job := &uieffects.Job{Request: request}
-	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("old", "", 0), ""))
+	m.push(uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup("old", "", 0), "", ""))
 	m.gens.dialog = 7
 	m.applyRenameOutcome(job, uiapply.Outcome{GroupRenamed: true}, errRenameStageTwo)
 

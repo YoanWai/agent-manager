@@ -79,7 +79,14 @@ func (r renameRoot) StepBase(s *uidialogs.RenameSurface, delta int) (string, tea
 
 func (r renameRoot) WorktreeCount() int { return len(uidialogs.WorktreeOptions) }
 
-func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) tea.Cmd {
+func (r renameRoot) EnvProfiles() []string { return r.workspace.envProfiles }
+
+func (r renameRoot) FieldsLine(x, y int) (int, bool) {
+	leftWidth, _ := r.splitWidths()
+	return y - r.listChromeRows() - 1, !r.fullRows() && x > leftWidth
+}
+
+func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base, env string) tea.Cmd {
 	if request.Group {
 		return r.queueRename(uiapply.RenameEffect{Request: uiapply.Request{
 			Kind:     uiapply.Group,
@@ -89,6 +96,7 @@ func (r renameRoot) QueueRename(request uidialogs.RenameRequest, base string) te
 			DraftDir: request.Dir,
 			Worktree: uidialogs.WorktreeValue(request.Worktree),
 			Base:     base,
+			Env:      env,
 			Name:     request.Name,
 		}})
 	}
@@ -114,6 +122,8 @@ func (r moveRoot) PaintMove(picker *spawn.Picker) string {
 
 // groupRoot is the root as the New Group card reaches it.
 type groupRoot struct{ *Model }
+
+func (r groupRoot) EnvProfiles() []string { return r.workspace.envProfiles }
 
 // launchHintRoot is the root as the setup-step card reaches it. The fix it
 // paints, the launch to retry and the images the refused prompt named all

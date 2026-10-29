@@ -28,7 +28,7 @@ func testContext(width int) Context {
 			AfterTurnArchive: "↓",
 			AfterTurnKill:    "■",
 		},
-		QuickKeys:    QuickKeys{Model: "ctrl+l", Effort: "ctrl+x", Profile: "ctrl+y"},
+		QuickKeys:    QuickKeys{Model: "ctrl+l", Effort: "ctrl+x", Profile: "ctrl+y", Env: "ctrl+g"},
 		CursorMarker: testCursorMarker,
 		ReviewRows:   [][2]string{{"c", "comment on the line"}},
 		Styles: Styles{

@@ -27,6 +27,9 @@ func (m *Model) openQuickMode() tea.Cmd {
 }
 
 func (m *Model) openQuickModeWithReader(reader uipersist.Reader) tea.Cmd {
+	if m.rail.ShowArchived() {
+		return nil
+	}
 	names, index := m.cachedSpawnToolSelection()
 	if len(names) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
@@ -56,6 +59,7 @@ func (m *Model) openQuickModeWithReader(reader uipersist.Reader) tea.Cmd {
 	// a connection starts on the host's defaults.
 	m.push(q)
 	q.Bar = uiquick.NewBar(m.spawnHost(), names, index, m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
+	q.Env().Seed(m.workspace.envProfiles, "")
 	catalog := m.ensureCatalog(names[index])
 	if m.settings.Pending > 0 {
 		return tea.Batch(m.quickWorktreeProbeCmd(false), catalog)
@@ -170,7 +174,7 @@ func (m *Model) handleQuickClick(hit uiquick.Hit) tea.Cmd {
 const quickModeTitle = "Quick prompt mode"
 
 func (m *Model) quickFooter(q *uiquick.Surface) legend {
-	edge := uitheme.KeyStyle().Render(quickEdge)
+	edge := uitheme.KeyStyle().Render(m.chrome().QuickEdgeGlyph)
 	gutter := strings.Repeat(" ", quickGutter-1)
 	painted := paintLegend([]legendSection{{Title: quickModeTitle, Pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1), m.prefs.glyphMode)
 	keys := uitheme.SplitLines(painted.Text)
@@ -189,7 +193,7 @@ func (m *Model) quickFooter(q *uiquick.Surface) legend {
 		}
 		lines = append(lines, uitheme.Paint(edge+gutter+line, m.layout.width, tone))
 	}
-	hits := painted.Hits.Moved(lipgloss.Width(quickEdge), len(lines))
+	hits := painted.Hits.Moved(lipgloss.Width(edge), len(lines))
 	for _, line := range keys {
 		lines = append(lines, uitheme.Paint(edge+line, m.layout.width, uitheme.QuickModeHex()))
 	}
@@ -198,7 +202,6 @@ func (m *Model) quickFooter(q *uiquick.Surface) legend {
 }
 
 const (
-	quickEdge   = "▌"
 	quickGutter = 3
 )
 
@@ -280,6 +283,7 @@ func (m *Model) clearAccepted(composerGen int, draft string, closeAfterSend bool
 	}
 	q := m.quick()
 	q.Input.SetValue("")
+	q.ResetEnterDebounce()
 	q.Saved = nil
 	if closeAfterSend {
 		m.closeQuick()

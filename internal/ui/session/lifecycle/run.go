@@ -42,6 +42,9 @@ type Selection struct {
 	Kind         SelectionKind
 	RootID       string
 	ArchivedOnly bool
+	// Members are the rows the card was opened on when it acts on a subset
+	// of them, so the check reads the whole set and the run the subset.
+	Members []store.Session
 }
 
 // Target is a confirmed action: what it does, the rows it holds and the
@@ -120,7 +123,7 @@ func Run(services Services, request Request) (Result, error) {
 			}
 			result.Archive, operationErr = services.Lifecycle.RestoreForHuman(sessioncmd.ArchiveSelection{Sessions: target.Sessions, GroupPath: target.Path}, request.Pane)
 			for _, sess := range result.Archive.Sessions {
-				if wasDead[sess.ID] {
+				if wasDead[sess.ID] && services.Driver.Exists(sess.ID) {
 					result.Launches = append(result.Launches, Relaunch{sess.ID, sessioncmd.RelaunchResult{LaunchedAt: sess.AgentLaunchedAt}})
 				}
 			}
@@ -237,12 +240,42 @@ func validateSelection(st *store.Store, target Target) (Target, error) {
 	}
 	if selection.ArchivedOnly {
 		current = archivedSessions(current)
+	} else if target.Action == Revive {
+		current = ActiveSessions(current)
 	}
-	if !sameSessionIDs(current, target.Sessions) {
+	expected := target.Sessions
+	if selection.Members != nil {
+		expected = selection.Members
+	}
+	if !sameSessionIDs(current, expected) {
 		return target, errors.New("sessions changed since confirmation; review the selection and try again")
+	}
+	if selection.Members != nil {
+		ids := make(map[string]bool, len(target.Sessions))
+		for _, session := range target.Sessions {
+			ids[session.ID] = true
+		}
+		var selected []store.Session
+		for _, session := range current {
+			if ids[session.ID] {
+				selected = append(selected, session)
+			}
+		}
+		current = selected
 	}
 	target.Sessions = current
 	return target, nil
+}
+
+// ActiveSessions are the rows not archived.
+func ActiveSessions(sessions []store.Session) []store.Session {
+	var active []store.Session
+	for _, sess := range sessions {
+		if !sess.Archived {
+			active = append(active, sess)
+		}
+	}
+	return active
 }
 
 func sameSessionIDs(left, right []store.Session) bool {
@@ -382,8 +415,19 @@ type AttachResult struct {
 	Fatal   error
 }
 
-// DeadSessionHint is what an attach reports when the pane is already gone.
-const DeadSessionHint = uisession.DeadHint
+// DeadSessionError is what a write to a pane that is gone reports: the way
+// back for a dead row, or for an archived one.
+func DeadSessionError(st *store.Store, id string) error {
+	sess, err := st.RequireSession(id)
+	if err != nil {
+		return err
+	}
+	keys, err := st.ListKeys()
+	if err != nil {
+		return err
+	}
+	return uisession.DeadError(sess.Archived, keys)
+}
 
 // RunAttach probes the pane, acknowledges a finished row and prepares the
 // attach, all before the terminal is handed over.
@@ -396,7 +440,7 @@ func RunAttach(services Services, request AttachRequest) (AttachResult, error) {
 			return
 		}
 		if !exists {
-			result.Fatal = errors.New(DeadSessionHint)
+			result.Fatal = DeadSessionError(services.Store, request.ID)
 			return
 		}
 		sess, readErr := services.Store.Get(request.ID)

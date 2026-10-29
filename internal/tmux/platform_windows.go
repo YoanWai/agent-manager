@@ -351,15 +351,25 @@ func ShellInvoke(path string) string {
 	return "& " + ShellQuote(path)
 }
 
-// exportEnv prefixes a command with assignments of the session environment,
-// for a command typed into a pane whose shell does not carry it.
-func exportEnv(env map[string]string, command string) string {
-	var line strings.Builder
-	for _, key := range sortedKeys(env) {
-		line.WriteString("$env:" + key + " = " + ShellQuote(env[key]) + "; ")
+// writeEnvFile writes the session environment for a pane whose shell does
+// not carry it. PowerShell dot-sources the file, which removes itself, so a
+// value such as a token is never typed into the pane, where it would show on
+// screen and land in the shell's history.
+func writeEnvFile(id string, env map[string]string) (string, error) {
+	file, err := os.CreateTemp("", "am-env-"+id+"-*.ps1")
+	if err != nil {
+		return "", fmt.Errorf("environment file: %w", err)
 	}
-	line.WriteString(command)
-	return line.String()
+	path := file.Name()
+	_, err = file.Write(pwsh.ScriptFile("Remove-Item -LiteralPath $PSCommandPath\n" + exportLines(env)))
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		os.Remove(path)
+		return "", fmt.Errorf("environment file: %w", err)
+	}
+	return path, nil
 }
 
 // RunInPane types a command into the PowerShell a pane already holds, with
@@ -380,20 +390,30 @@ func (d *Driver) RunInPane(id string, env map[string]string, command string) err
 		os.Remove(path)
 		return fmt.Errorf("relaunch script: %w", err)
 	}
-	if err := d.SendKeys(id, exportEnv(env, ShellInvoke(path)), "Enter"); err != nil {
+	envPath, err := writeEnvFile(id, env)
+	if err != nil {
 		os.Remove(path)
+		return err
+	}
+	if err := d.SendKeys(id, ". "+ShellQuote(envPath)+"; "+ShellInvoke(path), "Enter"); err != nil {
+		os.Remove(path)
+		os.Remove(envPath)
 		return err
 	}
 	return nil
 }
 
 // exportLines sets the session environment in the pane's shell, so it
-// outlives the launch command.
+// outlives the launch command. The keys the previous launch in the pane set
+// go first, so one a profile has dropped since is not kept at its old value.
 func exportLines(env map[string]string) string {
 	var lines strings.Builder
-	for _, key := range sortedKeys(env) {
+	lines.WriteString("foreach ($key in -split $env:" + envKeysVar + ") { if ($key) { Remove-Item -LiteralPath \"Env:$key\" -ErrorAction Ignore } }\n")
+	keys := sortedKeys(env)
+	for _, key := range keys {
 		lines.WriteString("$env:" + key + " = " + ShellQuote(env[key]) + "\n")
 	}
+	lines.WriteString("$env:" + envKeysVar + " = " + ShellQuote(strings.Join(keys, " ")) + "\n")
 	return lines.String()
 }
 
@@ -410,15 +430,20 @@ func launchScriptPath(id string) string {
 
 // writeLaunchScript writes the PowerShell script the pane shell runs with
 // -NoExit: once the agent exits, that shell stays as the user's prompt,
-// the way the POSIX script execs $SHELL.
+// the way the POSIX script execs $SHELL. With no command, as for a
+// terminal, the shell reaches its prompt once env is set.
 func writeLaunchScript(id string, env map[string]string, command, colorFgBg string) (string, error) {
 	path := launchScriptPath(id)
 	var header string
 	if colorFgBg != "" {
 		header = "$env:COLORFGBG = " + ShellQuote(colorFgBg) + "\n"
 	}
-	body := standardArgumentPassing + header + exportLines(env) + command + "\n" +
-		"Write-Host " + ShellQuote(relaunchHint) + "\n"
+	// The script removes itself once PowerShell has read it, so the
+	// environment it sets, a profile's tokens among it, is not left on disk.
+	body := "Remove-Item -LiteralPath $PSCommandPath\n" + standardArgumentPassing + header + exportLines(env)
+	if command != "" {
+		body += command + "\nWrite-Host " + ShellQuote(relaunchHint) + "\n"
+	}
 	if err := os.WriteFile(path, pwsh.ScriptFile(body), 0o600); err != nil {
 		return "", fmt.Errorf("launch script: %w", err)
 	}

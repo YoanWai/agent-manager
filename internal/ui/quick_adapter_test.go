@@ -3,6 +3,14 @@ package ui
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+	"unicode/utf8"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
@@ -17,13 +25,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
-	"os"
-	"path/filepath"
-	"slices"
-	"strings"
-	"testing"
-	"time"
-	"unicode/utf8"
 )
 
 // pasteQuickImage runs a full ctrl+v paste against a fake clipboard that
@@ -145,6 +146,9 @@ func TestOpenQuickModeDefersSettingsReadAndGuardsDefaults(t *testing.T) {
 func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	if err := m.services.store.SetKeys(m.services.listKeys.With(keybind.Revive, bindingOf(t, "U")).With(keybind.Restart, bindingOf(t))); err != nil {
+		t.Fatal(err)
+	}
 	createSession(t, m, "gone", t.TempDir(), "")
 
 	sess := m.sessionRows()[0]
@@ -157,7 +161,7 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	m.quick().Input.SetValue("hello?")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
-	if m.errBar.text != "session is dead - press v to revive or R to restart" {
+	if m.errBar.text != "session is dead - press U to revive" {
 		t.Fatalf("err = %q", m.errBar.text)
 	}
 	if m.quick() == nil {
@@ -1290,7 +1294,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			if i > 0 && i < len(rows)-keysHeight {
 				tone = uitheme.BlockHex()
 			}
-			if !strings.HasPrefix(line, uitheme.BgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
+			if !strings.HasPrefix(line, uitheme.BgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), m.chrome().QuickEdgeGlyph) || ansi.StringWidth(line) != m.layout.width {
 				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
 			}
 		}
@@ -1704,7 +1708,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			m.quick().Input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
 			frame := preparedView(m)
 			frameRows := uitheme.SplitLines(frame)
-			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
+			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), m.chrome().QuickEdgeGlyph)) == "" {
 				t.Fatalf("full %v width %d footer must end on the last terminal row", full, width)
 			}
 			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
@@ -1717,7 +1721,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 				t.Fatalf("target hit row = %d, want %d", m.quick().OriginY, m.layout.height-footerHeight)
 			}
 			for y := m.layout.height - footerHeight; y < m.layout.height; y++ {
-				if !strings.HasPrefix(ansi.Strip(frameRows[y]), quickEdge) {
+				if !strings.HasPrefix(ansi.Strip(frameRows[y]), m.chrome().QuickEdgeGlyph) {
 					t.Fatalf("footer row %d must carry the accent edge", y)
 				}
 				if cells := ansi.StringWidth(frameRows[y]); cells != m.layout.width {
@@ -1788,4 +1792,18 @@ func paintedPreview(m *Model) string {
 		painted.WriteString(ansi.Strip(row.Text) + "\n")
 	}
 	return painted.String()
+}
+
+// A prompt the bar just cleared ignores an Enter that lands right after,
+// so the key that sent it cannot also close the bar.
+func TestClearingQuickPromptDebouncesEmptyEnter(t *testing.T) {
+	m := buildModel(t)
+	m.openQuickMode()
+	q := m.quick()
+	q.Input.SetValue("ship it")
+	m.clearAccepted(q.Gen, "ship it", false)
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if q, ok := surfaceOf[*uiquick.Surface](m); !ok || q.Input.Value() != "" {
+		t.Fatal("Enter just after clearing should leave the empty prompt open")
+	}
 }

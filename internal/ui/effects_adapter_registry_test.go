@@ -16,18 +16,7 @@ type effectDeclarations struct {
 
 func parseEffectDeclarations(t *testing.T) effectDeclarations {
 	t.Helper()
-	fset := token.NewFileSet()
-	packages, err := parser.ParseDir(fset, ".", func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var files []*ast.File
-	for _, file := range packages["ui"].Files {
-		files = append(files, file)
-	}
-	return effectDeclarations{files: files}
+	return effectDeclarations{files: parseGoPackage(t, ".", parser.SkipObjectResolution)}
 }
 
 // A request a feature package declares runs only once bindEffect binds its

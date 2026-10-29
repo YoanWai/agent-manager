@@ -23,6 +23,8 @@ type Defaults struct {
 	// directory the manager started in.
 	Fallbacks []string
 	Worktree  bool
+	// Env is the environment profile the group preselects.
+	Env string
 }
 
 // FormRequest is the spawn a New Session form dispatches. name is the
@@ -43,6 +45,7 @@ func FormRequest(request spawn.Request, name, group string, prompt *composer.Com
 		PickWorktree: request.Worktree,
 		Choice:       config.Choice(request.Pick),
 		Base:         defaults.Base,
+		Environment:  request.Env,
 		Pane:         defaults.Pane,
 		ComposerGen:  prompt.Gen,
 		Images:       prompt.Attachments,
@@ -56,6 +59,10 @@ func FormRequest(request spawn.Request, name, group string, prompt *composer.Com
 // QuickRequest is the spawn the quick bar dispatches: it names its own
 // session and leaves the directory to the group.
 func QuickRequest(request spawn.Request, prompt *composer.Composer, defaults Defaults) Request {
+	env := defaults.Env
+	if request.EnvSet {
+		env = request.Env
+	}
 	return Request{
 		Kind:         Quick,
 		ToolName:     request.Tool,
@@ -66,6 +73,7 @@ func QuickRequest(request spawn.Request, prompt *composer.Composer, defaults Def
 		PickWorktree: request.Worktree,
 		Choice:       config.Choice(request.Pick),
 		Base:         defaults.Base,
+		Environment:  env,
 		Pane:         defaults.Pane,
 		ComposerGen:  prompt.Gen,
 		Images:       prompt.Attachments,

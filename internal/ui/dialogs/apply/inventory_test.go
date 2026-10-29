@@ -16,7 +16,7 @@ func TestRenamedGroupMirrorsOnlyTheStagesThatCommitted(t *testing.T) {
 		GroupWorktrees: map[string]string{"web": "on"},
 		GroupBases:     map[string]string{"web/api": "main"},
 	}
-	renamed := inv.RenamedGroup("web/api", "web/svc", "/w/svc", "off", "dev",
+	renamed := inv.RenamedGroup("web/api", "web/svc", "/w/svc", "off", "dev", "",
 		Stages{GroupRenamed: true, PathSet: true})
 	if renamed.Groups[1] != "web/svc" || renamed.Sessions[0].Group != "web/svc" || renamed.Sessions[1].Group != "ops" {
 		t.Fatalf("subtree = %q / %+v", renamed.Groups, renamed.Sessions)

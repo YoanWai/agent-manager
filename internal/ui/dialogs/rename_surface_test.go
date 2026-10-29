@@ -11,7 +11,7 @@ import (
 // the root's to build.
 func TestRenameSurfaceSubmitsTheValidatedRequest(t *testing.T) {
 	root := &renameStub{}
-	s := NewRenameSurface(root, RenameGroup("work/old", "", 0), "main")
+	s := NewRenameSurface(root, RenameGroup("work/old", "", 0), "main", "")
 	host := &stubHost{}
 	s.SetName("new")
 	s.Key(host, tea.KeyMsg{Type: tea.KeyEnter})
@@ -29,7 +29,7 @@ func TestRenameSurfaceSubmitsTheValidatedRequest(t *testing.T) {
 // A step keeps the choice the root probed, and esc closes the row.
 func TestRenameSurfaceStepsTheBaseAndCloses(t *testing.T) {
 	root := &renameStub{base: "next"}
-	s := NewRenameSurface(root, RenameGroup("work", "", 0), "")
+	s := NewRenameSurface(root, RenameGroup("work", "", 0), "", "")
 	host := &stubHost{}
 	for range 3 {
 		s.Key(host, tea.KeyMsg{Type: tea.KeyTab})
@@ -47,7 +47,7 @@ func TestRenameSurfaceStepsTheBaseAndCloses(t *testing.T) {
 // An invalid name is the root's to report, and the row stays open.
 func TestRenameSurfaceReportsAnInvalidName(t *testing.T) {
 	root := &renameStub{}
-	s := NewRenameSurface(root, RenameSession("s", "alpha", "claude", []string{"claude"}), "")
+	s := NewRenameSurface(root, RenameSession("s", "alpha", "claude", []string{"claude"}), "", "")
 	host := &stubHost{}
 	s.SetName("")
 	s.Key(host, tea.KeyMsg{Type: tea.KeyEnter})
@@ -59,7 +59,7 @@ func TestRenameSurfaceReportsAnInvalidName(t *testing.T) {
 // The row is not a card: it leaves the frame as it is and holds the list
 // still under a stray click.
 func TestRenameSurfacePaintsNoCard(t *testing.T) {
-	s := NewRenameSurface(&renameStub{}, RenameGroup("work", "", 0), "")
+	s := NewRenameSurface(&renameStub{}, RenameGroup("work", "", 0), "", "")
 	if s.Dismissible() {
 		t.Fatal("a rename holds a typed draft and must not close on a stray click")
 	}

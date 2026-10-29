@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,6 +21,7 @@ type GroupFormSurface struct {
 	GroupForm
 	pc        pathcomplete.State
 	base      string
+	env       string
 	remote    Remote
 	parents   []spawn.GroupOption
 	parent    int
@@ -35,16 +37,19 @@ type Remote struct{ Host, Group string }
 
 func (r Remote) on() bool { return r.Host != "" }
 
-type Lend struct{ Dir, Base string }
+type Lend struct{ Dir, Base, Env string }
 
 type GroupFormRoot interface {
 	CardWidth(cols int) int
 	ReportErr(text string)
+	// EnvProfiles are the defined environment profiles, in picker order.
+	EnvProfiles() []string
 }
 
 type GroupFormSubmitMsg struct {
 	Request GroupFormRequest
 	Base    string
+	Env     string
 	Remote  Remote
 }
 
@@ -122,6 +127,8 @@ func (s *GroupFormSurface) Base() string { return s.base }
 
 func (s *GroupFormSurface) BaseRef() *string { return &s.base }
 
+func (s *GroupFormSurface) Env() string { return s.env }
+
 func (s *GroupFormSurface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
 	return true, s.run(h, s.GroupForm.Key(msg, dialogPaths{&s.pc}, s.ParentPath(), len(s.worktrees)))
 }
@@ -158,11 +165,14 @@ func (s *GroupFormSurface) run(h surface.Host, key GroupFormKey) tea.Cmd {
 	case GroupFormStepBase:
 		ask := GroupBaseAskMsg{Gen: s.Gen(), Delta: key.Delta}
 		return func() tea.Msg { return ask }
+	case GroupFormStepEnv:
+		s.env = spawn.StepEnv(s.root.EnvProfiles(), s.env, key.Delta)
+		return nil
 	case GroupFormInvalid:
 		s.root.ReportErr(key.Err)
 		return nil
 	case GroupFormSubmit:
-		submit := GroupFormSubmitMsg{Request: key.Request, Base: s.base, Remote: s.remote}
+		submit := GroupFormSubmitMsg{Request: key.Request, Base: s.base, Env: s.env, Remote: s.remote}
 		return func() tea.Msg { return submit }
 	}
 	// A connection's directory is the host's: nothing here completes it.
@@ -206,7 +216,8 @@ func (s *GroupFormSurface) View(h surface.Host, _ string) string {
 		Subtle:    s.styles.Subtle,
 		Value:     s.styles.Value,
 		Worktrees: s.worktrees,
-		Base:      BaseChoice(s.styles.Subtle, s.styles.Value, s.base, s.lends[parent].Base),
+		Base:      BaseChoice(s.styles.Subtle, s.styles.Value, s.base, s.lends[parent].Base, s.styles.GlyphMode),
+		Env:       EnvChoice(s.styles.Subtle, s.styles.Value, s.env, s.lends[parent].Env, len(s.root.EnvProfiles()) > 0, s.styles.GlyphMode),
 	}
 	if s.pc.Active() {
 		view.Suggestions = func() string { return s.pc.View(pathStyles(s.styles)) }
@@ -248,9 +259,25 @@ func pathSuggestHints(chosen bool) [][2]string {
 
 // BaseChoice renders a group's base picker: its own ref, or auto and the
 // parent's choice that auto inherits.
-func BaseChoice(subtle, value lipgloss.Style, base, inherited string) string {
-	choice := subtle.Render("◂ ") + value.Render(cmp.Or(base, "auto")) + subtle.Render(" ▸")
+func BaseChoice(subtle, value lipgloss.Style, base, inherited string, mode presentation.GlyphMode) string {
+	g := presentation.ChromeFor(mode)
+	choice := subtle.Render(g.ChoiceLeftGlyph+" ") + value.Render(cmp.Or(base, "auto")) + subtle.Render(" "+g.ChoiceRightGlyph)
 	if base == "" && inherited != "" {
+		choice += subtle.Render("  " + inherited + " from parent")
+	}
+	return choice
+}
+
+// EnvChoice renders a group's environment picker: its own profile, or none
+// and the parent's that none inherits. With no profile defined and none
+// chosen it is empty, which leaves the row off the form.
+func EnvChoice(subtle, value lipgloss.Style, env, inherited string, defined bool, mode presentation.GlyphMode) string {
+	if !defined && env == "" {
+		return ""
+	}
+	g := presentation.ChromeFor(mode)
+	choice := subtle.Render(g.ChoiceLeftGlyph+" ") + value.Render(cmp.Or(env, "none")) + subtle.Render(" "+g.ChoiceRightGlyph)
+	if env == "" && inherited != "" {
 		choice += subtle.Render("  " + inherited + " from parent")
 	}
 	return choice

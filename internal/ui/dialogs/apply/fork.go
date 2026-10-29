@@ -74,6 +74,9 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 	if err != nil {
 		return result, err
 	}
+	if err := s.Lifecycle.ValidatePlacement(source); err != nil {
+		return result, err
+	}
 	// The re-read validates liveness, not identity: the fork targets the
 	// source the dialog confirmed. A restart while queued mints a new
 	// launch, and forking it would open the replacement. A conversation
@@ -85,6 +88,8 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 		switched = false
 	}
 	if source.Tool != request.Source.Tool ||
+		source.Group != request.Source.Group ||
+		source.ParentID != request.Source.ParentID ||
 		switched ||
 		source.Cwd != request.Source.Cwd ||
 		source.WorktreeRepo != request.Source.WorktreeRepo ||
@@ -178,6 +183,7 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 		WorktreeRepo:   request.Source.WorktreeRepo,
 		WorktreeBranch: request.Source.WorktreeBranch,
 		Choice:         request.Source.Choice,
+		Environment:    request.Source.Environment,
 	}
 	launched, err := s.Lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:     forked,

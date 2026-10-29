@@ -36,7 +36,7 @@ func TestCompatibleTopEdgeKeepsFrameGeometry(t *testing.T) {
 							t.Fatalf("%s/%d row=%q", mode, width, row)
 						}
 					}
-					if mode == presentation.GlyphModeBasic && strings.ContainsAny(frame, "🬹🬂🬨") {
+					if mode == presentation.GlyphModeBasic && strings.ContainsAny(frame, "◂▸╭╮╰╯━╸┃┄▀▄▐▜▟▍▎▏▌║🬹🬂🬨") {
 						t.Fatal("compatible frame contains sextants")
 					}
 				}
@@ -46,5 +46,44 @@ func TestCompatibleTopEdgeKeepsFrameGeometry(t *testing.T) {
 	m.prefs.glyphMode = presentation.GlyphModeAdvanced
 	if got := ansi.Strip(m.railTopRow(30, 80)); !strings.HasPrefix(got, "🬹"+strings.Repeat("🬂", 29)+"🬨") {
 		t.Fatalf("Advanced edge changed: %q", got)
+	}
+}
+
+func TestCompatibleEdgesKeepBackdropAndFocusCoordinates(t *testing.T) {
+	forceANSI256(t)
+	m := shotModel()
+	m.prefs.glyphMode = presentation.GlyphModeBasic
+	m.layout.width, m.layout.height = 80, 34
+	for _, terminal := range []bool{false, true} {
+		m.prefs.terminalBackground = terminal
+		for _, width := range []int{1, 34, 80} {
+			for _, row := range []string{m.boundedRuleRow(20, width, "▄"), m.boundedRuleRow(20, width, "▀"), m.focusBottomRule(20, width)} {
+				if ansi.StringWidth(row) != width || strings.ContainsAny(ansi.Strip(row), "▀▄▜▟╰") {
+					t.Fatalf("bad compatible edge %q", row)
+				}
+				backgrounds, _ := cellColors(row, width, 1)
+				for _, bg := range backgrounds[0] {
+					if bg != nil {
+						t.Fatal("flat edge painted panel background onto the backdrop")
+					}
+				}
+			}
+		}
+		m.push(newFocusSurface(m))
+		prepareFocusFrame(m, "agent\ncontent", 30, 2, 21, m.listChromeRows()+2, -1)
+		column := m.bleedColumn(8)
+		if ansi.Strip(column[1]) != "+" || ansi.Strip(column[2]) != "│" || ansi.Strip(column[3]) != "│" {
+			t.Fatalf("focus edge moved: %q", column)
+		}
+		for _, row := range column {
+			backgrounds, _ := cellColors(row, 1, 1)
+			if backgrounds[0][0] != nil {
+				t.Fatal("bleed painted the backdrop")
+			}
+		}
+		m.layout.split.ResizeMode = true
+		if ansi.Strip(m.seamCell(false)) != "│" {
+			t.Fatal("resize grip is incompatible")
+		}
 	}
 }

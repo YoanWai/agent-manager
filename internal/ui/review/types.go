@@ -5,6 +5,7 @@ import (
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 	git "github.com/YoanWai/agent-manager/internal/git/value"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -320,6 +321,7 @@ const (
 )
 
 type KeyContext struct {
+	HelpKey              keybind.Binding
 	CodeHeight           int
 	Now                  time.Time
 	Target               Target

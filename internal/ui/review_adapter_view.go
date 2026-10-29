@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/diff"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -181,7 +182,7 @@ func (m *Model) viewDiffFooter() string { return m.diffFooter().Text }
 
 func (m *Model) diffFooter() legend {
 	var sections []legendSection
-	for _, section := range m.review.Legend() {
+	for _, section := range m.review.Legend(m.services.listKeys.Binding(keybind.Help)) {
 		sections = append(sections, legendSection{Title: section.Title, Quiet: section.Quiet, Pairs: section.Pairs})
 	}
 	return paintLegend(sections, m.layout.width, m.prefs.glyphMode)

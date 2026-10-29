@@ -1,7 +1,6 @@
 package frame
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/charmbracelet/lipgloss"
@@ -22,15 +21,5 @@ func TestCapsPaintAKeyWithItsAction(t *testing.T) {
 	}
 	if got := ansi.Strip(cap.hintCap("x", "other")); got != "x other" {
 		t.Fatalf("another key should not take the badge: %q", got)
-	}
-}
-
-func TestDividerFillsItsWidth(t *testing.T) {
-	plain := ansi.Strip(Divider("files", 20, lipgloss.NewStyle(), lipgloss.NewStyle()))
-	if w := ansi.StringWidth(plain); w != 20 {
-		t.Fatalf("divider width = %d, want 20: %q", w, plain)
-	}
-	if !strings.Contains(plain, "files") {
-		t.Fatalf("divider lost its label: %q", plain)
 	}
 }

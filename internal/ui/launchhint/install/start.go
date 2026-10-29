@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -20,6 +21,7 @@ type Services struct {
 	Lifecycle *sessioncmd.Lifecycle
 	Hooks     *hooks.Manager
 	Driver    *tmux.Driver
+	Store     *store.Store
 	Tools     map[string]config.Tool
 }
 
@@ -48,6 +50,16 @@ func RunStart(services Services, request StartRequest) (StartResult, error) {
 	tool, ok := services.Tools[request.ToolName]
 	if !ok {
 		return result, fmt.Errorf("shell tool %s is no longer configured", request.ToolName)
+	}
+	// The install tab lands in the nearest live group, so the archived
+	// view never hides it.
+	groups, err := services.Store.Groups()
+	if err != nil {
+		return result, err
+	}
+	archived := store.ArchivedGroups(groups)
+	for store.EffectivelyArchived(archived, request.Group) {
+		request.Group = parentGroup(request.Group)
 	}
 	sess := store.Session{
 		ID:     request.ID,
@@ -168,4 +180,11 @@ func RunSettle(services Services, request SettleRequest) (SettleResult, error) {
 func Starting(request uieffects.Request) (string, bool) {
 	starting, ok := request.(StartRequest)
 	return starting.Binary, ok
+}
+
+func parentGroup(path string) string {
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[:i]
+	}
+	return ""
 }

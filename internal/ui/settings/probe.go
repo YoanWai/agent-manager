@@ -3,7 +3,7 @@ package settings
 func PromptRows(rows []Preset) []Prompt {
 	prompts := make([]Prompt, len(rows))
 	for i, row := range rows {
-		prompts[i] = Prompt{Name: row.Name, Text: row.Text}
+		prompts[i] = Prompt(row)
 	}
 	return prompts
 }

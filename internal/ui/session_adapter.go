@@ -1,12 +1,16 @@
 package ui
 
 import (
+	"os/exec"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
+	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	sessiondialogs "github.com/YoanWai/agent-manager/internal/ui/session/dialogs"
@@ -14,8 +18,6 @@ import (
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
-	"os/exec"
-	"time"
 )
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
@@ -240,10 +242,16 @@ func (m *Model) markRestoredLocally(edit *uilifecycle.ArchiveEdit) {
 	for _, sess := range uilifecycle.RestoreRows(m.workspace.sessions, edit) {
 		m.ledger.lifecycle.MarkSession(sess.ID, uilifecycle.GoneMark{Archived: false})
 	}
+	clearGroup := func(path string) {
+		delete(m.workspace.archivedGroups, path)
+		m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Archived: false})
+	}
 	if edit.Group != "" {
 		for _, path := range append([]string{edit.Group}, uilifecycle.Subgroups(m.workspace.groups, edit.Group)...) {
-			delete(m.workspace.archivedGroups, path)
-			m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Archived: false})
+			clearGroup(path)
+		}
+		for path := uirail.ParentGroup(edit.Group); path != ""; path = uirail.ParentGroup(path) {
+			clearGroup(path)
 		}
 	} else {
 		for id := range edit.Rows {
@@ -252,8 +260,7 @@ func (m *Model) markRestoredLocally(edit *uilifecycle.ArchiveEdit) {
 					continue
 				}
 				for _, path := range uilifecycle.Ancestors(sess.Group) {
-					delete(m.workspace.archivedGroups, path)
-					m.ledger.lifecycle.MarkGroup(path, uilifecycle.GoneMark{Archived: false})
+					clearGroup(path)
 				}
 			}
 		}
@@ -280,6 +287,7 @@ func (m *Model) pruneGroupsLocally(removed []string) {
 		delete(m.workspace.groupPaths, path)
 		delete(m.workspace.groupWorktrees, path)
 		delete(m.workspace.groupBases, path)
+		delete(m.workspace.groupEnvs, path)
 		delete(m.workspace.archivedGroups, path)
 	}
 	m.workspace.groups = uilifecycle.DropGroups(m.workspace.groups, removed)
@@ -449,7 +457,7 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 		m.reportErr(uisession.ShellPromptHint(sess.Name))
 		return m, nil
 	}
-	reader := uilifecycle.ReplyReader{Driver: m.services.tmux, Engine: m.services.engine, History: quoteHistoryLines}
+	reader := uilifecycle.ReplyReader{Store: m.services.store, Driver: m.services.tmux, Engine: m.services.engine, History: quoteHistoryLines}
 	return m, func() tea.Msg {
 		reply, err := reader.Copy(sess)
 		if err != nil {
@@ -709,12 +717,14 @@ func (m *Model) reconcileListing(msg *refreshMsg) {
 		GroupPaths:     msg.groupPaths,
 		GroupWorktrees: msg.groupWorktrees,
 		GroupBases:     msg.groupBases,
+		GroupEnvs:      msg.groupEnvs,
 		ArchivedGroups: msg.archivedGroups,
 	})
 	msg.groups = listing.Groups
 	msg.groupPaths = listing.GroupPaths
 	msg.groupWorktrees = listing.GroupWorktrees
 	msg.groupBases = listing.GroupBases
+	msg.groupEnvs = listing.GroupEnvs
 	msg.archivedGroups = listing.ArchivedGroups
 }
 

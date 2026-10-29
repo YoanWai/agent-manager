@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"os"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -11,12 +10,12 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	execution "github.com/YoanWai/agent-manager/internal/execution"
-	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -35,24 +34,6 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 			t.Fatal("the poll's hold on the store should reach the model")
 		}
 	}
-}
-
-// writeName queues a rename the way the subcommand does, and returns the
-// request its answer comes back under.
-func writeName(t *testing.T, m *Model, id, name string) string {
-	t.Helper()
-	path := m.services.hooks.NameFile(id)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("hooks dir: %v", err)
-	}
-	request, err := hooks.NewRequestID()
-	if err != nil {
-		t.Fatalf("request id: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(hooks.NameRequest(request, name)), 0o644); err != nil {
-		t.Fatalf("write name file: %v", err)
-	}
-	return request
 }
 
 func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {
@@ -558,95 +539,6 @@ func TestRefreshReplacesTheQueuedCountsWholesale(t *testing.T) {
 	}
 }
 
-// pollUntilQueued drives the poller's own loop so delivery passes the gate a
-// live manager applies rather than a hand-picked pane and status. The budget
-// is generous because that gate waits for the tool to echo the message just
-// typed, which takes as long as the runner needs.
-func pollUntilQueued(t *testing.T, m *Model, sessionID string, want int) {
-	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		queued, err := m.services.store.QueuedCount(sessionID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if queued == want {
-			return
-		}
-		if !time.Now().Before(deadline) {
-			t.Fatalf("queue held %d messages, want %d", queued, want)
-		}
-		m.applyCmd(t, m.refreshCmd())
-		time.Sleep(20 * time.Millisecond)
-	}
-}
-
-// settledPane waits for the pane to hold every marker and stop changing.
-// The markers come from the tty echo of what was pasted; the fixture tools
-// consume their input and print only a fresh prompt.
-func settledPane(t *testing.T, m *Model, sessionID string, markers ...string) string {
-	t.Helper()
-	// Two waits, not one. A paste still landing resets the quiet run, so
-	// requiring the markers and the quiet in the same capture can burn
-	// the whole deadline on a loaded runner: first wait for every marker
-	// to have rendered, then for the pane to stop changing.
-	deadline := time.Now().Add(60 * time.Second)
-	var previous string
-	for {
-		pane, err := m.services.tmux.CapturePane(sessionID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		previous = pane
-		if containsAll(pane, markers) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("pane never showed %v:\n%s", markers, previous)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	// The quiet run gets its own budget: markers rendering can eat most
-	// of the first deadline on a loaded runner, and the few captures the
-	// settle needs should not have to fit in whatever is left.
-	settleDeadline := time.Now().Add(20 * time.Second)
-	repeats := 0
-	for time.Now().Before(settleDeadline) {
-		pane, err := m.services.tmux.CapturePane(sessionID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if pane == previous {
-			repeats++
-		} else {
-			repeats = 0
-		}
-		previous = pane
-		if repeats >= 3 {
-			if !containsAll(previous, markers) {
-				t.Fatalf("pane settled without %v:\n%s", markers, previous)
-			}
-			return previous
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	t.Fatalf("pane never settled holding %v:\n%s", markers, previous)
-	return ""
-}
-
-// The envelope wraps at the pane width, and tmux wraps without inserting
-// anything, so the unwrapped text is the joined rows. The escapes go first:
-// psmux closes every captured row with an SGR reset.
-func containsAll(pane string, markers []string) bool {
-	flat := strings.ReplaceAll(ansi.Strip(pane), "\n", "")
-	for _, marker := range markers {
-		if !strings.Contains(flat, marker) {
-			return false
-		}
-	}
-	return true
-}
-
 // Quitting one CLI in a pane and starting another there is a real thing to
 // do, and every rule the row is read by follows its tool. The poll moves
 // the row onto what the pane is running rather than leaving the user to
@@ -729,14 +621,14 @@ func TestPollLeavesARunningRowAlone(t *testing.T) {
 func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
 	forceANSI256(t)
 
-	lowCharge := sgrOf(uitheme.Gauge(5, 10, true))
-	highUsage := sgrOf(uitheme.Gauge(95, 10, false))
+	lowCharge := sgrOf(uitheme.Gauge(5, 10, true, presentation.GlyphModeAdvanced))
+	highUsage := sgrOf(uitheme.Gauge(95, 10, false, presentation.GlyphModeAdvanced))
 	if lowCharge != highUsage {
 		t.Fatalf("5%% inverted = %q, want the same alarm color as 95%% uninverted %q", lowCharge, highUsage)
 	}
 
-	highCharge := sgrOf(uitheme.Gauge(95, 10, true))
-	lowUsage := sgrOf(uitheme.Gauge(5, 10, false))
+	highCharge := sgrOf(uitheme.Gauge(95, 10, true, presentation.GlyphModeAdvanced))
+	lowUsage := sgrOf(uitheme.Gauge(5, 10, false, presentation.GlyphModeAdvanced))
 	if highCharge != lowUsage {
 		t.Fatalf("95%% inverted = %q, want the same calm color as 5%% uninverted %q", highCharge, lowUsage)
 	}

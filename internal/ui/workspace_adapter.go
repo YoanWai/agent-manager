@@ -34,6 +34,11 @@ type workspace struct {
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
 	groupBases     map[string]string
+	// groupEnvs is each group's own environment profile, envProfiles the
+	// name of every defined one, and envKeys the variables each sets.
+	groupEnvs      map[string]string
+	envProfiles    []string
+	envKeys        map[string][]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	proc           sysstat.ProcStat
@@ -63,7 +68,7 @@ type workspace struct {
 
 // computerLines is the machine block docked at the rail's foot.
 func (m *Model) computerLines(width int) []string {
-	return uiworkspace.ComputerLines(m.workspace.snap, m.workspace.net, width)
+	return uiworkspace.ComputerLines(m.workspace.snap, m.workspace.net, width, m.prefs.glyphMode)
 }
 
 func (m *Model) railFootLines(width int) []string {
@@ -102,7 +107,7 @@ func pollMessage(result execution.Result) tea.Msg {
 	}
 	s := result.Snapshot
 	return refreshMsg{sessions: s.Sessions, listedAt: s.ListedAt, groups: s.Groups, groupPaths: s.GroupPaths,
-		groupWorktrees: s.GroupWorktrees, groupBases: s.GroupBases, archivedGroups: s.ArchivedGroups, snap: s.Snap, snapOK: s.SnapOK,
+		groupWorktrees: s.GroupWorktrees, groupBases: s.GroupBases, groupEnvs: s.GroupEnvs, envProfiles: s.EnvProfiles, envKeys: s.EnvKeys, archivedGroups: s.ArchivedGroups, snap: s.Snap, snapOK: s.SnapOK,
 		proc: s.Proc, procFor: s.ProcFor, preview: s.Preview, agents: agentStats{count: s.Agents.Count, cpu: s.Agents.CPU, ram: s.Agents.RAM, rss: s.Agents.RSS},
 		queuedMessages: s.QueuedMessages, paneLines: s.PaneLines, panePrompts: s.PanePrompts, panes: s.Panes,
 		tmuxSocket: s.TmuxSocket, leadingManager: s.LeadingManager, focusID: s.FocusID, turnsEnded: s.TurnsEnded, followWarning: s.FollowWarning}
@@ -149,6 +154,9 @@ type refreshMsg struct {
 	groupPaths     map[string]string
 	groupWorktrees map[string]string
 	groupBases     map[string]string
+	groupEnvs      map[string]string
+	envProfiles    []string
+	envKeys        map[string][]string
 	archivedGroups map[string]bool
 	snap           sysstat.Snapshot
 	snapOK         bool
@@ -271,13 +279,19 @@ func (m *Model) refreshCmd() tea.Cmd {
 	}
 }
 
+// listingFenced reports a listing no newer than the last committed mutation,
+// whose rows would show the store as it was before that mutation.
+func (m *Model) listingFenced(listedAt time.Time) bool {
+	return !listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !listedAt.After(m.effects.latestObservation)
+}
+
 func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case refreshMsg:
 		// A listing older than a committed mutation or a newer listing keeps
 		// its rows out, but still carries focus consumed from a notification,
 		// the turns it saw end and its pane facts.
-		fenced := !msg.listedAt.IsZero() && !m.effects.latestObservation.IsZero() && !msg.listedAt.After(m.effects.latestObservation)
+		fenced := m.listingFenced(msg.listedAt)
 		staleListing := fenced || (!msg.listedAt.IsZero() && msg.listedAt.Before(m.workspace.lastListedAt))
 		if !staleListing && !msg.listedAt.IsZero() {
 			m.workspace.lastListedAt = msg.listedAt
@@ -306,6 +320,15 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			m.workspace.groupPaths = msg.groupPaths
 			m.workspace.groupWorktrees = msg.groupWorktrees
 			m.workspace.groupBases = msg.groupBases
+			m.workspace.groupEnvs = msg.groupEnvs
+			m.workspace.envProfiles = msg.envProfiles
+			m.workspace.envKeys = msg.envKeys
+			if f := m.form(); f != nil && f.Remote.Host == "" {
+				f.Env().SetProfiles(msg.envProfiles)
+			}
+			if q := m.quick(); q != nil {
+				q.Env().SetProfiles(msg.envProfiles)
+			}
 			m.workspace.archivedGroups = msg.archivedGroups
 		}
 		m.endAfterTurns(msg.turnsEnded)

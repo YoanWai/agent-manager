@@ -180,13 +180,7 @@ type ScrollHost interface {
 // preview the view paints while the pane is scrolled back.
 func (s *Model) ApplyScroll(msg ScrollMessage, h ScrollHost) tea.Cmd {
 	id, _ := h.Session()
-	result := s.ApplyRegion(RegionResult{
-		SessionID: msg.SessionID,
-		Offset:    msg.Offset,
-		Rows:      msg.Rows,
-		Preview:   msg.Preview,
-		OK:        msg.OK,
-	}, id, h.PaneRows())
+	result := s.ApplyRegion(RegionResult(msg), id, h.PaneRows())
 	if result.Next != nil {
 		return h.Region(result.Next)
 	}

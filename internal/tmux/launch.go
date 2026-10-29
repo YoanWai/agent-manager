@@ -30,7 +30,7 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 	// pane to the user's shell afterwards matches "type into a shell"
 	// (pane stays up).
 	var scriptPath string
-	if command != "" {
+	if command != "" || len(env) > 0 {
 		var err error
 		scriptPath, err = writeLaunchScript(id, env, command, colorFgBg)
 		if err != nil {
@@ -56,6 +56,10 @@ func (d *Driver) Create(id, cwd, command string, env map[string]string, width, h
 // relaunchHint lands in the pane the moment the agent exits, which is where
 // the user is looking when they wonder how to get it back.
 const relaunchHint = "agent-manager: agent exited - press v in Agent Manager to relaunch it here."
+
+// envKeysVar lists the keys a launch exported into the pane's shell, so the
+// next launch in that pane can unset the ones its environment dropped.
+const envKeysVar = "AGENT_MANAGER_ENV_KEYS"
 
 func sortedKeys(env map[string]string) []string {
 	keys := make([]string, 0, len(env))

@@ -26,7 +26,7 @@ func TestPadRightUsesDisplayWidthAndKeepsStyledRowsClosed(t *testing.T) {
 func TestDividerUsesCallerStylesAndExactWidth(t *testing.T) {
 	section := lipgloss.NewStyle().Bold(true)
 	rule := lipgloss.NewStyle().Underline(true)
-	got := Divider("list", 20, section, rule)
+	got := Divider("list", 20, section, rule, ChromeFor(DefaultGlyphMode).SectionGlyph)
 	if width := ansi.StringWidth(got); width != 20 {
 		t.Fatalf("divider width = %d, want 20: %q", width, got)
 	}

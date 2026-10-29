@@ -1,8 +1,6 @@
 package runtime
 
 import (
-	"errors"
-
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
@@ -17,12 +15,16 @@ type Prober struct {
 // Probe refuses a window tmux no longer holds, and clears the unread mark a
 // finished session left, so a row entered after its turn does not read as new.
 func (p Prober) Probe(sessionID string) error {
-	if !p.Driver.Exists(sessionID) {
-		return errors.New(uisession.DeadHint)
-	}
 	sess, err := p.Store.Get(sessionID)
 	if err != nil {
 		return err
+	}
+	if !p.Driver.Exists(sessionID) {
+		keys, err := p.Store.ListKeys()
+		if err != nil {
+			return err
+		}
+		return uisession.DeadError(sess.Archived, keys)
 	}
 	if sess.Status == status.Finished {
 		return p.Store.AcknowledgeFinished(sessionID)

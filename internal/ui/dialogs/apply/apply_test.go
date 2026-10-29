@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
@@ -144,7 +145,7 @@ func TestForkRefusesASourceThatRestartedWhileQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = Fork(Sources{Store: st, Config: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
+	_, err = Fork(Sources{Store: st, Lifecycle: placedLauncher{}, Config: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
 		Source: source,
 		Name:   "child",
 	})
@@ -160,7 +161,7 @@ func TestForkRefusesAWorkingDirectoryThatDied(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	_, err := Fork(Sources{Store: st, Config: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
+	_, err := Fork(Sources{Store: st, Lifecycle: placedLauncher{}, Config: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
 		Source: source,
 		Name:   "child",
 	})
@@ -197,3 +198,13 @@ type fixedProbe struct {
 func (p fixedProbe) Resolve(string, []string) (string, bool) { return p.dir, p.ok }
 
 func (p fixedProbe) ResolveDir(string) bool { return p.ok }
+
+// placedLauncher accepts every placement and launches nothing, for a fork
+// the test stops before its launch.
+type placedLauncher struct{}
+
+func (placedLauncher) Launch(sessioncmd.LaunchRequest) (sessioncmd.LaunchResult, error) {
+	return sessioncmd.LaunchResult{}, errors.New("placedLauncher launches nothing")
+}
+
+func (placedLauncher) ValidatePlacement(store.Session) error { return nil }

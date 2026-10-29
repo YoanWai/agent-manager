@@ -38,6 +38,7 @@ func LiveChrome(mode presentation.GlyphMode) Chrome {
 		Title:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
 		Block:  uitheme.BlockHex(),
 		Cap:    LiveCap(mode),
+		Mode:   mode,
 	}
 }
 

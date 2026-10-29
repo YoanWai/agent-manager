@@ -62,7 +62,7 @@ func TestSplitSaveRequestWritesTheRatio(t *testing.T) {
 	if st.settings["split_ratio"] != "0.4200" {
 		t.Fatalf("stored ratio = %q", st.settings["split_ratio"])
 	}
-	if _, err := (SplitSaveRequest{Value: "0.5"}).Run(Services{}); err != NoStore {
-		t.Fatalf("a storeless save reported %v, want %v", err, NoStore)
+	if _, err := (SplitSaveRequest{Value: "0.5"}).Run(Services{}); err != ErrNoStore {
+		t.Fatalf("a storeless save reported %v, want %v", err, ErrNoStore)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -61,7 +62,7 @@ func TestComputerLinesTemperatures(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var temp string
-			for _, line := range ComputerLines(tc.r, Net{}, 40) {
+			for _, line := range ComputerLines(tc.r, Net{}, 40, presentation.GlyphModeAdvanced) {
 				plain := strings.TrimSpace(ansi.Strip(line))
 				if strings.HasPrefix(plain, "temp") {
 					temp = strings.Join(strings.Fields(plain), " ")
@@ -104,7 +105,7 @@ func TestComputerLinesBattery(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var batt string
-			for _, line := range ComputerLines(tc.r, Net{}, 40) {
+			for _, line := range ComputerLines(tc.r, Net{}, 40, presentation.GlyphModeAdvanced) {
 				plain := strings.TrimSpace(ansi.Strip(line))
 				if strings.HasPrefix(plain, "batt") {
 					batt = strings.Join(strings.Fields(plain), " ")
@@ -143,7 +144,7 @@ func TestTemperatureReadingsEachKeepTheirColor(t *testing.T) {
 func TestComputerDiskAvailable(t *testing.T) {
 	r := Readings{DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000}
 	for _, width := range []int{29, 34, 40, 55} {
-		lines := ComputerLines(r, Net{}, width)
+		lines := ComputerLines(r, Net{}, width, presentation.GlyphModeAdvanced)
 		plain := ansi.Strip(strings.Join(lines, "\n"))
 		if !strings.Contains(plain, "66%") || !strings.Contains(plain, "167.9GB available") {
 			t.Fatalf("disk reading = %q", plain)

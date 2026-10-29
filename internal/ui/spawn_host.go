@@ -164,6 +164,7 @@ func (m *Model) spawnDefaults(group string) uilaunch.Defaults {
 		GroupDir:  m.workspace.groupPaths[group],
 		Fallbacks: m.groupDirCandidates(group),
 		Worktree:  m.cachedSpawnWorktreeDefault(group),
+		Env:       m.groupEnv(group),
 	}
 }
 
@@ -236,6 +237,17 @@ func (m *Model) groupBase(group string) string {
 	return ""
 }
 
+// groupEnv is the environment profile a spawn into group preselects: the
+// nearest ancestor group's choice, or "" for none.
+func (m *Model) groupEnv(group string) string {
+	for g := group; g != ""; g = uirail.ParentGroup(g) {
+		if env := m.workspace.groupEnvs[g]; env != "" {
+			return env
+		}
+	}
+	return ""
+}
+
 func (m *Model) cachedHiddenTools() map[string]bool {
 	return m.settings.KnownHidden(m.services.cfg)
 }
@@ -263,17 +275,30 @@ func (m *Model) refreshQuickChoicePrefs() {
 // groupPickerFor is the picker rows of the group tree, highlighting
 // selectPath. Index 0 is always the root.
 func (m *Model) groupPickerFor(selectPath string) spawn.Picker {
-	groups, index := m.groupOptions(selectPath)
+	return m.groupPickerIncluding(selectPath, false)
+}
+
+// groupPickerIncluding is the picker with, in the archived view, the archived
+// groups under selectPath kept, so a move from there can land in place.
+func (m *Model) groupPickerIncluding(selectPath string, archived bool) spawn.Picker {
+	groups, index := m.groupOptionsIncluding(selectPath, archived)
 	return spawn.Picker{Groups: groups, GroupIndex: index}
 }
 
 // groupOptions is the picker's rows and the index of selectPath in them.
 func (m *Model) groupOptions(selectPath string) ([]spawn.GroupOption, int) {
+	return m.groupOptionsIncluding(selectPath, false)
+}
+
+func (m *Model) groupOptionsIncluding(selectPath string, archived bool) ([]spawn.GroupOption, int) {
 	sessionGroups := make([]string, 0, len(m.workspace.sessions))
 	for _, session := range m.workspace.sessions {
 		sessionGroups = append(sessionGroups, session.Group)
 	}
-	return spawn.Options(m.workspace.groups, sessionGroups, m.groupEffectivelyArchived, selectPath)
+	hidden := func(path string) bool {
+		return m.groupEffectivelyArchived(path) && (!archived || !uirail.InGroupSubtree(selectPath, path))
+	}
+	return spawn.Options(m.workspace.groups, sessionGroups, hidden, selectPath)
 }
 
 func (m *Model) viewGroupPicker(p *spawn.Picker) string {

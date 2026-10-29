@@ -7,6 +7,7 @@ import (
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 	git "github.com/YoanWai/agent-manager/internal/git/value"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -71,10 +72,11 @@ type renderer struct {
 	m *Model
 	s Styles
 	g presentation.GlyphSet
+	c presentation.ChromeSet
 }
 
 func (m *Model) renderer(ctx RenderContext) renderer {
-	return renderer{m: m, s: ctx.Styles, g: presentation.GlyphsFor(ctx.GlyphMode)}
+	return renderer{m: m, s: ctx.Styles, g: presentation.GlyphsFor(ctx.GlyphMode), c: presentation.ChromeFor(ctx.GlyphMode)}
 }
 
 func (s Styles) selectRow(row string) string {
@@ -87,8 +89,8 @@ func (s Styles) keyPill(key, text string, fg lipgloss.Color) string {
 	return s.Subtle.Render(key+" ") + s.Chip.Foreground(fg).Render(text)
 }
 
-func (s Styles) divider(label string, width int) string {
-	return presentation.Divider(label, width, s.Section, s.Rule)
+func (r renderer) divider(label string, width int) string {
+	return presentation.Divider(label, width, r.s.Section, r.s.Rule, r.c.SectionGlyph)
 }
 
 func PaneWidths(width int) (fileWidth, codeWidth int) {
@@ -116,7 +118,7 @@ func (m *Model) AnnotationInputHeight(width int) int {
 
 func (r renderer) annotationBar(fd *diff.FileDiff, width int, cursorMarker string) string {
 	num, _ := AnnotationLine(fd.Lines[r.m.CursorDiffLine()])
-	return r.s.divider(fmt.Sprintf("Comment · %s:%d", presentation.EscapeControlsInline(fd.File.Path), num), width) + "\n" + r.m.AnnotationView(cursorMarker)
+	return r.divider(fmt.Sprintf("Comment · %s:%d", presentation.EscapeControlsInline(fd.File.Path), num), width) + "\n" + r.m.AnnotationView(cursorMarker)
 }
 
 func (m *Model) EmptyText(ctx RenderContext) string { return m.renderer(ctx).emptyText() }
@@ -326,7 +328,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 		}
 		bar := " "
 		if i == state.FileIndex {
-			bar = lipgloss.NewStyle().Foreground(s.Accent).Render("▎")
+			bar = lipgloss.NewStyle().Foreground(s.Accent).Render(r.c.ReviewSelectionGlyph)
 		}
 		counts := lipgloss.NewStyle().Foreground(s.Finished).Render(fmt.Sprintf("+%d", fd.Stat.Adds)) +
 			" " + lipgloss.NewStyle().Foreground(s.Errored).Render(fmt.Sprintf("−%d", fd.Stat.Dels))
@@ -386,7 +388,7 @@ func (m *Model) Status(ctx RenderContext, width int) string {
 	return ""
 }
 
-func (m *Model) Legend() []LegendSection {
+func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
 	if m.annotationOpen {
 		return []LegendSection{{Title: "Comment", Pairs: [][2]string{
 			{"↵", "save"}, {"esc", "cancel"},
@@ -398,7 +400,13 @@ func (m *Model) Legend() []LegendSection {
 		if b.Footer == nil {
 			continue
 		}
-		pair := [2]string{b.legendKey(), b.Footer(m)}
+		key := b.legendKey()
+		if b.Action == actHelp {
+			if key = EffectiveHelpBinding(helpKey).Glyph("/"); key == "" {
+				continue
+			}
+		}
+		pair := [2]string{key, b.Footer(m)}
 		if b.Move {
 			move.Pairs = append(move.Pairs, pair)
 		} else {

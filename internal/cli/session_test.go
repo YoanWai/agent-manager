@@ -211,15 +211,15 @@ func TestSpawnPassesOnlyTheFlagsGiven(t *testing.T) {
 	if fake.opts.Model != "sonnet" || fake.opts.Effort != "high" || fake.opts.Profile != "work" {
 		t.Fatalf("spawn choice = %+v", fake.opts)
 	}
-	if fake.opts.Group != nil || fake.opts.Worktree != nil {
-		t.Fatalf("untyped flags should stay inherited, got group=%v worktree=%v", fake.opts.Group, fake.opts.Worktree)
+	if fake.opts.Group != nil || fake.opts.Worktree != nil || fake.opts.Environment != nil {
+		t.Fatalf("untyped flags should stay inherited, got group=%v worktree=%v environment=%v", fake.opts.Group, fake.opts.Worktree, fake.opts.Environment)
 	}
 	if !strings.HasPrefix(out.String(), "created api-worker (id beef1234)") {
 		t.Fatalf("spawn output = %q", out.String())
 	}
 
 	explicit := &fakeSessions{session: sampleSession()}
-	if err := runSpawn(&bytes.Buffer{}, explicit, []string{"--group", "", "--worktree"}, "cafe0001"); err != nil {
+	if err := runSpawn(&bytes.Buffer{}, explicit, []string{"--group", "", "--worktree", "--env", ""}, "cafe0001"); err != nil {
 		t.Fatalf("spawn explicit: %v", err)
 	}
 	if explicit.opts.Group == nil || *explicit.opts.Group != "" {
@@ -227,6 +227,9 @@ func TestSpawnPassesOnlyTheFlagsGiven(t *testing.T) {
 	}
 	if explicit.opts.Worktree == nil || !*explicit.opts.Worktree {
 		t.Fatalf("--worktree should be passed on, got %v", explicit.opts.Worktree)
+	}
+	if explicit.opts.Environment == nil || *explicit.opts.Environment != "" {
+		t.Fatalf("an explicit empty --env launches under none, got %v", explicit.opts.Environment)
 	}
 }
 

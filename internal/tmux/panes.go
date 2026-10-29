@@ -32,12 +32,6 @@ func (d *Driver) CapturePaneHistoryContext(ctx context.Context, id string, lines
 	return d.runContext(ctx, "capture-pane", "-p", "-e", "-S", "-"+strconv.Itoa(lines), "-t", PaneTarget(id))
 }
 
-// capturePlain drops the escapes CapturePane keeps, which an application is
-// free to write partway through a line, breaking a match on the text.
-func (d *Driver) capturePlain(target string) (string, error) {
-	return d.run("capture-pane", "-p", "-t", target)
-}
-
 func (d *Driver) capturePlainContext(ctx context.Context, target string) (string, error) {
 	return d.runContext(ctx, "capture-pane", "-p", "-t", target)
 }
@@ -169,33 +163,46 @@ func (d *Driver) Panes() (map[string]Pane, error) {
 var paneIDPattern = regexp.MustCompile(`^%[0-9]+$`)
 
 // SessionOfProcess names the managed session whose pane process is pid or
-// one of its ancestors. It serves a process that inherited neither $TMUX nor
-// $TMUX_PANE, such as an MCP server a CLI starts with a scrubbed environment.
-func (d *Driver) SessionOfProcess(pid int) (string, error) {
-	out, err := d.run("list-panes", "-a", "-F", "#{pane_pid} #{session_name}")
+// one of its ancestors; ppid is pid's parent as that process sees it.
+//
+// seen is false when the process table read here is not the one the tmux
+// server runs in, as inside a sandbox's PID namespace (Claude Code's
+// bubblewrap unshares it): the server is missing from the table, or the
+// table gives pid another parent, and the walk proves nothing either way.
+// When seen is true, an empty name means no managed pane started pid.
+func (d *Driver) SessionOfProcess(pid, ppid int) (name string, seen bool, err error) {
+	out, err := d.run("list-panes", "-a", "-F", "#{pid} #{pane_pid} #{session_name}")
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
+	server := 0
 	sessions := map[int]string{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		panePID, name, _ := strings.Cut(line, " ")
-		if id, err := strconv.Atoi(panePID); err == nil && strings.HasPrefix(name, prefix) {
-			sessions[id] = strings.TrimPrefix(name, prefix)
+		fields := strings.SplitN(line, " ", 3)
+		if len(fields) != 3 {
+			continue
+		}
+		server, _ = strconv.Atoi(fields[0])
+		if id, err := strconv.Atoi(fields[1]); err == nil && strings.HasPrefix(fields[2], prefix) {
+			sessions[id] = strings.TrimPrefix(fields[2], prefix)
 		}
 	}
 	parents, err := processParents()
 	if err != nil {
-		return "", err
+		return "", false, err
+	}
+	if _, ok := parents[server]; !ok || parents[pid] != ppid {
+		return "", false, nil
 	}
 	// The step bound stops a parent loop, which a racing ps snapshot can
 	// produce when a pid is reused mid-listing.
 	for steps := 0; pid > 1 && steps <= len(parents); steps++ {
 		if name, ok := sessions[pid]; ok {
-			return name, nil
+			return name, true, nil
 		}
 		pid = parents[pid]
 	}
-	return "", nil
+	return "", true, nil
 }
 
 // socketAndPid reads $TMUX from the right, since the socket path is the one

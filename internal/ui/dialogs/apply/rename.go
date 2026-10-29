@@ -31,6 +31,7 @@ type Request struct {
 	DraftDir        string
 	Worktree        string
 	Base            string
+	Env             string
 	SessID          string
 	Sess            store.Session
 	Name            string
@@ -52,6 +53,7 @@ type Outcome struct {
 	PathSet      bool
 	WorktreeSet  bool
 	BaseSet      bool
+	EnvSet       bool
 	NameRenamed  bool
 	ToolChanged  bool
 	Branch       string
@@ -91,6 +93,10 @@ func Rename(s Sources, preflight Preflight, request Request) (Outcome, error) {
 			return result, err
 		}
 		result.BaseSet = true
+		if err = s.Store.SetGroupEnvironment(request.NewGroup, request.Env); err != nil {
+			return result, err
+		}
+		result.EnvSet = true
 		sessions, err := s.Store.SessionsInSubtree(request.NewGroup)
 		if err != nil {
 			return result, err

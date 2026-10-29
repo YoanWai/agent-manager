@@ -48,6 +48,7 @@ type FormFacts struct {
 // View paints the form's body and its key hint, and records the line each
 // field takes for clicks.
 func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
+	chrome := presentation.ChromeFor(facts.Styles.GlyphMode)
 	st := facts.Styles
 	var head, tail strings.Builder
 	var headLines, tailLines presentation.Lines[fieldLine]
@@ -63,7 +64,7 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 
 	toolVal := "(none configured)"
 	if len(d.toolNames) > 0 {
-		toolVal = st.Subtle.Render("◂ ") + st.Value.Render(d.toolNames[d.toolIndex]) + st.Subtle.Render(" ▸")
+		toolVal = st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + st.Value.Render(d.toolNames[d.toolIndex]) + st.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	}
 	field("tool", toolVal, FieldTool)
 	toolName, ch := d.Tool(), &d.choice
@@ -84,6 +85,9 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	if value, shown, _ := ch.EffortRow(h, toolName, st); shown {
 		field("effort", value, FieldEffort)
 	}
+	if d.env.Shown() {
+		field("env", d.env.Label(st), FieldEnv)
+	}
 	field("dir", st.Input(d.dir), FieldDir)
 	paths := h.Paths()
 	if d.focus == FieldDir && paths.Active() {
@@ -100,7 +104,7 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 		case d.worktree:
 			worktreeVal = "on"
 		}
-		worktreeField = st.Subtle.Render("◂ ") + st.Value.Render(worktreeVal) + st.Subtle.Render(" ▸")
+		worktreeField = st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + st.Value.Render(worktreeVal) + st.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	}
 	field("worktree", worktreeField, FieldWorktree)
 	if d.worktree && facts.WorktreeKnown && facts.WorktreeCapable && facts.Host == "" {
@@ -160,6 +164,7 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 // savedRow is the saved prompts row's value, and whether it shows: the
 // read, its failure, or the pick once there is something to pick.
 func (d *Form) savedRow(facts FormFacts) (string, bool) {
+	chrome := presentation.ChromeFor(facts.Styles.GlyphMode)
 	st := facts.Styles
 	switch {
 	case d.savedLoading:
@@ -173,7 +178,7 @@ func (d *Form) savedRow(facts FormFacts) (string, bool) {
 	if d.savedIndex > 0 && d.savedIndex <= len(d.saved) {
 		name = d.saved[d.savedIndex-1].Name
 	}
-	return st.Subtle.Render("◂ ") + st.Value.Render(name) + st.Subtle.Render(" ▸"), true
+	return st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + st.Value.Render(name) + st.Subtle.Render(" "+chrome.ChoiceRightGlyph), true
 }
 
 // savedDetails are the lines under the saved prompts row, within room: the

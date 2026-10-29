@@ -8,6 +8,7 @@ package source
 import (
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
@@ -34,6 +35,7 @@ type Store interface {
 	SetReviewBase(sessionID, repoRoot, baseRef string) error
 	Get(id string) (store.Session, error)
 	SetAcked(id string, acked bool) error
+	ListKeys() (keybind.Table, error)
 }
 
 // Writer is the tmux side of a round: the existence probe that runs before the

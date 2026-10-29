@@ -13,9 +13,11 @@ func TestHelpDependencyGraph(t *testing.T) {
 }
 
 func TestFeatureDependenciesPermitOnlyPresentationAndBindings(t *testing.T) {
-	deps := []string{"fmt", "github.com/charmbracelet/bubbletea", module + "/internal/ui/help", module + "/internal/keybind", module + "/internal/ui/presentation"}
-	if err := checkBoundaryDependencies(helpBoundary, deps); err != nil {
-		t.Fatal(err)
+	for _, feature := range []boundary{helpBoundary, reviewBoundary} {
+		deps := []string{"fmt", "github.com/charmbracelet/bubbletea", module + feature.path, module + "/internal/keybind", module + "/internal/ui/presentation"}
+		if err := checkBoundaryDependencies(feature, deps); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

@@ -70,8 +70,8 @@ func TestFocusDeadSessionNeverEnters(t *testing.T) {
 	if !m.onList() {
 		t.Fatalf("a dead pane should not enter focus, screen = %v", m.screenID())
 	}
-	if m.errBar.text != uisession.DeadHint {
-		t.Fatalf("err = %q, want %q", m.errBar.text, uisession.DeadHint)
+	if m.errBar.text != uisession.DeadHint(keybind.DefaultList()) {
+		t.Fatalf("err = %q, want %q", m.errBar.text, uisession.DeadHint(keybind.DefaultList()))
 	}
 }
 
@@ -172,8 +172,8 @@ func TestAttachDeadSessionReportsFromCompletion(t *testing.T) {
 	}
 	m.applyTestMsg(t, cmd())
 	m.drainEffects(t)
-	if m.errBar.text != uisession.DeadHint {
-		t.Fatalf("err = %q, want %q", m.errBar.text, uisession.DeadHint)
+	if m.errBar.text != uisession.DeadHint(keybind.DefaultList()) {
+		t.Fatalf("err = %q, want %q", m.errBar.text, uisession.DeadHint(keybind.DefaultList()))
 	}
 }
 

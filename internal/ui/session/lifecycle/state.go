@@ -171,6 +171,7 @@ type Listing struct {
 	GroupPaths     map[string]string
 	GroupWorktrees map[string]string
 	GroupBases     map[string]string
+	GroupEnvs      map[string]string
 	ArchivedGroups map[string]bool
 }
 
@@ -209,6 +210,7 @@ func (s *State) ReconcileListing(listing Listing) Listing {
 		delete(listing.GroupPaths, path)
 		delete(listing.GroupWorktrees, path)
 		delete(listing.GroupBases, path)
+		delete(listing.GroupEnvs, path)
 		delete(listing.ArchivedGroups, path)
 	}
 	return listing

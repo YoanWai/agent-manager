@@ -2,19 +2,18 @@ package lifecycle
 
 import (
 	"context"
-	"errors"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
-	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 )
 
 // ReplyReader is what a reply copy reads a pane with: the tmux server, the
 // status engine that knows where a tool's turn begins, and how many lines of
 // history are worth keeping.
 type ReplyReader struct {
+	Store   *store.Store
 	Driver  *tmux.Driver
 	Engine  *status.Engine
 	History int
@@ -37,7 +36,7 @@ func (r ReplyReader) Copy(sess store.Session) (Reply, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), tmux.CommandTimeout)
 	defer cancel()
 	if !r.Driver.ExistsContext(ctx, sess.ID) {
-		return Reply{}, errors.New(uisession.DeadHint)
+		return Reply{}, DeadSessionError(r.Store, sess.ID)
 	}
 	pane, err := r.Driver.CapturePaneHistoryContext(ctx, sess.ID, r.History)
 	if err != nil {

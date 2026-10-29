@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
@@ -29,10 +30,12 @@ func (h helpHost) Glyphs() uihelp.Glyphs {
 }
 
 func (h helpHost) QuickKeys() uihelp.QuickKeys {
-	return uihelp.QuickKeys{Model: uiquick.ModelKey, Effort: uiquick.EffortKey, Profile: uiquick.ProfileKey}
+	return uihelp.QuickKeys{Model: uiquick.ModelKey, Effort: uiquick.EffortKey, Profile: uiquick.ProfileKey, Env: uiquick.EnvKey}
 }
 
-func (h helpHost) ReviewRows() [][2]string { return uireview.HelpRows() }
+func (h helpHost) ReviewRows() [][2]string {
+	return uireview.HelpRows(h.services.listKeys.Binding(keybind.Help))
+}
 
 func (h helpHost) CursorMarker() string { return uiframe.CursorMarker }
 

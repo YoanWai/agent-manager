@@ -506,6 +506,7 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 			Dir:      m.workspace.groupPaths[mutation.Path],
 			Worktree: m.workspace.groupWorktrees[mutation.Path],
 			Base:     m.workspace.groupBases[mutation.Path],
+			Env:      m.workspace.groupEnvs[mutation.Path],
 		}, chain, first)
 	}
 }
@@ -519,7 +520,7 @@ func (m *Model) applyRailEffect(result uirailpersist.Result, request uirailpersi
 			m.materializeGroupsLocal(mutation.GroupSiblings)
 			m.swapGroupInventory(mutation.Path, mutation.TargetPath)
 		case uirail.MoveGroup:
-			m.renameGroupLocally(mutation.Path, result.NewPath, request.Dir, request.Worktree, request.Base)
+			m.renameGroupLocally(mutation.Path, result.NewPath, request.Dir, request.Worktree, request.Base, request.Env)
 		}
 		for _, sess := range result.Sessions {
 			for i := range m.workspace.sessions {

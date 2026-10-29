@@ -97,8 +97,8 @@ func TestSaveRatioWrapsAStoreFailure(t *testing.T) {
 	if err := SaveRatio(store, "0.4"); err == nil || err.Error() != "save split ratio: database is locked" {
 		t.Fatalf("err = %v", err)
 	}
-	if NoStore == nil || NoStore.Error() != "save split ratio: store is unavailable" {
-		t.Fatalf("NoStore = %v", NoStore)
+	if ErrNoStore == nil || ErrNoStore.Error() != "save split ratio: store is unavailable" {
+		t.Fatalf("ErrNoStore = %v", ErrNoStore)
 	}
 	if err := SaveRatio(&fakeStore{}, "0.42"); err != nil {
 		t.Fatalf("save: %v", err)

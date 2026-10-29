@@ -87,7 +87,12 @@ func runSend(request Request, st Store, writer Writer) (Result, error) {
 		return Result{Op: Send, Send: result}, nil
 	}
 	if !exists {
-		result.Err = errors.New(uisession.DeadHint)
+		keys, keysErr := st.ListKeys()
+		if keysErr != nil {
+			result.Err = keysErr
+			return Result{Op: Send, Send: result}, nil
+		}
+		result.Err = uisession.DeadError(current.Archived, keys)
 		return Result{Op: Send, Send: result}, nil
 	}
 	if err := st.MergeReviewState(request.TargetID, request.RepoRoot, StateToStore(request.State)); err != nil {

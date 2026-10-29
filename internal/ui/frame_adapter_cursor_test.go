@@ -171,7 +171,7 @@ func TestFinalHelpLayoutPublishesAndRemovesCursorMarker(t *testing.T) {
 			t.Fatalf("final cursor anchor = (%d, %d, %v), frame is %dx%d", col, row, ok, m.layout.width, m.layout.height)
 		}
 		plain := strings.Split(ansi.Strip(frame), "\n")
-		if row > len(plain) || !strings.Contains(plain[row-1], "search 中文▏") {
+		if row > len(plain) || !strings.Contains(plain[row-1], "search 中文"+presentation.ChromeFor(mode).CursorGlyph) {
 			t.Fatalf("anchor row %d does not contain the help input: %q", row, plain[row-1])
 		}
 	}

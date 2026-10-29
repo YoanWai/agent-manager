@@ -42,10 +42,29 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 	remove := menuItem{label: "Delete", action: Delete, danger: true}
 	connection := menuItem{label: "New connection", action: NewConnection}
 	if row.isRoot() {
-		return menuSections(append(create, editor, menuItem{label: "Settings", action: OpenSettings}), []menuItem{connection})
+		rootCreate := create
+		var end []menuItem
+		if m.showArchived {
+			rootCreate = []menuItem{{label: "New session", action: NewSession}}
+		} else {
+			live, dead := m.groupLiveAndDead("")
+			if dead {
+				end = append(end, revive)
+			}
+			if live {
+				end = append(end, kill)
+			}
+		}
+		return menuSections(append(rootCreate, editor, menuItem{label: "Settings", action: OpenSettings}), end, []menuItem{connection})
 	}
 	if row.host != "" {
+		if m.showArchived {
+			create = []menuItem{{label: "New session", action: NewSession}}
+		}
 		return remoteMenuItems(row, create, connection)
+	}
+	if m.showArchived {
+		return menuSections(manage, []menuItem{{label: "Restore", action: Restore}, remove})
 	}
 	if row.kind == GroupRow {
 		live, dead := m.groupLiveAndDead(row.group)
@@ -58,9 +77,6 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 			end = append(end, kill)
 		}
 		return menuSections(create, manage, append(end, remove))
-	}
-	if row.sess.Archived {
-		return []menuItem{{label: "Restore", action: Restore}, remove}
 	}
 	var keep []menuItem
 	if row.sess.AfterTurn != "" {
@@ -139,8 +155,8 @@ func menuSections(sections ...[]menuItem) []menuItem {
 }
 
 func (m Model) groupLiveAndDead(group string) (live, dead bool) {
-	for _, session := range m.snapshot.Sessions {
-		if session.Archived != m.showArchived || !InGroupSubtree(session.Group, group) {
+	for _, session := range m.listedSessions() {
+		if !InGroupSubtree(session.Group, group) {
 			continue
 		}
 		if session.Status == "dead" {

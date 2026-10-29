@@ -16,7 +16,7 @@ import (
 const (
 	usageSessions      = "sessions [--json]"
 	usageSnapshot      = "snapshot --json"
-	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
+	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--env <name>] [--group <path>] [--directory <path>] [--worktree] [--json]"
 	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--from <name>] [--json]`
 	usageType          = `type <session-id> "<prompt>" [--json]`
 	usageRead          = "read <session-id> [--styled] [--json]"
@@ -124,6 +124,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 	model := set.String("model", "", "model to run it on, one the CLI lists; defaults to the CLI's own, and a restart, revive or fork keeps it")
 	effort := set.String("effort", "", "reasoning effort, one the model takes; defaults to the CLI's own")
 	profile := set.String("profile", "", "profile to launch the CLI under, for a CLI that has them")
+	environment := set.String("env", "", "environment profile to launch under; defaults to the group's, else to yours; pass an empty string for none")
 	group := set.String("group", "", "existing group path to file it under; pass an empty string for the root group")
 	directory := set.String("directory", "", "existing directory it works in; defaults to yours, or to the group's inherited path")
 	worktree := set.Bool("worktree", false, "give it its own git worktree and branch, which is what keeps parallel agents off each other's files")
@@ -149,6 +150,8 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 			opts.Group = group
 		case "worktree":
 			opts.Worktree = worktree
+		case "env":
+			opts.Environment = environment
 		}
 	})
 	created, err := sessions.Create(sessionID, opts)

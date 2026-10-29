@@ -66,5 +66,5 @@ func (r InputRequest) EffectCopy() uieffects.Request {
 }
 
 func (r InputRequest) Run(s Services) (uieffects.Result, error) {
-	return Writer{Store: s.Store, Driver: s.Driver, Engine: s.Engine, Watch: s.Watch, Paste: s.Paste}.Run(r.Value)
+	return Writer(s).Run(r.Value)
 }

@@ -29,7 +29,7 @@ func TestPruneTargetsDropsTheMovedSubtree(t *testing.T) {
 // cursor lands back on a group row.
 func TestNestAgentsPutsEachAgentUnderItsGroup(t *testing.T) {
 	picker := spawn.Picker{Groups: []spawn.GroupOption{{Path: ""}, {Path: "web"}}}
-	NestAgents(&picker, []Agent{{ID: "s1", Group: "web", Name: "api"}, {ID: "s2", Group: "", Name: "top"}})
+	NestAgents(&picker, []Agent{{ID: "s1", Group: "web", Name: "api"}, {ID: "s2", Group: "", Name: "top"}}, "")
 	var got []string
 	for _, opt := range picker.Groups {
 		got = append(got, opt.Path+"/"+opt.Name)

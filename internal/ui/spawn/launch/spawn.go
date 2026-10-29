@@ -57,6 +57,7 @@ type Request struct {
 	Images       []composer.Attachment
 	Choice       config.Choice
 	Base         string
+	Environment  string
 }
 
 // Result is the durable outcome of a spawn: the persisted session row, which
@@ -142,13 +143,14 @@ func Run(services Services, request Request) (Result, error) {
 	}
 	launched, err := services.Lifecycle.Spawn(sessioncmd.SpawnRequest{
 		Session: store.Session{
-			ID:       request.ID,
-			Name:     request.Name,
-			Tool:     request.ToolName,
-			Cwd:      dir,
-			Group:    request.Group,
-			ParentID: request.ParentID,
-			Choice:   request.Choice,
+			ID:          request.ID,
+			Name:        request.Name,
+			Tool:        request.ToolName,
+			Cwd:         dir,
+			Group:       request.Group,
+			ParentID:    request.ParentID,
+			Choice:      request.Choice,
+			Environment: request.Environment,
 		},
 		Tool:     tool,
 		Plan:     plan,
@@ -173,6 +175,7 @@ type GroupRequest struct {
 	Dir       string
 	Worktree  string
 	Base      string
+	Env       string
 	Gen       int
 	RawDir    string
 	Fallbacks []string
@@ -198,7 +201,7 @@ func RunGroup(services Services, request GroupRequest) (GroupResult, error) {
 			return GroupResult{}, errors.New("default path does not exist: " + dir)
 		}
 	}
-	if err := services.Store.AddGroup(request.Path, dir, request.Worktree, request.Base); err != nil {
+	if err := services.Store.AddGroup(request.Path, dir, request.Worktree, request.Base, request.Env); err != nil {
 		return GroupResult{}, err
 	}
 	return GroupResult{Path: request.Path, Dir: dir, Worktree: request.Worktree}, nil

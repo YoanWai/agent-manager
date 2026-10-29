@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -39,6 +40,7 @@ func (m *Model) activeNotices() []uinotices.Notice {
 // bar as the panel's tail shows them.
 func (m *Model) noticesFrame() uinotices.Frame {
 	return uinotices.Frame{
+		CloseKey:    m.services.listKeys.Binding(keybind.Messages),
 		GlyphMode:   m.prefs.glyphMode,
 		Width:       m.layout.width,
 		Height:      m.layout.height,

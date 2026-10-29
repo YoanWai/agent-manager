@@ -52,9 +52,3 @@ func (c Cap) quietCap(key, label string) string {
 	key = presentation.KeyLabel(c.Mode, key)
 	return c.Key.Render(key) + " " + c.Muted.Render(label)
 }
-
-// Divider renders a labeled section rule that fills the given width: an
-// accent tick, the label, then a hairline out to the edge.
-func Divider(label string, width int, heading, rule lipgloss.Style) string {
-	return presentation.Divider(label, width, heading, rule)
-}

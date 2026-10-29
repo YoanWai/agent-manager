@@ -29,7 +29,7 @@ func PruneTargets(p *spawn.Picker, subtree string) {
 
 // NestAgents adds each agent under the group it runs in, so a shell moved
 // out of an agent follows it there.
-func NestAgents(p *spawn.Picker, agents []Agent) {
+func NestAgents(p *spawn.Picker, agents []Agent, parentID string) {
 	selected := p.GroupPath()
 	var options []spawn.GroupOption
 	for _, opt := range p.Groups {
@@ -47,5 +47,13 @@ func NestAgents(p *spawn.Picker, agents []Agent) {
 		}
 	}
 	p.Groups = options
+	if parentID != "" {
+		for i, opt := range options {
+			if opt.SessionID == parentID {
+				p.GroupIndex = i
+				return
+			}
+		}
+	}
 	p.Reselect(selected, func(opt spawn.GroupOption) bool { return opt.SessionID == "" })
 }

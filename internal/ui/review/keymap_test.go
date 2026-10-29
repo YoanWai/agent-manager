@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -24,7 +25,7 @@ func TestLegendReadsTheKeymap(t *testing.T) {
 			{"esc/q", "close"}, {"ctrl+c", "quit"},
 		}},
 	}
-	if got := m.Legend(); !reflect.DeepEqual(got, want) {
+	if got := m.Legend(defaultHelpKey()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("legend =\n%v\nwant\n%v", got, want)
 	}
 }
@@ -34,7 +35,7 @@ func TestLegendReadsTheKeymap(t *testing.T) {
 func TestEveryNamedKeyIsHandled(t *testing.T) {
 	named := map[string]bool{}
 	m := New(false)
-	for _, section := range m.Legend() {
+	for _, section := range m.Legend(defaultHelpKey()) {
 		for _, pair := range section.Pairs {
 			if pair == quitPair {
 				continue
@@ -69,7 +70,7 @@ func TestUnboundKeyIsNotConsumed(t *testing.T) {
 	if result := m.Key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")}, KeyContext{CodeHeight: 10}); result.Consumed {
 		t.Fatalf("z was consumed: %+v", result)
 	}
-	if result := m.Key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")}, KeyContext{CodeHeight: 10}); result.Navigation != NavigationHelp {
+	if result := m.Key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")}, KeyContext{CodeHeight: 10, HelpKey: defaultHelpKey()}); result.Navigation != NavigationHelp {
 		t.Fatalf("? = %+v", result)
 	}
 }
@@ -97,7 +98,47 @@ func TestHelpRowsReadTheKeymap(t *testing.T) {
 		{"?", "this key map"},
 		{"esc / q", "close the review"},
 	}
-	if got := HelpRows(); !reflect.DeepEqual(got, want) {
+	if got := HelpRows(defaultHelpKey()); !reflect.DeepEqual(got, want) {
 		t.Fatalf("help rows =\n%v\nwant\n%v", got, want)
+	}
+}
+
+func defaultHelpKey() keybind.Binding { return keybind.DefaultList().Binding(keybind.Help) }
+
+// The help row follows the configured key, less any key Review already
+// answers to, and leaves the footer and the map when nothing is left.
+func TestHelpRowNamesTheConfiguredKey(t *testing.T) {
+	key, err := keybind.Parse("H")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := New(false)
+	for _, tc := range []struct {
+		binding keybind.Binding
+		want    string
+	}{
+		{keybind.Keys(key), "H"},
+		{keybind.Binding{}, ""},
+	} {
+		got := ""
+		for _, row := range HelpRows(tc.binding) {
+			if row[1] == "this key map" {
+				got = row[0]
+			}
+		}
+		if got != tc.want {
+			t.Fatalf("help row key = %q, want %q", got, tc.want)
+		}
+		got = ""
+		for _, section := range m.Legend(tc.binding) {
+			for _, pair := range section.Pairs {
+				if pair[1] == "keys" {
+					got = pair[0]
+				}
+			}
+		}
+		if got != tc.want {
+			t.Fatalf("footer key = %q, want %q", got, tc.want)
+		}
 	}
 }

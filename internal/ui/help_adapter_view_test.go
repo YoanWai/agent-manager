@@ -112,7 +112,15 @@ func TestHelpBodyShowsMoreMarkersWhenItOverflows(t *testing.T) {
 	}
 }
 
-func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
+func TestHelpReportsWhenNothingMatches(t *testing.T) {
+	m := helpModel()
+	typeHelpSearch(m, "zzzz", true)
+	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "no key matches that") {
+		t.Fatal("a query nothing answers should say so")
+	}
+}
+
+func TestHelpContentAndLayout(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previousProfile) })
@@ -147,7 +155,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 			got := readableHelpFrame(preparedView(test.model))
 			want := strings.TrimSuffix(string(golden), "\n")
 			if got != want {
-				t.Fatalf("help content and layout changed from 560a463:\nwant:\n%s\n\ngot:\n%s", want, got)
+				t.Fatalf("help content and layout changed:\nwant:\n%s\n\ngot:\n%s", want, got)
 			}
 			if test.assertCursor {
 				if _, _, ok := test.model.focus.imeCursor.Get(); !ok {
@@ -547,4 +555,51 @@ func viewHelpOf(m *Model) string { return helpSurfaceOf(m).View(m, "") }
 func helpOpen(m *Model) bool {
 	_, ok := surfaceOf[*uihelp.Surface](m)
 	return ok
+}
+
+func TestHelpCloseFollowsSavedBindingWithoutStealingSearch(t *testing.T) {
+	m := helpModel()
+	m.services.listKeys = m.services.listKeys.With(keybind.Help, bindingOf(t, "H", "f2"))
+	m.handleKey(runeKey("?"))
+	if !m.helpOpen() {
+		t.Fatal("old help binding closed dialog")
+	}
+	m.handleKey(runeKey("/"))
+	m.handleKey(runeKey("H"))
+	if frame := ansi.Strip(preparedView(m)); !strings.Contains(frame, "search H") {
+		t.Fatalf("bound key stole search: %s", frame)
+	}
+	m.handleKey(namedKey(tea.KeyEnter))
+	m.handleKey(tea.KeyMsg{Type: tea.KeyF2})
+	if m.helpOpen() {
+		t.Fatal("saved help binding did not close dialog")
+	}
+	m.openHelp()
+	m.services.listKeys = m.services.listKeys.With(keybind.Help, bindingOf(t))
+	m.handleKey(runeKey("?"))
+	if !m.helpOpen() {
+		t.Fatal("disabled help binding retained old alias")
+	}
+	m.handleKey(namedKey(tea.KeyEnter))
+	if !m.helpOpen() {
+		t.Fatal("unadvertised Enter closed help")
+	}
+	m.handleKey(namedKey(tea.KeyEsc))
+	if m.helpOpen() {
+		t.Fatal("Escape did not close help")
+	}
+}
+
+func TestHelpToggleDoesNotOverrideDocs(t *testing.T) {
+	m := helpModel()
+	m.services.listKeys = m.services.listKeys.With(keybind.Help, bindingOf(t, "o"))
+	_, cmd := m.handleKey(runeKey("o"))
+	if !m.helpOpen() || cmd == nil {
+		t.Fatal("toggle stole local docs action")
+	}
+	for _, pair := range helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 84)).Hints {
+		if pair[1] == "close" && strings.Contains(pair[0], "o") {
+			t.Fatalf("docs key advertised as close: %v", pair)
+		}
+	}
 }

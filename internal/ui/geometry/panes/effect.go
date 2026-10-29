@@ -34,7 +34,7 @@ func (SplitSaveRequest) EffectName() string { return "split ratio save" }
 
 func (r SplitSaveRequest) Run(s Services) (uieffects.Result, error) {
 	if s.Store == nil {
-		return nil, NoStore
+		return nil, ErrNoStore
 	}
 	return nil, SaveRatio(s.Store, r.Value)
 }

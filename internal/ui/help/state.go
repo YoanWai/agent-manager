@@ -3,7 +3,10 @@
 // bindings and glyphs and opens the links it names.
 package help
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	tea "github.com/charmbracelet/bubbletea"
+)
 
 type State struct {
 	scroll    int
@@ -28,8 +31,9 @@ const (
 )
 
 type Viewport struct {
-	Rows  int
-	Lines int
+	Rows     int
+	Lines    int
+	CloseKey keybind.Binding
 }
 
 func New(scope Scope) State {
@@ -67,6 +71,10 @@ func (s *State) Update(msg tea.KeyMsg, viewport Viewport) Action {
 		s.updateSearch(msg, viewport)
 		return Stay
 	}
+	if closeBinding(viewport.CloseKey).Has(keybind.Normalize(msg.String())) {
+		s.close()
+		return Close
+	}
 	switch msg.String() {
 	case "esc":
 		if s.query != "" {
@@ -76,7 +84,7 @@ func (s *State) Update(msg tea.KeyMsg, viewport Viewport) Action {
 		}
 		s.close()
 		return Close
-	case "q", "?", "enter":
+	case "q":
 		s.close()
 		return Close
 	case "/":
@@ -132,4 +140,17 @@ func (s *State) updateSearch(msg tea.KeyMsg, viewport Viewport) {
 			s.scroll = 0
 		}
 	}
+}
+
+// Modal actions keep their keys when the global toggle is rebound onto one.
+func closeBinding(binding keybind.Binding) keybind.Binding {
+	var keys []keybind.Key
+	for _, key := range binding.Keys() {
+		switch key.Tea() {
+		case "/", "o", "up", "k", "down", "j", "pgup", "ctrl+u", "pgdn", "ctrl+d", "g", "home", "G", "end":
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keybind.Keys(keys...)
 }

@@ -35,7 +35,11 @@ func (r *renameStub) StepBase(*RenameSurface, int) (string, tea.Cmd) {
 
 func (r *renameStub) WorktreeCount() int { return 3 }
 
-func (r *renameStub) QueueRename(request RenameRequest, base string) tea.Cmd {
+func (r *renameStub) EnvProfiles() []string { return nil }
+
+func (r *renameStub) FieldsLine(int, int) (int, bool) { return 0, false }
+
+func (r *renameStub) QueueRename(request RenameRequest, base, _ string) tea.Cmd {
 	r.requests = append(r.requests, request)
 	r.bases = append(r.bases, base)
 	return nil

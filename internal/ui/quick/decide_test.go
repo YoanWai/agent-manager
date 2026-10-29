@@ -10,13 +10,12 @@ import (
 // effectsHost records the root work a bar key asked for.
 type effectsHost struct {
 	fakeHost
-	moved    int
-	toggled  int
-	closed   int
-	sent     []string
-	spawned  []spawn.Request
-	loaded   int
-	inserted []string
+	moved   int
+	toggled int
+	closed  int
+	sent    []string
+	spawned []spawn.Request
+	loaded  int
 }
 
 func (h *effectsHost) MoveCursor(delta int) tea.Cmd { h.moved += delta; return nil }

@@ -59,7 +59,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("filter to what needs attention (waiting, finished, errored)", keybind.Filter)
 	h.action("archived view", keybind.Archived)
 	h.action("hide / show empty groups", keybind.EmptyGroups)
-	h.action("fold / unfold every group", keybind.FoldAll)
+	h.action("fold / unfold every group (active view)", keybind.FoldAll)
 	h.action("resize the split (←→ or hl, or drag; ↵ commits, esc cancels)", keybind.Resize)
 	h.action("settings (also in the root row menu)", keybind.Settings)
 	h.action("messages", keybind.Messages)
@@ -155,6 +155,7 @@ func helpSections(ctx Context) []helpSection {
 			{ctx.QuickKeys.Model, "pick the spawn's model from the ones the tool lists; type to filter"},
 			{ctx.QuickKeys.Effort, "step the spawn's reasoning effort through the model's levels"},
 			{ctx.QuickKeys.Profile, "step the spawn's profile, for a tool that has them"},
+			{ctx.QuickKeys.Env, "step the spawn's environment profile; a group's own starts it"},
 			{"click", "step a spawn choice the way its key does, or pick a listed model"},
 			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},

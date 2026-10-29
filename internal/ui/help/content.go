@@ -26,6 +26,7 @@ type QuickKeys struct {
 	Model   string
 	Effort  string
 	Profile string
+	Env     string
 }
 
 // Styles is a snapshot of the root UI's active presentation values. State
@@ -113,7 +114,7 @@ func helpBodyLines(sections []helpSection, ctx Context, query string) []string {
 		if i > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, presentation.Divider(section.title, ctx.Width, ctx.Styles.Section, ctx.Styles.Rule))
+		lines = append(lines, presentation.Divider(section.title, ctx.Width, ctx.Styles.Section, ctx.Styles.Rule, presentation.ChromeFor(ctx.Glyphs.Mode).SectionGlyph))
 		for _, row := range section.rows {
 			// A row with no key is a note about the one above it, so it
 			// recedes into the description column instead of claiming a
@@ -172,7 +173,7 @@ func (s State) Content(ctx Context) Content {
 		Title:  title,
 		Head:   head,
 		Lines:  lines,
-		Hints:  s.hints(),
+		Hints:  s.hints(ctx.ListKeys.Binding(keybind.Help)),
 		Offset: s.scroll,
 	}
 }
@@ -182,7 +183,7 @@ func (s State) Content(ctx Context) Content {
 func (s State) searchLine(sections []helpSection, ctx Context) string {
 	line := ctx.Styles.Key.Render("search ") + ctx.Styles.Value.Render(s.query)
 	if s.searching {
-		line += ctx.CursorMarker + ctx.Styles.Cursor.Render("▏")
+		line += ctx.CursorMarker + ctx.Styles.Cursor.Render(presentation.ChromeFor(ctx.Glyphs.Mode).CursorGlyph)
 	}
 	count := helpRowCount(sections)
 	label := " keys"
@@ -192,16 +193,22 @@ func (s State) searchLine(sections []helpSection, ctx Context) string {
 	return line + ctx.Styles.Subtle.Render(fmt.Sprintf("   %d%s", count, label))
 }
 
-func (s State) hints() [][2]string {
+func (s State) hints(binding keybind.Binding) [][2]string {
+	closeKeys := "q"
+	for _, key := range closeBinding(binding).Keys() {
+		if key.Tea() != "q" {
+			closeKeys += "/" + key.Glyph()
+		}
+	}
 	if s.searching {
 		return [][2]string{{"type", "search"}, {"↵", "done"}, {"↑↓", "scroll"}, {"esc", "clear"}}
 	}
 	docs := [2]string{"o", "docs"}
 	if s.query != "" {
-		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {"q", "close"}}
+		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {closeKeys, "close"}}
 	}
 	return [][2]string{
 		{"↑↓/jk", "scroll"}, {"pgup/pgdn", "page"}, {"g/G", "top/bottom"},
-		{"/", "search"}, docs, {"esc/q", "close"},
+		{"/", "search"}, docs, {"esc/" + closeKeys, "close"},
 	}
 }

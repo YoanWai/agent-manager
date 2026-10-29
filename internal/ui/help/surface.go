@@ -3,6 +3,7 @@ package help
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
@@ -36,10 +37,11 @@ type Root interface {
 // Card is the key map's card as it paints: its content, its width, and the
 // body rows the window shows.
 type Card struct {
-	Content Content
-	Width   int
-	Rows    int
-	subtle  lipgloss.Style
+	Content  Content
+	Width    int
+	Rows     int
+	subtle   lipgloss.Style
+	closeKey keybind.Binding
 }
 
 func NewSurface(root Root, scope Scope) *Surface {
@@ -58,7 +60,7 @@ func (s *Surface) Card(h surface.Host) Card {
 	if s.root.StatusShown() {
 		room -= 2
 	}
-	return Card{Content: content, Width: width, Rows: max(room, 1), subtle: ctx.Styles.Subtle}
+	return Card{Content: content, Width: width, Rows: max(room, 1), subtle: ctx.Styles.Subtle, closeKey: ctx.ListKeys.Binding(keybind.Help)}
 }
 
 func (s *Surface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
@@ -68,7 +70,7 @@ func (s *Surface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
 
 func (s *Surface) step(h surface.Host, msg tea.KeyMsg) tea.Cmd {
 	card := s.Card(h)
-	switch s.state.Update(msg, Viewport{Rows: card.Rows, Lines: len(card.Content.Lines)}) {
+	switch s.state.Update(msg, Viewport{Rows: card.Rows, Lines: len(card.Content.Lines), CloseKey: card.closeKey}) {
 	case OpenDocs:
 		return s.root.OpenDocs()
 	case Close:

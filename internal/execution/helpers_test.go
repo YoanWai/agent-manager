@@ -16,7 +16,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/notify"
-	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
@@ -298,7 +297,7 @@ func (h *harness) spawnSession(toolName, name, dir, group, prompt string, autoNa
 		}
 	}
 	plan := launch.Assemble(toolName, tool, prompt, autoNamed, false)
-	command, env, err := launch.Environment(h.hooks, toolName, tool, plan.Command, id, dir, time.Time{})
+	command, env, err := launch.Environment(h.hooks, toolName, tool, plan.Command, id, dir, time.Time{}, nil)
 	if err != nil {
 		return err
 	}
@@ -369,24 +368,9 @@ func seedRepo(t *testing.T) string {
 	return dir
 }
 
-// waitForAgent waits for a session's pane to hold an agent, or to be left
-// with only its shell.
-func waitForAgent(t *testing.T, m *harness, sessID string, want bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		if running, err := sessioncmd.AgentRunning(m.tmux, sessID); err == nil && running == want {
-			return
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	pane, _ := m.tmux.CapturePane(sessID)
-	t.Fatalf("pane never settled on agent running = %v; pane:\n%s", want, pane)
-}
-
-// waitForPaneChild waits for a pane to run a named program, which is a
-// step past waitForAgent: a shell counts as busy from the moment it forks,
-// before the child has exec'd the program it was asked for.
+// waitForPaneChild waits for a pane to run a named program, a step past
+// the pane holding an agent: a shell counts as busy from the moment it
+// forks, before the child has exec'd the program it was asked for.
 func waitForPaneChild(t *testing.T, m *harness, sessID, name string) {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
@@ -403,17 +387,6 @@ func waitForPaneChild(t *testing.T, m *harness, sessID, name string) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("pane never ran %s; children = %v", name, children)
-}
-
-// quitAgent ends the CLI the session launched with, leaving the pane on the
-// shell underneath it: the user pressing ctrl-d in their agent.
-func quitAgent(t *testing.T, m *harness, sessID string) {
-	t.Helper()
-	waitForAgent(t, m, sessID, true)
-	if err := m.tmux.SendKeys(sessID, "C-d"); err != nil {
-		t.Fatalf("send ctrl-d: %v", err)
-	}
-	waitForAgent(t, m, sessID, false)
 }
 
 func assertPaneStayedOnSpawnPath(t *testing.T, m *harness, id, want string) {

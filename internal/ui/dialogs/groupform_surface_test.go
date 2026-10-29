@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -19,6 +20,8 @@ type fakeRoot struct {
 func (r *fakeRoot) CardWidth(int) int { return r.width }
 
 func (r *fakeRoot) ReportErr(text string) { r.err = text }
+
+func (r *fakeRoot) EnvProfiles() []string { return nil }
 
 // fakeHost is the stack's host: a card's own size and a pop that says it
 // happened.
@@ -131,7 +134,7 @@ func TestGroupFormSurfaceBaseAskAndInvalidName(t *testing.T) {
 func TestGroupFormSurfaceHoldsTheBaseTheRootSteps(t *testing.T) {
 	root := &fakeRoot{width: 64}
 	s := NewGroupFormSurface(root, testOptions(root))
-	if got := BaseChoice(lipgloss.NewStyle(), lipgloss.NewStyle(), "", "develop"); got != "◂ auto ▸  develop from parent" {
+	if got := BaseChoice(lipgloss.NewStyle(), lipgloss.NewStyle(), "", "develop", presentation.GlyphModeAdvanced); got != "◂ auto ▸  develop from parent" {
 		t.Fatalf("auto choice = %q", got)
 	}
 	*s.BaseRef() = "main"

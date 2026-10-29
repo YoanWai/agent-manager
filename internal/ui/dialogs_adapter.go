@@ -71,13 +71,19 @@ func (m *Model) openMove() {
 	var picker spawn.Picker
 	if row.isGroup {
 		move = uidialogs.MoveGroup(row.group)
-		picker = m.groupPickerFor(uirail.ParentGroup(row.group))
+		picker = m.groupPickerIncluding(uirail.ParentGroup(row.group), m.rail.ShowArchived())
 		uidialogs.PruneTargets(&picker, row.group)
 	} else {
 		move = uidialogs.MoveSession(row.sess.ID)
-		picker = m.groupPickerFor(row.sess.Group)
+		picker = m.groupPickerIncluding(row.sess.Group, m.rail.ShowArchived())
 		if m.isShell(row.sess.Tool) {
-			uidialogs.NestAgents(&picker, m.agentMoveTargets())
+			// An archived shell keeps the archived agent it ran under as a
+			// target, so enter leaves it where it is.
+			parentID := ""
+			if row.sess.Archived {
+				parentID = row.sess.ParentID
+			}
+			uidialogs.NestAgents(&picker, m.agentMoveTargets(parentID), parentID)
 		}
 	}
 	m.gens.dialog++
@@ -85,11 +91,12 @@ func (m *Model) openMove() {
 	m.clearErr()
 }
 
-// agentMoveTargets are the running agents a shell may be nested under.
-func (m *Model) agentMoveTargets() []uidialogs.Agent {
+// agentMoveTargets are the running agents a shell may be nested under, plus
+// the archived parent an archived shell keeps.
+func (m *Model) agentMoveTargets(parentID string) []uidialogs.Agent {
 	var agents []uidialogs.Agent
 	for _, sess := range m.workspace.sessions {
-		if sess.Archived || m.isShell(sess.Tool) {
+		if sess.Archived && sess.ID != parentID || m.isShell(sess.Tool) {
 			continue
 		}
 		agents = append(agents, uidialogs.Agent{ID: sess.ID, Group: sess.Group, Name: sess.Name})
@@ -129,6 +136,7 @@ func (m *Model) enqueueMove(mut uirail.Mutation, close uiapply.MoveClose) tea.Cm
 		Dir:      m.workspace.groupPaths[mut.Path],
 		Worktree: m.workspace.groupWorktrees[mut.Path],
 		Base:     m.workspace.groupBases[mut.Path],
+		Env:      m.workspace.groupEnvs[mut.Path],
 	}
 	if mut.Kind == uirail.PlaceSession {
 		request.Placement = m.capturePlacementPrecondition(mut)
@@ -178,6 +186,9 @@ func (m *Model) applyMoveClose(request uiapply.MoveClose) {
 }
 
 func (m *Model) openFork() {
+	if m.rail.ShowArchived() {
+		return
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
 		return
@@ -290,7 +301,7 @@ func (m *Model) openRename() {
 		if dir == "" {
 			dir = m.capturedGroupDefaultDir(entry.group)
 		}
-		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup(entry.group, dir, uidialogs.WorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group])
+		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup(entry.group, dir, uidialogs.WorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group], m.workspace.groupEnvs[entry.group])
 	} else {
 		tools := m.services.cfg.AgentToolNames()
 		shells := []string{}
@@ -301,7 +312,7 @@ func (m *Model) openRename() {
 		}
 		sort.Strings(shells)
 		tools = append(tools, shells...)
-		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "")
+		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "", "")
 	}
 	// Each opening's reads outrank the last one's, so a scan a cancelled
 	// rename asked for cannot replace this one's pick.
@@ -351,6 +362,7 @@ func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, e
 		GroupPaths:     m.workspace.groupPaths,
 		GroupWorktrees: m.workspace.groupWorktrees,
 		GroupBases:     m.workspace.groupBases,
+		GroupEnvs:      m.workspace.groupEnvs,
 	}
 	if request.Kind == uiapply.Group {
 		dir := request.Dir
@@ -361,10 +373,10 @@ func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, e
 			// Rewriting the in-memory tree right away means the frames
 			// between saving and the poller's refresh already show the new
 			// name and path instead of flashing the stale ones.
-			renamed := inventory.RenamedGroup(request.OldGroup, request.NewGroup, dir, request.Worktree, request.Base, stages)
+			renamed := inventory.RenamedGroup(request.OldGroup, request.NewGroup, dir, request.Worktree, request.Base, request.Env, stages)
 			m.workspace.groups, m.workspace.sessions = renamed.Groups, renamed.Sessions
 			m.workspace.groupPaths, m.workspace.groupWorktrees = renamed.GroupPaths, renamed.GroupWorktrees
-			m.workspace.groupBases = renamed.GroupBases
+			m.workspace.groupBases, m.workspace.groupEnvs = renamed.GroupBases, renamed.GroupEnvs
 			m.queueRail(m.rail.RenameGroup(request.OldGroup, request.NewGroup).Mutations, 0, true)
 		}
 	} else {
@@ -385,18 +397,19 @@ func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, e
 // renameGroupLocally rewrites the in-memory tree right away, so the frames
 // between saving and the poller's next refresh already show the new name and
 // path instead of flashing the stale ones.
-func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base string) {
+func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base, env string) {
 	renamed := uiapply.Inventory{
 		Groups:         m.workspace.groups,
 		Sessions:       m.workspace.sessions,
 		GroupPaths:     m.workspace.groupPaths,
 		GroupWorktrees: m.workspace.groupWorktrees,
 		GroupBases:     m.workspace.groupBases,
-	}.RenamedGroup(old, newPath, dir, worktree, base,
-		uiapply.Stages{GroupRenamed: true, PathSet: true, WorktreeSet: true, BaseSet: true})
+		GroupEnvs:      m.workspace.groupEnvs,
+	}.RenamedGroup(old, newPath, dir, worktree, base, env,
+		uiapply.Stages{GroupRenamed: true, PathSet: true, WorktreeSet: true, BaseSet: true, EnvSet: true})
 	m.workspace.groups, m.workspace.sessions = renamed.Groups, renamed.Sessions
 	m.workspace.groupPaths, m.workspace.groupWorktrees = renamed.GroupPaths, renamed.GroupWorktrees
-	m.workspace.groupBases = renamed.GroupBases
+	m.workspace.groupBases, m.workspace.groupEnvs = renamed.GroupBases, renamed.GroupEnvs
 	m.queueRail(m.rail.RenameGroup(old, newPath).Mutations, 0, true)
 }
 
@@ -404,6 +417,7 @@ func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base string) {
 // under the group's head in the detail column.
 func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, width int) string {
 	view := uidialogs.GroupFieldsView{
+		GlyphMode: m.prefs.glyphMode,
 		Width:     width,
 		Label:     uitheme.LabelStyle(),
 		Focused:   lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
@@ -411,7 +425,8 @@ func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, 
 		Value:     uitheme.ValueStyle(),
 		Input:     uiframe.TextInputView,
 		Worktrees: uidialogs.WorktreeOptions,
-		Base:      uidialogs.BaseChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group))),
+		Base:      uidialogs.BaseChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group)), m.prefs.glyphMode),
+		Env:       uidialogs.EnvChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Env, m.groupEnv(uirail.ParentGroup(group)), len(m.workspace.envProfiles) > 0, m.prefs.glyphMode),
 	}
 	if s.Paths().Active() {
 		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }
@@ -437,7 +452,7 @@ func (m *Model) openGroupForm() {
 	parents, at := m.groupOptions(m.contextGroup())
 	lends := make(map[string]uidialogs.Lend, len(parents))
 	for _, opt := range parents {
-		lends[opt.Path] = uidialogs.Lend{Dir: m.capturedAncestorGroupDir(opt.Path), Base: m.groupBase(opt.Path)}
+		lends[opt.Path] = uidialogs.Lend{Dir: m.capturedAncestorGroupDir(opt.Path), Base: m.groupBase(opt.Path), Env: m.groupEnv(opt.Path)}
 	}
 	opts.Dir = m.capturedGroupDefaultDir(parents[at].Path)
 	opts.Parents, opts.Parent, opts.Lends = parents, at, lends
@@ -455,7 +470,7 @@ func (m *Model) handleGroupFormSubmit(msg uidialogs.GroupFormSubmitMsg, reader d
 			GroupDir: strings.TrimSpace(request.Dir), ComposerGen: request.Gen})
 	}
 	m.enqueueEffect(uilaunch.GroupRequest{
-		Path: request.Path, Worktree: uidialogs.WorktreeValue(request.Worktree), Base: msg.Base, Gen: request.Gen,
+		Path: request.Path, Worktree: uidialogs.WorktreeValue(request.Worktree), Base: msg.Base, Env: msg.Env, Gen: request.Gen,
 		RawDir: request.Dir, Fallbacks: m.groupDirCandidates(request.Parent), DirReader: crossPreflight(reader),
 		DraftName: request.Name, DraftDir: request.Dir,
 	}, 0, false)

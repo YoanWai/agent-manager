@@ -1731,3 +1731,37 @@ func TestOpenPanelSaysTheFeedCheckHasNotLanded(t *testing.T) {
 		t.Fatalf("an open panel should say the feed check has not landed:\n%s", got)
 	}
 }
+
+func TestNoticesCloseFollowsSavedBinding(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.openNotices("")
+	m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, "N", "f2"))
+	m.handleKey(key("M"))
+	if !m.noticesOpen() {
+		t.Fatal("old messages binding closed dialog")
+	}
+	m.handleKey(tea.KeyMsg{Type: tea.KeyF2})
+	if m.noticesOpen() {
+		t.Fatal("saved messages binding did not close dialog")
+	}
+	m.openNotices("")
+	m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t))
+	m.handleKey(key("M"))
+	if !m.noticesOpen() {
+		t.Fatal("disabled messages binding retained old alias")
+	}
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.noticesOpen() {
+		t.Fatal("Escape did not close messages")
+	}
+}
+
+func TestNoticesToggleDoesNotOverrideRefresh(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.openNotices("")
+	m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, "r"))
+	_, cmd := m.handleKey(key("r"))
+	if !m.noticesOpen() || cmd == nil || !m.release.Refreshing {
+		t.Fatal("toggle stole local refresh action")
+	}
+}

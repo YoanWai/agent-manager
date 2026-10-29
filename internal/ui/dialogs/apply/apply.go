@@ -43,6 +43,7 @@ type Labels interface {
 
 type Launcher interface {
 	Launch(request sessioncmd.LaunchRequest) (sessioncmd.LaunchResult, error)
+	ValidatePlacement(sess store.Session) error
 }
 
 type KeyTyper interface {

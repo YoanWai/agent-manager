@@ -106,7 +106,7 @@ func (m *Model) statusMessage(fail, done, warn string) string {
 // the frame's top right, so a notice never costs the body a row.
 func (m *Model) statusToast() []string {
 	leftWidth, _ := m.splitWidths()
-	return uistatusbar.Toast(m.statusLine(), m.layout.width-leftWidth-2, uistatusbar.TonesFor(uitheme.Current()))
+	return uistatusbar.Toast(m.statusLine(), m.layout.width-leftWidth-2, uistatusbar.TonesFor(uitheme.Current()), m.prefs.glyphMode)
 }
 
 // overlayTopRight splices a pre-painted box over the frame's rows, anchored

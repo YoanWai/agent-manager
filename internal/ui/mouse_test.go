@@ -2,13 +2,7 @@ package ui
 
 import (
 	"fmt"
-	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
-	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
-	"github.com/charmbracelet/x/ansi"
 	"go/ast"
-	"go/parser"
-	"go/token"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -19,6 +13,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/remote"
@@ -2155,15 +2153,9 @@ func declaredSurfaces(t *testing.T) []string {
 	}
 	var names []string
 	for _, dir := range dirs {
-		fset := token.NewFileSet()
-		packages, err := parser.ParseDir(fset, dir, func(info fs.FileInfo) bool {
-			return !strings.HasSuffix(info.Name(), "_test.go")
-		}, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for pkg, parsed := range packages {
-			for _, file := range parsed.Files {
+		for _, file := range parseGoPackage(t, dir, 0) {
+			pkg := file.Name.Name
+			{
 				for _, decl := range file.Decls {
 					fn, ok := decl.(*ast.FuncDecl)
 					if !ok || fn.Recv == nil || fn.Name.Name != "Leave" || !takesHost(fn) {
@@ -2221,7 +2213,8 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
 				t.Fatal("revealed symbols row was not clickable")
 			}
-			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+			// The environments row between them waits for a profile.
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs - 1 {
 				m = wheelOnCard(m, tea.MouseButtonWheelDown)
 			}
 			if m.settingsCard().State().Field != uisettings.FieldDocs || !paints(m, "docs") {
@@ -2235,7 +2228,8 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			if opened != docsURL {
 				t.Fatal("docs click did not follow the scrolled row")
 			}
-			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+			// The environments row between them waits for a profile.
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs - 1 {
 				m = wheelOnCard(m, tea.MouseButtonWheelUp)
 			}
 			if m.settingsCard().State().Field != uisettings.FieldGlyphs || !paints(m, "symbols") {
@@ -2475,7 +2469,7 @@ func TestClickOnHelpFootCloses(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
 	m.openHelp()
-	if m = clickLabel(t, m, "esc/q close"); !m.onList() {
+	if m = clickLabel(t, m, "esc/q/? close"); !m.onList() {
 		t.Fatalf("close in the foot should leave help, screen = %v", m.screenID())
 	}
 }

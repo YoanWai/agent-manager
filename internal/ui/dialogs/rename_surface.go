@@ -2,6 +2,7 @@ package dialogs
 
 import (
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -15,7 +16,11 @@ type RenameSurface struct {
 	Rename
 	complete pathcomplete.State
 	Base     string
+	Env      string
 	root     RenameRoot
+	// pressed is a left press on the group edit's fields, which a release
+	// over them completes as a click.
+	pressed bool
 }
 
 // RenameRoot is what the row reaches on the root beyond surface.Host. The
@@ -29,16 +34,21 @@ type RenameRoot interface {
 	// StepBase steps the group base choice, probing the default path this
 	// row would save.
 	StepBase(s *RenameSurface, delta int) (string, tea.Cmd)
-	QueueRename(request RenameRequest, base string) tea.Cmd
+	QueueRename(request RenameRequest, base, env string) tea.Cmd
 	// WorktreeCount is how many worktree choices the group field cycles
 	// through, which the root's list of labels decides.
 	WorktreeCount() int
+	// EnvProfiles are the defined environment profiles, in picker order.
+	EnvProfiles() []string
+	// FieldsLine is the group edit's field line under the pointer, which the
+	// root paints in the detail column.
+	FieldsLine(x, y int) (line int, ok bool)
 }
 
 // NewRenameSurface opens the row on a rename the root seeded, its base choice
 // and the root it reaches beyond the stack.
-func NewRenameSurface(root RenameRoot, rename Rename, base string) *RenameSurface {
-	return &RenameSurface{Rename: rename, Base: base, root: root}
+func NewRenameSurface(root RenameRoot, rename Rename, base, env string) *RenameSurface {
+	return &RenameSurface{Rename: rename, Base: base, Env: env, root: root}
 }
 
 func (s *RenameSurface) Root() RenameRoot { return s.root }
@@ -53,34 +63,67 @@ func (p dialogPaths) Move(delta int) bool { return p.State.Move(delta) }
 func (p dialogPaths) Reset()              { p.State.Reset() }
 
 func (s *RenameSurface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
-	key := s.Rename.Key(msg, dialogPaths{&s.complete}, s.root.WorktreeCount())
+	return true, s.run(h, s.Rename.Key(msg, dialogPaths{&s.complete}, s.root.WorktreeCount()))
+}
+
+// Click acts on a click on line of the group edit's fields, which the root
+// paints in the detail column.
+func (s *RenameSurface) Click(h surface.Host, line int) tea.Cmd {
+	return s.run(h, s.Rename.Click(line, dialogPaths{&s.complete}, s.root.WorktreeCount()))
+}
+
+func (s *RenameSurface) run(h surface.Host, key RenameKey) tea.Cmd {
 	switch key.Action {
 	case RenameCancel:
 		h.Pop()
-		return true, nil
+		return nil
 	case RenameComplete:
-		return true, s.root.ApplyPathSuggestion()
+		return s.root.ApplyPathSuggestion()
+	case RenamePickPath:
+		if s.complete.Pick(key.Entry) {
+			return s.root.ApplyPathSuggestion()
+		}
+		return nil
 	case RenameStepBase:
 		var cmd tea.Cmd
 		s.Base, cmd = s.root.StepBase(s, key.Delta)
-		return true, cmd
+		return cmd
+	case RenameStepEnv:
+		s.Env = spawn.StepEnv(s.root.EnvProfiles(), s.Env, key.Delta)
+		return nil
 	case RenameInvalid:
 		s.root.ReportErr(key.Err)
-		return true, nil
+		return nil
 	case RenameSubmit:
-		return true, s.root.QueueRename(key.Request, s.Base)
+		return s.root.QueueRename(key.Request, s.Base, s.Env)
 	}
 	if key.Suggest {
-		return true, tea.Batch(key.Cmd, s.complete.Request(pathcomplete.Rename, s.Dir(), pathcomplete.SystemReader{}))
+		return tea.Batch(key.Cmd, s.complete.Request(pathcomplete.Rename, s.Dir(), pathcomplete.SystemReader{}))
 	}
-	return true, key.Cmd
+	return key.Cmd
 }
 
-// Click and Wheel do nothing: the name is typed into its row and the list
-// holds still.
-func (s *RenameSurface) Click(surface.Host, int) tea.Cmd { return nil }
-
 func (s *RenameSurface) Wheel(surface.Host, tea.KeyMsg) tea.Cmd { return nil }
+
+// Mouse answers a left click on the group edit's fields; the rest of the
+// screen holds still while a rename is typed.
+func (s *RenameSurface) Mouse(h surface.Host, msg tea.MouseMsg) tea.Cmd {
+	line, onFields := s.root.FieldsLine(msg.X, msg.Y)
+	onFields = onFields && s.IsGroup()
+	switch msg.Action {
+	case tea.MouseActionPress:
+		s.pressed = onFields && msg.Button == tea.MouseButtonLeft
+	case tea.MouseActionRelease:
+		// X10 reporting names no button on any release, so only the press
+		// tells a left click from a right one.
+		pressed := s.pressed
+		s.pressed = false
+		if pressed && onFields {
+			return s.Click(h, line)
+		}
+	}
+	return nil
+}
 
 // View leaves the frame as it is: the row and the detail column draw the
 // fields themselves.

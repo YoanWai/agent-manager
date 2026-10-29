@@ -83,7 +83,7 @@ func RunSend(services Services, request SendRequest) (SendResult, error) {
 		return result, fmt.Errorf("check quick-send target %s: %w", current.Name, err)
 	}
 	if !exists {
-		return result, errors.New(uisession.DeadHint)
+		return result, deadSessionError(services.Store, current)
 	}
 	sent, sendErr := services.SendText(services.Driver, current.ID, request.Text)
 	if sendErr != nil {
@@ -143,4 +143,12 @@ func Apply(root Root, request SendRequest, result SendResult, err error) tea.Cmd
 	root.MarkSent(request.Session, request.Text)
 	root.ClearErr()
 	return nil
+}
+
+func deadSessionError(st *store.Store, sess store.Session) error {
+	keys, err := st.ListKeys()
+	if err != nil {
+		return err
+	}
+	return uisession.DeadError(sess.Archived, keys)
 }

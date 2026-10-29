@@ -2,15 +2,6 @@ package ui
 
 import (
 	"errors"
-	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/store"
-	"github.com/YoanWai/agent-manager/internal/testenv"
-	"github.com/YoanWai/agent-manager/internal/tmux"
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
-	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
-	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
-	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +10,17 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
@@ -281,8 +283,8 @@ func TestCopyReplyOnADeadSessionHints(t *testing.T) {
 		t.Fatalf("copy reported %q before the command ran", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	if m.errBar.text != uisession.DeadHint {
-		t.Fatalf("errBar = %q, want %q", m.errBar.text, uisession.DeadHint)
+	if m.errBar.text != uisession.DeadHint(keybind.DefaultList()) {
+		t.Fatalf("errBar = %q, want %q", m.errBar.text, uisession.DeadHint(keybind.DefaultList()))
 	}
 }
 
@@ -402,7 +404,7 @@ func TestAttachReportsTransportFailureWithoutCallingPaneDead(t *testing.T) {
 	}
 	services := effectServices{store: m.services.store, driver: driver}
 	_, err = uilifecycle.RunAttach(services.lifecycleServices(), uilifecycle.AttachRequest{ID: "attach-probe"})
-	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), uilifecycle.DeadSessionHint) {
+	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), uisession.DeadHint(keybind.DefaultList())) {
 		t.Fatalf("transport failure mislabeled: %v", err)
 	}
 }

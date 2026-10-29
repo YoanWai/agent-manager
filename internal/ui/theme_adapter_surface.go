@@ -1,9 +1,10 @@
 package ui
 
 import (
+	"strings"
+
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
-	"strings"
 
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
@@ -38,7 +39,7 @@ func (m *Model) railTopRow(paneWidth, width int) string {
 // half a cell wide, so it takes a quadrant instead of a half block and the
 // pane tone stops at the corner instead of jutting past it.
 func (m *Model) boundedRuleRow(paneWidth, width int, edge string) string {
-	if paneWidth < 2 || paneWidth >= width {
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic || paneWidth < 2 || paneWidth >= width {
 		return uitheme.Paint(uitheme.Hrule(width), width, uitheme.BackdropHex())
 	}
 	facing, corner := "▄", "▜"
@@ -74,7 +75,12 @@ func (m *Model) vruleColumn(height int) []string {
 // bleedColumn finishes a pane's right edge: a half block in the pane's
 // tone on the backdrop, extending the fill half a cell past the seam.
 func (m *Model) bleedColumn(height int) []string {
-	cell := uitheme.Paint(lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render("▐"), 1, uitheme.PanelHex())
+	background := uitheme.PanelHex()
+	cell := uitheme.Paint(lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render("▐"), 1, background)
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic {
+		background = uitheme.BackdropHex()
+		cell = uitheme.Paint(lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.RuleHex())).Render("│"), 1, background)
+	}
 	lines := make([]string, height)
 	for i := range lines {
 		lines[i] = cell
@@ -84,8 +90,8 @@ func (m *Model) bleedColumn(height int) []string {
 	// top corner sits on the rule row just above the capture.
 	box := m.focus.pane.FrameBox()
 	if m.focused() && box.Valid {
-		edge := uitheme.Paint(uitheme.FocusEdgeStyle().Render("│"), 1, uitheme.PanelHex())
-		corner := uitheme.Paint(uitheme.FocusEdgeStyle().Render("╭"), 1, uitheme.PanelHex())
+		edge := uitheme.Paint(uitheme.FocusEdgeStyle().Render("│"), 1, background)
+		corner := uitheme.Paint(uitheme.FocusEdgeStyle().Render(m.chrome().TopLeftGlyph), 1, background)
 		top := box.Y - m.listChromeRows()
 		if top-1 >= 0 && top-1 < len(lines) {
 			lines[top-1] = corner
@@ -107,6 +113,10 @@ func (m *Model) focusBottomRule(paneWidth, width int) string {
 	if tail < 1 || paneWidth < 2 {
 		return m.boundedRuleRow(paneWidth, width, "▄")
 	}
+	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic {
+		return uitheme.Paint(uitheme.Hrule(paneWidth), paneWidth, uitheme.BackdropHex()) +
+			uitheme.Paint(uitheme.FocusEdgeStyle().Render(m.chrome().BottomLeftGlyph+strings.Repeat("─", tail)), tail+1, uitheme.BackdropHex())
+	}
 	first := uitheme.Plain(lipgloss.NewStyle().Foreground(lipgloss.Color(uitheme.PanelHex())).Render("▀"), 1)
 	interior := lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render(strings.Repeat("▄", paneWidth-1))
 	corner := uitheme.FocusEdgeStyle().Render("╰")
@@ -124,7 +134,7 @@ func (m *Model) seamCell(railRule bool) string {
 		if m.layout.split.Dragging {
 			color = uitheme.ColorAccent2()
 		}
-		return uitheme.Paint(lipgloss.NewStyle().Foreground(color).Render("║"), 1, uitheme.PanelHex())
+		return uitheme.Paint(lipgloss.NewStyle().Foreground(color).Render(m.chrome().ResizeGlyph), 1, uitheme.PanelHex())
 	}
 	if railRule {
 		return uitheme.Paint(uitheme.Hrule(1), 1, uitheme.PanelHex())

@@ -21,6 +21,7 @@ type Request struct {
 	Dir       string
 	Worktree  string
 	Base      string
+	Env       string
 	Placement Precondition
 }
 

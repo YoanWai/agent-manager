@@ -448,12 +448,22 @@ func presetRows(rows []store.SessionPreset) []uisettings.Preset {
 	return presets
 }
 
+// settingsEnvs are the defined environment profiles the dialog lists.
+func (m *Model) settingsEnvs() []uisettings.Env {
+	envs := make([]uisettings.Env, len(m.workspace.envProfiles))
+	for i, name := range m.workspace.envProfiles {
+		envs[i] = uisettings.Env{Name: name, Keys: m.workspace.envKeys[name]}
+	}
+	return envs
+}
+
 // paintSettings frames the dialog in the root's card chrome.
 func (m *Model) paintSettings(d *uisettings.State) string {
 	frame := d.View(uisettings.ViewContext{
 		GlyphMode:  m.prefs.glyphMode,
 		Session:    m.services.keys,
 		List:       m.services.listKeys,
+		Envs:       m.settingsEnvs(),
 		Version:    m.release.Version,
 		Latest:     m.release.Latest,
 		Applying:   m.release.Applying,

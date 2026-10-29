@@ -135,7 +135,7 @@ func Line(msg Message, glyphs presentation.GlyphSet, tones Tones) string {
 // Toast is the card for a message in a content column room columns wide:
 // nil when there is nothing to say, or when the column is too narrow to hold
 // a card.
-func Toast(text string, room int, tones Tones) []string {
+func Toast(text string, room int, tones Tones, mode presentation.GlyphMode) []string {
 	if text == "" {
 		return nil
 	}
@@ -150,11 +150,12 @@ func Toast(text string, room int, tones Tones) []string {
 	}
 	inner := width - chromeX
 	edge := tones.Border.Render("│")
-	rows := []string{paint(tones.Border.Render("╭"+strings.Repeat("─", width-2)+"╮"), width, tones.Fill)}
+	g := presentation.ChromeFor(mode)
+	rows := []string{paint(tones.Border.Render(g.TopLeftGlyph+strings.Repeat("─", width-2)+g.TopRightGlyph), width, tones.Fill)}
 	for _, line := range strings.Split(ansi.Wordwrap(text, inner, ""), "\n") {
 		rows = append(rows, paint(edge+" "+presentation.PadRight(line, inner)+" "+edge, width, tones.Fill))
 	}
-	return append(rows, paint(tones.Border.Render("╰"+strings.Repeat("─", width-2)+"╯"), width, tones.Fill))
+	return append(rows, paint(tones.Border.Render(g.BottomLeftGlyph+strings.Repeat("─", width-2)+g.BottomRightGlyph), width, tones.Fill))
 }
 
 // Splice overpaints a run of cells inside a styled row, keeping the escape

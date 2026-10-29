@@ -114,7 +114,7 @@ func Archived(sessions []store.Session) []store.Session {
 func Dead(sessions []store.Session) []store.Session {
 	var out []store.Session
 	for _, sess := range sessions {
-		if sess.Status == status.Dead {
+		if !sess.Archived && sess.Status == status.Dead {
 			out = append(out, sess)
 		}
 	}
@@ -141,9 +141,13 @@ func Archive(view View, row Row) Intent {
 	}
 	if row.Kind == GroupRow {
 		subtree := Subtree(view.Sessions(), row.Group)
+		alreadyArchived := ""
+		if count := len(Archived(subtree)); count > 0 {
+			alreadyArchived = fmt.Sprintf(", %d already archived", count)
+		}
 		return Intent{ClearsErr: true, Card: Card{
 			Group: true,
-			Label: fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", row.Group, len(subtree)),
+			Label: fmt.Sprintf("archive whole group %s (%d sessions%s)? includes sessions hidden by filters.", row.Group, len(subtree), alreadyArchived),
 			Target: uilifecycle.Target{
 				Path:      row.Group,
 				Action:    uilifecycle.Archive,
@@ -176,7 +180,7 @@ func Restore(view View, row Row) Intent {
 		archived := Archived(Subtree(view.Sessions(), row.Group))
 		return Intent{ClearsErr: true, Card: Card{
 			Group: true,
-			Label: fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", row.Group, len(archived)),
+			Label: fmt.Sprintf("restore whole group %s (%d archived sessions)? includes sessions hidden by filters.", row.Group, len(archived)),
 			Target: uilifecycle.Target{
 				Path:      row.Group,
 				Action:    uilifecycle.Restore,
@@ -201,15 +205,18 @@ func Restore(view View, row Row) Intent {
 // Kill is what the kill key asks for: a group's live rows, or one session and
 // the shells nested under it.
 func Kill(view View, row Row) Intent {
-	if row.Kind == GroupRow {
+	if view.ArchivedView() {
+		return Intent{}
+	}
+	if row.Kind == GroupRow || row.Kind == RootRow {
 		live := live(view, InGroup(view.Listed(), row.Group))
 		if len(live) == 0 {
-			return Intent{Notice: "no live sessions to kill in " + row.Group}
+			return Intent{Notice: "no live sessions to kill in " + uiframe.DisplayGroup(row.Group)}
 		}
 		return Intent{Card: Card{
 			Group: true,
 			Label: fmt.Sprintf("kill group %s (%d live sessions)? frees their RAM, v revives them.",
-				row.Group, len(live)),
+				uiframe.DisplayGroup(row.Group), len(live)),
 			Target: uilifecycle.Target{
 				Path:     row.Group,
 				Action:   uilifecycle.Kill,
@@ -217,30 +224,27 @@ func Kill(view View, row Row) Intent {
 			},
 		}}
 	}
-	sessions := Children(view.Sessions(), row.Sess)
-	live := false
-	for _, sess := range sessions {
-		if view.Live(sess.ID) {
-			live = true
-			break
-		}
-	}
-	if !live {
+	members := Children(view.Sessions(), row.Sess)
+	sessions := live(view, members)
+	if len(sessions) == 0 {
 		return Intent{Notice: row.Sess.Name + " is already dead"}
 	}
 	return Intent{Card: Card{
-		Label: uisession.FollowConfirmLabel("kill", row.Sess.Name, len(sessions)-1,
+		Label: SessionActionLabel("kill", row.Sess, sessions,
 			"frees its RAM, v revives it.",
 			"frees their RAM, v revives them."),
 		Target: uilifecycle.Target{
 			Action:    uilifecycle.Kill,
 			Sessions:  sessions,
-			Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID},
+			Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID, Members: members},
 		},
 	}}
 }
 
 func KillAll(view View) Intent {
+	if view.ArchivedView() {
+		return Intent{}
+	}
 	live := live(view, view.Listed())
 	if len(live) == 0 {
 		return Intent{Notice: "no live sessions to kill"}
@@ -253,7 +257,10 @@ func KillAll(view View) Intent {
 
 // Restart is what a restart asks for: never a group row.
 func Restart(view View, row Row) Intent {
-	if row.Kind == GroupRow {
+	if view.ArchivedView() {
+		return Intent{}
+	}
+	if row.Kind == GroupRow || row.Kind == RootRow {
 		return Intent{Notice: "restart applies to a session; pick one under " + uiframe.DisplayGroup(row.Group)}
 	}
 	label := fmt.Sprintf("restart %s with an empty context? its current conversation is left behind.", row.Sess.Name)
@@ -269,7 +276,10 @@ func Restart(view View, row Row) Intent {
 // Revive is what the revive key asks for on a session row, or over a group's
 // subtree: one card for several dead rows, the run itself for one.
 func Revive(view View, row Row) Intent {
-	if row.Kind == GroupRow {
+	if view.ArchivedView() {
+		return Intent{}
+	}
+	if row.Kind == GroupRow || row.Kind == RootRow {
 		sessions := InGroup(view.Listed(), row.Group)
 		if dead := Dead(sessions); len(dead) > 1 {
 			return Intent{Card: Card{
@@ -284,25 +294,24 @@ func Revive(view View, row Row) Intent {
 				},
 			}}
 		}
-		return ReviveMany(sessions, "no dead sessions to revive in "+row.Group)
+		return ReviveMany(sessions, "no dead sessions to revive in "+uiframe.DisplayGroup(row.Group))
 	}
-	set := Children(view.Sessions(), row.Sess)
-	dead := false
+	set := uilifecycle.ActiveSessions(Children(view.Sessions(), row.Sess))
+	var dead []store.Session
 	for _, sess := range set {
 		if !view.Live(sess.ID) {
-			dead = true
-			break
+			dead = append(dead, sess)
 		}
 	}
-	if len(set) > 1 && dead {
+	if len(set) > 1 && len(dead) > 0 {
 		return Intent{Card: Card{
-			Label: uisession.FollowConfirmLabel("revive", row.Sess.Name, len(set)-1,
+			Label: SessionActionLabel("revive", row.Sess, dead,
 				"brings it back.",
 				"brings them back."),
 			Target: uilifecycle.Target{
 				Action:    uilifecycle.Revive,
-				Sessions:  set,
-				Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID},
+				Sessions:  dead,
+				Selection: uilifecycle.Selection{Kind: uilifecycle.SelectSession, RootID: row.Sess.ID, Members: set},
 			},
 		}}
 	}
@@ -411,4 +420,19 @@ func archivedGroupDelete(path string, subtree []store.Session) Card {
 			Selection:    uilifecycle.Selection{Kind: uilifecycle.SelectGroup, ArchivedOnly: true},
 		},
 	}
+}
+
+// SessionActionLabel asks to act on a session and the terminals under it,
+// or, when the session itself is left out, on those terminals alone.
+func SessionActionLabel(verb string, root store.Session, sessions []store.Session, one, many string) string {
+	for _, session := range sessions {
+		if session.ID == root.ID {
+			return uisession.FollowConfirmLabel(verb, root.Name, len(sessions)-1, one, many)
+		}
+	}
+	unit, suffix := "terminal", one
+	if len(sessions) != 1 {
+		unit, suffix = "terminals", many
+	}
+	return fmt.Sprintf("%s %d %s of %s? %s", verb, len(sessions), unit, root.Name, suffix)
 }

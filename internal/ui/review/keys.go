@@ -3,8 +3,28 @@ package review
 import (
 	"path/filepath"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	tea "github.com/charmbracelet/bubbletea"
 )
+
+var localKeyCommands = map[string]string{
+	"ctrl+c": "ctrl+c", "q": "q", "esc": "q",
+	"up": "up", "k": "up", "down": "down", "j": "down",
+	"ctrl+d": "ctrl+d", "ctrl+u": "ctrl+u", "pgup": "pgup", "pgdn": "pgdn",
+	"g": "g", "G": "G", "J": "tab", "tab": "tab", "K": "shift+tab", "shift+tab": "shift+tab",
+	"n": "n", "N": "N", "s": "s", "r": "r", "b": "b", "B": "B", "u": "u", "f": "f",
+	"space": "space", "c": "c", "d": "d", "C": "C", "o": "o", "f3": "o",
+}
+
+func EffectiveHelpBinding(configured keybind.Binding) keybind.Binding {
+	var keys []keybind.Key
+	for _, key := range configured.Keys() {
+		if localKeyCommands[keybind.Normalize(key.Tea())] == "" {
+			keys = append(keys, key)
+		}
+	}
+	return keybind.Keys(keys...)
+}
 
 // Key owns Review's complete key priority. Root interprets navigation and runs
 // the concrete I/O requests, but cannot bypass draft or confirmation modes.
@@ -30,12 +50,16 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 		}
 		return KeyResult{Consumed: true}
 	}
+	key := keybind.Normalize(msg.String())
 	height := ctx.CodeHeight
 	if height < 1 {
 		height = 1
 	}
 	b, ok := bindingFor(msg.String())
-	if !ok {
+	if !ok || b.Action == actHelp {
+		if ctx.HelpKey.Has(key) {
+			return KeyResult{Consumed: true, Navigation: NavigationHelp}
+		}
 		return KeyResult{}
 	}
 	return m.run(b.Action, ctx, height)

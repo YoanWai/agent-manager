@@ -71,7 +71,7 @@ func (d LaunchHint) Key(msg tea.KeyMsg) LaunchHintAction {
 			return LaunchHintStay
 		}
 		return LaunchHintInstall
-	case "esc", "q", "enter":
+	case "esc":
 		return LaunchHintClose
 	}
 	return LaunchHintStay

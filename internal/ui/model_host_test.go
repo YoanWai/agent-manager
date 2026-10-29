@@ -5,7 +5,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
 	"os"
 	"slices"
 	"sort"
@@ -40,26 +39,14 @@ func TestFeatureHostsStayNarrow(t *testing.T) {
 	}
 	hosts := 0
 	for _, dir := range dirs {
-		packages, err := parser.ParseDir(token.NewFileSet(), dir, func(info fs.FileInfo) bool {
-			return !strings.HasSuffix(info.Name(), "_test.go")
-		}, 0)
-		if err != nil {
-			t.Fatal(err)
+		isHost := func(name string) bool { return strings.HasSuffix(name, "Root") }
+		if dir == "." {
+			isHost = func(name string) bool { return strings.HasSuffix(name, "Host") || name == "Root" }
 		}
-		for _, pkg := range packages {
-			var files []*ast.File
-			for _, file := range pkg.Files {
-				files = append(files, file)
-			}
-			isHost := func(name string) bool { return strings.HasSuffix(name, "Root") }
-			if dir == "." {
-				isHost = func(name string) bool { return strings.HasSuffix(name, "Host") || name == "Root" }
-			}
-			found, violations := hostViolations(files, isHost)
-			hosts += found
-			for _, violation := range violations {
-				t.Errorf("%s: %s", dir, violation)
-			}
+		found, violations := hostViolations(parseGoPackage(t, dir, 0), isHost)
+		hosts += found
+		for _, violation := range violations {
+			t.Errorf("%s: %s", dir, violation)
 		}
 	}
 	if hosts == 0 {

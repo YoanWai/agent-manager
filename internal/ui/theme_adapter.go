@@ -128,6 +128,10 @@ func (m *Model) afterTurnBadge(action string) string {
 	return uitheme.InboxBadgeStyle().Render(m.afterTurnGlyph(action))
 }
 
+func (m *Model) chrome() presentation.ChromeSet {
+	return presentation.ChromeFor(m.prefs.glyphMode)
+}
+
 func (m *Model) glyphs() presentation.GlyphSet {
 	return presentation.GlyphsFor(m.prefs.glyphMode)
 }
