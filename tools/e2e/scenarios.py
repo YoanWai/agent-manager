@@ -17,7 +17,7 @@ import time
 import uuid
 from pathlib import Path
 
-from smoke import Sandbox, profile_dir, settle_messages
+from smoke import Sandbox, profile_dir
 
 BUILTIN_TOOLS = ('antigravity', 'claude', 'command-code', 'codex', 'gemini',
                  'grok', 'hermes', 'muse', 'opencode', 'pi', 'terminal')
