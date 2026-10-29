@@ -107,11 +107,11 @@ func TestTranscriptPathPerStyle(t *testing.T) {
 	if _, err := TranscriptPath("codex", cwd, "id"); !errors.Is(err, ErrNoTranscript) {
 		t.Fatalf("codex: err=%v, want ErrNoTranscript", err)
 	}
-	piPath := copyPiFixture(t, "pi", piRoot(), cwd)
+	piPath := copyPiFixture(t, "pi", piRoot(managerEnv), cwd)
 	if path, err := TranscriptPath("pi", cwd, "019a1b2c-3d4e-7f60-8a9b-0c1d2e3f4a5b"); err != nil || path != piPath {
 		t.Fatalf("pi path = %q err=%v, want %q", path, err, piPath)
 	}
-	ompPath := copyPiFixture(t, "omp", ompRoot(), cwd)
+	ompPath := copyPiFixture(t, "omp", ompRoot(managerEnv), cwd)
 	if path, err := TranscriptPath("omp", cwd, "01a12b27-3455-75b7-80ac-db738fedb8b6"); err != nil || path != ompPath {
 		t.Fatalf("omp path = %q err=%v, want %q", path, err, ompPath)
 	}

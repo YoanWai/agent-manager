@@ -1443,3 +1443,27 @@ func TestLaunchStampOfAFirstLaunchIsZero(t *testing.T) {
 		t.Fatalf("LaunchStamp(zero) = %d, want 0", got)
 	}
 }
+
+func TestAConversationMovesToTheRowWhoseAgentReportsIt(t *testing.T) {
+	st := newTestStore(t)
+	for _, id := range []string{"holder", "switcher", "capturer"} {
+		if err := st.CreateSession(sample(id, "g")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if bound, err := st.BindAgentSessionID("holder", "shared", time.Time{}); err != nil || !bound {
+		t.Fatalf("holder capture: %v %v", bound, err)
+	}
+	if bound, err := st.BindAgentSessionID("capturer", "shared", time.Time{}); err != nil || bound {
+		t.Fatalf("a capture must not bind a conversation another row holds: %v %v", bound, err)
+	}
+	if result, err := st.ReportAgentSessionID("switcher", "claude", "shared", 0); err != nil || result != ReportAdopted {
+		t.Fatalf("report: %v %v", result, err)
+	}
+	if got := reportedConversation(t, st, "switcher"); got.AgentSessionID != "shared" {
+		t.Fatalf("switcher = %+v, want the conversation its agent is on", got)
+	}
+	if got := reportedConversation(t, st, "holder"); got.AgentSessionID != "" {
+		t.Fatalf("holder = %+v, want it to let the conversation go", got)
+	}
+}

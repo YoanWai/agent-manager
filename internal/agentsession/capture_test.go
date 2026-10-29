@@ -260,7 +260,7 @@ func TestCaptureCommandCodeSkipsMalformedTranscripts(t *testing.T) {
 func stubOpencodeJSON(t *testing.T, entries []opencodeListEntry) {
 	t.Helper()
 	saved := opencodeSessionListJSON
-	opencodeSessionListJSON = func(string) ([]opencodeListEntry, bool) { return entries, true }
+	opencodeSessionListJSON = func(string, Env) ([]opencodeListEntry, bool) { return entries, true }
 	t.Cleanup(func() { opencodeSessionListJSON = saved })
 }
 
@@ -362,8 +362,8 @@ func TestCaptureHermesSkipsClaimed(t *testing.T) {
 func TestHermesStateDBFollowsHermesHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HERMES_HOME", home)
-	if got := hermesStateDB(); got != filepath.Join(home, "state.db") {
-		t.Fatalf("hermesStateDB() = %q", got)
+	if got := hermesStateDB(managerEnv); got != filepath.Join(home, "state.db") {
+		t.Fatalf("hermesStateDB(managerEnv) = %q", got)
 	}
 }
 
@@ -374,16 +374,16 @@ func TestHermesStateDBFollowsStickyProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(home, "profiles", "coder", "state.db")
-	if got := hermesStateDB(); got != want {
-		t.Fatalf("hermesStateDB() = %q want %q", got, want)
+	if got := hermesStateDB(managerEnv); got != want {
+		t.Fatalf("hermesStateDB(managerEnv) = %q want %q", got, want)
 	}
 }
 
 func TestHermesStateDBKeepsExplicitProfileHome(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "profiles", "research")
 	t.Setenv("HERMES_HOME", home)
-	if got := hermesStateDB(); got != filepath.Join(home, "state.db") {
-		t.Fatalf("hermesStateDB() = %q", got)
+	if got := hermesStateDB(managerEnv); got != filepath.Join(home, "state.db") {
+		t.Fatalf("hermesStateDB(managerEnv) = %q", got)
 	}
 }
 

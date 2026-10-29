@@ -305,7 +305,7 @@ func (h *harness) spawnSession(toolName, name, dir, group, prompt string, autoNa
 			return err
 		}
 	}
-	plan := launch.Assemble(toolName, tool, prompt, "", autoNamed, false)
+	plan := launch.Assemble(toolName, tool, prompt, autoNamed, false)
 	command, env, err := launch.Environment(h.hooks, toolName, tool, plan.Command, id, dir, time.Time{}, nil)
 	if err != nil {
 		return err

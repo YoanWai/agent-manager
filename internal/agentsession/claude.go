@@ -16,11 +16,19 @@ const transcriptTailBytes = 256 * 1024
 // one conversation: unlike the pane, which Claude repaints in place and
 // tmux holds no history for, the transcript has the whole exchange.
 func ClaudeTranscriptPath(cwd, sessionID string) (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	return claudeTranscriptPath(managerEnv, cwd, sessionID)
+}
+
+func claudeTranscriptPath(env Env, cwd, sessionID string) (string, error) {
+	configDir := env.get("CLAUDE_CONFIG_DIR")
+	if configDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		configDir = filepath.Join(home, ".claude")
 	}
-	return filepath.Join(home, ".claude", "projects", claudeProjectSlug(resolvePath(cwd)), sessionID+".jsonl"), nil
+	return filepath.Join(configDir, "projects", claudeProjectSlug(resolvePath(cwd)), sessionID+".jsonl"), nil
 }
 
 // claudeProjectSlug names the per-directory folder Claude Code files a

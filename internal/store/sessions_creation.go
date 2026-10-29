@@ -16,8 +16,7 @@ func (s *Store) CreateActiveSessionBeside(sess Session, anchorID string) error {
 	return s.createSession(sess, anchorID, true)
 }
 
-// ConversationFree refuses a conversation another row of the same CLI
-// already holds, so two rows never resume it side by side.
+// ConversationFree refuses a conversation a row of the same CLI already holds.
 func (s *Store) ConversationFree(tool, agentSessionID string) error {
 	return conversationFree(s.db, tool, agentSessionID)
 }

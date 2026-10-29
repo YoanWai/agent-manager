@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS settings (
 			PRIMARY KEY (conversation_id, session_id)
 		)`,
 		`CREATE INDEX IF NOT EXISTS conversation_owners_session ON conversation_owners (session_id)`,
+		`CREATE INDEX IF NOT EXISTS sessions_conversation ON sessions (tool, agent_session_id) WHERE agent_session_id != ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {

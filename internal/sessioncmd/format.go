@@ -51,6 +51,9 @@ func FormatSession(session Session) string {
 	if session.Environment != "" {
 		line += " under environment " + session.Environment
 	}
+	if session.AgentSessionID != "" {
+		line += " on conversation " + session.AgentSessionID
+	}
 	return line
 }
 

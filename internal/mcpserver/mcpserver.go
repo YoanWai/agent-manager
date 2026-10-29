@@ -67,7 +67,7 @@ type createSessionArgs struct {
 	Effort      string  `json:"effort,omitempty" jsonschema:"reasoning effort, one the chosen model takes; omit to keep the CLI's own"`
 	Profile     string  `json:"profile,omitempty" jsonschema:"profile to launch the CLI under, for a CLI that has them (hermes); omit for the CLI's active one"`
 	Environment *string `json:"environment,omitempty" jsonschema:"environment profile from Agent Manager to launch under, a named set of environment variables the user defined; omit to inherit the group's, else this agent's own; pass an empty string for none; not taken with host"`
-	Resume      string  `json:"resume,omitempty" jsonschema:"conversation id of the chosen CLI's own, from a session it saved earlier; the session opens that conversation in its directory instead of a new one, keeps it on every revive, and sends it nothing unless prompt is set; pass the directory it was saved in, and no worktree"`
+	Resume      string  `json:"resume,omitempty" jsonschema:"conversation id of the chosen CLI's own, from a session it saved earlier; the session opens that conversation instead of a new one, keeps it on every revive, and sends it nothing unless prompt is set; pass the directory it was saved in, a name when there is no prompt, and no worktree"`
 	Host        string  `json:"host,omitempty" jsonschema:"SSH connection to start the session on, the host list_sessions reports; omit for this machine. There nothing is inherited from this agent: group defaults to the root, directory to the remote user's home and tool to the one picked in that host's settings"`
 }
 

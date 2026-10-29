@@ -1,8 +1,10 @@
 package sessioncmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/testenv"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -206,17 +208,113 @@ func TestSessionsCreateTypesAResumedPromptIn(t *testing.T) {
 }
 
 func TestSessionsCreateResumesWhereTheConversationWasSaved(t *testing.T) {
+	for _, scope := range []string{"setting", "group"} {
+		t.Run(scope, func(t *testing.T) {
+			h := newSessionHarness(t)
+			repo := newGitRepo(t)
+			opts := CreateSessionOptions{Name: "imported", Tool: "reporter", Directory: repo, Resume: "conv-saved"}
+			if scope == "setting" {
+				if err := h.store.SetSetting(worktreeSetting, "on"); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := h.store.CreateGroup("worktrees", repo); err != nil {
+					t.Fatal(err)
+				}
+				if err := h.store.SetGroupWorktree("worktrees", "on"); err != nil {
+					t.Fatal(err)
+				}
+				group := "worktrees"
+				opts.Group = &group
+			}
+			created, err := h.sessions.Create(h.caller.ID, opts)
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if created.Branch != "" || !sameTerminalPath(created.Directory, repo) {
+				t.Fatalf("resumed session = %+v, want the saved directory without a worktree", created)
+			}
+		})
+	}
+}
+
+func TestSessionsCreateResumesOnlyAConversationSavedThere(t *testing.T) {
 	h := newSessionHarness(t)
-	repo := newGitRepo(t)
-	if err := h.store.SetSetting(worktreeSetting, "on"); err != nil {
+	managerHome := t.TempDir()
+	t.Setenv("CODEX_HOME", managerHome)
+	if err := os.MkdirAll(filepath.Join(managerHome, "sessions"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "imported", Tool: "reporter", Directory: repo, Resume: "conv-saved"})
+	profileHome := t.TempDir()
+	if _, err := h.store.SetEnvVars("work", map[string]string{"CODEX_HOME": profileHome}); err != nil {
+		t.Fatal(err)
+	}
+	saved, elsewhere := t.TempDir(), t.TempDir()
+	rollout := filepath.Join(profileHome, "sessions", "2026", "rollout-conv-1.jsonl")
+	if err := os.MkdirAll(filepath.Dir(rollout), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta, err := json.Marshal(map[string]any{"type": "session_meta", "payload": map[string]string{"session_id": "conv-1", "cwd": saved}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rollout, append(meta, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	work, none := "work", ""
+	for _, tc := range []struct {
+		dir, resume string
+		environment *string
+	}{
+		{elsewhere, "conv-1", &work},
+		{saved, "conv-2", &work},
+		{saved, "conv-1", &none},
+	} {
+		_, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "imported", Tool: "saver", Directory: tc.dir, Environment: tc.environment, Resume: tc.resume})
+		if err == nil || !strings.Contains(err.Error(), "has no conversation "+tc.resume+" saved in") {
+			t.Fatalf("resume %s in %s under %q = %v, want it refused", tc.resume, tc.dir, *tc.environment, err)
+		}
+	}
+	created, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "imported", Tool: "saver", Directory: saved, Environment: &work, Resume: "conv-1"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if created.Branch != "" || !sameTerminalPath(created.Directory, repo) {
-		t.Fatalf("resumed session = %+v, want the saved directory without a worktree", created)
+	if created.AgentSessionID != "conv-1" {
+		t.Fatalf("created = %+v, want conv-1", created)
+	}
+}
+
+func TestSessionsCreateLetsOneOfTwoRacingResumesWin(t *testing.T) {
+	h := newSessionHarness(t)
+	before, err := h.driver.Panes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := make(chan error, 2)
+	for _, name := range []string{"first", "second"} {
+		go func() {
+			_, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: name, Tool: "reporter", Resume: "conv-raced"})
+			errs <- err
+		}()
+	}
+	failed := 0
+	for range 2 {
+		if err := <-errs; err != nil {
+			if !strings.Contains(err.Error(), "already session") {
+				t.Fatalf("losing create = %v", err)
+			}
+			failed++
+		}
+	}
+	if failed != 1 {
+		t.Fatalf("%d of two racing resumes failed, want one", failed)
+	}
+	after, err := h.driver.Panes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != len(before)+1 {
+		t.Fatalf("panes went from %d to %d, want the loser's pane gone", len(before), len(after))
 	}
 }
 
@@ -230,9 +328,10 @@ func TestSessionsCreateRefusesAResumeItCannotHonour(t *testing.T) {
 		opts CreateSessionOptions
 		want string
 	}{
-		{CreateSessionOptions{Tool: "reporter", Resume: "conv; rm -rf ~"}, "not a conversation id"},
-		{CreateSessionOptions{Tool: "reporter", Resume: "conv-other", Worktree: &worktree}, "directory it was saved in"},
-		{CreateSessionOptions{Tool: "reporter", Resume: "conv-saved"}, "already session"},
+		{CreateSessionOptions{Name: "n", Tool: "reporter", Resume: "conv; rm -rf ~"}, "not a conversation id"},
+		{CreateSessionOptions{Name: "n", Tool: "reporter", Resume: "conv-other", Worktree: &worktree}, "directory it was saved in"},
+		{CreateSessionOptions{Tool: "reporter", Resume: "conv-other"}, "pass a name"},
+		{CreateSessionOptions{Name: "n", Tool: "reporter", Resume: "conv-saved"}, "already session"},
 	} {
 		if _, err := h.sessions.Create(h.caller.ID, tc.opts); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Fatalf("Create(%+v) error = %v, want %q", tc.opts, err, tc.want)

@@ -30,9 +30,9 @@ func TranscriptPath(style, cwd, sessionID string) (string, error) {
 	case "claude":
 		return ClaudeTranscriptPath(cwd, sessionID)
 	case "pi":
-		return piTranscriptPath(piRoot(), cwd, sessionID)
+		return piTranscriptPath(piRoot(managerEnv), cwd, sessionID)
 	case "omp":
-		return piTranscriptPath(ompRoot(), cwd, sessionID)
+		return piTranscriptPath(ompRoot(managerEnv), cwd, sessionID)
 	}
 	return "", ErrNoTranscript
 }
@@ -54,11 +54,11 @@ func TranscriptTail(style, path string, cleanUser func(string) string) (prompt, 
 // piRoot is where pi keeps one directory of session files per working
 // directory: $PI_CODING_AGENT_SESSION_DIR, else sessions under
 // $PI_CODING_AGENT_DIR or ~/.pi/agent, as pi --help documents them.
-func piRoot() string {
-	if dir := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); dir != "" {
+func piRoot(env Env) string {
+	if dir := env.get("PI_CODING_AGENT_SESSION_DIR"); dir != "" {
 		return dir
 	}
-	agentDir := os.Getenv("PI_CODING_AGENT_DIR")
+	agentDir := env.get("PI_CODING_AGENT_DIR")
 	if agentDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {

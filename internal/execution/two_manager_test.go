@@ -110,7 +110,7 @@ func (p *twoManagers) spawnReady(t *testing.T) store.Session {
 	t.Helper()
 	id := uuid.NewString()[:8]
 	tool := p.cfg.Tools["ready-tool"]
-	plan := launch.Assemble("ready-tool", tool, "", "", false, false)
+	plan := launch.Assemble("ready-tool", tool, "", false, false)
 	cwd := t.TempDir()
 	command, env, err := launch.Environment(p.hooks, "ready-tool", tool, plan.Command, id, cwd, time.Time{}, nil)
 	if err != nil {

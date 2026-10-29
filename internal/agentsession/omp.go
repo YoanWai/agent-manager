@@ -11,8 +11,8 @@ import (
 
 // ompRoot is where omp keeps one directory of session files per working
 // directory: ~/.omp/agent/sessions, or $PI_CODING_AGENT_DIR/sessions.
-func ompRoot() string {
-	agentDir := os.Getenv("PI_CODING_AGENT_DIR")
+func ompRoot(env Env) string {
+	agentDir := env.get("PI_CODING_AGENT_DIR")
 	if agentDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
