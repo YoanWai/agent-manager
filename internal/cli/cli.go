@@ -56,6 +56,7 @@ func sections(version string, specs settingSpecs) []section {
 	return []section{
 		sessionSection(),
 		promptsSection(),
+		envSection(),
 		taskSection(),
 		fileSection(),
 		terminalSection(),
@@ -89,6 +90,7 @@ func CommandsWithBackend(version string, specs settingSpecs, backend *sessioncmd
 	return commandTable([]section{
 		sessionSectionWith(func(string) sessionCommands { return sessions }),
 		promptsSection(),
+		envSection(),
 		groupSection("Shared task list", "task", "the work list every session in this manager claims from", taskVerbsWith(func(string) taskCommands { return sessions })),
 		fileSectionWith(func(string) fileCommands { return sessions }),
 		groupSection("Managed terminals", "terminal", "shells the user watches beside the agents, for work they should be able to watch, attach to or take over", terminalVerbsWith(func(string) terminalCommands { return terminals })),
@@ -180,12 +182,6 @@ func dispatch(out io.Writer, group string, verbs []command, args []string, calle
 func bind[Layer any](open func(configDir string) Layer, run func(io.Writer, Layer, []string, string) error) Command {
 	return func(args []string, caller func() string, configDir string) error {
 		return run(os.Stdout, open(configDir), args, caller())
-	}
-}
-
-func configCommand(run func(out io.Writer, args []string, sessionID, configDir string) error) Command {
-	return func(args []string, caller func() string, configDir string) error {
-		return run(os.Stdout, args, caller(), configDir)
 	}
 }
 

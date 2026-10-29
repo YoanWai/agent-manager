@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"runtime"
@@ -555,6 +557,22 @@ func TestOmpDefaults(t *testing.T) {
 	}
 }
 
+func TestAntigravityTakesTheModelAndEffort(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tool := cfg.Tools["antigravity"]
+	if tool.Catalog != "antigravity" || tool.CatalogCommand != "agy models" || tool.MinimumVersion != "1.3.4" {
+		t.Fatalf("antigravity catalog = %+v", tool)
+	}
+	chosen := tool.WithChoice(Choice{Model: "gemini-3.8-flash", Effort: "low"})
+	flags := ` --model 'gemini-3.8-flash' --effort 'low'`
+	if chosen.Command != "agy"+flags || chosen.ReviveCommand != "agy -c"+flags || chosen.ResumeByIDCommand != "agy --conversation {id}"+flags {
+		t.Fatalf("antigravity launch lines = %q, %q, %q", chosen.Command, chosen.ReviveCommand, chosen.ResumeByIDCommand)
+	}
+}
+
 func TestCursorDefaults(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {
@@ -576,4 +594,90 @@ func TestCursorDefaults(t *testing.T) {
 	if tool.DefaultStatus != "idle" || tool.TurnEnd != "" || tool.ActivityCutoff == "" {
 		t.Fatalf("cursor status defaults = %+v", tool)
 	}
+}
+
+// Under go test, Dir stays in a temp directory. os.UserConfigDir ignores
+// XDG_CONFIG_HOME on macOS, and a test that resolved there would open the
+// user's state.db.
+func TestDirStaysOutOfTheUserConfigUnderTest(t *testing.T) {
+	if !testing.Testing() {
+		t.Fatal("Dir was not read from a test binary")
+	}
+	got, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pathInside(got, os.TempDir()) {
+		t.Fatalf("Dir() = %q, outside %q", got, os.TempDir())
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	configBase, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	banned := []string{
+		configBase,
+		filepath.Join(home, ".config"),
+		filepath.Join(home, "Library", "Application Support"),
+	}
+	for _, dir := range banned {
+		if pathInside(got, dir) {
+			t.Fatalf("Dir() = %q, under the real config dir %q", got, dir)
+		}
+	}
+}
+
+func TestDirHonorsOverrideThenXDGThenUserConfig(t *testing.T) {
+	override := t.TempDir()
+	xdg := t.TempDir()
+	t.Setenv("AGENT_MANAGER_CONFIG_DIR", override)
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+	got, err := Dir()
+	if err != nil || got != override {
+		t.Fatalf("Dir() = %q, %v; want the override %q", got, err, override)
+	}
+
+	t.Setenv("AGENT_MANAGER_CONFIG_DIR", "")
+	got, err = Dir()
+	want := filepath.Join(xdg, "agent-manager")
+	if err != nil || got != want {
+		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
+	}
+
+	t.Setenv("XDG_CONFIG_HOME", "relative")
+	if _, err = Dir(); err == nil || !strings.Contains(err.Error(), "path in $XDG_CONFIG_HOME is relative") {
+		t.Fatalf("relative XDG_CONFIG_HOME: %v", err)
+	}
+
+	home := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if runtime.GOOS == "windows" {
+		appData := filepath.Join(home, "AppData")
+		if err := os.MkdirAll(appData, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("APPDATA", appData)
+		t.Setenv("AppData", appData)
+	}
+	got, err = Dir()
+	base, berr := os.UserConfigDir()
+	if berr != nil {
+		t.Fatal(berr)
+	}
+	want = filepath.Join(base, "agent-manager")
+	if err != nil || got != want {
+		t.Fatalf("Dir() = %q, %v; want %q", got, err, want)
+	}
+	if got == testConfigDir {
+		t.Fatalf("Dir() used the test directory %q for a home the test chose", got)
+	}
+}
+
+func pathInside(path, dir string) bool {
+	return dirInside(path, dir)
 }

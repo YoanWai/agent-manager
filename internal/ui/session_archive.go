@@ -2,10 +2,11 @@ package ui
 
 import (
 	"fmt"
-	"github.com/YoanWai/agent-manager/internal/store"
-	tea "github.com/charmbracelet/bubbletea"
 	"strings"
 	"time"
+
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
@@ -22,12 +23,16 @@ func (m *Model) archiveSelected() (tea.Model, tea.Cmd) {
 	}
 	if entry.isGroup {
 		subtree := m.sessionsInSubtree(entry.group)
+		alreadyArchived := ""
+		if count := len(archivedSessions(subtree)); count > 0 {
+			alreadyArchived = fmt.Sprintf(", %d already archived", count)
+		}
 		m.confirm.confirmTarget = confirmTarget{
 			isGroup:   true,
 			path:      entry.group,
 			action:    actionArchive,
 			sessions:  subtree,
-			label:     fmt.Sprintf("archive group %s (%d sessions)? frees their RAM, t to find them.", entry.group, len(subtree)),
+			label:     fmt.Sprintf("archive whole group %s (%d sessions%s)? includes sessions hidden by filters.", entry.group, len(subtree), alreadyArchived),
 			selection: lifecycleSelection{kind: lifecycleSelectionGroup},
 		}
 	} else {
@@ -66,7 +71,7 @@ func (m *Model) restoreSelected() (tea.Model, tea.Cmd) {
 			path:      entry.group,
 			action:    actionRestore,
 			sessions:  archived,
-			label:     fmt.Sprintf("restore group %s (%d archived sessions)? brings them back.", entry.group, len(archived)),
+			label:     fmt.Sprintf("restore whole group %s (%d archived sessions)? includes sessions hidden by filters.", entry.group, len(archived)),
 			selection: lifecycleSelection{kind: lifecycleSelectionGroup, archivedOnly: true},
 		}
 	} else {
@@ -135,9 +140,8 @@ func (m *Model) subgroupPaths(path string) []string {
 
 // markRestoredLocally mirrors a completed restore in the loaded rows and
 // group flags, so what came back changes views on this frame rather than
-// waiting for the next poll. A group restore unarchives the subtree; a
-// single restore also clears its group's ancestors, which is what the
-// store write just did to keep a restored session under a live home.
+// waiting for the next poll. Restores also clear ancestor group flags so
+// the restored rows have a visible home.
 func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) {
 	byID := make(map[string]bool, len(restored))
 	for _, sess := range restored {
@@ -152,16 +156,21 @@ func (m *Model) markRestoredLocally(restored []store.Session, groupPath string) 
 			m.markSession(m.workspace.sessions[i].ID, goneMark{archived: false})
 		}
 	}
+	clearGroup := func(path string) {
+		delete(m.workspace.archivedGroups, path)
+		m.markGroup(path, goneMark{archived: false})
+	}
 	if groupPath != "" {
 		for _, path := range append([]string{groupPath}, m.subgroupPaths(groupPath)...) {
-			delete(m.workspace.archivedGroups, path)
-			m.markGroup(path, goneMark{archived: false})
+			clearGroup(path)
+		}
+		for path := parentGroup(groupPath); path != ""; path = parentGroup(path) {
+			clearGroup(path)
 		}
 	} else {
 		for _, sess := range restored {
 			for path := sess.Group; path != ""; path = parentGroup(path) {
-				delete(m.workspace.archivedGroups, path)
-				m.markGroup(path, goneMark{archived: false})
+				clearGroup(path)
 			}
 		}
 	}

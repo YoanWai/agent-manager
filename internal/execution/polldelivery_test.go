@@ -628,6 +628,31 @@ func TestInboxPressesEnterAgainWhileThePasteSitsInTheComposer(t *testing.T) {
 	}
 }
 
+// An agent that took the Enter can draw its turn starting before it clears
+// the composer. An Enter pressed again then lands on the empty prompt that
+// follows, so a pane that is still redrawing is waited on instead.
+func TestInboxWaitsOnAComposerThatClearsAfterRedrawing(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "slow-submit-tool")
+	id := queueMessage(t, m, sess.ID, "rebase on main\nthen run the suite")
+	pane := settledPane(t, m, sess.ID, "❯")
+
+	if _, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
+		t.Fatalf("maybeDeliverInbox: %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("a message the first Enter submitted was recorded as %+v", state)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if after, err := m.tmux.CapturePane(sess.ID); err != nil || strings.Contains(after, "!extra") {
+		t.Fatalf("an Enter was pressed after the agent took the message (%v):\n%s", err, after)
+	}
+}
+
 // A paste no Enter submits never reached the agent. Recording it as
 // delivered leaves its sender waiting on a reply that cannot come.
 func TestInboxRecordsAPasteNoEnterSubmittedAsDropped(t *testing.T) {

@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
+	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -97,7 +99,7 @@ func newCommandTestPoller(t *testing.T, command string) (*Runner, store.Session,
 func TestNotifyTransitionRunsTheCommandBesideTheBanner(t *testing.T) {
 	p, sess, rec, commands := newCommandTestPoller(t, ` curl -d "$AM_BODY" ntfy.sh/topic `)
 	sess.WorktreeBranch = "am/fix-login"
-	p.notifyTransition(sess, status.Waiting)
+	p.notifyTransition(sess, status.Waiting, "", "")
 	want := notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Dir: sess.Cwd, Branch: "am/fix-login"}
 	if calls := waitForCalls(t, rec, 1); calls[0] != want {
 		t.Fatalf("banner got %+v, want %+v", calls[0], want)
@@ -110,7 +112,7 @@ func TestNotifyTransitionRunsTheCommandBesideTheBanner(t *testing.T) {
 
 func TestNotifyTransitionWithoutACommandRunsNone(t *testing.T) {
 	p, sess, rec, commands := newCommandTestPoller(t, "")
-	p.notifyTransition(sess, status.Waiting)
+	p.notifyTransition(sess, status.Waiting, "", "")
 	waitForCalls(t, rec, 1)
 	settle()
 	if calls := commands.all(); len(calls) != 0 {
@@ -126,7 +128,7 @@ func TestNotifyTransitionReportsAnUnreadableCommand(t *testing.T) {
 	if err := p.store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	p.notifyTransition(sess, status.Waiting)
+	p.notifyTransition(sess, status.Waiting, "", "")
 	waitForCalls(t, rec, 1)
 	calls := waitForCommands(t, commands, 1)
 	if calls[0].readErr == nil || calls[0].command != "" || calls[0].event.Kind != notify.Waiting {
@@ -138,7 +140,7 @@ func TestNotifyTransitionReportsAnUnreadableCommand(t *testing.T) {
 // and finished needs the opt-in.
 func TestNotifyCommandFollowsTheNotificationToggles(t *testing.T) {
 	p, sess, _, commands := newCommandTestPoller(t, "true")
-	p.notifyTransition(sess, status.Finished)
+	p.notifyTransition(sess, status.Finished, "", "")
 	settle()
 	if calls := commands.all(); len(calls) != 0 {
 		t.Fatalf("finished without the opt-in ran %v", calls)
@@ -146,7 +148,7 @@ func TestNotifyCommandFollowsTheNotificationToggles(t *testing.T) {
 	if err := p.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
 		t.Fatal(err)
 	}
-	p.notifyTransition(sess, status.Finished)
+	p.notifyTransition(sess, status.Finished, "", "")
 	if calls := waitForCommands(t, commands, 1); calls[0].event.Kind != notify.Finished {
 		t.Fatalf("want a finished command after the opt-in, got %v", calls)
 	}
@@ -154,7 +156,7 @@ func TestNotifyCommandFollowsTheNotificationToggles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, st := range []string{status.Waiting, status.Errored, status.Finished} {
-		p.notifyTransition(sess, st)
+		p.notifyTransition(sess, st, "", "")
 	}
 	settle()
 	if calls := commands.all(); len(calls) != 1 {
@@ -204,9 +206,9 @@ func loggedCommandPoller(t *testing.T, command string) (*Runner, store.Session, 
 // on a banner before its first run, and only then.
 func TestANewNotifyCommandIsShownOnceBeforeItRuns(t *testing.T) {
 	p, sess, log := loggedCommandPoller(t, " say done ")
-	p.notifyTransition(sess, status.Waiting)
+	p.notifyTransition(sess, status.Waiting, "", "")
 	log.wait(t, 3)
-	p.notifyTransition(sess, status.Errored)
+	p.notifyTransition(sess, status.Errored, "", "")
 	want := []string{"banner", "shown say done", "ran say done", "banner", "ran say done"}
 	if got := log.wait(t, 5); !slices.Equal(got, want) {
 		t.Fatalf("deliveries = %v, want %v", got, want)
@@ -222,7 +224,7 @@ func TestAChangedNotifyCommandIsShownAgain(t *testing.T) {
 		if err := p.store.SetSetting(notifyCommandSetting, command); err != nil {
 			t.Fatal(err)
 		}
-		p.notifyTransition(sess, status.Waiting)
+		p.notifyTransition(sess, status.Waiting, "", "")
 		steps += 3
 		log.wait(t, steps)
 	}
@@ -241,7 +243,7 @@ func TestAChangedNotifyCommandIsShownAgain(t *testing.T) {
 // this one after a restart, does not show it again.
 func TestAShownNotifyCommandStaysShownAcrossManagers(t *testing.T) {
 	p, sess, log := loggedCommandPoller(t, "say done")
-	p.notifyTransition(sess, status.Waiting)
+	p.notifyTransition(sess, status.Waiting, "", "")
 	log.wait(t, 3)
 	if (&Runner{store: p.store}).claimUnshownCommand("say done") {
 		t.Fatal("a second manager would show a command the first already showed")
@@ -250,7 +252,7 @@ func TestAShownNotifyCommandStaysShownAcrossManagers(t *testing.T) {
 
 func TestNoNotifyCommandShowsNoBanner(t *testing.T) {
 	p, sess, log := loggedCommandPoller(t, "")
-	p.notifyTransition(sess, status.Waiting)
+	p.notifyTransition(sess, status.Waiting, "", "")
 	log.wait(t, 1)
 	settle()
 	if got := log.wait(t, 1); !slices.Equal(got, []string{"banner"}) {
@@ -260,8 +262,8 @@ func TestNoNotifyCommandShowsNoBanner(t *testing.T) {
 
 func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 	p, sess, rec := newNotifyTestPoller(t)
-	p.notifyTransition(sess, status.Waiting)
-	p.notifyTransition(sess, status.Errored)
+	p.notifyTransition(sess, status.Waiting, "", "")
+	p.notifyTransition(sess, status.Errored, "", "")
 	calls := waitForCalls(t, rec, 2)
 	want := map[notify.Event]bool{
 		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting, Dir: sess.Cwd}: true,
@@ -278,7 +280,7 @@ func TestNotifyTransitionFiresOnWaitingAndErrored(t *testing.T) {
 func TestNotifyTransitionCarriesCustomToolName(t *testing.T) {
 	p, sess, rec := newNotifyTestPoller(t)
 	sess.Tool = "my-custom-agent"
-	p.notifyTransition(sess, status.Waiting)
+	p.notifyTransition(sess, status.Waiting, "", "")
 	calls := waitForCalls(t, rec, 1)
 	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: "my-custom-agent", Kind: notify.Waiting, Dir: sess.Cwd}) {
 		t.Fatalf("configured tool identity should reach the backend, got %v", calls)
@@ -288,7 +290,7 @@ func TestNotifyTransitionCarriesCustomToolName(t *testing.T) {
 func TestNotifyTransitionSkipsUnattentionStatuses(t *testing.T) {
 	p, sess, rec := newNotifyTestPoller(t)
 	for _, st := range []string{status.Working, status.Idle, status.Dead, status.Starting} {
-		p.notifyTransition(sess, st)
+		p.notifyTransition(sess, st, "", "")
 	}
 	settle()
 	if calls := rec.all(); len(calls) != 0 {
@@ -300,7 +302,7 @@ func TestNotifyTransitionSkipsUnattentionStatuses(t *testing.T) {
 // opted in.
 func TestNotifyTransitionFinishedOptIn(t *testing.T) {
 	p, sess, rec := newNotifyTestPoller(t)
-	p.notifyTransition(sess, status.Finished)
+	p.notifyTransition(sess, status.Finished, "", "")
 	settle()
 	if calls := rec.all(); len(calls) != 0 {
 		t.Fatalf("finished should stay quiet by default, got %v", calls)
@@ -308,7 +310,7 @@ func TestNotifyTransitionFinishedOptIn(t *testing.T) {
 	if err := p.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
 		t.Fatal(err)
 	}
-	p.notifyTransition(sess, status.Finished)
+	p.notifyTransition(sess, status.Finished, "", "")
 	calls := waitForCalls(t, rec, 1)
 	if calls[0] != (notify.Event{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Finished, Dir: sess.Cwd}) {
 		t.Fatalf("want one finished notification after opt-in, got %v", calls)
@@ -320,8 +322,8 @@ func TestNotifyTransitionSilencedBySetting(t *testing.T) {
 	if err := p.store.SetSetting(notificationsSetting, "off"); err != nil {
 		t.Fatal(err)
 	}
-	p.notifyTransition(sess, status.Waiting)
-	p.notifyTransition(sess, status.Errored)
+	p.notifyTransition(sess, status.Waiting, "", "")
+	p.notifyTransition(sess, status.Errored, "", "")
 	settle()
 	if calls := rec.all(); len(calls) != 0 {
 		t.Fatalf("notifications off should silence everything, got %v", calls)
@@ -366,8 +368,8 @@ func TestRefreshNotifiesWaitingTransitionOnce(t *testing.T) {
 
 	m.applyCmd(t, m.refreshCmd())
 	calls := waitForCalls(t, rec, 1)
-	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting, Dir: sess.Cwd}) {
-		t.Fatalf("want one waiting notification titled with the session name, got %v", calls)
+	if calls[0] != (notify.Event{ID: sess.ID, Session: "needy", Tool: "claude-hooked", Kind: notify.Waiting, Dir: sess.Cwd, Text: "boot-marker"}) {
+		t.Fatalf("want one waiting notification titled with the session name and quoting the pane, got %v", calls)
 	}
 
 	m.applyCmd(t, m.refreshCmd())
@@ -415,5 +417,125 @@ func TestNotifyCommandRunsOnceAcrossManagers(t *testing.T) {
 	settle()
 	if calls := commands.all(); len(calls) != 1 {
 		t.Fatalf("two managers ran the command %d times: %v", len(calls), calls)
+	}
+}
+
+// The banner quotes what the row would: a waiting session's question, a
+// finished session's prompt. The prompt falls back the way the row does,
+// to the last one the manager sent and then to the launch prompt.
+func TestNotifyTransitionCarriesTheRowsLine(t *testing.T) {
+	p, sess, rec := newNotifyTestPoller(t)
+	if err := p.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	p.notifyTransition(sess, status.Waiting, "", "Do you want to proceed?")
+	p.notifyTransition(sess, status.Finished, "write a haiku", "Rivers run.")
+	sess.LastPrompt = "sent through the manager"
+	p.notifyTransition(sess, status.Finished, "", "Rivers run.")
+	sess.LastPrompt = ""
+	sess.LaunchPrompt = launch.RenameDirective + "\n\nthe launch prompt"
+	p.notifyTransition(sess, status.Finished, "", "Rivers run.")
+	p.notifyTransition(sess, status.Errored, "write a haiku", "boom")
+	calls := waitForCalls(t, rec, 5)
+	want := map[notify.Event]bool{
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Waiting, Text: "Do you want to proceed?"}:   true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Finished, Text: "write a haiku"}:            true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Finished, Text: "sent through the manager"}: true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Finished, Text: "the launch prompt"}:        true,
+		{ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Dir: sess.Cwd, Kind: notify.Errored}:                                    true,
+	}
+	for _, call := range calls {
+		delete(want, call)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing notifications %v, got %v", want, calls)
+	}
+}
+
+// followConversation can move a row onto another conversation in the same
+// pass that notices the turn ended. The banner quotes that conversation,
+// not the one the pass listed.
+func TestRefreshQuotesTheConversationFollowedThisPass(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	m := buildModel(t)
+	m.poller.reportStyles["claude-hooked"] = "claude"
+	if err := m.store.SetSetting(notifyFinishedSetting, "on"); err != nil {
+		t.Fatal(err)
+	}
+	hooked := m.cfg.Tools["claude-hooked"]
+	if runtime.GOOS != "windows" {
+		hooked.Command = `sh -c 'exec cat' --`
+	}
+	m.cfg.Tools["claude-hooked"] = hooked
+	if err := m.spawnSession("claude-hooked", "needy", t.TempDir(), "", "boot-marker", false, false); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, nil)
+	sess := m.sessionRows()[0]
+	waitForPane(t, m, sess.ID, "boot-marker")
+	if err := m.store.UpdateStatus(sess.ID, status.Idle); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.store.SetAgentSessionID(sess.ID, "old-conv"); err != nil {
+		t.Fatal(err)
+	}
+	write := func(id, prompt string) {
+		t.Helper()
+		path, err := agentsession.ClaudeTranscriptPath(sess.Cwd, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := `{"type":"user","message":{"content":[{"type":"text","text":"` + prompt + `"}]}}` + "\n"
+		if err := os.WriteFile(path, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("old-conv", "previous conversation")
+	write("new-conv", "current conversation")
+	prev := followDuringPoll
+	t.Cleanup(func() { followDuringPoll = prev })
+	followDuringPoll = func(p *Runner, row *store.Session, agentAlive, paneGone bool) error {
+		if row.ID == sess.ID {
+			row.AgentSessionID = "new-conv"
+		}
+		return nil
+	}
+	statusFile := m.poller.hooks.StatusFile(sess.ID)
+	if err := os.MkdirAll(filepath.Dir(statusFile), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(statusFile, []byte(status.Finished), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := &notifyRecorder{}
+	m.poller.notifyFn = rec.fn()
+	m.applyCmd(t, m.refreshCmd())
+	calls := waitForCalls(t, rec, 1)
+	if calls[0].Text != "current conversation" {
+		t.Fatalf("notification quoted %q, want the conversation followed this pass", calls[0].Text)
+	}
+}
+
+// A worktree session's banner names the repository it was cut from. The
+// working directory on the event stays the worktree, which is what a
+// notify command receives as AM_CWD.
+func TestNotifyTransitionNamesTheRepoOfAWorktreeSession(t *testing.T) {
+	p, sess, rec := newNotifyTestPoller(t)
+	sess.Cwd = "/src/api-worktrees/deploy"
+	sess.WorktreeRepo = "/src/api"
+	sess.WorktreeBranch = "am/deploy"
+	p.notifyTransition(sess, status.Waiting, "", "")
+	calls := waitForCalls(t, rec, 1)
+	want := notify.Event{
+		ID: sess.ID, Session: sess.Name, Tool: sess.Tool, Kind: notify.Waiting,
+		Dir: sess.Cwd, Repo: "/src/api", Branch: "am/deploy",
+	}
+	if calls[0] != want {
+		t.Fatalf("want the repository named beside the working directory, got %v", calls)
 	}
 }

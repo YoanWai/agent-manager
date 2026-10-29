@@ -187,21 +187,19 @@ func TestPsmuxSessionOfPaneUsesTheServerPid(t *testing.T) {
 	}
 }
 
-// Kill takes the session's server down and its launch script with it.
+// The launch script is gone once PowerShell has run it, and Kill takes the
+// session's server down.
 func TestPsmuxKillRemovesSessionAndScript(t *testing.T) {
 	driver := requireTmux(t)
 	id := psmuxSession(t, driver, "kill", "Write-Output started", "started")
-	if _, err := os.Stat(launchScriptPath(id)); err != nil {
-		t.Fatalf("launch script: %v", err)
+	if _, err := os.Stat(launchScriptPath(id)); !os.IsNotExist(err) {
+		t.Fatalf("launch script left behind: %v", err)
 	}
 	if err := driver.Kill(id); err != nil {
 		t.Fatalf("Kill: %v", err)
 	}
 	if driver.Exists(id) {
 		t.Fatal("session should be gone after Kill")
-	}
-	if _, err := os.Stat(launchScriptPath(id)); !os.IsNotExist(err) {
-		t.Fatalf("launch script should be removed, stat err = %v", err)
 	}
 }
 
@@ -234,6 +232,45 @@ func TestPsmuxRunInPaneDeliversALongCommand(t *testing.T) {
 	if len(left) != 0 {
 		t.Fatalf("relaunch scripts left behind: %v", left)
 	}
+}
+
+// A key removed from the profile between relaunches must not stay set in
+// the pane's PowerShell, where the next agent would still see it.
+func TestPsmuxRunInPaneDropsAKeyTheProfileNoLongerHas(t *testing.T) {
+	driver := requireTmux(t)
+	id := psmuxSession(t, driver, "drop", "Write-Output launched", "launched")
+	if err := driver.RunInPane(id, map[string]string{"AM_SECRET": "old-value", "AM_KEEP": "one"}, "Write-Output first"); err != nil {
+		t.Fatalf("RunInPane: %v", err)
+	}
+	waitForPaneLine(t, driver, id, "first")
+	marker := filepath.Join(t.TempDir(), "ran")
+	command := "[IO.File]::WriteAllText(" + ShellQuote(marker) + ", [string]($null -eq $env:AM_SECRET) + '|' + $env:AM_KEEP)"
+	if err := driver.RunInPane(id, map[string]string{"AM_KEEP": "two"}, command); err != nil {
+		t.Fatalf("RunInPane: %v", err)
+	}
+	var got string
+	for deadline := time.Now().Add(15 * time.Second); got == "" && time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		data, _ := os.ReadFile(marker)
+		got = string(data)
+	}
+	if got != "True|two" {
+		pane, _ := driver.CapturePane(id)
+		t.Fatalf("relaunched agent saw %q, want the dropped key gone and the kept one updated; pane:\n%s", got, pane)
+	}
+}
+
+// A terminal has no command, but a profile still reaches its PowerShell.
+func TestPsmuxCreateExportsAProfileIntoATerminal(t *testing.T) {
+	driver := requireTmux(t)
+	id := prefixedID("term")
+	if err := driver.Create(id, paneDir(), "", map[string]string{"AM_SECRET": "s3cret-value"}, 100, 30); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	if err := driver.SendKeys(id, "Write-Output ('seen-' + $env:AM_SECRET)", "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	waitForPaneLine(t, driver, id, "seen-s3cret-value")
 }
 
 // A prompt holding double quotes reaches the agent CLI as the one argument

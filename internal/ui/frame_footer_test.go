@@ -1,15 +1,16 @@
 package ui
 
 import (
+	"slices"
+	"strings"
+	"testing"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"slices"
-	"strings"
-	"testing"
 )
 
 // Focused, the keyboard belongs to the agent: one tier with the keys the
@@ -189,8 +190,8 @@ func TestFooterTierFollowsTheCursor(t *testing.T) {
 		}
 	}
 	footer := ansi.Strip(m.viewFooter())
-	if !strings.Contains(footer, "Group") {
-		t.Fatalf("a group under the cursor should title the tier Group:\n%s", footer)
+	if !strings.Contains(footer, "Root") {
+		t.Fatalf("the root under the cursor should title the tier Root:\n%s", footer)
 	}
 	if strings.Contains(footer, "fork") {
 		t.Fatalf("a group cannot be forked, so the key should not be offered:\n%s", footer)
@@ -205,7 +206,7 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	// Wide enough that the row budget keeps every app-wide binding.
 	m.layout.width = 260
 	dir := t.TempDir()
-	if err := m.services.store.AddGroup("work", dir, "off", ""); err != nil {
+	if err := m.services.store.AddGroup("work", dir, "off", "", ""); err != nil {
 		t.Fatalf("seed group: %v", err)
 	}
 	m.applyCmd(t, m.refreshCmd())

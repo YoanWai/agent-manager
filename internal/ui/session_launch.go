@@ -154,6 +154,7 @@ func stripDeletedGroups(msg *refreshMsg, gone map[string]goneMark) {
 		delete(msg.groupPaths, path)
 		delete(msg.groupWorktrees, path)
 		delete(msg.groupBases, path)
+		delete(msg.groupEnvs, path)
 		delete(msg.archivedGroups, path)
 	}
 }

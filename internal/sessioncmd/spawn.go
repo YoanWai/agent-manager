@@ -36,6 +36,10 @@ type CreateSessionOptions struct {
 	Model   string
 	Effort  string
 	Profile string
+	// Environment names the environment profile it launches under. Nil
+	// inherits the group's, then the caller's; a pointer to an empty string
+	// launches under the manager's environment alone.
+	Environment *string
 }
 
 func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session, error) {
@@ -66,6 +70,10 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		return Session{}, err
 	}
 	choice, err := s.choose(runtime.words, toolName, tool, opts)
+	if err != nil {
+		return Session{}, err
+	}
+	environment, err := runtime.environmentFor(caller, group, opts.Environment)
 	if err != nil {
 		return Session{}, err
 	}
@@ -114,7 +122,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	chosen := tool.WithChoice(choice)
 	launched, err := lifecycle.Spawn(SpawnRequest{
-		Session:  store.Session{ID: id, Name: name, Tool: toolName, Cwd: dir, Group: group, Choice: choice},
+		Session:  store.Session{ID: id, Name: name, Tool: toolName, Cwd: dir, Group: group, Choice: choice, Environment: environment},
 		Tool:     chosen,
 		Plan:     launch.Assemble(toolName, chosen, prompt, autoNamed, proactive),
 		Worktree: worktree,
@@ -229,6 +237,63 @@ func groupBase(st *store.Store, group string) (string, error) {
 	return "", nil
 }
 
+// environmentFor is the environment profile a new pane launches under: the
+// one asked for, else the nearest default of the group it joins, else the
+// caller's own, so a helper an agent opens keeps its account and config.
+func (r *runtime) environmentFor(caller store.Session, group string, explicit *string) (string, error) {
+	environment := ""
+	switch {
+	case explicit != nil:
+		environment = strings.TrimSpace(*explicit)
+	default:
+		inherited, err := groupEnvironment(r.store, group)
+		if err != nil {
+			return "", err
+		}
+		environment = inherited
+		if environment == "" {
+			environment = caller.Environment
+		}
+	}
+	if environment == "" {
+		return "", nil
+	}
+	if _, found, err := r.store.EnvProfile(environment); err != nil || found {
+		return environment, err
+	}
+	profiles, err := r.store.EnvProfiles()
+	if err != nil {
+		return "", err
+	}
+	names := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		names = append(names, profile.Name)
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("environment %q does not exist, and none is defined; create one with agent-manager env set", environment)
+	}
+	return "", fmt.Errorf("environment %q does not exist; defined are %s", environment, strings.Join(names, ", "))
+}
+
+// groupEnvironment is the environment profile a spawn into group
+// preselects: the nearest ancestor's choice, or "" for none.
+func groupEnvironment(st *store.Store, group string) (string, error) {
+	groups, err := st.Groups()
+	if err != nil {
+		return "", err
+	}
+	chosen := make(map[string]string, len(groups))
+	for _, candidate := range groups {
+		chosen[candidate.Name] = candidate.Environment
+	}
+	for current := group; current != ""; current = parentGroup(current) {
+		if environment := chosen[current]; environment != "" {
+			return environment, nil
+		}
+	}
+	return "", nil
+}
+
 // createTarget resolves the group and directory a new pane opens in.
 // A nil requested group inherits the caller's; an explicit one must
 // already exist. An explicit directory wins outright; a caller that named
@@ -241,10 +306,9 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		return "", "", err
 	}
 	byName := make(map[string]store.Group, len(groups))
-	archived := make(map[string]bool, len(groups))
+	archived := store.ArchivedGroups(groups)
 	for _, candidate := range groups {
 		byName[candidate.Name] = candidate
-		archived[candidate.Name] = candidate.Archived
 	}
 	if requestedGroup != nil {
 		group = strings.TrimSpace(*requestedGroup)

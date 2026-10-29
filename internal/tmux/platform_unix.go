@@ -203,35 +203,39 @@ func ShellInvoke(path string) string {
 	return ShellQuote(path)
 }
 
-// exportEnv prefixes a command with exports of the session environment, for
-// a command typed into a pane whose shell does not carry it: a session
-// launched before the manager started exporting these values still holds a
-// shell that never received them, and it keeps them once this agent exits
-// too.
-func exportEnv(env map[string]string, command string) string {
-	var line strings.Builder
-	for _, key := range sortedKeys(env) {
-		line.WriteString("export " + key + "=" + ShellQuote(env[key]) + "; ")
+// relaunchTools are rm and sh as the manager's own PATH resolves them. The
+// relaunch runs them from a shell that may hold an earlier profile's PATH,
+// and a profile that sets PATH for its agent must not hide what the
+// relaunch itself needs.
+func relaunchTools() (rm, sh string, err error) {
+	if rm, err = exec.LookPath("rm"); err != nil {
+		return "", "", fmt.Errorf("relaunch: %w", err)
 	}
-	line.WriteString(command)
-	return line.String()
+	if sh, err = exec.LookPath("sh"); err != nil {
+		return "", "", fmt.Errorf("relaunch: %w", err)
+	}
+	return rm, sh, nil
 }
 
-// RunInPane types a command into the shell a pane already holds, with the
-// session environment exported into that shell first. The command runs
-// from a script, as Create's does: send-keys stops around 1024 bytes, and a
-// shell without line editing, such as dash, drops a longer line whole. The
-// script gets a fresh name no other user can claim first in a shared temp
-// dir, and removes itself once the shell has opened it. set -m gives the
-// agent its own process group, so tmux reports the agent rather than the
-// script as the pane's command and directory.
+// RunInPane replaces the shell a pane already holds with a launch script,
+// as Create's, which runs the command under the session environment and
+// execs the user's shell again once the agent exits. Running in sh, whatever
+// that shell is, the script can unset what the previous launch exported. A
+// script, since send-keys stops around 1024 bytes and a shell without line
+// editing, such as dash, drops a longer line whole. It gets a fresh name no
+// other user can claim first in a shared temp dir, and removes itself once
+// sh has opened it, so no value is typed into the pane or left on disk.
 func (d *Driver) RunInPane(id string, env map[string]string, command string) error {
+	rm, sh, err := relaunchTools()
+	if err != nil {
+		return err
+	}
 	script, err := os.CreateTemp("", "am-relaunch-"+id+"-*.sh")
 	if err != nil {
 		return fmt.Errorf("relaunch script: %w", err)
 	}
 	path := script.Name()
-	_, err = script.WriteString("rm -f -- \"$0\"\nset -m\n" + command + "\n")
+	_, err = script.WriteString(launchScript(rm, env, command, ""))
 	if closeErr := script.Close(); err == nil {
 		err = closeErr
 	}
@@ -239,7 +243,7 @@ func (d *Driver) RunInPane(id string, env map[string]string, command string) err
 		os.Remove(path)
 		return fmt.Errorf("relaunch script: %w", err)
 	}
-	if err := d.SendKeys(id, exportEnv(env, "sh "+ShellQuote(path)), "Enter"); err != nil {
+	if err := d.SendKeys(id, "exec "+ShellQuote(sh)+" "+ShellQuote(path), "Enter"); err != nil {
 		os.Remove(path)
 		return err
 	}
@@ -249,12 +253,18 @@ func (d *Driver) RunInPane(id string, env map[string]string, command string) err
 // exportLines exports the session environment into the pane's shell, so it
 // outlives the launch command. Quitting the agent leaves a shell that still
 // knows which managed session it belongs to, and an agent started again
-// from that shell is the same session to every manager subcommand.
+// from that shell is the same session to every manager subcommand. The keys
+// the previous launch in the pane exported go first, so one a profile has
+// dropped since is not kept at its old value. They are names CheckEnvKey
+// passed, so sh splits the list safely.
 func exportLines(env map[string]string) string {
 	var lines strings.Builder
-	for _, key := range sortedKeys(env) {
+	lines.WriteString("for key in $" + envKeysVar + "; do unset \"$key\"; done\n")
+	keys := sortedKeys(env)
+	for _, key := range keys {
 		lines.WriteString("export " + key + "=" + ShellQuote(env[key]) + "\n")
 	}
+	lines.WriteString("export " + envKeysVar + "=" + ShellQuote(strings.Join(keys, " ")) + "\n")
 	return lines.String()
 }
 
@@ -264,6 +274,16 @@ func launchScriptPath(id string) string {
 
 func writeLaunchScript(id string, env map[string]string, command, colorFgBg string) (string, error) {
 	path := launchScriptPath(id)
+	if err := os.WriteFile(path, []byte(launchScript("rm", env, command, colorFgBg)), 0o700); err != nil {
+		return "", fmt.Errorf("launch script: %w", err)
+	}
+	return path, nil
+}
+
+// launchScript runs command under env, then execs the user's shell as the
+// pane's process; with no command, as for a terminal, it execs the shell
+// once env is exported.
+func launchScript(rm string, env map[string]string, command, colorFgBg string) string {
 	shell := os.Getenv("SHELL")
 	if shell == "" {
 		shell = "/bin/sh"
@@ -277,24 +297,25 @@ func writeLaunchScript(id string, env map[string]string, command, colorFgBg stri
 	if colorFgBg != "" {
 		header = "export COLORFGBG=" + ShellQuote(colorFgBg) + "\n"
 	}
+	var run string
+	if command != "" {
+		run = command + "\nprintf '%s\\n' " + ShellQuote(relaunchHint) + "\n"
+	}
 	// set -m puts the agent in its own process group, so tmux reports the
 	// agent's cwd as pane_current_path rather than this script's, which
 	// never moves. The INT trap keeps dash and Linux bash from exiting
 	// when the agent dies of SIGINT, which would skip the hint and shell.
-	body := "#!/bin/sh\ntrap : INT\nset -m\n" + header + exportLines(env) + command + "\n" +
-		"printf '%s\\n' " + ShellQuote(relaunchHint) + "\n" +
+	// The script deletes itself once sh has it open, so the environment it
+	// exports, a profile's tokens among it, is not left on disk.
+	return "#!/bin/sh\n" + ShellQuote(rm) + " -f -- \"$0\"\ntrap : INT\nset -m\n" + header + exportLines(env) + run +
 		"exec " + ShellQuote(shell) + "\n"
-	if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
-		return "", fmt.Errorf("launch script: %w", err)
-	}
-	return path, nil
 }
 
 // SessionOfPane names the managed session a tmux pane belongs to, for a
 // caller that knows which pane it sits in but not which session it is.
-// A terminal the manager opens carries no launch command, so it gets no
-// launch script and the session id never reaches its environment; the
-// pane it runs in still says which session tmux filed it under.
+// A terminal the manager opens without a profile gets no launch script,
+// so the session id never reaches its environment; the pane it runs in
+// still says which session tmux filed it under.
 //
 // tmuxEnv is the caller's $TMUX, socket,server_pid,session_id. A pane on any
 // other server belongs to some other tmux, not to this manager, and answers

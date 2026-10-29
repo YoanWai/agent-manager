@@ -7,6 +7,7 @@ import (
 
 	diff "github.com/YoanWai/agent-manager/internal/diff/model"
 	git "github.com/YoanWai/agent-manager/internal/git/value"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -71,10 +72,11 @@ type renderer struct {
 	m *Model
 	s Styles
 	g presentation.GlyphSet
+	c presentation.ChromeSet
 }
 
 func (m *Model) renderer(ctx RenderContext) renderer {
-	return renderer{m: m, s: ctx.Styles, g: presentation.GlyphsFor(ctx.GlyphMode)}
+	return renderer{m: m, s: ctx.Styles, g: presentation.GlyphsFor(ctx.GlyphMode), c: presentation.ChromeFor(ctx.GlyphMode)}
 }
 
 func (s Styles) selectRow(row string) string {
@@ -87,8 +89,8 @@ func (s Styles) keyPill(key, text string, fg lipgloss.Color) string {
 	return s.Subtle.Render(key+" ") + s.Chip.Foreground(fg).Render(text)
 }
 
-func (s Styles) divider(label string, width int) string {
-	return presentation.Divider(label, width, s.Section, s.Rule)
+func (r renderer) divider(label string, width int) string {
+	return presentation.Divider(label, width, r.s.Section, r.s.Rule, r.c.SectionGlyph)
 }
 
 // PaneWidths splits the terminal width between the file rail and the code.
@@ -118,7 +120,7 @@ func (m *Model) AnnotationInputHeight(width int) int {
 // annotationBar is the comment box docked under the code while typing.
 func (r renderer) annotationBar(fd *diff.FileDiff, width int, cursorMarker string) string {
 	num, _ := AnnotationLine(fd.Lines[r.m.CursorDiffLine()])
-	return r.s.divider(fmt.Sprintf("Comment · %s:%d", presentation.EscapeControlsInline(fd.File.Path), num), width) + "\n" + r.m.AnnotationView(cursorMarker)
+	return r.divider(fmt.Sprintf("Comment · %s:%d", presentation.EscapeControlsInline(fd.File.Path), num), width) + "\n" + r.m.AnnotationView(cursorMarker)
 }
 
 func (m *Model) EmptyText(ctx RenderContext) string { return m.renderer(ctx).emptyText() }
@@ -330,7 +332,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 		}
 		bar := " "
 		if i == state.FileIndex {
-			bar = lipgloss.NewStyle().Foreground(s.Accent).Render("▎")
+			bar = lipgloss.NewStyle().Foreground(s.Accent).Render(r.c.ReviewSelectionGlyph)
 		}
 		counts := lipgloss.NewStyle().Foreground(s.Finished).Render(fmt.Sprintf("+%d", fd.Stat.Adds)) +
 			" " + lipgloss.NewStyle().Foreground(s.Errored).Render(fmt.Sprintf("−%d", fd.Stat.Dels))
@@ -379,17 +381,18 @@ func (m *Model) Status(ctx RenderContext, width int) string {
 		count := m.DraftCount()
 		question := s.Err.Render(fmt.Sprintf(" ¶ send %d %s to the agent?", count, CommentNoun(count)))
 		send := ansi.StringWidth(question) + 2
-		cancel := send + ansi.StringWidth("↵/y send · ")
+		sendLabel := presentation.KeyLabel(ctx.GlyphMode, "↵/y") + " send"
+		cancel := send + ansi.StringWidth(sendLabel+" · ")
 		m.statusKeys = keptWithin([]presentation.PaintedKey{
-			{X0: send, X1: send + ansi.StringWidth("↵/y send"), Label: "↵/y"},
+			{X0: send, X1: send + ansi.StringWidth(sendLabel), Label: "↵/y"},
 			{X0: cancel, X1: cancel + ansi.StringWidth("esc cancel"), Label: "esc"},
 		}, width)
-		return presentation.PadRight(question+s.Subtle.Render("  ↵/y send · esc cancel"), width)
+		return presentation.PadRight(question+s.Subtle.Render("  "+sendLabel+" · esc cancel"), width)
 	}
 	return ""
 }
 
-func (m *Model) Legend() []LegendSection {
+func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
 	if m.annotationOpen {
 		return []LegendSection{{Title: "Comment", Pairs: [][2]string{
 			{"↵", "save"}, {"esc", "cancel"},
@@ -407,17 +410,21 @@ func (m *Model) Legend() []LegendSection {
 	if m.codeOnly {
 		filter = "all files"
 	}
+	movePairs := [][2]string{
+		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
+		{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
+		{"u", "layout"}, {"f", filter}, {"o/f3", "open file"},
+	}
+	if glyph := EffectiveHelpBinding(helpKey).Glyph("/"); glyph != "" {
+		movePairs = append(movePairs, [2]string{glyph, "keys"})
+	}
+	movePairs = append(movePairs, [2]string{"esc/q", "close"}, [2]string{"ctrl+c", "quit"})
 	return []LegendSection{
 		{Title: "Review", Pairs: [][2]string{
 			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
 			{"s", "scope: " + m.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
 		}},
-		{Title: "Move", Quiet: true, Pairs: [][2]string{
-			{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
-			{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
-			{"u", "layout"}, {"f", filter}, {"o/f3", "open file"}, {"?", "keys"},
-			{"esc/q", "close"}, {"ctrl+c", "quit"},
-		}},
+		{Title: "Move", Quiet: true, Pairs: movePairs},
 	}
 }
 

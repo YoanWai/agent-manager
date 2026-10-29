@@ -204,3 +204,50 @@ func TestHelpContextForwardsCustomSessionAndListTablesThroughView(t *testing.T) 
 		}
 	}
 }
+
+func TestHelpCloseFollowsSavedBindingWithoutStealingSearch(t *testing.T) {
+	m := helpModel()
+	m.services.listKeys = m.services.listKeys.With(keybind.Help, bindingOf(t, "H", "f2"))
+	m.handleHelpKey(runeKey("?"))
+	if m.mode != modeHelp {
+		t.Fatal("old help binding closed dialog")
+	}
+	m.handleHelpKey(runeKey("/"))
+	m.handleHelpKey(runeKey("H"))
+	if frame := ansi.Strip(m.viewHelp()); !strings.Contains(frame, "search H") {
+		t.Fatalf("bound key stole search: %s", frame)
+	}
+	m.handleHelpKey(namedKey(tea.KeyEnter))
+	m.handleHelpKey(tea.KeyMsg{Type: tea.KeyF2})
+	if m.mode == modeHelp {
+		t.Fatal("saved help binding did not close dialog")
+	}
+	m.openHelp()
+	m.services.listKeys = m.services.listKeys.With(keybind.Help, bindingOf(t))
+	m.handleHelpKey(runeKey("?"))
+	if m.mode != modeHelp {
+		t.Fatal("disabled help binding retained old alias")
+	}
+	m.handleHelpKey(namedKey(tea.KeyEnter))
+	if m.mode != modeHelp {
+		t.Fatal("unadvertised Enter closed help")
+	}
+	m.handleHelpKey(namedKey(tea.KeyEsc))
+	if m.mode == modeHelp {
+		t.Fatal("Escape did not close help")
+	}
+}
+
+func TestHelpToggleDoesNotOverrideDocs(t *testing.T) {
+	m := helpModel()
+	m.services.listKeys = m.services.listKeys.With(keybind.Help, bindingOf(t, "o"))
+	_, cmd := m.handleHelpKey(runeKey("o"))
+	if m.mode != modeHelp || cmd == nil {
+		t.Fatal("toggle stole local docs action")
+	}
+	for _, pair := range m.help.state.Content(m.helpContext(84)).Hints {
+		if pair[1] == "close" && strings.Contains(pair[0], "o") {
+			t.Fatalf("docs key advertised as close: %v", pair)
+		}
+	}
+}

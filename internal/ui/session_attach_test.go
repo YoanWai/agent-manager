@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"strings"
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	tea "github.com/charmbracelet/bubbletea"
-	"strings"
-	"testing"
 )
 
 func TestAttachDoneOpensReviewWhenMarkerSet(t *testing.T) {
@@ -254,6 +256,9 @@ func TestAttachClearsStaleHashBeforeReflow(t *testing.T) {
 func TestCopyReplyOnADeadSessionHints(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	if err := m.services.store.SetKeys(m.services.listKeys.With(keybind.Revive, bindingOf(t, "U")).With(keybind.Restart, bindingOf(t))); err != nil {
+		t.Fatal(err)
+	}
 	createSession(t, m, "alpha", t.TempDir(), "")
 	sess := m.sessionRows()[0]
 	if err := m.services.tmux.Kill(sess.ID); err != nil {
@@ -268,8 +273,8 @@ func TestCopyReplyOnADeadSessionHints(t *testing.T) {
 		t.Fatalf("copy reported %q before the command ran", m.errBar.text)
 	}
 	m.applyCmd(t, cmd)
-	if m.errBar.text != deadSessionHint {
-		t.Fatalf("errBar = %q, want %q", m.errBar.text, deadSessionHint)
+	if m.errBar.text != "session is dead - press U to revive" {
+		t.Fatalf("errBar = %q, want %q", m.errBar.text, "session is dead - press U to revive")
 	}
 }
 

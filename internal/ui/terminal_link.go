@@ -99,13 +99,13 @@ func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
 
 var openURL = func(url string) error {
 	if runtime.GOOS == "windows" {
-		return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		return startReaped(exec.Command("rundll32", "url.dll,FileProtocolHandler", url))
 	}
 	opener := "xdg-open"
 	if runtime.GOOS == "darwin" {
 		opener = "open"
 	}
-	return exec.Command(opener, url).Start()
+	return startReaped(exec.Command(opener, url))
 }
 
 type linkOpenErrMsg struct{ err error }

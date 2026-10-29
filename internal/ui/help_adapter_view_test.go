@@ -149,7 +149,7 @@ func TestHelpReportsWhenNothingMatches(t *testing.T) {
 	}
 }
 
-func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
+func TestHelpContentAndLayout(t *testing.T) {
 	previousProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	t.Cleanup(func() { lipgloss.SetColorProfile(previousProfile) })
@@ -185,7 +185,7 @@ func TestHelpMatchesBaselineContentAndLayout(t *testing.T) {
 			got := readableHelpFrame(preparedView(test.model))
 			want := strings.TrimSuffix(string(golden), "\n")
 			if got != want {
-				t.Fatalf("help content and layout changed from 560a463:\nwant:\n%s\n\ngot:\n%s", want, got)
+				t.Fatalf("help content and layout changed:\nwant:\n%s\n\ngot:\n%s", want, got)
 			}
 			if test.assertCursor {
 				if _, _, ok := test.model.focus.runtime.imeCursor.get(); !ok {

@@ -1,6 +1,8 @@
 package execution
 
 import (
+	"database/sql"
+	"errors"
 	"path/filepath"
 	"sort"
 
@@ -142,7 +144,22 @@ cands:
 		if !bound {
 			// The session was restarted (or bound elsewhere) while this pass
 			// was reading the tool's store, so this id answers a launch that
-			// is over. The next pass captures the one now in the pane.
+			// is over. The next pass captures the one now in the pane. A bind
+			// or restart that landed after this pass's snapshot still claims
+			// its ids.
+			current, err := p.store.Get(sess.ID)
+			if errors.Is(err, sql.ErrNoRows) {
+				continue
+			}
+			if err != nil {
+				return captured, err
+			}
+			if current.AgentSessionID != "" {
+				claimed[current.AgentSessionID] = true
+			}
+			if current.RetiredAgentSessionID != "" {
+				claimed[current.RetiredAgentSessionID] = true
+			}
 			continue
 		}
 		claimed[agentID] = true

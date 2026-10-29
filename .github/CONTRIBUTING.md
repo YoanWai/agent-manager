@@ -7,6 +7,7 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 - **Report a bug** with the [bug report form](https://github.com/YoanWai/agent-manager/issues/new?template=bug_report.yml).
 - **Suggest a feature** with the [feature request form](https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml).
 - **Ask a question or show what you built** in [Discussions](https://github.com/YoanWai/agent-manager/discussions).
+- **Talk about contributing** in #dev on the [Agent Manager Community Discord](https://discord.gg/ecS88An7pF).
 - **Add or fix status rules for a CLI** you use. Every CLI's launch command and detection rules ship in the binary, in `internal/config/config.go`, so a pull request there reaches everyone running that agent. An issue with the CLI's version and the pane text it draws is the next best thing.
 
 ## Picking up an issue
@@ -72,11 +73,12 @@ The manager runs its sessions on a dedicated tmux socket (`-L`), so a developmen
 
 ## Checks
 
-CI runs these on every pull request, plus gitleaks, govulncheck and shellcheck on `install.sh`. Run them locally first:
+CI runs these on every pull request. The other jobs in `.github/workflows/ci.yml` are gitleaks, govulncheck, shellcheck on `install.sh`, a run of `install.sh` on Linux and macOS and of `install.ps1` on Windows against the latest release, the test suite on Windows and on macOS (all but one echo-latency test), the real-terminal e2e scenarios, the Windows ssh client against a WSL host, and a goreleaser snapshot build of every release target. Run these locally first:
 
 ```bash
 gofmt -l .          # must print nothing
 go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@2026.2.2 ./...
 mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest go test -race ./...
 go build ./...
 ```
@@ -182,7 +184,7 @@ Two clauses are worth knowing as a contributor. Section 3 licenses the patent cl
 
 [REVIEW.md](../REVIEW.md) states what a review here covers, so you can see what a finding will be about before you open the PR. CodeRabbit reviews every pull request automatically, usually within minutes. Work through its findings first: fix what it got right, and reply on the comment when you disagree, so the thread records why. Maintainer review starts once the CodeRabbit round is handled; a PR with open, unanswered findings waits.
 
-@YoanWai reviews and merges everything (see [CODEOWNERS](CODEOWNERS)). Expect a first response within a few days.
+Collaborators may merge a pull request once @YoanWai has approved it. GitHub enforces this with a required code-owner review. [CODEOWNERS](CODEOWNERS) is `* @YoanWai`. One approving code-owner review is required. A push after approval needs a fresh approval. The required checks must pass, and conversations must be resolved. Expect a first response within a few days.
 
 ## Code of Conduct
 

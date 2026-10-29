@@ -21,10 +21,13 @@ func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
 				t.Fatalf("Settings exceeds height %d: %d", m.layout.height, len(lines))
 			}
 			want := map[int]string{uisettings.FieldGlyphs: "symbols", uisettings.FieldKeybindings: "keybindings", uisettings.FieldUpdate: "version"}[field]
-			for _, text := range []string{want, "Save and close", "esc"} {
+			for _, text := range []string{want, "save and close", "esc"} {
 				if !strings.Contains(view, text) {
 					t.Fatalf("Settings %dx%d lost %q:\n%s", m.layout.width, m.layout.height, text, view)
 				}
+			}
+			if strings.Contains(view, "[ Save and close ]") {
+				t.Fatalf("Settings %dx%d kept a save button in the rows:\n%s", m.layout.width, m.layout.height, view)
 			}
 			if field != uisettings.FieldGlyphs && !strings.Contains(view, "symbols") {
 				m = leftClick(m, m.layout.card.bodyLeft, m.layout.card.bodyTop-1)
@@ -36,8 +39,8 @@ func TestSettingsViewportKeepsFocusedFieldAndSaveVisible(t *testing.T) {
 	}
 }
 
-// The save button and the field scroll belong to the main rows; the key
-// picker scrolls its own list and saves on esc.
+// Save and close stays in the main dialog's footer. The key picker scrolls
+// its own list and leaves with esc.
 func TestKeyPickerCardCarriesNoSaveButton(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 40
@@ -48,8 +51,8 @@ func TestKeyPickerCardCarriesNoSaveButton(t *testing.T) {
 		t.Fatal("test setup: enter on keybindings opens the picker")
 	}
 	view := ansi.Strip(m.viewSettings())
-	if strings.Contains(view, "Save and close") {
-		t.Fatalf("the key picker painted the main dialog's save button:\n%s", view)
+	if strings.Contains(view, "save and close") {
+		t.Fatalf("the key picker painted the main dialog's save hint:\n%s", view)
 	}
 	if !strings.Contains(view, "detach") {
 		t.Fatalf("the key picker lost its first row:\n%s", view)

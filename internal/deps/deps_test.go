@@ -2,6 +2,7 @@ package deps
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -490,6 +491,200 @@ func runCommand(t *testing.T, cmd *exec.Cmd, env []string) (string, int) {
 	}
 	t.Fatal(err)
 	return "", 1
+}
+
+func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
+	dir := t.TempDir()
+	log := filepath.Join(dir, "gh.log")
+	writeExe(t, filepath.Join(dir, "gh"), "#!/bin/sh\nprintf 'prompt=%s\\n' \"${GH_PROMPT_DISABLED-unset}\" >> \"$GH_LOG\"\nprintf '%s\\n' \"$*\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n")
+	body := "set -eu\nREPO=YoanWai/agent-manager\n" + installFuncs(t, "err", "verify_attestation") + "verify_attestation /tmp/archive.tar.gz\nprintf 'done\\n'\n"
+	path := "PATH=" + dir
+	base := []string{path, "GH_LOG=" + log}
+
+	out, code := runDash(t, body, base)
+	if code != 0 || !strings.Contains(out, "done") || fileExists(log) {
+		t.Fatalf("unset flag called gh: exit %d\n%s", code, out)
+	}
+
+	for _, flag := range []string{"1", "y", "Y", "yes", "YES", "Yes", "true", "TRUE", "True"} {
+		if err := os.Remove(log); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		out, code = runDash(t, body, append(append([]string{}, base...), "AGENT_MANAGER_VERIFY_ATTESTATION="+flag, "GH_EXIT=0"))
+		got := readLog(t, log)
+		if code != 0 || !strings.Contains(out, "done") || !strings.Contains(got, "prompt=1\nattestation verify /tmp/archive.tar.gz --repo YoanWai/agent-manager\n") {
+			t.Fatalf("flag %s: exit %d\n%s\nlog %q", flag, code, out, got)
+		}
+	}
+
+	for _, flag := range []string{"", "0", "no", "yesterday", "truth"} {
+		if err := os.Remove(log); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		out, code = runDash(t, body, append(append([]string{}, base...), "AGENT_MANAGER_VERIFY_ATTESTATION="+flag, "GH_EXIT=1"))
+		if code != 0 || !strings.Contains(out, "done") || fileExists(log) {
+			t.Fatalf("flag %q must skip gh: exit %d\n%s", flag, code, out)
+		}
+	}
+
+	if err := os.Remove(log); err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	out, code = runDash(t, body, append(append([]string{}, base...), "AGENT_MANAGER_VERIFY_ATTESTATION=1", "GH_EXIT=1"))
+	if code != 1 || !strings.Contains(out, "error: attestation verification failed for /tmp/archive.tar.gz") {
+		t.Fatalf("rejected attestation: exit %d\n%s", code, out)
+	}
+
+	out, code = runDash(t, body, []string{"PATH=" + t.TempDir(), "AGENT_MANAGER_VERIFY_ATTESTATION=yes"})
+	if code != 1 || !strings.Contains(out, "error: AGENT_MANAGER_VERIFY_ATTESTATION is set but gh is not installed") {
+		t.Fatalf("missing gh: exit %d\n%s", code, out)
+	}
+}
+
+func TestReleaseFooterShowsTheScriptBeforeRunning(t *testing.T) {
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh is not installed")
+	}
+	fence := powershellFence(t, ".goreleaser.yaml", "install.ps1")
+	show := strings.Index(fence, "Get-Content .\\install.ps1")
+	run := strings.Index(fence, "powershell -NoProfile -ExecutionPolicy Bypass -File .\\install.ps1")
+	if show < 0 || run < 0 || show > run {
+		t.Fatalf("release footer runs install.ps1 without showing it:\n%s", fence)
+	}
+	script := "$ErrorActionPreference = 'Continue'\n" +
+		"Remove-Item Alias:\\irm -Force\n" +
+		"function scoop { }\n" +
+		"function irm { param($Url, $OutFile) Set-Content -LiteralPath $OutFile -Value 'script-body' }\n" +
+		"function Unblock-File { param($Path) }\n" +
+		"function powershell { 'RAN' }\n" +
+		fence
+	out, code := runPwsh(t, script, "")
+	shown := strings.Index(out, "script-body")
+	ran := strings.Index(out, "RAN")
+	if code != 0 || shown < 0 || ran < 0 || shown > ran {
+		t.Fatalf("footer did not show the script before running it: exit %d\n%s", code, out)
+	}
+}
+
+func TestPowerShellAttestationExampleRequiresGh(t *testing.T) {
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh is not installed")
+	}
+	for _, path := range []string{"README.md", "docs/install.md"} {
+		fence := powershellFence(t, path, "gh attestation verify .\\install.ps1")
+		if !strings.Contains(fence, "Get-Command gh -ErrorAction Stop") {
+			t.Fatalf("%s attestation example does not require gh", path)
+		}
+		out, code := runPwsh(t, missingGhPrelude()+fence, "")
+		if strings.Contains(out, "RAN") || code == 0 {
+			t.Fatalf("%s missing gh ran the installer: exit %d\n%s", path, code, out)
+		}
+	}
+	zip := powershellFence(t, "docs/install.md", "gh attestation verify $archive")
+	out, code := runPwsh(t, "$global:LASTEXITCODE = 0\n$archive = 'archive.zip'\n"+zip+"'PASSED'\n", "")
+	if strings.Contains(out, "PASSED") || code == 0 {
+		t.Fatalf("zip verify treated a missing gh as success: exit %d\n%s", code, out)
+	}
+	readme := powershellFence(t, "README.md", "gh attestation verify .\\install.ps1")
+	out, code = runPwsh(t, missingGhPrelude()+readme, writeGhStub(t, 0))
+	if code != 0 || !strings.Contains(out, "RAN") {
+		t.Fatalf("verify success should install: exit %d\n%s", code, out)
+	}
+	out, code = runPwsh(t, missingGhPrelude()+readme, writeGhStub(t, 1))
+	if strings.Contains(out, "RAN") || code == 0 {
+		t.Fatalf("verify failure should stop: exit %d\n%s", code, out)
+	}
+}
+
+func missingGhPrelude() string {
+	return "$ErrorActionPreference = 'Continue'\n" +
+		"Remove-Item Alias:\\irm -Force\n" +
+		"function irm { param($Url, $OutFile) }\n" +
+		"function Unblock-File { param($Path) }\n" +
+		"function powershell { 'RAN' }\n" +
+		"Set-Content -LiteralPath install.ps1 -Value 'ok'\n" +
+		"$global:LASTEXITCODE = 0\n"
+}
+
+func writeGhStub(t *testing.T, exit int) string {
+	t.Helper()
+	dir := t.TempDir()
+	if runtime.GOOS == "windows" {
+		writeExe(t, filepath.Join(dir, "gh.cmd"), fmt.Sprintf("@exit /b %d\r\n", exit))
+		return dir
+	}
+	writeExe(t, filepath.Join(dir, "gh"), fmt.Sprintf("#!/bin/sh\nexit %d\n", exit))
+	return dir
+}
+
+func powershellFence(t *testing.T, path, marker string) string {
+	t.Helper()
+	source, err := os.ReadFile(repoFile(t, path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.ReplaceAll(string(source), "\r\n", "\n"), "\n")
+	for i := 0; i < len(lines); i++ {
+		if strings.TrimSpace(lines[i]) != "```powershell" {
+			continue
+		}
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		var body []string
+		closed := false
+		for j := i + 1; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "```" {
+				closed = true
+				i = j
+				break
+			}
+			line := lines[j]
+			if len(line) >= indent && strings.TrimLeft(line[:indent], " ") == "" {
+				line = line[indent:]
+			}
+			body = append(body, line)
+		}
+		if !closed {
+			t.Fatalf("%s fence never closed", path)
+		}
+		text := strings.Join(body, "\n")
+		if strings.Contains(text, marker) {
+			return text + "\n"
+		}
+	}
+	t.Fatalf("%s has no powershell fence containing %s", path, marker)
+	return ""
+}
+
+func runPwsh(t *testing.T, script, pathDir string) (string, int) {
+	t.Helper()
+	cmd := exec.Command("pwsh", "-NoProfile", "-Command", script)
+	cmd.Dir = t.TempDir()
+	env := make([]string, 0, len(os.Environ())+1)
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(strings.ToUpper(entry), "PATH=") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	// A cleared environment drops SYSTEMROOT, and pwsh on Windows then
+	// fails before the script runs. Only the search path changes, so a
+	// stub gh is the one Get-Command finds.
+	cmd.Env = append(env, "PATH="+pathDir)
+	return runCommand(t, cmd, cmd.Env)
+}
+
+func TestDetectOSOnWindowsNamesTheReadableInstaller(t *testing.T) {
+	body := "set -eu\n" + installFuncs(t, "err", "detect_os") + "uname() { echo Windows_NT; }\ndetect_os\n"
+	out, code := runDash(t, body, []string{"PATH=/usr/bin:/bin"})
+	const want = "https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1"
+	if code != 1 || !strings.Contains(out, want) || strings.Contains(out, "releases/latest/download/install.ps1") {
+		t.Fatalf("windows hint: exit %d\n%s", code, out)
+	}
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func TestHintShowsOneLineForScriptRecipes(t *testing.T) {

@@ -90,6 +90,9 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 	if err != nil {
 		return result, err
 	}
+	if err := s.lifecycle.ValidatePlacement(source); err != nil {
+		return result, err
+	}
 	// The re-read validates liveness, not identity: the fork targets the
 	// source the dialog confirmed. A restart while queued mints a new
 	// launch, and forking it would open the replacement. A conversation
@@ -101,6 +104,8 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 		switched = false
 	}
 	if source.Tool != request.source.Tool ||
+		source.Group != request.source.Group ||
+		source.ParentID != request.source.ParentID ||
 		switched ||
 		source.Cwd != request.source.Cwd ||
 		source.WorktreeRepo != request.source.WorktreeRepo ||
@@ -194,6 +199,7 @@ func (s effectServices) runFork(request forkRequest) (effectResult, error) {
 		WorktreeRepo:   request.source.WorktreeRepo,
 		WorktreeBranch: request.source.WorktreeBranch,
 		Choice:         request.source.Choice,
+		Environment:    request.source.Environment,
 	}
 	launched, err := s.lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:     forked,

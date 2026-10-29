@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -87,12 +88,12 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			m.quick.input.SetValue("hello 界 " + strings.Repeat("wrapping ", 12))
 			frame := preparedView(m)
 			frameRows := splitLines(frame)
-			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), quickEdge)) == "" {
+			if len(frameRows) != m.layout.height || strings.TrimSpace(strings.TrimPrefix(ansi.Strip(frameRows[len(frameRows)-1]), m.chrome().QuickEdgeGlyph)) == "" {
 				t.Fatalf("full %v width %d footer must end on the last terminal row", full, width)
 			}
 			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
 			footerHeight := lipgloss.Height(m.viewFooter())
-			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1).text)
+			keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1, presentation.DefaultGlyphMode).text)
 			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}
@@ -100,7 +101,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 				t.Fatalf("target hit row = %d, want %d", m.quick.originY, m.layout.height-footerHeight)
 			}
 			for y := m.layout.height - footerHeight; y < m.layout.height; y++ {
-				if !strings.HasPrefix(ansi.Strip(frameRows[y]), quickEdge) {
+				if !strings.HasPrefix(ansi.Strip(frameRows[y]), m.chrome().QuickEdgeGlyph) {
 					t.Fatalf("footer row %d must carry the accent edge", y)
 				}
 				if cells := ansi.StringWidth(frameRows[y]); cells != m.layout.width {

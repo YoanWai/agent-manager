@@ -22,6 +22,8 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -107,7 +109,12 @@ const (
 
 // Event is one session transition worth telling the user about. ID is the
 // session's store id, which a click hands back so the manager can select
-// that row.
+// that row. Dir is the session's working directory and Branch the worktree
+// branch the manager made for it. Repo, when set, is the repository that
+// worktree was cut from, which the title names in Dir's place so two
+// sessions of one name read apart. Text is what the row quotes for the
+// state: the question a waiting session asks, the prompt a finished one
+// was given.
 type Event struct {
 	ID      string
 	Session string
@@ -115,9 +122,20 @@ type Event struct {
 	Kind    Kind
 	Dir     string
 	Branch  string
+	// Repo is the repository a worktree session was cut from. The title
+	// names it in place of Dir, whose folder is the session's own name.
+	// Dir stays the working directory the notify command receives.
+	Repo string
+	Text string
 }
 
+// bodyTextCap bounds the row's line on a banner, which shows about two
+// lines before cutting it off itself.
+const bodyTextCap = 120
+
 type presentation struct {
+	glyph         string
+	word          string
 	body          string
 	macSound      string
 	windowsSound  string
@@ -131,6 +149,8 @@ func describe(kind Kind) (presentation, bool) {
 	switch kind {
 	case Waiting:
 		return presentation{
+			glyph:         "◆",
+			word:          "Waiting",
 			body:          "◆ Waiting for your input",
 			macSound:      "Funk",
 			windowsSound:  "ms-winsoundevent:Notification.Reminder",
@@ -141,6 +161,8 @@ func describe(kind Kind) (presentation, bool) {
 		}, true
 	case Finished:
 		return presentation{
+			glyph:         "●",
+			word:          "Finished",
 			body:          "● Finished",
 			macSound:      "Hero",
 			windowsSound:  "ms-winsoundevent:Notification.Default",
@@ -151,6 +173,8 @@ func describe(kind Kind) (presentation, bool) {
 		}, true
 	case Errored:
 		return presentation{
+			glyph:         "✕",
+			word:          "Errored",
 			body:          "✕ Errored",
 			macSound:      "Basso",
 			windowsSound:  "ms-winsoundevent:Notification.IM",
@@ -222,11 +246,56 @@ func deliver(sessionID, subtitle, body string, detail presentation) {
 // content is the title and text every channel shows for an event, the
 // native banner and the user's command alike.
 func content(event Event, detail presentation) (title, body string) {
-	title = sanitize(event.Session)
-	if tool := sanitize(event.Tool); tool != "" {
-		title += " · " + tool
+	return titleLine(event), bodyLine(event.Kind, detail, event.Text)
+}
+
+// titleLine names the session, then where it runs, then its tool:
+// "deploy · api · am/fix-login · codex". A worktree names the repository
+// it was cut from; the worktree directory itself is the session's name.
+func titleLine(event Event) string {
+	parts := []string{sanitize(event.Session)}
+	named := event.Dir
+	if event.Repo != "" {
+		named = event.Repo
 	}
-	return title, detail.body
+	if dir := sanitize(titleDir(named)); named != "" && dir != "" {
+		parts = append(parts, dir)
+	}
+	if branch := sanitize(event.Branch); branch != "" {
+		parts = append(parts, branch)
+	}
+	if tool := sanitize(event.Tool); tool != "" {
+		parts = append(parts, tool)
+	}
+	return strings.Join(parts, " · ")
+}
+
+// titleDir is the directory a banner names. A Unix root stays "/", and a
+// Windows drive root stays "C:\". path.Base of the slash form of "C:\"
+// is "C:", and filepath.Base("/") is "\" on Windows.
+func titleDir(named string) string {
+	if vol := filepath.VolumeName(named); vol != "" {
+		rest := strings.TrimPrefix(named, vol)
+		if strings.Trim(rest, `/\`) == "" {
+			return vol + `\`
+		}
+	}
+	return path.Base(filepath.ToSlash(named))
+}
+
+// bodyLine puts the row's line behind the state glyph, "◆ Waiting: <the
+// question>", so the banner alone says what the session needs. Errored
+// keeps its state word: the row's line there is the turn that failed, not
+// something to act on.
+func bodyLine(kind Kind, detail presentation, text string) string {
+	text = sanitize(text)
+	if text == "" || kind == Errored {
+		return detail.body
+	}
+	if runes := []rune(text); len(runes) > bodyTextCap {
+		text = string(runes[:bodyTextCap-1]) + "…"
+	}
+	return detail.glyph + " " + detail.word + ": " + text
 }
 
 // notifySend keeps the call open for the banner's lifetime when the
@@ -240,6 +309,9 @@ func notifySend(sessionID, body string, detail presentation) error {
 		"--icon=" + detail.linuxIcon,
 		"--hint=string:sound-name:" + detail.linuxSound,
 	}
+	// Desktop daemons read the body as markup, so a < or & the agent
+	// wrote has to arrive as text.
+	body = markupEscaper.Replace(body)
 	if !notifySendReportsActions() {
 		return runCmd("notify-send", append(args, "--", "agent-manager", body)...)
 	}
@@ -342,12 +414,14 @@ func osc777(title, body string) string {
 		strings.ReplaceAll(body, ";", ",") + "\a"
 }
 
+var markupEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+
 // sanitize squashes a title or body to one line with no control
-// characters, so neither escapes nor external commands can be fed
-// anything that breaks out of its payload.
+// characters, C1 included, so neither escapes nor external commands can
+// be fed anything that breaks out of its payload.
 func sanitize(s string) string {
 	mapped := strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return ' '
 		}
 		return r

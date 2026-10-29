@@ -112,7 +112,7 @@ func (p *twoManagers) spawnReady(t *testing.T) store.Session {
 	tool := p.cfg.Tools["ready-tool"]
 	plan := launch.Assemble("ready-tool", tool, "", false, false)
 	cwd := t.TempDir()
-	command, env, _, err := launch.Environment(p.hooks, "ready-tool", tool, plan.Command, id, cwd, time.Time{})
+	command, env, _, err := launch.Environment(p.hooks, "ready-tool", tool, plan.Command, id, cwd, time.Time{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

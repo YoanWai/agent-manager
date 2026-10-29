@@ -14,6 +14,10 @@ The poll interval is fixed at two seconds, so a `poll_interval` line in that fil
 
 One list in Settings, shared by the new-session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, and `saved` on `create_session` and `send_session`. Names are unique, up to 60 characters, with no brackets. The text is up to 64 KiB. `agent-manager prompts list`, `add` and `rm` edit the list from a shell. See [Saved prompts](usage.md#saved-prompts).
 
+## Environment profiles
+
+Named sets of environment variables a session launches under, kept in `state.db` and edited from a shell with `agent-manager env list`, `show`, `set`, `unset` and `rm`. Settings lists their names and variables, never their values. Names are up to 60 characters. See [Environment profiles](usage.md#environment-profiles).
+
 ## Agent CLIs
 
 Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI, plus the shell `T` opens. OpenCode means OpenCode 2 (`@opencode/cli`), which the manager runs with `--standalone` so each session has a server of its own. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity, Oh My Pi and Cursor CLI have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
@@ -24,7 +28,7 @@ Hermes is tested with Hermes Agent 0.20.0 and launches its classic REPL with `--
 
 Grok Build launches with `--no-leader`, so every session runs its own agent. A shared Grok leader runs each session's shell commands under the environment of the session that started it, which would make one session's agent-manager commands act as another. `[cli] use_leader` in Grok's `config.toml` keeps applying to the Grok sessions you start yourself.
 
-Antigravity CLI is tested with agy 1.2.14. Its first launch registers the `agent-manager` server with `agy mcp add`, which writes `~/.gemini/config/mcp_config.json`, the file the Antigravity IDE reads its servers from too. agy has no command-line fork, and its `/fork` moves the running session onto the copy, so `f` does not offer one.
+Antigravity CLI is tested with agy 1.4.7 and needs 1.3.4 or later, the first release that takes a model without an effort. Its first launch registers the `agent-manager` server with `agy mcp add`, which writes `~/.gemini/config/mcp_config.json`, the file the Antigravity IDE reads its servers from too. agy has no command-line fork, and its `/fork` moves the running session onto the copy, so `f` does not offer one.
 
 Muse Code is tested with Muse 1.3.0 and 1.4.0. Muse reads MCP servers only from its settings file, so the first Muse launch adds the `agent-manager` server to `~/.config/muse/settings.json` (under `$XDG_CONFIG_HOME` when set) and keeps every other setting and server. A symlinked settings file is written through the link. Muse starts that server with none of the session's environment, so the server finds its session through its process tree, which needs the manager's tmux server at the default `TMUX_TMPDIR`. Muse forks only from inside a running session: `f` types `/fork` into the source and opens the fork in its own pane.
 
@@ -64,7 +68,7 @@ A session key is `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or 
 
 Every key the list answers to is an action in the picker: `up`, `down`, `open`, `attach`, `step_in`, `step_out`, `reorder_up`, `reorder_down`, `new_session`, `terminal`, `new_group`, `fork`, `prompt`, `copy_reply`, `review`, `mark_idle`, `rename`, `move`, `editor`, `restart`, `kill`, `kill_all`, `revive`, `revive_all`, `archive`, `cancel_end`, `restore`, `delete`, `search`, `filter`, `archived`, `empty_groups`, `fold_all`, `resize`, `settings`, `messages`, `help` and `quit`.
 
-A list key is a plain character (`n`, `N`, `?`, `|`), a key name (`space`, `enter`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pgup`, `pgdn`), `shift+` an arrow or tab, or the `ctrl+`, `alt+` and `f1` to `f12` forms above. `esc` and `ctrl+c` stay as they are: `esc` cancels everywhere and `ctrl+c` always quits, even with `quit` turned off. `settings` keeps at least one key, so the picker stays reachable. The footer, the `?` key map and the empty-list hints all read the table, so a moved key is named where it moved to.
+A list key is a plain character (`n`, `N`, `?`, `|`), a key name (`space`, `enter`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pgup`, `pgdn`), `shift+` an arrow or tab, or the `ctrl+`, `alt+` and `f1` to `f12` forms above. `esc` and `ctrl+c` stay as they are. `esc` cancels everywhere. `ctrl+c` quits the manager even with `quit` turned off, and a focused session sends it to the agent. `settings` keeps at least one key, so the picker stays reachable. The footer, the `?` key map and the empty-list hints all read the table, so a moved key is named where it moved to.
 
 ### Where the keys apply
 

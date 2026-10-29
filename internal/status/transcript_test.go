@@ -106,8 +106,8 @@ func TestGrokLastMessageSkipsChrome(t *testing.T) {
 		t.Fatalf("minimal grok quote = %q, want the reply", line)
 	}
 
-	if echoed, ok := engine.LastUserEcho("grok", fullscreen); ok {
-		t.Fatalf("grok has no user_echo, LastUserEcho ok=%v echo=%q", ok, echoed)
+	if echoed, ok := engine.LastUserEcho("grok", fullscreen); !ok || echoed != "" {
+		t.Fatalf("a pane with no prompt row echoes nothing, LastUserEcho ok=%v echo=%q", ok, echoed)
 	}
 }
 
@@ -291,9 +291,9 @@ func TestFullTurnTextKeepsTableRows(t *testing.T) {
 // tool draws behind its own composer marker cannot pass for one: opencode
 // spells its model footer in the ┃ gutter its echoes use, and codex draws
 // an open dialog's options behind ›. Row shapes as verified live in
-// TestLastUserEchoPerTool. Tools that echo nothing (grok, hermes) take the
-// composer row itself as the bound, and a reply body that renders indented
-// (opencode) is content, not a wrapped prompt's tail.
+// TestLastUserEchoPerTool. grok's prompt owns the deeper-indented rows it
+// wrapped onto, and a reply body that renders indented (opencode) is
+// content, not a wrapped prompt's tail.
 func TestFullTurnTextPerTool(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {
@@ -355,17 +355,19 @@ func TestFullTurnTextPerTool(t *testing.T) {
 			want: "⠶ CMD ECHO TEST DONE.\n  And a second line of the reply.",
 		},
 		{
-			name: "grok bounds on its composer row, not its turn summary",
+			name: "grok bounds on its prompt, not its turn summary",
 			tool: "grok",
-			pane: "│ ❯ first prompt\n" +
-				"Grok answer paragraph one.\n" +
-				"Grok answer paragraph two.\n" +
-				"  Worked for 3s. Press ctrl+c to stop\n" +
-				"│ ❯ ",
-			want: "Grok answer paragraph one.\nGrok answer paragraph two.",
+			pane: "     ❯ first prompt, long enough to wrap onto    3:46 PM\n" +
+				"       a second row\n" +
+				"\n" +
+				"     Grok answer paragraph one.\n" +
+				"     Grok answer paragraph two.\n" +
+				"     Worked for 3s. Press ctrl+c to stop\n" +
+				"  │ ❯ ",
+			want: "     Grok answer paragraph one.\n     Grok answer paragraph two.",
 		},
 		{
-			name: "grok keeps no prompt, so its previous turn summary bounds",
+			name: "grok's prompt scrolled off, so its previous turn summary bounds",
 			tool: "grok",
 			pane: "Grok answer to the first question.\n" +
 				"  Worked for 3s. Press ctrl+c to stop\n" +
@@ -488,14 +490,14 @@ func TestFullTurnTextPerTool(t *testing.T) {
 	}
 }
 
-// Where nothing in the pane says the turn began - grok keeps no prompt in
-// its transcript, and its summary can sit above the capture - the text is
-// the whole region, and the caller is told so. pi draws no readable region
+// Where nothing in the pane says the turn began - grok's prompt scrolled
+// off, and its summary can sit above the capture - the text is the whole
+// region, and the caller is told so. pi draws no readable region
 // at all, so no reply can be read from it.
 func TestFullTurnTextReportsAnUnboundedCopy(t *testing.T) {
 	engine := defaultEngine(t)
-	bounded := "│ ❯ a prompt\nGrok answered it.\n│ ❯ "
-	if text, isBounded, ok := engine.FullTurnText("grok", bounded); !ok || !isBounded || text != "Grok answered it." {
+	bounded := "     ❯ a prompt\n     Grok answered it.\n  │ ❯ "
+	if text, isBounded, ok := engine.FullTurnText("grok", bounded); !ok || !isBounded || text != "     Grok answered it." {
 		t.Fatalf("bounded grok turn = %q bounded=%v ok=%v", text, isBounded, ok)
 	}
 	unbounded := "Grok answered something older.\nGrok answered this too.\n│ ❯ "
@@ -564,6 +566,37 @@ func TestFullTurnTextResultWithBlankLine(t *testing.T) {
 			want := tc.call + "\n\n" + tc.answer + "\n  reply continuation"
 			if got, _, ok := engine.FullTurnText(tc.tool, pane); !ok || got != want {
 				t.Fatalf("copied %q, ok=%v; want %q", got, ok, want)
+			}
+		})
+	}
+}
+
+// grok 1.0.50 echoes a sent prompt behind ❯: indented with a clock at the
+// row's right edge under fullscreen, flush-left under --minimal. The clock
+// reads the same under a German locale. The rows a long prompt wrapped
+// onto stay out of the copied reply.
+func TestGrokEchoesItsPrompt(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, tc := range []struct{ capture, prompt, reply string }{
+		{"finished-wrapped-prompt", "Reply with exactly the word OK and nothing else. This sentence is only padding", "     OK"},
+		{"finished-de-locale", "Reply with exactly the word OK.", "     OK"},
+		{"minimal-two-prompts", "Now reply with exactly the word YES.", "YES"},
+	} {
+		t.Run(tc.capture, func(t *testing.T) {
+			data, err := os.ReadFile("testdata/grok/1.0.50/" + tc.capture + ".txt")
+			if err != nil {
+				t.Fatal(err)
+			}
+			pane := engine.Plain("grok", string(data))
+			if echoed, ok := engine.LastUserEcho("grok", pane); !ok || echoed != tc.prompt {
+				t.Fatalf("echo = %q ok=%v, want %q", echoed, ok, tc.prompt)
+			}
+			text, bounded, ok := engine.FullTurnText("grok", pane)
+			if !ok || !bounded || !strings.HasPrefix(text, tc.reply) {
+				t.Fatalf("copy = %q bounded=%v ok=%v, want it to open on %q", text, bounded, ok, tc.reply)
+			}
+			if strings.Contains(text, "wraps onto") {
+				t.Fatalf("copy kept the prompt's wrapped row: %q", text)
 			}
 		})
 	}

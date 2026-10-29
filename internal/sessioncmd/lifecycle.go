@@ -157,6 +157,9 @@ type SpawnRequest struct {
 // CLI: it opens the worktree the request asks for, fills the row from the
 // launch plan, and launches it, handing the worktree back if that fails.
 func (l *Lifecycle) Spawn(request SpawnRequest) (LaunchResult, error) {
+	if err := l.ValidatePlacement(request.Session); err != nil {
+		return LaunchResult{}, err
+	}
 	sess := request.Session
 	if request.Worktree != nil {
 		if l.runtime.Git == nil {
@@ -195,6 +198,12 @@ func (l *Lifecycle) Spawn(request SpawnRequest) (LaunchResult, error) {
 // cannot be persisted. A label failure is returned separately because the UI
 // reports it while agent commands historically treat it as cosmetic.
 func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
+	if err := l.ValidatePlacement(request.Session); err != nil {
+		if request.RollbackWorktree {
+			l.discardWorktree(request.Session)
+		}
+		return LaunchResult{}, err
+	}
 	if err := l.requireHooks(); err != nil {
 		return LaunchResult{}, err
 	}
@@ -210,7 +219,12 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 			l.discardWorktree(sess)
 		}
 	}
-	command, env, warning, err := launch.Environment(l.runtime.Hooks, sess.Tool, request.Tool, request.BaseCommand, sess.ID, sess.Cwd, time.Time{})
+	profile, err := l.runtime.Store.LaunchEnv(sess.Environment)
+	if err != nil {
+		discard()
+		return LaunchResult{}, err
+	}
+	command, env, warning, err := launch.Environment(l.runtime.Hooks, sess.Tool, request.Tool, request.BaseCommand, sess.ID, sess.Cwd, time.Time{}, profile)
 	if err != nil {
 		discard()
 		return LaunchResult{}, err
@@ -225,10 +239,10 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 		return LaunchResult{}, err
 	}
 	sess.TmuxSocket = l.runtime.Driver.SocketPath()
-	create := l.runtime.Store.CreateSession
+	create := l.runtime.Store.CreateActiveSession
 	if request.BesideSessionID != "" {
 		create = func(row store.Session) error {
-			return l.runtime.Store.CreateSessionBeside(row, request.BesideSessionID)
+			return l.runtime.Store.CreateActiveSessionBeside(row, request.BesideSessionID)
 		}
 	}
 	if err := create(sess); err != nil {
@@ -288,13 +302,18 @@ func (l *Lifecycle) Revive(listed store.Session, pane PaneSize) (RelaunchResult,
 	if err := l.requireHooks(); err != nil {
 		return RelaunchResult{}, err
 	}
-	sess, err := l.runtime.Store.Get(listed.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return RelaunchResult{}, fmt.Errorf("session %s: %w", listed.ID, store.ErrSessionGone)
-	}
+	sess, err := l.runtime.Store.RequireSession(listed.ID)
 	if err != nil {
 		return RelaunchResult{}, err
 	}
+	if sess.Archived {
+		return RelaunchResult{}, fmt.Errorf("session %s is archived; restore it before reviving", sess.Name)
+	}
+	return l.revive(sess, pane)
+}
+
+func (l *Lifecycle) revive(sess store.Session, pane PaneSize) (RelaunchResult, error) {
+	var err error
 	tool, ok := l.runtime.Config.Tools[sess.Tool]
 	if !ok {
 		return RelaunchResult{}, fmt.Errorf("tool %s is no longer configured", sess.Tool)
@@ -331,9 +350,16 @@ func (l *Lifecycle) Revive(listed store.Session, pane PaneSize) (RelaunchResult,
 	})
 }
 
-func (l *Lifecycle) Restart(sess store.Session, pane PaneSize) (RelaunchResult, error) {
+func (l *Lifecycle) Restart(listed store.Session, pane PaneSize) (RelaunchResult, error) {
 	if err := l.requireHooks(); err != nil {
 		return RelaunchResult{}, err
+	}
+	sess, err := l.runtime.Store.RequireSession(listed.ID)
+	if err != nil {
+		return RelaunchResult{}, err
+	}
+	if sess.Archived {
+		return RelaunchResult{}, fmt.Errorf("session %s is archived; restore it before restarting", sess.Name)
 	}
 	tool, ok := l.runtime.Config.Tools[sess.Tool]
 	if !ok {
@@ -369,9 +395,13 @@ func (l *Lifecycle) Restart(sess store.Session, pane PaneSize) (RelaunchResult, 
 	return result, err
 }
 
-func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (RelaunchResult, error) {
+func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (result RelaunchResult, launchErr error) {
 	launchedAt := time.Now()
-	command, env, warning, err := launch.Environment(l.runtime.Hooks, sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, launchedAt)
+	profile, err := l.runtime.Store.LaunchEnv(sess.Environment)
+	if err != nil {
+		return RelaunchResult{}, err
+	}
+	command, env, warning, err := launch.Environment(l.runtime.Hooks, sess.Tool, tool, baseCommand, sess.ID, sess.Cwd, launchedAt, profile)
 	if err != nil {
 		return RelaunchResult{}, err
 	}
@@ -382,12 +412,18 @@ func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCom
 	if err := l.runtime.Driver.Create(sess.ID, sess.Cwd, command, env, size.Width, size.Height); err != nil {
 		return RelaunchResult{}, err
 	}
+	defer func() {
+		if launchErr != nil {
+			_, cleanupErr := l.stopFailedLaunch(sess)
+			if cleanupErr != nil {
+				launchErr = errors.Join(launchErr, fmt.Errorf("stop failed launch of %s: %w", sess.Name, cleanupErr))
+			}
+		}
+	}()
 	if err := bind(launchedAt); err != nil {
-		_ = l.runtime.Driver.Kill(sess.ID)
 		return RelaunchResult{}, err
 	}
 	if err := l.runtime.Store.SetTmuxSocket(sess.ID, l.runtime.Driver.SocketPath()); err != nil {
-		_ = l.runtime.Driver.Kill(sess.ID)
 		return RelaunchResult{}, err
 	}
 	labelErr := l.setLabel(sess.ID, SessionLabel(sess.Group, sess.Name))
@@ -484,20 +520,47 @@ func (l *Lifecycle) ArchiveForHuman(selection ArchiveSelection) (ArchiveResult, 
 	return partial(archived, true), nil
 }
 
-func (l *Lifecycle) RestoreForHuman(selection ArchiveSelection, pane PaneSize) (ArchiveResult, error) {
+func (l *Lifecycle) RestoreForHuman(selection ArchiveSelection, pane PaneSize) (result ArchiveResult, operationErr error) {
 	restored := make([]store.Session, 0, len(selection.Sessions))
+	started := map[string]bool{}
 	groupChanged := false
 	var labelErr error
 	partial := func() ArchiveResult {
 		return ArchiveResult{Sessions: restored, GroupPath: selection.GroupPath, LabelError: labelErr, GroupChanged: groupChanged}
 	}
+	// A failed archive write must not leave newly started panes running
+	// outside the active inventory.
+	defer func() {
+		if operationErr == nil {
+			return
+		}
+		for i, sess := range restored {
+			if !started[sess.ID] || !sess.Archived {
+				continue
+			}
+			killed, err := l.stopFailedLaunch(sess)
+			restored[i] = killed
+			if err != nil {
+				operationErr = errors.Join(operationErr, fmt.Errorf("stop failed restore of %s: %w", sess.Name, err))
+			}
+		}
+		result = partial()
+	}()
 	for _, sess := range selection.Sessions {
 		if !l.runtime.Driver.Exists(sess.ID) {
-			result, err := l.Revive(sess, pane)
+			if err := l.requireHooks(); err != nil {
+				return partial(), err
+			}
+			current, err := l.runtime.Store.RequireSession(sess.ID)
+			if err != nil {
+				return partial(), err
+			}
+			result, err := l.revive(current, pane)
 			if err != nil {
 				return partial(), err
 			}
 			sess = result.Session
+			started[sess.ID] = true
 			labelErr = errors.Join(labelErr, result.LabelError)
 		}
 		restored = append(restored, sess)
@@ -671,4 +734,19 @@ func (l *Lifecycle) Capture(cfg config.Config, snapshot func(string, string) err
 	captured.runtime.Config = cfg
 	captured.runtime.Snapshot = snapshot
 	return &captured
+}
+
+// Failed launches must not overwrite the screen saved when the row was archived.
+func (l *Lifecycle) stopFailedLaunch(sess store.Session) (store.Session, error) {
+	if l.runtime.Driver.Exists(sess.ID) {
+		if err := l.killPane(sess.ID); err != nil {
+			return sess, err
+		}
+	}
+	hookErr := l.runtime.Hooks.Remove(sess.ID)
+	statusErr := l.runtime.Store.UpdateStatus(sess.ID, status.Dead)
+	if statusErr == nil {
+		sess.Status = status.Dead
+	}
+	return sess, errors.Join(hookErr, statusErr)
 }

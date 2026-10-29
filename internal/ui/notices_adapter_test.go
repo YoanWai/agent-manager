@@ -175,7 +175,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 		"v0.3.0",
 		"Worktree: Respect group defaults",
 		"v0.6.0",
-		"updates once to v0.6.0",
+		"Press u to update to v0.6.0",
 	} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("cumulative modal missing %q:\n%s", want, frame)
@@ -1291,5 +1291,39 @@ func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
 	m.handleMouse(tea.MouseMsg{X: 2, Y: y0 + line, Button: tea.MouseButtonRight, Action: tea.MouseActionPress})
 	if m.listReadyForNotice() {
 		t.Fatal("an open row menu should hold notices back")
+	}
+}
+
+func TestNoticesCloseFollowsSavedBinding(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.mode = modeNotices
+	m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, "N", "f2"))
+	m.handleNoticesKey(key("M"))
+	if m.mode != modeNotices {
+		t.Fatal("old messages binding closed dialog")
+	}
+	m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyF2})
+	if m.mode != modeList {
+		t.Fatal("saved messages binding did not close dialog")
+	}
+	m.mode = modeNotices
+	m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t))
+	m.handleNoticesKey(key("M"))
+	if m.mode != modeNotices {
+		t.Fatal("disabled messages binding retained old alias")
+	}
+	m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.mode != modeList {
+		t.Fatal("Escape did not close messages")
+	}
+}
+
+func TestNoticesToggleDoesNotOverrideRefresh(t *testing.T) {
+	m := noticeModel(noticeStore(t), "v0.2.0")
+	m.mode = modeNotices
+	m.services.listKeys = m.services.listKeys.With(keybind.Messages, bindingOf(t, "r"))
+	_, cmd := m.handleNoticesKey(key("r"))
+	if m.mode != modeNotices || cmd == nil || !m.update.refreshing {
+		t.Fatal("toggle stole local refresh action")
 	}
 }

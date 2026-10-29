@@ -9,7 +9,8 @@ import (
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		name := keybind.Normalize(key.String())
-		if name == "ctrl+c" || (m.effects.quitting && m.services.listKeys.Binding(keybind.Quit).Has(name)) {
+		abandonsDrain := m.effects.quitting && (name == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(name))
+		if abandonsDrain || (name == "ctrl+c" && m.mode != modeFocus) {
 			return m.requestQuit()
 		}
 	}

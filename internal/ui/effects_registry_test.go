@@ -3,11 +3,8 @@ package ui
 import (
 	"go/ast"
 	"go/parser"
-	"go/token"
-	"io/fs"
 	"reflect"
 	"slices"
-	"strings"
 	"testing"
 )
 
@@ -102,18 +99,7 @@ type effectDeclarations struct {
 
 func parseEffectDeclarations(t *testing.T) effectDeclarations {
 	t.Helper()
-	fset := token.NewFileSet()
-	packages, err := parser.ParseDir(fset, ".", func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, parser.SkipObjectResolution)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var files []*ast.File
-	for _, file := range packages["ui"].Files {
-		files = append(files, file)
-	}
-	return effectDeclarations{files: files}
+	return effectDeclarations{files: packageFiles(t, parser.SkipObjectResolution)}
 }
 
 func (d effectDeclarations) receiversOf(markerMethod string) []string {

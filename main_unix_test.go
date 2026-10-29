@@ -3,24 +3,21 @@
 package main
 
 import (
+	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 )
 
-// A TUI launched without a controlling terminal fails with the one message
-// that tells the user what to open it in; the Setsid call is what makes the
-// child terminal-less, which Windows has no equivalent of.
-func TestMainReportsHeadlessStartupFailure(t *testing.T) {
+// Piped output is not a terminal, and Setsid drops the controlling
+// terminal that a TUI would open. A no-argument start prints usage and
+// exits 0 instead of failing that open, whether or not tmux is installed.
+func TestMainHeadlessNoArgsPrintsUsage(t *testing.T) {
 	if prepareMainProcess() {
 		main()
 		return
-	}
-	if _, err := exec.LookPath("tmux"); err != nil {
-		t.Skip("tmux not installed")
 	}
 	root, err := os.MkdirTemp("/tmp", "ammain")
 	if err != nil {
@@ -44,11 +41,19 @@ func TestMainReportsHeadlessStartupFailure(t *testing.T) {
 		"XDG_CONFIG_HOME", filepath.Join(root, "config"),
 		"TMUX_TMPDIR", filepath.Join(root, "tmux"),
 	)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("agent-manager unexpectedly started without a controlling terminal:\n%s", out)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("agent-manager with no terminal: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
 	}
-	if !strings.Contains(string(out), "could not open a new TTY") {
-		t.Fatalf("agent-manager reported the wrong startup failure:\n%s", out)
+	if !strings.Contains(stdout.String(), "Usage: agent-manager [command]") {
+		t.Fatalf("agent-manager did not print usage:\n%s", stdout.String())
+	}
+	if strings.Contains(stdout.String(), noTerminalNotice) {
+		t.Fatalf("stdout included the terminal notice:\n%s", stdout.String())
+	}
+	if stderr.String() != noTerminalNotice+"\n" {
+		t.Fatalf("stderr = %q, want the terminal notice", stderr.String())
 	}
 }

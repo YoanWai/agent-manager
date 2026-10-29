@@ -40,6 +40,12 @@ func (m *Model) resizeSessions() {
 		if sess.Archived || sess.ID == fullFocusID {
 			continue
 		}
+		// A dead row has no window to size. Its resize would fail every
+		// pass, and a finished effect asks for another poll, so the rows
+		// without a pane in this pass's listing are skipped (#880).
+		if _, live := m.workspace.panes[sess.ID]; !live {
+			continue
+		}
 		wanted := height
 		if last, ok := m.focus.runtime.lastPaneSizes[sess.ID]; ok {
 			fitsHeight := m.workspace.panes[sess.ID].AltScreen || m.services.cfg.Tools[sess.Tool].FitsHeight

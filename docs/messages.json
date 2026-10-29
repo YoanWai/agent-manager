@@ -1,5 +1,20 @@
 [
   {
+    "id": "discord-community",
+    "banner": "Agent Manager has a Discord now",
+    "title": "Join the Agent Manager Community on Discord",
+    "body": [
+      "Ask questions and get setup help in #help, from other users and the maintainer.",
+      "Share your setup, tips and experiments in #workflows, tagged by agent.",
+      "New releases post in #announcements.",
+      "Contributors and collaborators are actively wanted. Say hi in #dev.",
+      "Unassigned issues are free to claim. Bugs and feature requests still go to GitHub issues.",
+      "Press Enter to join."
+    ],
+    "url": "https://discord.gg/ecS88An7pF",
+    "expires_at": "2026-11-22T12:00:00Z"
+  },
+  {
     "id": "v0430-ssh-sessions",
     "banner": "Sessions on your other machines",
     "title": "v0.43.0: sessions on your other machines",

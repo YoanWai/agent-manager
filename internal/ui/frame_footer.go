@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -85,7 +86,7 @@ func (m *Model) footer() legend {
 func (m *Model) listFooter() string { return m.listLegend().text }
 
 func (m *Model) listLegend() legend {
-	return paintLegend([]legendSection{m.rowLegend(), m.viewLegend()}, m.layout.width)
+	return paintLegend([]legendSection{m.rowLegend(), m.viewLegend()}, m.layout.width, m.prefs.glyphMode)
 }
 
 // transientFooter renders one tier at the list footer's height: the footer
@@ -94,7 +95,7 @@ func (m *Model) listLegend() legend {
 // The full screen layout has no preview box to hold still, so a tier there
 // takes the one row it needs and hands the rest to the body.
 func (m *Model) transientFooter(section legendSection) legend {
-	bar := paintLegend([]legendSection{section}, m.layout.width)
+	bar := paintLegend([]legendSection{section}, m.layout.width, m.prefs.glyphMode)
 	if !m.prefs.fullLayout {
 		bar.text = presentation.PadToHeight(bar.text, lipgloss.Height(m.listFooter()))
 	}
@@ -113,15 +114,18 @@ func (m *Model) listGlyph(actions ...string) string {
 		}
 		joined += glyph
 	}
-	return joined
+	return presentation.KeyLabel(m.prefs.glyphMode, joined)
 }
 
 func (m *Model) messagesAlert() (glyph, label string) {
-	if len(m.activeNotices()) == 0 {
-		return "", ""
-	}
 	glyph = m.listGlyph(keybind.Messages)
 	if glyph == "" {
+		return "", ""
+	}
+	if m.notices.feedPending {
+		return glyph, uinotices.FeedPendingText
+	}
+	if len(m.activeNotices()) == 0 {
 		return "", ""
 	}
 	return glyph, "unread"

@@ -5,7 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"io/fs"
+	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -20,19 +20,30 @@ const maxHostMethods = 8
 // driver through its host.
 var forbiddenHostTypes = []string{"Model", "services", "effectServices", "effectRequest", "store.Store", "tmux.Driver", "git.Driver"}
 
-func TestFeatureHostsStayNarrow(t *testing.T) {
-	fset := token.NewFileSet()
-	packages, err := parser.ParseDir(fset, ".", func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, 0)
+func packageFiles(t *testing.T, mode parser.Mode) []*ast.File {
+	t.Helper()
+	entries, err := os.ReadDir(".")
 	if err != nil {
 		t.Fatal(err)
 	}
+	fset := token.NewFileSet()
 	var files []*ast.File
-	for _, file := range packages["ui"].Files {
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, name, nil, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
 		files = append(files, file)
 	}
-	hosts, violations := hostViolations(files)
+	return files
+}
+
+func TestFeatureHostsStayNarrow(t *testing.T) {
+	hosts, violations := hostViolations(packageFiles(t, 0))
 	if hosts == 0 {
 		t.Fatal("found no feature hosts")
 	}

@@ -107,6 +107,139 @@ func TestPrintHelpReturnsWriteError(t *testing.T) {
 	}
 }
 
+const noTerminalNotice = "agent-manager: no terminal attached; run it in a terminal to open the manager"
+
+func TestMainNonInteractiveStartDoesNotNeedMultiplexer(t *testing.T) {
+	if prepareMainProcess() {
+		main()
+		return
+	}
+	empty := t.TempDir()
+	home := t.TempDir()
+	cases := []struct {
+		name   string
+		args   []string
+		want   string
+		notice bool
+	}{
+		{name: "no-args", want: "Usage: agent-manager [command]", notice: true},
+		{name: "version", args: []string{"--version"}, want: "agent-manager dev"},
+		{name: "help", args: []string{"--help"}, want: "Usage: agent-manager [command]"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := mainTestCommand(t, tc.args...)
+			cmd.Env = replaceEnv(cmd.Env,
+				"HOME", home,
+				"XDG_CONFIG_HOME", filepath.Join(home, ".config"),
+				"PATH", empty,
+				"Path", empty,
+			)
+			devNull, err := os.Open(os.DevNull)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { devNull.Close() })
+			cmd.Stdin = devNull
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			if err := cmd.Run(); err != nil {
+				t.Fatalf("exit: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+			}
+			if !strings.Contains(stdout.String(), tc.want) {
+				t.Fatalf("stdout missing %q:\n%s", tc.want, stdout.String())
+			}
+			if strings.Contains(stdout.String(), noTerminalNotice) {
+				t.Fatalf("stdout included the terminal notice:\n%s", stdout.String())
+			}
+			if tc.notice {
+				if stderr.String() != noTerminalNotice+"\n" {
+					t.Fatalf("stderr = %q, want the terminal notice", stderr.String())
+				}
+			} else if strings.Contains(stderr.String(), noTerminalNotice) || strings.Contains(stderr.String(), "not found") {
+				t.Fatalf("stderr = %q", stderr.String())
+			}
+		})
+	}
+}
+
+// config.Dir and printHelp both fail closed on this path. Each arm is the
+// input os.UserConfigDir and the store actually reject on that OS.
+func TestMainNonInteractiveStartReportsHelpFailures(t *testing.T) {
+	if prepareMainProcess() {
+		main()
+		return
+	}
+	t.Run("config dir", func(t *testing.T) {
+		home := t.TempDir()
+		env, want := nonInteractiveConfigDirFailure(home)
+		assertNonInteractiveFailure(t, env, want)
+	})
+	t.Run("state db", func(t *testing.T) {
+		root := t.TempDir()
+		env, configDir := nonInteractiveConfigDir(root)
+		if err := os.MkdirAll(configDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(configDir, "state.db"), []byte("not a database"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		assertNonInteractiveFailure(t, env, "not a database")
+	})
+}
+
+func nonInteractiveConfigDirFailure(home string) (env []string, want string) {
+	switch runtime.GOOS {
+	case "windows":
+		return []string{"HOME", home, "USERPROFILE", home, "AppData", "", "APPDATA", ""}, "%AppData% is not defined"
+	case "darwin", "ios":
+		return []string{"HOME", "", "USERPROFILE", ""}, "$HOME is not defined"
+	default:
+		return []string{"HOME", home, "USERPROFILE", home, "XDG_CONFIG_HOME", "relative"}, "path in $XDG_CONFIG_HOME is relative"
+	}
+}
+
+func nonInteractiveConfigDir(root string) (env []string, configDir string) {
+	switch runtime.GOOS {
+	case "windows":
+		appData := filepath.Join(root, "AppData")
+		return []string{"HOME", root, "USERPROFILE", root, "AppData", appData, "APPDATA", appData}, filepath.Join(appData, "agent-manager")
+	case "darwin", "ios":
+		return []string{"HOME", root, "USERPROFILE", root}, filepath.Join(root, "Library", "Application Support", "agent-manager")
+	default:
+		xdg := filepath.Join(root, "xdg")
+		return []string{"HOME", root, "USERPROFILE", root, "XDG_CONFIG_HOME", xdg}, filepath.Join(xdg, "agent-manager")
+	}
+}
+
+func assertNonInteractiveFailure(t *testing.T, env []string, wantErr string) {
+	t.Helper()
+	cmd := mainTestCommand(t)
+	empty := t.TempDir()
+	cmd.Env = replaceEnv(cmd.Env, append(env, "PATH", empty, "Path", empty)...)
+	devNull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { devNull.Close() })
+	cmd.Stdin = devNull
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("exit: %v\nstdout:\n%s\nstderr:\n%s", err, stdout.String(), stderr.String())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if !strings.HasPrefix(stderr.String(), noTerminalNotice+"\nagent-manager: ") || !strings.Contains(stderr.String(), wantErr) {
+		t.Fatalf("stderr = %q, want the terminal notice and %q", stderr.String(), wantErr)
+	}
+}
+
 func TestMainPrintsHelpWithoutStartingTUI(t *testing.T) {
 	if prepareMainProcess() {
 		main()
