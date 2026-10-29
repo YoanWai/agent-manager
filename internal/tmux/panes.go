@@ -32,12 +32,6 @@ func (d *Driver) CapturePaneHistoryContext(ctx context.Context, id string, lines
 	return d.runContext(ctx, "capture-pane", "-p", "-e", "-S", "-"+strconv.Itoa(lines), "-t", PaneTarget(id))
 }
 
-// capturePlain drops the escapes CapturePane keeps, which an application is
-// free to write partway through a line, breaking a match on the text.
-func (d *Driver) capturePlain(target string) (string, error) {
-	return d.run("capture-pane", "-p", "-t", target)
-}
-
 func (d *Driver) capturePlainContext(ctx context.Context, target string) (string, error) {
 	return d.runContext(ctx, "capture-pane", "-p", "-t", target)
 }

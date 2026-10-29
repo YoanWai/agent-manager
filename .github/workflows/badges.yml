@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: badges
@@ -17,6 +17,12 @@ concurrency:
 jobs:
   regenerate:
     runs-on: ubuntu-latest
+    # BADGE_TOKEN lives in the badges environment, which only main and v* tags
+    # can deploy to.
+    environment: badges
+    permissions:
+      # Pushes the generated assets to the badges branch.
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:

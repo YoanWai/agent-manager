@@ -274,16 +274,17 @@ func inboxEnvelope(msg store.InboxMessage, mcpStyle string, fromShell bool) stri
 		reply)
 }
 
-// sanitizeBody drops the control bytes that would move the cursor or open
-// an escape sequence when the message is pasted into a live pane. Newlines
-// and tabs are the message's own shape, and bracketed paste already keeps a
-// newline from submitting the recipient's prompt.
+// sanitizeBody drops the control characters that would move the cursor or
+// open an escape sequence when the message is pasted into a live pane, the
+// C1 range included, since a terminal in UTF-8 mode reads U+009B as a CSI.
+// Newlines and tabs are the message's own shape, and bracketed paste
+// already keeps a newline from submitting the recipient's prompt.
 func sanitizeBody(body string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\t' {
 			return r
 		}
-		if r < 0x20 || r == 0x7f {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
 			return -1
 		}
 		return r

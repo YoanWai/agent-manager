@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	"github.com/YoanWai/agent-manager/internal/feed"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -39,6 +40,8 @@ type noticesPanel struct {
 	// feedMessages is the remote message feed, refreshed on the update
 	// tick and folded into the notices next to the built-in ones.
 	feedMessages []feed.Message
+	// The fetch writes its cache before the UI applies its result.
+	feedPending bool
 	// pendingNotice is a new notice that arrived while the list was not
 	// showing; flushPendingNotice opens it once the list is back.
 	pendingNotice string
@@ -81,14 +84,16 @@ func (m *Model) activeNotices() []uinotices.Notice {
 // bar as the panel's tail shows them.
 func (m *Model) noticesFrame() uinotices.Frame {
 	return uinotices.Frame{
-		GlyphMode:  m.prefs.glyphMode,
-		Width:      m.layout.width,
-		Height:     m.layout.height,
-		Refreshing: m.update.refreshing,
-		Applying:   m.update.applying,
-		Latest:     m.update.latest,
-		Status:     m.statusRow(),
-		Theme:      noticesTheme(),
+		CloseKey:    m.services.listKeys.Binding(keybind.Messages),
+		GlyphMode:   m.prefs.glyphMode,
+		Width:       m.layout.width,
+		Height:      m.layout.height,
+		Refreshing:  m.update.refreshing,
+		FeedPending: m.notices.feedPending,
+		Applying:    m.update.applying,
+		Latest:      m.update.latest,
+		Status:      m.statusRow(),
+		Theme:       noticesTheme(),
 	}
 }
 

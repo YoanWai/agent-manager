@@ -311,6 +311,47 @@ func TestFocusModeForwardsKeys(t *testing.T) {
 	}
 }
 
+func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "focus-cancel", t.TempDir(), "")
+	m.selectSessionRow(t, "focus-cancel")
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	if m.mode != modeFocus {
+		t.Fatalf("after enter, mode = %v, err = %q", m.mode, m.errBar.text)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	*m = *updated.(*Model)
+	if m.effects.quitting || m.mode != modeFocus {
+		t.Fatalf("ctrl+c quit or left focus: quitting=%t mode=%v", m.effects.quitting, m.mode)
+	}
+	sess := railSelectedSession(m)
+	want := "send-keys -t " + tmux.PaneTarget(sess.ID) + " C-c"
+	request, ok := inputRequest{}, false
+	if job := m.effects.input.active; job != nil {
+		request, ok = job.request.(inputRequest)
+	}
+	if !ok || request.kind != inputKeys || request.command != want {
+		t.Fatalf("ctrl+c command = %q, want %q", request.command, want)
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	if m.mode != modeList {
+		t.Fatalf("ctrl+q left mode = %v", m.mode)
+	}
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	*m = *updated.(*Model)
+	if !m.effects.quitting {
+		t.Fatal("ctrl+c on the list did not quit")
+	}
+}
+
 func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)

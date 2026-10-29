@@ -3,6 +3,7 @@ package notices
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -95,17 +96,21 @@ type Theme struct {
 	Fill func(row string, width int) string
 }
 
+const FeedPendingText = "checking messages…"
+
 // Frame is what one paint or key of the panel sees: the terminal, the
 // refresh and download in flight, the status bar's message and the theme.
 type Frame struct {
-	GlyphMode  presentation.GlyphMode
-	Width      int
-	Height     int
-	Refreshing bool
-	Applying   bool
-	Latest     string
-	Status     string
-	Theme      Theme
+	CloseKey    keybind.Binding
+	GlyphMode   presentation.GlyphMode
+	Width       int
+	Height      int
+	Refreshing  bool
+	FeedPending bool
+	Applying    bool
+	Latest      string
+	Status      string
+	Theme       Theme
 }
 
 // Action is what a key asks the root to do.
@@ -136,6 +141,9 @@ type Outcome struct {
 const WheelRows = 3
 
 func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
+	if closeBinding(f.CloseKey).Has(keybind.Normalize(msg.String())) {
+		return Outcome{Action: Close}
+	}
 	switch msg.String() {
 	case "r":
 		return Outcome{Action: Refresh}
@@ -174,7 +182,7 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 		p.cursor = min(p.cursor, len(notices)-2)
 		p.scroll = 0
 		return out
-	case "esc", "q", "M":
+	case "esc", "q":
 		return Outcome{Action: Close}
 	}
 	return Outcome{}
@@ -201,7 +209,7 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	}
 	inner := innerWidth(notices, f.Width)
 	room := bodyRoom(f.Height, len(notices), len(p.tail(notices, f, inner))+1)
-	body, _ := bodyLayout(notices[p.cursor], inner, room, f.Theme)
+	body, _ := bodyLayout(notices[p.cursor], inner, room, f.Theme, f.GlyphMode)
 	return max(0, len(body)-room)
 }
 
@@ -231,6 +239,9 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 	if f.Refreshing {
 		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" refreshing releases and messages…"))
 	}
+	if f.FeedPending {
+		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" "+FeedPendingText))
+	}
 	if f.Applying {
 		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent).Render(presentation.GlyphsFor(f.GlyphMode).DownloadGlyph+" downloading "+f.Latest+"…"))
 	}
@@ -247,7 +258,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
+		frame := cardFrame(rows, inner, legend(t), renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode), t, f.GlyphMode)
 		return frame
 	}
 	var rows []string
@@ -264,22 +275,22 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 		p.lines.Show(i, 1)
 	}
 	selected := notices[p.cursor]
-	rows = append(rows, t.Border.Render(strings.Repeat("┄", inner)))
+	rows = append(rows, t.Border.Render(strings.Repeat(presentation.ChromeFor(f.GlyphMode).DashedRuleGlyph, inner)))
 
 	tail := p.tail(notices, f, inner)
 	tail = append(tail, "")
 
 	room := bodyRoom(f.Height, len(notices), len(tail))
-	body, scrolls := bodyLayout(selected, inner, room, t)
+	body, scrolls := bodyLayout(selected, inner, room, t, f.GlyphMode)
 	if scrolls {
-		body = scrollWindow(body, room, p.scroll, inner, t)
+		body = scrollWindow(body, room, p.scroll, inner, t, f.GlyphMode)
 	}
 	rows = append(rows, body...)
 	rows = append(rows, tail...)
 
 	frame := cardFrame(rows, inner,
 		legend(t),
-		t.Muted.Render(footText(footPairs(notices, p.cursor, inner))), t)
+		renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode), t, f.GlyphMode)
 	return frame
 }
 
@@ -295,11 +306,11 @@ func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	inner := innerWidth(notices, f.Width)
 	var keys []presentation.PaintedKey
 	x := footStart
-	for i, pair := range footPairs(notices, p.cursor, inner) {
+	for i, pair := range footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey) {
 		if i > 0 {
 			x += lipgloss.Width(footSep)
 		}
-		width := lipgloss.Width(footPart(pair))
+		width := lipgloss.Width(footPart(pair, f.GlyphMode))
 		if x+width > footStart+inner+1 {
 			break
 		}
@@ -309,15 +320,21 @@ func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	return keys
 }
 
-func footPairs(notices []Notice, cursor, inner int) [][2]string {
+func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode, binding keybind.Binding) [][2]string {
+	closeKeys := "esc/q"
+	for _, key := range closeBinding(binding).Keys() {
+		if key.Tea() != "q" {
+			closeKeys += "/" + key.Glyph()
+		}
+	}
 	if len(notices) == 0 {
-		return [][2]string{{"r", "refresh"}, {"esc", ""}}
+		return [][2]string{{"r", "refresh"}, {closeKeys, ""}}
 	}
 	var update [][2]string
 	if notices[cursor].IsUpdate() {
 		update = [][2]string{{"u", "update"}}
 	}
-	actions := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {"esc", ""}}...)
+	actions := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {closeKeys, ""}}...)
 	// Navigation shrinks, then drops, then the actions lose their words, so
 	// every key a click can run stays on the edge.
 	bare := [][2]string{{"↑↓", ""}}
@@ -329,19 +346,33 @@ func footPairs(notices []Notice, cursor, inner int) [][2]string {
 		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
 		actions,
 	} {
-		if lipgloss.Width(footText(pairs)) <= inner+1 {
+		if lipgloss.Width(footText(pairs, mode)) <= inner+1 {
 			return pairs
 		}
 	}
 	return bare
 }
 
-func footPart(pair [2]string) string { return strings.TrimSpace(pair[0] + " " + pair[1]) }
+func footPart(pair [2]string, mode presentation.GlyphMode) string {
+	return strings.TrimSpace(presentation.KeyLabel(mode, pair[0]) + " " + pair[1])
+}
 
-func footText(pairs [][2]string) string {
+func renderFoot(pairs [][2]string, t Theme, mode presentation.GlyphMode) string {
 	parts := make([]string, len(pairs))
 	for i, pair := range pairs {
-		parts[i] = footPart(pair)
+		style := t.Muted
+		if pair[0] == "u" {
+			style = t.Key
+		}
+		parts[i] = style.Render(footPart(pair, mode))
+	}
+	return strings.Join(parts, t.Muted.Render(footSep))
+}
+
+func footText(pairs [][2]string, mode presentation.GlyphMode) string {
+	parts := make([]string, len(pairs))
+	for i, pair := range pairs {
+		parts[i] = footPart(pair, mode)
 	}
 	return strings.Join(parts, footSep)
 }
@@ -355,7 +386,8 @@ func legend(t Theme) string {
 // cardFrame wraps content rows in the notices fieldset: a rounded
 // yellow border with legends set into the top and bottom edges and the
 // card fill behind every row. inner is the content column's width.
-func cardFrame(rows []string, inner int, topLegend, bottomLegend string, t Theme) []string {
+func cardFrame(rows []string, inner int, topLegend, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {
+	g := presentation.ChromeFor(mode)
 	border := t.Border
 	edge := border.Render("│")
 	legend := func(left, label, right string) string {
@@ -370,12 +402,25 @@ func cardFrame(rows []string, inner int, topLegend, bottomLegend string, t Theme
 		}
 		return border.Render(left) + label + border.Render(strings.Repeat("─", dashes)+right)
 	}
-	lines := []string{legend("╭", topLegend, "╮")}
+	lines := []string{legend(g.TopLeftGlyph, topLegend, g.TopRightGlyph)}
 	for _, row := range rows {
 		row = ansi.Truncate(row, inner, "…")
 		lines = append(lines, edge+t.Fill(" "+row, inner+2)+edge)
 	}
-	return append(lines, legend("╰", bottomLegend, "╯"))
+	return append(lines, legend(g.BottomLeftGlyph, bottomLegend, g.BottomRightGlyph))
 }
 
 func padRight(s string, width int) string { return presentation.PadRight(s, width) }
+
+// Reserve local actions even when the selected notice cannot use them.
+func closeBinding(binding keybind.Binding) keybind.Binding {
+	var keys []keybind.Key
+	for _, key := range binding.Keys() {
+		switch key.Tea() {
+		case "r", "u", "up", "k", "down", "j", "pgup", "ctrl+u", "pgdn", "ctrl+d", "home", "g", "end", "G", "enter", "x", "d":
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return keybind.Keys(keys...)
+}

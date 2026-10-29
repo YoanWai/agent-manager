@@ -1,11 +1,13 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/sysstat"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestComputerLinesTemperatures(t *testing.T) {
@@ -101,14 +103,14 @@ func TestComputerLinesBattery(t *testing.T) {
 func TestGaugeInvertFlipsTheColorRamp(t *testing.T) {
 	forceANSI256(t)
 
-	lowCharge := sgrOf(gauge(5, 10, true))
-	highUsage := sgrOf(gauge(95, 10, false))
+	lowCharge := sgrOf(gauge(5, 10, true, presentation.DefaultGlyphMode))
+	highUsage := sgrOf(gauge(95, 10, false, presentation.DefaultGlyphMode))
 	if lowCharge != highUsage {
 		t.Fatalf("5%% inverted = %q, want the same alarm color as 95%% uninverted %q", lowCharge, highUsage)
 	}
 
-	highCharge := sgrOf(gauge(95, 10, true))
-	lowUsage := sgrOf(gauge(5, 10, false))
+	highCharge := sgrOf(gauge(95, 10, true, presentation.DefaultGlyphMode))
+	lowUsage := sgrOf(gauge(5, 10, false, presentation.DefaultGlyphMode))
 	if highCharge != lowUsage {
 		t.Fatalf("95%% inverted = %q, want the same calm color as 5%% uninverted %q", highCharge, lowUsage)
 	}
@@ -267,5 +269,15 @@ func TestFullFootDiskAvailable(t *testing.T) {
 	line := ansi.Strip(strings.Join(m.fullFootLine(200), "\n"))
 	if !strings.Contains(line, "disk 66% 167.9GB available") {
 		t.Fatalf("disk reading = %q", line)
+	}
+}
+
+// Every odd multiple of 5% lands a 10-cell meter exactly on a half cell,
+// which must draw the cap on every architecture.
+func TestGaugeDrawsTheHalfCellOnExactHalves(t *testing.T) {
+	for percent := 5.0; percent < 100; percent += 10 {
+		if got := strings.Count(ansi.Strip(gauge(percent, 10, false, presentation.GlyphModeAdvanced)), gaugeHalf); got != 1 {
+			t.Errorf("%.0f%%: %d half caps, want 1", percent, got)
+		}
 	}
 }

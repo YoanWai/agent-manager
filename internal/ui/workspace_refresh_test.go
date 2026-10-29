@@ -1,9 +1,6 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/hooks"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -21,24 +18,6 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 			t.Fatal("the poll's hold on the store should reach the model")
 		}
 	}
-}
-
-// writeName queues a rename the way the subcommand does, and returns the
-// request its answer comes back under.
-func writeName(t *testing.T, m *Model, id, name string) string {
-	t.Helper()
-	path := m.services.hooks.NameFile(id)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("hooks dir: %v", err)
-	}
-	request, err := hooks.NewRequestID()
-	if err != nil {
-		t.Fatalf("request id: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(hooks.NameRequest(request, name)), 0o644); err != nil {
-		t.Fatalf("write name file: %v", err)
-	}
-	return request
 }
 
 func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {

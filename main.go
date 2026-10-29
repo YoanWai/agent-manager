@@ -28,6 +28,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/term"
 )
 
 const devVersion = "dev"
@@ -103,10 +104,33 @@ func main() {
 			return
 		}
 	}
+	// A package validator and a script start the binary with no arguments
+	// and at least one stream redirected. There is no TUI to open, and
+	// probing the multiplexer fails the process on a machine that does
+	// not have one. Say so on stderr, print usage on stdout, and
+	// succeed; a real terminal still falls through to run.
+	if len(os.Args) == 1 && !stdioIsTerminal() {
+		fmt.Fprintln(os.Stderr, "agent-manager: no terminal attached; run it in a terminal to open the manager")
+		dir, err := config.Dir()
+		if err == nil {
+			err = printHelp(os.Stdout, dir)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "agent-manager:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "agent-manager:", err)
 		os.Exit(1)
 	}
+}
+
+// stdioIsTerminal reports whether both standard streams are terminals.
+// Either one being a pipe or a file is a non-interactive start.
+func stdioIsTerminal() bool {
+	return term.IsTerminal(os.Stdin.Fd()) && term.IsTerminal(os.Stdout.Fd())
 }
 
 func printHelp(w io.Writer, configDir string) error {

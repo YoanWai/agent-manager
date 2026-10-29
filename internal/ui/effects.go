@@ -451,12 +451,24 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 			m.reportErr(msg.err.Error())
 		}
 	}
-	// A settle check runs once per poll; asking for a poll after it would
-	// spin the poller for as long as the installer runs.
-	if _, settling := job.request.(installSettleRequest); m.poller != nil && !settling {
+	if m.poller != nil && pollAfterEffect(job.request) {
 		m.requestRefresh()
 	}
 	return m, tea.Batch(command, m.nextEffectCmd())
+}
+
+// pollAfterEffect reports whether a finished effect asks for a poll. The
+// effects the poll itself enqueues every pass must not: the install settle
+// check and the review status read would otherwise spin the poller for as
+// long as the installer runs or the review stays open (#880).
+func pollAfterEffect(request effectRequest) bool {
+	switch request := request.(type) {
+	case installSettleRequest:
+		return false
+	case reviewEffectRequest:
+		return request.op != reviewOpStatus
+	}
+	return true
 }
 
 func effectName(request effectRequest) string {

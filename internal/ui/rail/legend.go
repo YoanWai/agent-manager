@@ -49,6 +49,20 @@ func (m Model) RowLegend(ctx LegendContext) Legend {
 	if !ctx.RowOK {
 		return Legend{}
 	}
+	if ctx.Row.Kind == GroupRow && ctx.Row.Group == "" {
+		if m.showArchived {
+			return Legend{Title: "Root", Pairs: boundPairs([][2]string{{k(keybind.Editor), "editor"}})}
+		}
+		return Legend{Title: "Root", Leads: [][2]string{ctx.quickModeLead()}, Pairs: boundPairs([][2]string{
+			{k(keybind.Editor), "editor"}, ctx.pair(keybind.Kill, "kill", keybind.KillAll, "all"), ctx.pair(keybind.Revive, "revive", keybind.ReviveAll, "all"),
+		})}
+	}
+	if m.showArchived {
+		return Legend{Title: "Archived", Pairs: boundPairs([][2]string{
+			{k(keybind.Editor), "editor"}, {k(keybind.Rename), "rename"}, {k(keybind.Move), "move"},
+			m.archiveRestoreLegend(ctx), {k(keybind.Delete), "delete"},
+		})}
+	}
 	if ctx.Row.Kind == GroupRow {
 		foldAction := "fold"
 		if m.IsCollapsed(ctx.Row.Group) {
@@ -133,8 +147,12 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 	// something, the filters, then the keys a user already knows to look for.
 	k := ctx.glyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
+	terminalKey := k(keybind.Terminal)
+	foldAllKey := k(keybind.FoldAll)
 	if m.ShowArchived() {
 		emptyGroupsKey = ""
+		terminalKey = ""
+		foldAllKey = ""
 	}
 	var alerts [][2]string
 	if ctx.Unread[0] != "" {
@@ -142,10 +160,10 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 	}
 	pairs := [][2]string{
 		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
-		{k(keybind.NewSession), "new"}, {k(keybind.Terminal), "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
+		{k(keybind.NewSession), "new"}, {terminalKey, "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"}, {k(keybind.NewConnection), "connection"},
-		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {k(keybind.FoldAll), foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
+		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {foldAllKey, foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
 	}
 	return Legend{Title: "View", Quiet: true, Alerts: alerts, Pairs: boundPairs(pairs)}
 }

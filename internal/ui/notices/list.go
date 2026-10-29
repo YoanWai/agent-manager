@@ -83,7 +83,7 @@ func (p Panel) Active(src Sources) []Notice {
 			Releases:      releaseRange.Releases,
 			RangeComplete: releaseRange.Complete,
 			After: []string{
-				"u updates once to " + src.Update.Latest + " and restarts; every release above is included.",
+				"`Press u to update to " + src.Update.Latest + " and restart.` Every release above is included.",
 				"Enter opens the full release notes.",
 			},
 			URL: src.Update.URL,
@@ -232,7 +232,7 @@ func (src Sources) firstListKey(action string) string {
 	if len(keys) == 0 {
 		return ""
 	}
-	return keys[0].Glyph()
+	return presentation.KeyLabel(src.GlyphMode, keys[0].Glyph())
 }
 
 func (src Sources) firstListKeys(actions ...string) string {

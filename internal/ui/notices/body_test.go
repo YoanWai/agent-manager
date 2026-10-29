@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -30,7 +31,7 @@ func pickersRelease() Release {
 }
 
 func bodyText(n Notice, width int) []string {
-	rows := renderBody(n, width, testTheme())
+	rows := renderBody(n, width, testTheme(), presentation.DefaultGlyphMode)
 	plain := make([]string, len(rows))
 	for index, row := range rows {
 		plain[index] = ansi.Strip(row)
@@ -96,7 +97,7 @@ func TestReleaseBodyOrdersHeadlineSummaryHighlightsAndLists(t *testing.T) {
 func TestReleaseBodyAccentsTheMarkedWords(t *testing.T) {
 	useTrueColor(t)
 	n := Notice{ReleaseNotes: true, Releases: []Release{pickersRelease()}, RangeComplete: true}
-	joined := strings.Join(renderBody(n, 100, testTheme()), "\n")
+	joined := strings.Join(renderBody(n, 100, testTheme(), presentation.DefaultGlyphMode), "\n")
 	for _, want := range []string{testTheme().Key.Render("ctrl+x"), testTheme().Key.Render("Model and reasoning pickers")} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing accent run %q", want)
@@ -242,7 +243,7 @@ func TestFeedBodyShowsHeadlineAndAccentPhrases(t *testing.T) {
 		Accent:   []string{"ctrl+l"},
 		Body:     []string{"In quick prompt mode, ctrl+l opens the model list."},
 	}
-	rows := renderBody(n, 80, testTheme())
+	rows := renderBody(n, 80, testTheme(), presentation.DefaultGlyphMode)
 	if ansi.Strip(rows[0]) != "Model + reasoning pickers are here!" || ansi.Strip(rows[2]) != "" {
 		t.Fatalf("headline, rule, then a blank row before the body: %q", rows[:3])
 	}
@@ -286,7 +287,7 @@ func TestScrollingBodyKeepsItsWidestRowWhole(t *testing.T) {
 	}
 	n := Notice{ReleaseNotes: true, Releases: []Release{release}, RangeComplete: true}
 	inner := innerWidth([]Notice{n}, 300)
-	body, scrolls := bodyLayout(n, inner, 10, testTheme())
+	body, scrolls := bodyLayout(n, inner, 10, testTheme(), presentation.DefaultGlyphMode)
 	if !scrolls {
 		t.Fatal("the body should scroll")
 	}
@@ -330,18 +331,18 @@ func TestScrollWindowDrawsAThumbThatFollowsTheOffset(t *testing.T) {
 	for index := range body {
 		body[index] = fmt.Sprintf("row %02d", index)
 	}
-	top := scrollWindow(body, 10, 0, 20, testTheme())
+	top := scrollWindow(body, 10, 0, 20, testTheme(), presentation.DefaultGlyphMode)
 	if len(top) != 10 || !strings.HasSuffix(ansi.Strip(top[0]), "┃") || !strings.HasSuffix(ansi.Strip(top[9]), "│") {
 		t.Fatalf("at the top the thumb leads the track:\n%s", ansi.Strip(strings.Join(top, "\n")))
 	}
-	middle := scrollWindow(body, 10, 15, 20, testTheme())
+	middle := scrollWindow(body, 10, 15, 20, testTheme(), presentation.DefaultGlyphMode)
 	for index, row := range middle {
 		thumb := index == 4 || index == 5
 		if strings.HasSuffix(ansi.Strip(row), "┃") != thumb {
 			t.Fatalf("in the middle the thumb sits on rows 4 and 5:\n%s", ansi.Strip(strings.Join(middle, "\n")))
 		}
 	}
-	bottom := scrollWindow(body, 10, 30, 20, testTheme())
+	bottom := scrollWindow(body, 10, 30, 20, testTheme(), presentation.DefaultGlyphMode)
 	if !strings.HasSuffix(ansi.Strip(bottom[9]), "┃") || !strings.HasPrefix(ansi.Strip(bottom[9]), "row 39") {
 		t.Fatalf("at the bottom the thumb ends the track and the last row shows:\n%s", ansi.Strip(strings.Join(bottom, "\n")))
 	}
@@ -354,7 +355,7 @@ func TestScrollWindowDrawsAThumbThatFollowsTheOffset(t *testing.T) {
 
 func TestScrollWindowClampsAnOffsetPastTheEnd(t *testing.T) {
 	body := []string{"a", "b", "c", "d", "e", "f"}
-	rows := scrollWindow(body, 4, 99, 10, testTheme())
+	rows := scrollWindow(body, 4, 99, 10, testTheme(), presentation.DefaultGlyphMode)
 	if got := ansi.Strip(rows[3]); !strings.HasPrefix(got, "f") {
 		t.Fatalf("an offset past the end shows the last page, got %q", got)
 	}
@@ -365,7 +366,7 @@ func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
 		Releases:      []Release{releaseWithTotal("v0.3.0", 4, "Visible change")},
 		RangeComplete: false,
 	}
-	body := ansi.Strip(strings.Join(renderBody(n, modalInner, testTheme()), "\n"))
+	body := ansi.Strip(strings.Join(renderBody(n, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n"))
 	for _, want := range []string{"OTHER · 1", "+3 more in the full notes", "catalog covers part of this range"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("partial summary missing %q:\n%s", want, body)
@@ -376,7 +377,7 @@ func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
 func TestReleaseSummaryShowsTheListUnderTheHighlights(t *testing.T) {
 	release := releaseWithTotal("v0.34.0", 17, "UI: Full screen sessions mode")
 	release.Highlights = []string{"The session list can take the whole terminal"}
-	body := ansi.Strip(strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme()), "\n"))
+	body := ansi.Strip(strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n"))
 
 	if !strings.Contains(body, "• The session list can take the whole terminal") {
 		t.Fatalf("highlights missing:\n%s", body)
@@ -395,7 +396,7 @@ func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 		"@dolutech asked in #388 and built the picker (#400)",
 		"@fruch reported that a live rename moved the worktree (#418)",
 	}
-	body := ansi.Strip(strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme()), "\n"))
+	body := ansi.Strip(strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n"))
 
 	for _, want := range []string{
 		"• Revive without a captured id opens the tool's own picker",
@@ -418,7 +419,7 @@ func TestReleaseSummaryShowsThanksUnderGeneratedList(t *testing.T) {
 	body := ansi.Strip(strings.Join(renderBody(Notice{
 		Releases:      []Release{release},
 		RangeComplete: true,
-	}, modalInner, testTheme()), "\n"))
+	}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n"))
 	for _, want := range []string{
 		"OTHER · 1",
 		"• UI: A change",
@@ -435,7 +436,7 @@ func TestReleaseSummaryFallsBackToTheGeneratedList(t *testing.T) {
 	body := ansi.Strip(strings.Join(renderBody(Notice{
 		Releases:      []Release{releaseOf("v0.33.0", "UI: A change")},
 		RangeComplete: true,
-	}, modalInner, testTheme()), "\n"))
+	}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n"))
 	if !strings.Contains(body, "OTHER · 1") || !strings.Contains(body, "• UI: A change") {
 		t.Fatalf("release without highlights lost its generated list:\n%s", body)
 	}

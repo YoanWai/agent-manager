@@ -121,7 +121,7 @@ func (m Model) ListedSessionIDs() []string {
 
 func (m Model) ListedAgentIDs() []string {
 	var ids []string
-	for _, session := range m.listedSessions() {
+	for _, session := range m.listed("", m.snapshot.Sessions) {
 		if !session.IsShell {
 			ids = append(ids, session.ID)
 		}
@@ -168,6 +168,9 @@ func (m *Model) Key(msg tea.KeyMsg, _ Frame, ctx KeyContext) Decision {
 }
 
 func (m *Model) action(action string, ctx KeyContext) Decision {
+	if m.showArchived && (action == keybind.Kill || action == keybind.KillAll || action == keybind.Revive || action == keybind.ReviveAll || action == keybind.Restart || action == keybind.Fork || action == keybind.Terminal || action == keybind.Prompt) {
+		return Decision{Consumed: true}
+	}
 	switch action {
 	case keybind.Quit:
 		return m.intent(Quit)
@@ -363,6 +366,9 @@ func filterSelectionDecision(previous Selection, previousOK bool, current Select
 }
 
 func (m *Model) toggleCollapse() Decision {
+	if m.showArchived {
+		return Decision{Consumed: true}
+	}
 	row, ok := m.row()
 	if !ok {
 		return Decision{Consumed: true}
@@ -376,6 +382,9 @@ func (m *Model) toggleCollapse() Decision {
 }
 
 func (m *Model) toggleCollapseAll() Decision {
+	if m.showArchived {
+		return Decision{Consumed: true}
+	}
 	collapse := !m.AllGroupsCollapsed()
 	for _, fold := range m.foldable() {
 		m.setFolded(fold.Host, fold.Path, collapse)
@@ -463,18 +472,17 @@ func (m *Model) OpenGroup(path string) Decision {
 	return m.collapsedDecision()
 }
 
-// RevealGroup resets list narrowing after a successful group creation, opens
-// its ancestors, and selects the new group if it is present in the current
+// RevealGroup resets list narrowing after a successful creation, opens the
+// group and its ancestors, and selects it if it is present in the current
 // copied inventory.
 func (m *Model) RevealGroup(path string) Decision {
 	previous, previousOK := m.Selected()
 	m.showArchived = false
-	m.hideEmptyGroups = false
 	m.filter = statusFilterAll
 	m.search = ""
 	m.searching = false
 	collapsedChanged := false
-	for ancestor := ParentGroup(path); ancestor != ""; ancestor = ParentGroup(ancestor) {
+	for ancestor := path; ancestor != ""; ancestor = ParentGroup(ancestor) {
 		if m.collapsed[ancestor] {
 			delete(m.collapsed, ancestor)
 			collapsedChanged = true

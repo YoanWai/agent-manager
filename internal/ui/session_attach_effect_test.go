@@ -1,14 +1,15 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/status"
-	"github.com/YoanWai/agent-manager/internal/testenv"
-	"github.com/YoanWai/agent-manager/internal/tmux"
-	tea "github.com/charmbracelet/bubbletea"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/testenv"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestPreparedAttachDoesNotReplaceNewerHelp(t *testing.T) {
@@ -64,7 +65,7 @@ func TestAttachReportsTransportFailureWithoutCallingPaneDead(t *testing.T) {
 	}
 	services := effectServices{store: m.services.store, driver: driver}
 	_, err = services.runAttach(attachRequest{id: "attach-probe"})
-	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), deadSessionHint) {
+	if err == nil || !strings.Contains(err.Error(), "attach liveness unavailable") || strings.Contains(err.Error(), "session is dead - press v to revive or R to restart") {
 		t.Fatalf("transport failure mislabeled: %v", err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -137,6 +138,9 @@ func TestOpenQuickModeDefersSettingsReadAndGuardsDefaults(t *testing.T) {
 func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	if err := m.services.store.SetKeys(m.services.listKeys.With(keybind.Revive, bindingOf(t, "U")).With(keybind.Restart, bindingOf(t))); err != nil {
+		t.Fatal(err)
+	}
 	createSession(t, m, "gone", t.TempDir(), "")
 
 	sess := m.sessionRows()[0]
@@ -149,7 +153,7 @@ func TestQuickPromptDeadSessionSetsError(t *testing.T) {
 	m.quick.input.SetValue("hello?")
 	_, cmd := m.submitQuick()
 	m.applyTestMsg(t, cmd())
-	if m.errBar.text != "session is dead - press v to revive or R to restart" {
+	if m.errBar.text != "session is dead - press U to revive" {
 		t.Fatalf("err = %q", m.errBar.text)
 	}
 	if !m.quick.active {
@@ -1274,13 +1278,13 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			t.Fatalf("full layout %v: the prompt should sit in the footer:\n%s", full, ansi.Strip(frame))
 		}
 		rows := strings.Split(footer, "\n")
-		keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1).text)
+		keysHeight := lipgloss.Height(paintLegend([]legendSection{{title: quickModeTitle, pairs: m.quick.Legend(m.quickBarHost())}}, m.layout.width-1, presentation.DefaultGlyphMode).text)
 		for i, line := range rows {
 			tone := quickModeHex()
 			if i > 0 && i < len(rows)-keysHeight {
 				tone = blockHex()
 			}
-			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), quickEdge) || ansi.StringWidth(line) != m.layout.width {
+			if !strings.HasPrefix(line, bgSeq(tone)) || !strings.HasPrefix(ansi.Strip(line), m.chrome().QuickEdgeGlyph) || ansi.StringWidth(line) != m.layout.width {
 				t.Fatalf("full layout %v: every bar row should open on the accent edge over the band, across the width: %q", full, line)
 			}
 		}

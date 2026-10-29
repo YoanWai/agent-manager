@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 )
@@ -28,30 +27,13 @@ func readOpencode(ctx context.Context, command, dir string) (Catalog, error) {
 }
 
 func askOpencode(ctx context.Context, command, dir string) (Catalog, error) {
-	proc, err := start(command, dir, true)
+	ids, err := printedRows(ctx, command, dir, opencodeModel)
 	if err != nil {
 		return Catalog{}, err
 	}
-	defer proc.stop()
 	var cat Catalog
-	var said []string
-	for {
-		select {
-		case <-ctx.Done():
-			return Catalog{}, ctx.Err()
-		case line, ok := <-proc.lines:
-			if !ok {
-				if proc.waitErr != nil {
-					return Catalog{}, fmt.Errorf("%w: %s", proc.waitErr, strings.Join(said, " "))
-				}
-				return cat, nil
-			}
-			text := strings.TrimSpace(string(line))
-			if opencodeModel.MatchString(text) {
-				cat.Models = append(cat.Models, Model{ID: text})
-			} else if text != "" {
-				said = append(said, text)
-			}
-		}
+	for _, id := range ids {
+		cat.Models = append(cat.Models, Model{ID: id})
 	}
+	return cat, nil
 }

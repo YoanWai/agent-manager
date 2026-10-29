@@ -176,9 +176,10 @@ func TestFormProfileScopesModelsAndTypedEffort(t *testing.T) {
 	}
 }
 
-// A click focuses a row, a second click on a stepping row steps it, and a
-// click on a listed model picks it. Clicks land where the frame shows the
-// text, and a click on the backdrop beside the card does nothing.
+// A click focuses a row, a second click on a stepping row steps it or on
+// the model row opens its list, and a click on a listed model picks it.
+// Clicks land where the frame shows the text, and a click on the backdrop
+// beside the card does nothing.
 func TestFormClicks(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
@@ -194,8 +195,12 @@ func TestFormClicks(t *testing.T) {
 		t.Fatal("a click on the backdrop focused the model row")
 	}
 	click(x, y)
-	if m.form.Focused() != spawn.FieldModel || !m.form.Choice().ListOpen() {
+	if m.form.Focused() != spawn.FieldModel || m.form.Choice().ListOpen() {
 		t.Fatalf("focus %d open %v", m.form.Focused(), m.form.Choice().ListOpen())
+	}
+	click(x, y)
+	if !m.form.Choice().ListOpen() {
+		t.Fatal("a second click on the model row left its list shut")
 	}
 	click(at("opus  Opus 5.5"))
 	if m.form.Choice().Model() != "opus" {
@@ -325,6 +330,7 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 		answered(m, claudeLike, claudeAnswer)
 		openFormOnClaude(t, m)
 		m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+		m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
 		for range 3 {
 			m.handleFormKey(down)
 		}
@@ -459,6 +465,7 @@ func TestFormModelListScrollsThroughEveryModel(t *testing.T) {
 	answered(m, claudeLike, catalog.Catalog{Models: models})
 	openFormOnClaude(t, m)
 	m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
 	for i := range models {
 		m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
 		body := formBody(m)
@@ -529,7 +536,8 @@ func TestQuickChoiceKeysOverlapNothing(t *testing.T) {
 }
 
 // A picked model shows in the field without narrowing the list: coming
-// back to the row lists every model again, the pick highlighted.
+// back to the row and opening its list lists every model again, the pick
+// highlighted.
 func TestFormModelListOpensOnEveryModelWithThePickHighlighted(t *testing.T) {
 	m := buildModel(t)
 	answered(m, claudeLike, claudeAnswer)
@@ -542,6 +550,7 @@ func TestFormModelListOpensOnEveryModelWithThePickHighlighted(t *testing.T) {
 	}
 	m.form.FocusField(m.spawnHost(), spawn.FieldDir)
 	m.form.FocusField(m.spawnHost(), spawn.FieldModel)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
 	body := formBody(m)
 	for _, model := range claudeAnswer.Models {
 		if !strings.Contains(body, model.ID) {
@@ -694,6 +703,41 @@ func TestQuickStatusRowLeavesOutWhatACLICannotPick(t *testing.T) {
 	}
 	if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, quickModelKey) || strings.Contains(footer, quickEffortKey) {
 		t.Fatalf("footer offers a choice the CLI does not have: %s", footer)
+	}
+}
+
+// The model row focuses with its list shut, so tab and the arrows pass over
+// it without walking every model; ctrl+o opens the list and shuts it again.
+func TestFormModelRowFocusesWithItsListShut(t *testing.T) {
+	m := buildModel(t)
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	focusModel := func() { m.form.FocusField(m.spawnHost(), spawn.FieldModel) }
+	focusModel()
+	if m.form.Choice().ListOpen() || strings.Contains(formBody(m), "Opus 5.5") {
+		t.Fatalf("focus opened the model list:\n%s", formBody(m))
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyDown})
+	if m.form.Focused() != spawn.FieldEffort {
+		t.Fatalf("down from the model row focused %d, want effort", m.form.Focused())
+	}
+	focusModel()
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.form.Focused() != spawn.FieldEffort || m.form.Choice().Model() != "" {
+		t.Fatalf("tab focused %d and picked %q, want effort and no pick", m.form.Focused(), m.form.Choice().Model())
+	}
+	focusModel()
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	if !m.form.Choice().ListOpen() || !strings.Contains(formBody(m), "Opus 5.5") {
+		t.Fatalf("ctrl+o left the list shut:\n%s", formBody(m))
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	if m.form.Choice().ListOpen() || m.form.Focused() != spawn.FieldModel {
+		t.Fatalf("second ctrl+o: open %v focus %d", m.form.Choice().ListOpen(), m.form.Focused())
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyUp})
+	if m.form.Focused() != spawn.FieldTool {
+		t.Fatalf("up from the model row focused %d, want tool", m.form.Focused())
 	}
 }
 

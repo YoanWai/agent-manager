@@ -3,9 +3,9 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 // Theme and the palettes live in ui/theme so feature packages read the
@@ -84,14 +84,12 @@ func EnableTerminalPassthrough() {
 }
 
 // bgSeq is the raw "set background" SGR for a hex color, for the few spots
-// that paint a background around content lipgloss already styled. It goes
-// through the live color profile, so a 256-color terminal gets an indexed
-// sequence rather than a truecolor one lipgloss would have downsampled.
+// that paint a background around content lipgloss already styled.
 func bgSeq(hex string) string {
-	return "\x1b[" + lipgloss.ColorProfile().Color(hex).Sequence(true) + "m"
+	return presentation.ColorSequence(hex, true)
 }
 
 // fgSeq is the raw "set foreground" SGR for a hex color.
 func fgSeq(hex string) string {
-	return "\x1b[" + lipgloss.ColorProfile().Color(hex).Sequence(false) + "m"
+	return presentation.ColorSequence(hex, false)
 }

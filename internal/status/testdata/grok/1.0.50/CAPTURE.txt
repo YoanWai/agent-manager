@@ -1,0 +1,14 @@
+Captured on macOS on 2026-10-11 with grok 1.0.50 (c58f321264ba) [stable].
+
+Ran grok in a throwaway HOME on a dedicated TMUX_TMPDIR, 100 columns by 35
+rows, using the existing Grok authentication and configuration.
+
+Raw captures (no escape preservation or whitespace normalization):
+  tmux capture-pane -p -t <session>
+
+finished-wrapped-prompt.txt: a prompt long enough to wrap onto a second row,
+  answered, with LANG=en_US.UTF-8.
+finished-de-locale.txt: a one-row prompt, answered, with LANG and LC_ALL set
+  to de_DE.UTF-8. The clock beside the prompt still reads "3:47 PM".
+minimal-two-prompts.txt: grok --minimal, two prompts answered in turn, the
+  first long enough to wrap. Prompts sit at the left edge with no clock.

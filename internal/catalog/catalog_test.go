@@ -138,6 +138,51 @@ func TestHermesReadsProfilesAndTypedEfforts(t *testing.T) {
 	}
 }
 
+// agy lists each thinking level as a model of its own; the reader folds them
+// into one model with its levels, and marks the one agy's settings name.
+func TestAntigravityFoldsLevelsIntoEfforts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	models := func(saved bool) []Model {
+		return []Model{
+			{ID: "gemini-3.8-flash", Label: "Gemini 3.8 Flash", Efforts: []string{"high", "medium", "low"}, Default: saved},
+			{ID: "claude-sonnet-4-6", Label: "Claude Sonnet 4.6 (Thinking)"},
+			{ID: "claude-opus-4-6-thinking", Label: "Claude Opus 4.6 (Thinking)"},
+			{ID: "gpt-oss-120b", Label: "GPT-OSS 120B", Efforts: []string{"medium"}},
+		}
+	}
+	got, err := fetchFake(t, "antigravity", "antigravity")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if want := (Catalog{Models: models(false)}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("catalog without settings =\n%s\nwant\n%s", dump(got), dump(want))
+	}
+	settings := filepath.Join(home, ".gemini", "antigravity-cli", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settings), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settings, []byte(`{"colorScheme":"dark","model":"Gemini 3.8 Flash (Medium)"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err = fetchFake(t, "antigravity", "antigravity")
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if want := (Catalog{Models: models(true)}); !reflect.DeepEqual(got, want) {
+		t.Fatalf("catalog with a saved model =\n%s\nwant\n%s", dump(got), dump(want))
+	}
+}
+
+// Business accounts list Claude at four levels, max among them.
+func TestAntigravityFoldsTheMaxLevel(t *testing.T) {
+	base, label, level := antigravityModel("claude-sonnet-5-5-max", "Claude Sonnet 5.5 (Max)")
+	if base != "claude-sonnet-5-5" || label != "Claude Sonnet 5.5" || level != "max" {
+		t.Fatalf("antigravityModel = %q, %q, %q", base, label, level)
+	}
+}
+
 // opencode's server can answer the first ask before its plugins settle; the
 // reader asks again, and gives up on the error after a few.
 func TestOpencodeIsAskedAgainWhileItsServerSettles(t *testing.T) {
@@ -154,6 +199,12 @@ func TestAReaderThatFailsSaysWhy(t *testing.T) {
 	}
 	if _, err := fetchFake(t, "opencode", "opencode-unavailable"); err == nil || !strings.Contains(err.Error(), "Location plugins did not finish activating") {
 		t.Fatalf("unavailable opencode err = %v", err)
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if _, err := fetchFake(t, "antigravity", "antigravity-signed-out"); err == nil || !strings.Contains(err.Error(), "Please sign in to view available models") {
+		t.Fatalf("signed-out agy err = %v", err)
 	}
 	if _, err := fetchFake(t, "codex", "exit"); err == nil || !strings.Contains(err.Error(), "exited before answering") {
 		t.Fatalf("exit err = %v", err)

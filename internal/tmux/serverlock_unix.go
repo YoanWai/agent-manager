@@ -14,12 +14,6 @@ import (
 	"time"
 )
 
-// lockServer holds the lock file beside the server's socket, shared or
-// exclusive, until unlock.
-func lockServer(socket string, exclusive bool) (unlock func(), err error) {
-	return lockServerContext(context.Background(), socket, exclusive)
-}
-
 func lockServerContext(ctx context.Context, socket string, exclusive bool) (unlock func(), err error) {
 	// tmux takes <socket>.lock itself while it starts a server.
 	return lockFileContext(ctx, "tmux server lock", socketPathFromEnv(socket)+".attach-gate", exclusive)
