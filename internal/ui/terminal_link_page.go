@@ -17,7 +17,7 @@ var remoteTerminal = termseq.Remote
 type linkPageMsg struct{ url string }
 
 func showLinkPage(url string) tea.Cmd {
-	return tea.Exec(&linkPage{url: url}, func(err error) tea.Msg {
+	return execTerminal(&linkPage{url: url}, func(err error) tea.Msg {
 		if err != nil {
 			return linkOpenErrMsg{err: fmt.Errorf("show link: %w", err)}
 		}

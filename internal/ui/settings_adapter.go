@@ -379,6 +379,9 @@ func (m *Model) routeSettingsMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 	case baseFetchedMsg:
 		return routed(m, m.recordBaseFetch(msg))
 
+	case colorSchemeMsg:
+		return routed(m, m.followColorScheme(msg))
+
 	case editorsProbedMsg:
 		m.settings.applyEditorsProbe(msg, m.mode == modeSettings)
 		return routed(m, nil)
