@@ -26,11 +26,11 @@ const (
 	Review
 	Orchestrate
 	Places
+	Import
 )
 
-// Steps is the walk, in order. A step a later release adds, such as
-// importing existing sessions, takes its place in this list.
-var Steps = []Step{Welcome, Agents, Layout, Density, Theme, QuickPrompt, Sessions, Review, Orchestrate, Places}
+// Steps is the walk, in order.
+var Steps = []Step{Welcome, Agents, Layout, Density, Theme, QuickPrompt, Sessions, Review, Orchestrate, Places, Import}
 
 // choosing reports a step that sets a preference. The others teach.
 func (s Step) choosing() bool {
@@ -70,11 +70,14 @@ const (
 	Save
 	// Close ends the setup. Whatever was saved stays.
 	Close
+	// StartImport ends the setup and starts Outcome.Import.
+	StartImport
 )
 
 type Outcome struct {
 	Action  Action
 	Choices Choices
+	Import  ImportRequest
 }
 
 type Model struct {
@@ -100,6 +103,7 @@ type Model struct {
 	beat int
 	// skipping is a first esc waiting for the second that skips the setup.
 	skipping bool
+	imports  importer
 }
 
 // New opens the setup on the current choices. A first run checks the
@@ -168,7 +172,12 @@ func (m *Model) Key(msg tea.KeyMsg) Outcome {
 		}
 		return Outcome{}
 	}
-	switch msg.String() {
+	key := msg.String()
+	if m.onValueRow() && (key == "right" || key == "left") {
+		m.importStep(map[string]int{"right": 1, "left": -1}[key])
+		return Outcome{}
+	}
+	switch key {
 	case "esc":
 		m.skipping = !m.Step().choosing()
 	case "enter", "right", "tab":
@@ -209,6 +218,9 @@ func (m *Model) Click(line int) Outcome {
 		} else {
 			m.pickTheme(row)
 		}
+	case Import:
+		m.imports.cursor = row
+		m.importToggle()
 	}
 	return Outcome{}
 }
@@ -224,9 +236,20 @@ func (m *Model) close() Outcome {
 	return Outcome{Action: Close, Choices: m.saved.clone()}
 }
 
+// finish ends the setup on its last step, starting the import picked
+// there, if any.
+func (m *Model) finish() Outcome {
+	request, ok := m.pendingImport()
+	out := m.close()
+	if ok {
+		out.Action, out.Import = StartImport, request
+	}
+	return out
+}
+
 func (m *Model) next() Outcome {
 	if m.at == len(m.steps)-1 {
-		return m.close()
+		return m.finish()
 	}
 	out := Outcome{}
 	if m.Step().choosing() {
@@ -265,6 +288,8 @@ func (m *Model) move(delta int) {
 	case Theme:
 		count := len(uitheme.Palettes)
 		m.pickTheme((m.themeCursor-1+delta+count)%count + 1)
+	case Import:
+		m.importMove(delta)
 	}
 }
 
@@ -284,6 +309,8 @@ func (m *Model) toggle() {
 		}
 	case Theme:
 		m.chosen.ThemeAuto = !m.chosen.ThemeAuto
+	case Import:
+		m.importToggle()
 	}
 }
 
@@ -319,12 +346,18 @@ func (m Model) Hints() [][2]string {
 		hints = [][2]string{{"↑↓", "move"}, {"space", "check"}}
 	case step == Theme:
 		hints = [][2]string{{"↑↓", "theme"}, {"space", "follow OS"}}
+	case m.onValueRow():
+		hints = [][2]string{{"↑↓", "move"}, {"←→", "change"}}
+	case step == Import && len(m.importSources()) > 0:
+		hints = [][2]string{{"↑↓", "move"}, {"space", "check"}}
 	case step.choosing():
 		hints = [][2]string{{"↑↓", "choose"}}
 	}
 	switch {
 	case step == Welcome:
 		hints = append(hints, [2]string{"↵", "set it up"})
+	case step == Import && m.importReady():
+		hints = append(hints, [2]string{"↵", "import and start"})
 	case m.at == len(m.steps)-1:
 		hints = append(hints, [2]string{"↵", "start"})
 	default:

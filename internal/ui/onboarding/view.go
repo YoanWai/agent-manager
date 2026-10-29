@@ -43,6 +43,8 @@ type Preview struct {
 	// Scene is the guide line an animated step is acting out, and Frame how
 	// many beats into it the animation is.
 	Scene, Frame int
+	// Import is the import as picked so far.
+	Import ImportRequest
 }
 
 // Frame is the setup's rows and the column its content starts at, which
@@ -101,8 +103,9 @@ func (m *Model) View(ctx ViewContext) Frame {
 	var preview []string
 	if previewWidth > 0 {
 		scene, frame := m.scene()
+		pending, _ := m.pendingImport()
 		preview = ctx.Preview(Preview{Step: m.Step(), Choices: m.chosen.clone(), Agents: m.Enabled(),
-			Width: previewWidth, Height: min(bodyRows, previewMaxRows), Scene: scene, Frame: frame})
+			Width: previewWidth, Height: min(bodyRows, previewMaxRows), Scene: scene, Frame: frame, Import: pending})
 	}
 	block := max(len(column), len(preview))
 	top := bandRows + max((bodyRows-block)/2, 0)
@@ -169,7 +172,7 @@ func (m Model) progress(p palette) string {
 	for i, step := range m.steps {
 		if i > 0 {
 			b.WriteString(" ")
-			if m.steps[i-1].choosing() && !step.choosing() {
+			if m.steps[i-1].choosing() && !step.choosing() || step == Import {
 				b.WriteString("  ")
 			}
 		}
@@ -224,6 +227,8 @@ func (m *Model) column(ctx ViewContext, p palette, width, rows int) ([]string, [
 		for i := m.themeFirst; i < m.themeFirst+visible; i++ {
 			add(m.themeRow(p, i, width), i+1)
 		}
+	case Import:
+		m.importColumn(p, width, rows-len(lines), add)
 	default:
 		active := -1
 		if m.Animating() {
@@ -274,6 +279,8 @@ func copyFor(step Step) (string, string) {
 		return "Review what changed", "Read an agent's diff, comment on a line, and hand the notes back."
 	case Orchestrate:
 		return "Let one agent lead the rest", "Agents here can open more agents, sort them into groups, and keep them in step. Ask one to lead."
+	case Import:
+		return "Bring in your past chats", "Optional. An agent finds the conversations your CLIs saved on this machine and adds each one to the list, ready to pick up where you left off."
 	}
 	return "Change anything later", "Every choice here lives in Settings, and so does this setup."
 }

@@ -66,6 +66,8 @@ func (m *Model) setupScene(p uionboarding.Preview, width, height int) previewSce
 		m.orchestrateScene(&scene, p, width)
 	case uionboarding.Places:
 		scene.foot = []string{"", m.previewLegend()}
+	case uionboarding.Import:
+		m.importScene(&scene, p)
 	}
 	return scene
 }

@@ -23,6 +23,7 @@ const (
 	spawnForm spawnKind = iota
 	spawnQuick
 	spawnShell
+	spawnImport
 )
 
 // spawnRequest captures everything a spawn needs at dispatch time, so the
@@ -278,6 +279,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			if m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0 {
 				m.quick.clearAfterSend()
 			}
+		case spawnImport:
+			reveal = m.mode == modeList
 		}
 		m.rebuildRows()
 		if reveal {

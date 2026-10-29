@@ -10,6 +10,7 @@ var sceneBeats = map[Step][]int{
 	Sessions:    {36, 40, 18},
 	Review:      {18, 40, 30},
 	Orchestrate: {54, 60, 80},
+	Import:      {90},
 }
 
 // sceneLines is the guide line each scene acts out, for a step that acts a

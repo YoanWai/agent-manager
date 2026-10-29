@@ -231,7 +231,7 @@ func TestSetupScenesFitTheTerminal(t *testing.T) {
 			pressKeys(m, enterKey)
 		}
 		pressKeys(m, enterKey, enterKey, enterKey)
-		for m.startup.setup.Step() != uionboarding.Places {
+		for m.mode == modeOnboarding {
 			for range 200 {
 				lines := strings.Split(preparedView(m), "\n")
 				if len(lines) != 36 {
@@ -246,5 +246,33 @@ func TestSetupScenesFitTheTerminal(t *testing.T) {
 			}
 			pressKeys(m, enterKey)
 		}
+	}
+}
+
+func TestSetupImportStartsTheImportAgent(t *testing.T) {
+	m := setupModel(t)
+	for m.startup.setup.Step() != uionboarding.Import {
+		pressKeys(m, enterKey)
+	}
+	pressKeys(m, tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, enterKey)
+	if m.mode != modeList {
+		t.Fatalf("starting the import left mode %v", m.mode)
+	}
+	var queued []spawnRequest
+	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
+		if job == nil {
+			continue
+		}
+		if request, ok := job.request.(spawnRequest); ok {
+			queued = append(queued, request)
+		}
+	}
+	if len(queued) != 1 {
+		t.Fatalf("queued %d spawns, want the import agent", len(queued))
+	}
+	request := queued[0]
+	if request.kind != spawnImport || request.toolName != "claude" || request.name != importSessionName ||
+		!strings.Contains(request.prompt, "Bring my past claude conversations from the last 7 days") {
+		t.Fatalf("queued %+v", request)
 	}
 }

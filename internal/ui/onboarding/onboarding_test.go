@@ -200,9 +200,9 @@ func TestHintsFollowTheStep(t *testing.T) {
 	if got := labels(); !slices.Equal(got, []string{"move", "check", "next", "back"}) {
 		t.Fatalf("agents step hints = %v", got)
 	}
-	walkTo(t, &m, Places)
+	walkTo(t, &m, Import)
 	if got := labels(); !slices.Equal(got, []string{"start", "back"}) {
-		t.Fatalf("last step hints = %v", got)
+		t.Fatalf("last step hints with nothing to import = %v", got)
 	}
 	m.Key(press("esc"))
 	if got := labels(); !slices.Equal(got, []string{"skip setup", "keep going"}) {

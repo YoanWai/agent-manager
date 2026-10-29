@@ -90,14 +90,17 @@ func (m *Model) handleSetupKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) applySetupOutcome(out uionboarding.Outcome) (tea.Model, tea.Cmd) {
-	var save tea.Cmd
+	var cmd tea.Cmd
 	switch out.Action {
 	case uionboarding.Save:
-		save = m.saveSetup(out.Choices)
+		cmd = m.saveSetup(out.Choices)
 	case uionboarding.Close:
 		m.mode = modeList
+	case uionboarding.StartImport:
+		m.mode = modeList
+		cmd = m.startSetupImport(out.Import)
 	}
-	return m, tea.Batch(save, m.syncSetupPalette(), m.keepSetupAnimating())
+	return m, tea.Batch(cmd, m.syncSetupPalette(), m.keepSetupAnimating())
 }
 
 // saveSetup writes the confirmed choices down the Settings save path, so
