@@ -89,7 +89,7 @@ type Model struct {
 	// agent was toggled first.
 	preselect, touched bool
 	// chosen is what the screen shows, and saved is what the confirmed
-	// steps wrote and what skipping keeps.
+	// steps wrote and what leaving keeps.
 	chosen, saved           Choices
 	agentCursor, agentFirst int
 	// themeCursor is the theme step's palette row, from 1: row 0 is the
@@ -101,9 +101,9 @@ type Model struct {
 	lines                   presentation.Lines[int]
 	// beat counts the animation ticks since the open step came on screen.
 	beat int
-	// skipping is a first esc waiting for the second that skips the setup.
-	skipping bool
-	imports  importer
+	// leaving is the question esc asks before the setup closes.
+	leaving bool
+	imports importer
 }
 
 // New opens the setup on the current choices. A first run checks the
@@ -165,28 +165,36 @@ func (m *Model) SetInstalled(installed map[string]bool) {
 
 func (m *Model) Key(msg tea.KeyMsg) Outcome {
 	m.notice = ""
-	if m.skipping {
-		m.skipping = false
-		if msg.String() == "esc" {
-			return m.close()
-		}
-		return Outcome{}
-	}
 	key := msg.String()
-	if m.onValueRow() && (key == "right" || key == "left") {
-		m.importStep(map[string]int{"right": 1, "left": -1}[key])
+	if m.leaving {
+		switch key {
+		case "y", "enter":
+			return m.close()
+		case "n", "esc":
+			m.leaving = false
+		}
 		return Outcome{}
 	}
 	switch key {
 	case "esc":
-		m.skipping = !m.Step().choosing()
-	case "enter", "right", "tab":
+		m.leaving = true
+	case "enter":
 		return m.next()
-	case "backspace", "left", "shift+tab":
-		if m.at > 0 {
-			m.at--
-			m.beat = 0
+	case "right", "tab":
+		switch {
+		case key == "right" && m.onValueRow():
+			m.importStep(1)
+		case m.at < len(m.steps)-1:
+			return m.next()
 		}
+	case "left":
+		if m.onValueRow() {
+			m.importStep(-1)
+		} else {
+			m.back()
+		}
+	case "backspace", "shift+tab":
+		m.back()
 	case "up", "k":
 		m.move(-1)
 	case "down", "j":
@@ -200,10 +208,10 @@ func (m *Model) Key(msg tea.KeyMsg) Outcome {
 // Click acts on the option painted on line of the last frame.
 func (m *Model) Click(line int) Outcome {
 	row, ok := m.lines.At(line)
-	if !ok {
+	if !ok || m.leaving {
 		return Outcome{}
 	}
-	m.notice, m.skipping = "", false
+	m.notice = ""
 	switch m.Step() {
 	case Agents:
 		m.agentCursor = row
@@ -227,6 +235,9 @@ func (m *Model) Click(line int) Outcome {
 
 // Wheel moves through the options the way ↑↓ do.
 func (m *Model) Wheel(step int) Outcome {
+	if m.leaving {
+		return Outcome{}
+	}
 	m.move(step)
 	return Outcome{}
 }
@@ -236,15 +247,24 @@ func (m *Model) close() Outcome {
 	return Outcome{Action: Close, Choices: m.saved.clone()}
 }
 
-// finish ends the setup on its last step, starting the import picked
-// there, if any.
+// finish ends the setup on its last step by starting the import picked
+// there. Only esc leaves without one.
 func (m *Model) finish() Outcome {
 	request, ok := m.pendingImport()
-	out := m.close()
-	if ok {
-		out.Action, out.Import = StartImport, request
+	if !ok {
+		m.notice = "Check a CLI to bring chats in from, or press esc to leave."
+		return Outcome{}
 	}
+	out := m.close()
+	out.Action, out.Import = StartImport, request
 	return out
+}
+
+func (m *Model) back() {
+	if m.at > 0 {
+		m.at--
+		m.beat = 0
+	}
 }
 
 func (m *Model) next() Outcome {
@@ -332,13 +352,12 @@ func (m *Model) toggleAgent(name string) {
 	m.chosen.Hidden[name] = true
 }
 
-// Hints are the footer's keys for the open step. Only the welcome offers
-// a skip. The choices are required, and the tour takes an esc it does not
-// name.
+// Leaving reports the question esc asks, which the root draws as a dialog
+// over the setup.
+func (m Model) Leaving() bool { return m.leaving }
+
+// Hints are the footer's keys for the open step.
 func (m Model) Hints() [][2]string {
-	if m.skipping {
-		return [][2]string{{"esc", "skip setup"}, {"↵", "keep going"}}
-	}
 	step := m.Step()
 	var hints [][2]string
 	switch {
@@ -356,10 +375,10 @@ func (m Model) Hints() [][2]string {
 	switch {
 	case step == Welcome:
 		hints = append(hints, [2]string{"↵", "set it up"})
-	case step == Import && m.importReady():
-		hints = append(hints, [2]string{"↵", "import and start"})
-	case m.at == len(m.steps)-1:
-		hints = append(hints, [2]string{"↵", "start"})
+	case step == Import:
+		if m.importReady() {
+			hints = append(hints, [2]string{"↵", "import and start"})
+		}
 	default:
 		hints = append(hints, [2]string{"↵", "next"})
 	}
@@ -367,7 +386,7 @@ func (m Model) Hints() [][2]string {
 		hints = append(hints, [2]string{"⌫", "back"})
 	}
 	if step == Welcome {
-		hints = append(hints, [2]string{"esc", "skip setup"})
+		return append(hints, [2]string{"esc", "skip setup"})
 	}
-	return hints
+	return append(hints, [2]string{"esc", "leave setup"})
 }

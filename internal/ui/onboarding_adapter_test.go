@@ -73,8 +73,7 @@ func TestSetupWritesWhatSettingsWrites(t *testing.T) {
 	}
 }
 
-// The welcome is the one place the setup offers a skip: esc, then esc
-// again, leaves with nothing written.
+// esc on the welcome asks, and leaving writes nothing.
 func TestSkippingFromTheWelcomeWritesNothing(t *testing.T) {
 	previous := current()
 	t.Cleanup(func() { applyTheme(previous) })
@@ -82,13 +81,13 @@ func TestSkippingFromTheWelcomeWritesNothing(t *testing.T) {
 	m.layout.width, m.layout.height = 120, 36
 	m.openSetup(true)
 	pressKeys(m, escKey)
-	if m.mode != modeOnboarding || !strings.Contains(ansi.Strip(preparedView(m)), "Skip the setup?") {
-		t.Fatal("the first esc did not ask")
+	if m.mode != modeOnboarding || !strings.Contains(ansi.Strip(preparedView(m)), "Leave the setup?") {
+		t.Fatal("esc did not ask")
 	}
-	pressKeys(m, escKey)
+	m = clickLabel(t, m, "leave")
 	m.drainEffects(t)
 	if m.mode != modeList {
-		t.Fatalf("the second esc left mode %v", m.mode)
+		t.Fatalf("a click on leave left mode %v", m.mode)
 	}
 	for _, key := range []string{uisettings.ThemeSetting, uisettings.SessionLayoutSetting, uisettings.ListDensitySetting, uisettings.HiddenToolsSetting} {
 		if got := storedSetting(t, m, key); got != "" {
@@ -97,14 +96,14 @@ func TestSkippingFromTheWelcomeWritesNothing(t *testing.T) {
 	}
 }
 
-// The choices are required: esc on the theme step stays, still previewing
+// Cancelling the question on the theme step stays there, still previewing
 // the palette under the cursor, and going back shows the saved one again.
-func TestChoicesCannotBeSkipped(t *testing.T) {
+func TestCancellingTheQuestionKeepsTheStep(t *testing.T) {
 	m := setupModel(t)
 	before := current().Name
-	pressKeys(m, enterKey, enterKey, enterKey, downKey, downKey, escKey)
+	pressKeys(m, enterKey, enterKey, enterKey, downKey, downKey, escKey, escKey)
 	if m.mode != modeOnboarding || m.startup.setup.Step() != uionboarding.Theme || current().Name == before {
-		t.Fatalf("esc on the theme step left %v in mode %v painting %s", m.startup.setup.Step(), m.mode, current().Name)
+		t.Fatalf("esc twice on the theme step left %v in mode %v painting %s", m.startup.setup.Step(), m.mode, current().Name)
 	}
 	pressKeys(m, tea.KeyMsg{Type: tea.KeyBackspace})
 	if current().Name != before {
@@ -231,7 +230,7 @@ func TestSetupScenesFitTheTerminal(t *testing.T) {
 			pressKeys(m, enterKey)
 		}
 		pressKeys(m, enterKey, enterKey, enterKey)
-		for m.mode == modeOnboarding {
+		for m.startup.setup.Step() != uionboarding.Import {
 			for range 200 {
 				lines := strings.Split(preparedView(m), "\n")
 				if len(lines) != 36 {

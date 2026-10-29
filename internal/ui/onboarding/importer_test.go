@@ -19,7 +19,7 @@ func TestImportStartsOnlyOnceACLIIsChecked(t *testing.T) {
 	if got := m.importSources(); !slices.Equal(got, []string{"claude", "codex"}) {
 		t.Fatalf("sources = %v, want the installed agents", got)
 	}
-	if out := m.Key(press("enter")); out.Action != Close {
+	if out := m.Key(press("enter")); out.Action != Stay || m.Step() != Import {
 		t.Fatalf("enter with nothing checked = %+v", out)
 	}
 
@@ -57,7 +57,7 @@ func TestImportRowsTakeTheMouse(t *testing.T) {
 	if !ok || !slices.Equal(request.From, []string{"claude"}) || request.Days != 14 {
 		t.Fatalf("after two clicks the import is %+v, ready %v", request, ok)
 	}
-	if got := m.Hints(); got[len(got)-2][1] != "import and start" {
+	if got := m.Hints(); !slices.Contains(got, [2]string{"↵", "import and start"}) {
 		t.Fatalf("hints = %v", got)
 	}
 }

@@ -57,9 +57,9 @@ type Frame struct {
 const (
 	margin = 4
 	gutter = 6
-	// bandRows are the blank row, the wordmark with the progress, and the
+	// bandRows are two blank rows, the wordmark with the progress, and the
 	// blank row under them.
-	bandRows       = 3
+	bandRows       = 4
 	previewMinRows = 12
 	previewMaxRows = 26
 )
@@ -115,7 +115,7 @@ func (m *Model) View(ctx ViewContext) Frame {
 	m.lines.Reset()
 	indent := strings.Repeat(" ", left)
 	for y := range lines {
-		if y == 1 {
+		if y == bandRows-2 {
 			lines[y] = indent + m.band(p, ctx.Wordmark, total)
 		}
 		if y < bandRows {
@@ -244,12 +244,6 @@ func (m *Model) column(ctx ViewContext, p palette, width, rows int) ([]string, [
 	if m.notice != "" {
 		add("", -1)
 		add("  "+p.warn.Render(m.notice), -1)
-	}
-	if m.skipping {
-		add("", -1)
-		for _, line := range strings.Split(ansi.Wordwrap("Skip the setup? Settings has a first-run setup row that brings it back.", width-2, ""), "\n") {
-			add("  "+p.bright.Render(line), -1)
-		}
 	}
 	if ctx.Status != "" {
 		add("", -1)

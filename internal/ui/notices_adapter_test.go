@@ -914,7 +914,7 @@ func TestFeedArrivingDuringSetupWaitsForTheList(t *testing.T) {
 		t.Fatalf("a feed message took the screen from the setup, mode=%v", m.mode)
 	}
 	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
-	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.flushPendingNotice()
 	if m.mode != modeNotices || m.activeNotices()[m.notices.Cursor()].ID != "feed-new" {
 		t.Fatalf("the waiting message should open once the setup closes, mode=%v", m.mode)

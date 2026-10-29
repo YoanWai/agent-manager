@@ -42,7 +42,7 @@ func TestClosedSetupStopsAnimating(t *testing.T) {
 	m := New(agents, defaults(), false)
 	walkTo(t, &m, Review)
 	m.Key(press("esc"))
-	m.Key(press("esc"))
+	m.Key(press("y"))
 	if m.Animating() {
 		t.Fatal("a closed setup still asks for ticks")
 	}

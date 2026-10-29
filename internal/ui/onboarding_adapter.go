@@ -189,6 +189,10 @@ const setupMargin = 4
 // under a rule. Every row is the card's body, so a click lands on the
 // option it paints.
 func (m *Model) viewSetup() string {
+	if m.startup.setup.Leaving() {
+		return m.confirmCard("Leave setup", "Leave the setup?",
+			"What you set so far stays. The first-run setup row in Settings brings it back.", false, "leave")
+	}
 	width, height := m.layout.width, m.layout.height
 	foot := paintInline(m.startup.setup.Hints(), max(width-2*setupMargin, 1), m.prefs.glyphMode)
 	footRows := splitLines(foot.text)

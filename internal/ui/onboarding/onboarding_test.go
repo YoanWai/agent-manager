@@ -60,34 +60,42 @@ func TestConfirmingAStepSavesItsChoiceAlone(t *testing.T) {
 	}
 }
 
-// Skipping takes two esc presses, away from the choices, and keeps what
-// the confirmed steps saved.
-func TestSkipKeepsOnlyTheConfirmedSteps(t *testing.T) {
+// esc asks on every step, and leaving keeps only what the confirmed steps
+// saved.
+func TestLeavingAsksAndKeepsTheConfirmedSteps(t *testing.T) {
 	m := New(agents, defaults(), false)
 	walkTo(t, &m, Layout)
 	m.Key(press("down"))
-	if out := m.Key(press("esc")); out.Action != Stay || m.skipping {
-		t.Fatalf("esc on a choice = %+v, skipping %v", out, m.skipping)
+	if out := m.Key(press("esc")); out.Action != Stay || !m.Leaving() {
+		t.Fatalf("esc on a choice = %+v, leaving %v", out, m.Leaving())
+	}
+	if out := m.Key(press("n")); out.Action != Stay || m.Leaving() || m.Step() != Layout {
+		t.Fatalf("n = %+v on %v, leaving %v", out, m.Step(), m.Leaving())
 	}
 	m.Key(press("enter"))
 	walkTo(t, &m, Sessions)
-	if out := m.Key(press("esc")); out.Action != Stay || !m.skipping {
-		t.Fatalf("a first esc on the tour = %+v, skipping %v", out, m.skipping)
-	}
-	out := m.Key(press("esc"))
+	m.Key(press("esc"))
+	out := m.Key(press("enter"))
 	if out.Action != Close || !out.Choices.FullLayout || out.Choices.Theme != uitheme.Palettes[0].Name {
-		t.Fatalf("the second esc = %+v", out)
+		t.Fatalf("enter on the question = %+v", out)
 	}
 }
 
-func TestAnyOtherKeyKeepsGoing(t *testing.T) {
+func TestTheQuestionHoldsTheStep(t *testing.T) {
 	m := New(agents, defaults(), false)
+	walkTo(t, &m, Agents)
 	m.Key(press("esc"))
-	if out := m.Key(press("enter")); out.Action != Stay || m.skipping || m.Step() != Welcome {
-		t.Fatalf("enter after esc = %+v on %v", out, m.Step())
+	for _, key := range []string{"down", "space", "right", "q"} {
+		if out := m.Key(press(key)); out.Action != Stay || !m.Leaving() {
+			t.Fatalf("%s while asking = %+v, leaving %v", key, out, m.Leaving())
+		}
 	}
-	if out := m.Key(press("enter")); out.Action != Stay || m.Step() != Agents {
-		t.Fatalf("the next enter went to %v", m.Step())
+	if len(m.chosen.Hidden) != 0 || m.Step() != Agents {
+		t.Fatalf("keys behind the question moved the setup: %+v on %v", m.chosen.Hidden, m.Step())
+	}
+	m.Key(press("esc"))
+	if m.Leaving() {
+		t.Fatal("a second esc did not cancel the question")
 	}
 }
 
@@ -168,7 +176,8 @@ func TestFirstRunChecksTheInstalledAgents(t *testing.T) {
 	}
 }
 
-func TestTheLastStepCloses(t *testing.T) {
+// The last step ends only by starting an import, or by leaving.
+func TestTheLastStepNeedsAnImport(t *testing.T) {
 	m := New(agents, defaults(), false)
 	saves := 0
 	for range len(Steps) - 1 {
@@ -179,8 +188,13 @@ func TestTheLastStepCloses(t *testing.T) {
 	if saves != 4 || m.Step() != Steps[len(Steps)-1] {
 		t.Fatalf("walked to %v with %d saves", m.Step(), saves)
 	}
-	if out := m.Key(press("enter")); out.Action != Close {
-		t.Fatalf("enter on the last step = %+v", out)
+	for _, key := range []string{"enter", "right", "tab"} {
+		if out := m.Key(press(key)); out.Action != Stay || m.Step() != Import {
+			t.Fatalf("%s on the last step with nothing checked = %+v", key, out)
+		}
+	}
+	if m.Key(press("enter")); m.notice == "" {
+		t.Fatal("enter with nothing checked said nothing")
 	}
 }
 
@@ -197,16 +211,12 @@ func TestHintsFollowTheStep(t *testing.T) {
 		t.Fatalf("welcome hints = %v", got)
 	}
 	walkTo(t, &m, Agents)
-	if got := labels(); !slices.Equal(got, []string{"move", "check", "next", "back"}) {
+	if got := labels(); !slices.Equal(got, []string{"move", "check", "next", "back", "leave setup"}) {
 		t.Fatalf("agents step hints = %v", got)
 	}
 	walkTo(t, &m, Import)
-	if got := labels(); !slices.Equal(got, []string{"start", "back"}) {
+	if got := labels(); !slices.Equal(got, []string{"back", "leave setup"}) {
 		t.Fatalf("last step hints with nothing to import = %v", got)
-	}
-	m.Key(press("esc"))
-	if got := labels(); !slices.Equal(got, []string{"skip setup", "keep going"}) {
-		t.Fatalf("hints while skipping = %v", got)
 	}
 }
 
