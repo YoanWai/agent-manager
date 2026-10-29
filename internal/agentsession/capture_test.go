@@ -22,7 +22,14 @@ type hermesRow struct {
 
 func writeHermesStore(t *testing.T, rows ...hermesRow) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "state.db")
+	return writeHermesStoreAt(t, filepath.Join(t.TempDir(), "state.db"), rows...)
+}
+
+func writeHermesStoreAt(t *testing.T, path string, rows ...hermesRow) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)

@@ -58,9 +58,10 @@ func (env Env) command(ctx context.Context, name string, args ...string) *exec.C
 	for _, dir := range filepath.SplitList(env.get("PATH")) {
 		if path, err := exec.LookPath(filepath.Join(dir, name)); err == nil {
 			cmd.Path, cmd.Err = path, nil
-			break
+			return cmd
 		}
 	}
+	cmd.Err = &exec.Error{Name: name, Err: exec.ErrNotFound}
 	return cmd
 }
 

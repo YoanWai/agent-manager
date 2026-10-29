@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -57,13 +58,7 @@ func TestSavedReadsTheHomeAndProfileTheLaunchSelects(t *testing.T) {
 	launchHome, geminiHome, hermesHome := t.TempDir(), t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(launchHome, ".claude", "projects", claudeProjectSlug(cwd), "conv-claude.jsonl"), "{}\n", time.Now())
 	writeFile(t, filepath.Join(geminiHome, ".gemini", "tmp", "w", "chats", "session-1.jsonl"), `{"sessionId":"conv-gemini","projectHash":"`+geminiProjectHash(cwd)+`"}`+"\n", time.Now())
-	profileDB := filepath.Join(hermesHome, "profiles", "work", "state.db")
-	if err := os.MkdirAll(filepath.Dir(profileDB), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Rename(writeHermesStore(t, hermesRow{id: "conv-hermes", source: "cli", cwd: cwd, started: time.Now()}), profileDB); err != nil {
-		t.Fatal(err)
-	}
+	writeHermesStoreAt(t, filepath.Join(hermesHome, "profiles", "work", "state.db"), hermesRow{id: "conv-hermes", source: "cli", cwd: cwd, started: time.Now()})
 	homeVariable := "HOME"
 	if runtime.GOOS == "windows" {
 		homeVariable = "USERPROFILE"
@@ -100,5 +95,8 @@ func TestEnvCommandRunsTheExecutableOnTheLaunchPath(t *testing.T) {
 	out, err := Env{"PATH": launchBin}.command(context.Background(), "opencode").Output()
 	if err != nil || strings.TrimSpace(string(out)) != "launch" {
 		t.Fatalf("command ran %q (%v), want the launch PATH's opencode", out, err)
+	}
+	if out, err := (Env{"PATH": t.TempDir()}).command(context.Background(), "opencode").Output(); !errors.Is(err, exec.ErrNotFound) {
+		t.Fatalf("a launch PATH without opencode ran %q (%v), want not found", out, err)
 	}
 }
