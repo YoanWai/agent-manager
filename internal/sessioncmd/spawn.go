@@ -95,7 +95,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	autoNamed := name == ""
 	chosen := tool.WithChoice(choice)
 	resume, err := runtime.resumable(resumeRequest{
-		toolName: toolName, tool: chosen, id: opts.Resume, dir: dir, environment: environment,
+		toolName: toolName, tool: chosen, id: opts.Resume, dir: dir, environment: environment, profile: choice.Profile,
 		worktree: opts.Worktree, named: !autoNamed, prompted: prompt != "",
 	})
 	if err != nil {
@@ -153,10 +153,10 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 }
 
 type resumeRequest struct {
-	toolName, id, dir, environment string
-	tool                           config.Tool
-	worktree                       *bool
-	named, prompted                bool
+	toolName, id, dir, environment, profile string
+	tool                                    config.Tool
+	worktree                                *bool
+	named, prompted                         bool
 }
 
 // resumable admits a conversation saved in the directory and held by no row.
@@ -186,7 +186,7 @@ func (r *runtime) resumable(req resumeRequest) (string, error) {
 		env = agentsession.Env{}
 	}
 	maps.Copy(env, req.tool.Env)
-	saved, err := agentsession.Saved(req.tool.SessionStore, req.tool.SessionReport, req.dir, resume, env)
+	saved, err := agentsession.Saved(req.tool.SessionStore, req.tool.SessionReport, resume, agentsession.Launch{Cwd: req.dir, Env: env, Profile: req.profile})
 	if errors.Is(err, agentsession.ErrNoStore) {
 		return resume, nil
 	}

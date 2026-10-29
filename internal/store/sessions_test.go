@@ -1466,4 +1466,17 @@ func TestAConversationMovesToTheRowWhoseAgentReportsIt(t *testing.T) {
 	if got := reportedConversation(t, st, "holder"); got.AgentSessionID != "" {
 		t.Fatalf("holder = %+v, want it to let the conversation go", got)
 	}
+	if result, err := st.ReportAgentSessionID("holder", "claude", "shared", 0); err != nil || result != ReportStale {
+		t.Fatalf("the holder's launch replaying its old state = %v %v, want stale", result, err)
+	}
+	if got := reportedConversation(t, st, "switcher"); got.AgentSessionID != "shared" {
+		t.Fatalf("switcher = %+v after the replay, want it to keep the conversation", got)
+	}
+	revived := time.Unix(1_800_000_000, 0)
+	if err := st.SetAgentLaunchedAt("holder", revived); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := st.ReportAgentSessionID("holder", "claude", "shared", LaunchStamp(revived)); err != nil || result != ReportAdopted {
+		t.Fatalf("a later launch switching back = %v %v, want adopted", result, err)
+	}
 }

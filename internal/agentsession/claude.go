@@ -22,7 +22,7 @@ func ClaudeTranscriptPath(cwd, sessionID string) (string, error) {
 func claudeTranscriptPath(env Env, cwd, sessionID string) (string, error) {
 	configDir := env.get("CLAUDE_CONFIG_DIR")
 	if configDir == "" {
-		home, err := os.UserHomeDir()
+		home, err := env.homeDir()
 		if err != nil {
 			return "", err
 		}

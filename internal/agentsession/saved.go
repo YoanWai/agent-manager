@@ -1,11 +1,15 @@
 package agentsession
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 )
 
 // Env holds the variables an agent launches with over the manager's own.
@@ -14,10 +18,23 @@ type Env map[string]string
 var managerEnv Env
 
 func (env Env) get(key string) string {
-	if value, ok := env[key]; ok {
-		return value
+	for name, value := range env {
+		if name == key || runtime.GOOS == "windows" && strings.EqualFold(name, key) {
+			return value
+		}
 	}
 	return os.Getenv(key)
+}
+
+func (env Env) homeDir() (string, error) {
+	variable := "HOME"
+	if runtime.GOOS == "windows" {
+		variable = "USERPROFILE"
+	}
+	if home := env.get(variable); home != "" {
+		return home, nil
+	}
+	return os.UserHomeDir()
 }
 
 func (env Env) environ() []string {
@@ -31,13 +48,37 @@ func (env Env) environ() []string {
 	return environ
 }
 
+// command finds name on the PATH the launch sets, not the manager's own.
+func (env Env) command(ctx context.Context, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = env.environ()
+	if len(env) == 0 {
+		return cmd
+	}
+	for _, dir := range filepath.SplitList(env.get("PATH")) {
+		if path, err := exec.LookPath(filepath.Join(dir, name)); err == nil {
+			cmd.Path, cmd.Err = path, nil
+			break
+		}
+	}
+	return cmd
+}
+
 // ErrNoStore reports a tool whose saved conversations the manager cannot read.
 var ErrNoStore = errors.New("tool keeps no conversations the manager reads")
 
-// Saved reports whether a tool launched under env saved conversation id in cwd.
-func Saved(sessionStore, sessionReport, cwd, id string, env Env) (bool, error) {
+// Launch is where and how a tool starts: its directory, the variables it
+// gets and the profile it runs under.
+type Launch struct {
+	Cwd     string
+	Env     Env
+	Profile string
+}
+
+// Saved reports whether a tool started as launch saved conversation id there.
+func Saved(sessionStore, sessionReport, id string, launch Launch) (bool, error) {
 	if sessionStore != "" {
-		snapshot, ok := snapshotUnder(sessionStore, cwd, env)
+		snapshot, ok := snapshotUnder(sessionStore, launch.Cwd, launch.Profile, launch.Env)
 		if !ok {
 			return false, fmt.Errorf("cannot read the conversations %s saved", sessionStore)
 		}
@@ -48,11 +89,11 @@ func Saved(sessionStore, sessionReport, cwd, id string, env Env) (bool, error) {
 	var err error
 	switch sessionReport {
 	case "claude":
-		path, err = claudeTranscriptPath(env, cwd, id)
+		path, err = claudeTranscriptPath(launch.Env, launch.Cwd, id)
 	case "pi":
-		path, err = piTranscriptPath(piRoot(env), cwd, id)
+		path, err = piTranscriptPath(piRoot(launch.Env), launch.Cwd, id)
 	case "grok":
-		return grokSaved(grokHome(env), cwd, id)
+		return grokSaved(grokHome(launch.Env), launch.Cwd, id)
 	default:
 		return false, ErrNoStore
 	}
@@ -69,7 +110,7 @@ func grokHome(env Env) string {
 	if home := env.get("GROK_HOME"); home != "" {
 		return home
 	}
-	home, err := os.UserHomeDir()
+	home, err := env.homeDir()
 	if err != nil {
 		return ""
 	}

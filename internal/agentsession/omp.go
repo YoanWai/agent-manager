@@ -14,7 +14,7 @@ import (
 func ompRoot(env Env) string {
 	agentDir := env.get("PI_CODING_AGENT_DIR")
 	if agentDir == "" {
-		home, err := os.UserHomeDir()
+		home, err := env.homeDir()
 		if err != nil {
 			return ""
 		}

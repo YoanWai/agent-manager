@@ -447,17 +447,19 @@ const (
 // it switched to, but only for the launch now in the pane. launch is the
 // LaunchStamp the agent was started with. A report overrides a captured id,
 // takes the conversation from any other row holding it, and ends a picker
-// recapture by clearing its snapshot.
+// recapture by clearing its snapshot. A launch that lost a conversation this
+// way cannot take it back while another row holds it, since its CLI keeps
+// naming it from old state.
 func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int64) (ConversationReport, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
-	var storedTool, storedID string
-	var storedLaunch int64
-	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id FROM sessions WHERE id = ?`, id).
-		Scan(&storedTool, &storedLaunch, &storedID)
+	var storedTool, storedID, releasedID string
+	var storedLaunch, releasedLaunch int64
+	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id, released_agent_session_id, released_launch FROM sessions WHERE id = ?`, id).
+		Scan(&storedTool, &storedLaunch, &storedID, &releasedID, &releasedLaunch)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return ReportEarly, nil
@@ -467,6 +469,15 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 		return ReportEarly, nil
 	case storedLaunch > launch || storedTool != tool:
 		return ReportStale, nil
+	}
+	if releasedID == agentSessionID && releasedLaunch == launch {
+		var holders int
+		if err := tx.QueryRow(`SELECT count(*) FROM sessions WHERE tool = ? AND agent_session_id = ? AND id != ?`, tool, agentSessionID, id).Scan(&holders); err != nil {
+			return 0, err
+		}
+		if holders > 0 {
+			return ReportStale, nil
+		}
 	}
 	// The agent this launch started is on the conversation, so the session
 	// owns it from now on, also once the agent moves on to another one. A
@@ -487,9 +498,10 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 	if storedID == agentSessionID {
 		return ReportUnchanged, tx.Commit()
 	}
-	// The agent is on the conversation now, so a row that held it lets go.
+	// A row that held the conversation lets go of it for the rest of its launch.
 	if _, err := tx.Exec(
-		`UPDATE sessions SET agent_session_id = '' WHERE tool = ? AND agent_session_id = ? AND id != ?`,
+		`UPDATE sessions SET released_agent_session_id = agent_session_id, released_launch = agent_launched_at, agent_session_id = ''
+		 WHERE tool = ? AND agent_session_id = ? AND id != ?`,
 		tool, agentSessionID, id); err != nil {
 		return 0, err
 	}

@@ -24,7 +24,7 @@ func cursorConfigDir(env Env) string {
 	if dir := strings.TrimSpace(env.get("XDG_CONFIG_HOME")); dir != "" {
 		return filepath.Join(dir, "cursor")
 	}
-	home, err := os.UserHomeDir()
+	home, err := env.homeDir()
 	if err != nil {
 		return ""
 	}
