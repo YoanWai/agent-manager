@@ -110,17 +110,17 @@ func TestCursorConfigDirFollowsTheEnvThenXDGThenHome(t *testing.T) {
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("CURSOR_CONFIG_DIR", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
-	if got, want := cursorConfigDir(), filepath.Join(home, ".cursor"); got != want {
+	if got, want := cursorConfigDir(managerEnv), filepath.Join(home, ".cursor"); got != want {
 		t.Fatalf("config dir = %q, want %q", got, want)
 	}
 	xdg := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", xdg)
-	if got, want := cursorConfigDir(), filepath.Join(xdg, "cursor"); got != want {
+	if got, want := cursorConfigDir(managerEnv), filepath.Join(xdg, "cursor"); got != want {
 		t.Fatalf("config dir = %q, want %q", got, want)
 	}
 	explicit := t.TempDir()
 	t.Setenv("CURSOR_CONFIG_DIR", "  "+explicit+"  ")
-	if got := cursorConfigDir(); got != explicit {
+	if got := cursorConfigDir(managerEnv); got != explicit {
 		t.Fatalf("config dir = %q, want %q", got, explicit)
 	}
 }

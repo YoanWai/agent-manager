@@ -32,6 +32,8 @@ func TestFormatSessions(t *testing.T) {
 
 	assertFormatted(t, FormatSession(root), "lead (id abc123) running codex in root at /repo")
 	assertFormatted(t, FormatSession(worker), "worker (id def456) running claude in backend at /worktree on branch feature")
+	imported := Session{Name: "imported", ID: "ghi789", Tool: "codex", Directory: "/repo", AgentSessionID: "conv-1"}
+	assertFormatted(t, FormatSession(imported), "imported (id ghi789) running codex in root at /repo on conversation conv-1")
 	assertFormatted(t, FormatSessionList(nil), "no agent sessions")
 	assertFormatted(t, FormatSessionList([]Session{root, worker}),
 		"- lead (id abc123) running codex in root at /repo; status=working; running=true; this session\n"+

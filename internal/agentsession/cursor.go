@@ -17,14 +17,14 @@ import (
 // cwd a process inherits on macOS is already the real path. Both spellings
 // are hashed so a session launched through /tmp still finds a store recorded
 // under /private/tmp.
-func cursorConfigDir() string {
-	if dir := strings.TrimSpace(os.Getenv("CURSOR_CONFIG_DIR")); dir != "" {
+func cursorConfigDir(env Env) string {
+	if dir := strings.TrimSpace(env.get("CURSOR_CONFIG_DIR")); dir != "" {
 		return dir
 	}
-	if dir := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); dir != "" {
+	if dir := strings.TrimSpace(env.get("XDG_CONFIG_HOME")); dir != "" {
 		return filepath.Join(dir, "cursor")
 	}
-	home, err := os.UserHomeDir()
+	home, err := env.homeDir()
 	if err != nil {
 		return ""
 	}
@@ -93,23 +93,22 @@ func readCursorMeta(path string) (cursorChatMeta, error) {
 	return meta, nil
 }
 
-func captureCursor(cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	return captureCandidates(cursorCandidates(cwd, launchedAt.Add(-clockSlack), claimed, false))
+func captureCursor(root, cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
+	return captureCandidates(cursorCandidates(root, cwd, launchedAt.Add(-clockSlack), claimed, false))
 }
 
-func snapshotCursor(cwd string) (map[string]int64, bool) {
-	return snapshotCandidates(cursorCandidates(cwd, time.Time{}, nil, true))
+func snapshotCursor(root, cwd string) (map[string]int64, bool) {
+	return snapshotCandidates(cursorCandidates(root, cwd, time.Time{}, nil, true))
 }
 
-func recaptureCursor(cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
-	cands, err := cursorCandidates(cwd, time.Time{}, claimed, true)
+func recaptureCursor(root, cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
+	cands, err := cursorCandidates(root, cwd, time.Time{}, claimed, true)
 	return recaptureCandidates(cands, err, snapshot)
 }
 
 // byUpdate ranks a chat by updatedAtMs, which is what a resume touches.
 // A launch ranks by createdAtMs so the first chat written after it wins.
-func cursorCandidates(cwd string, cutoff time.Time, claimed map[string]bool, byUpdate bool) ([]candidate, error) {
-	root := cursorConfigDir()
+func cursorCandidates(root, cwd string, cutoff time.Time, claimed map[string]bool, byUpdate bool) ([]candidate, error) {
 	if root == "" {
 		return nil, os.ErrNotExist
 	}

@@ -21,7 +21,7 @@ func writeAntigravityStore(t *testing.T, lastStarted string, conversations ...ag
 	t.Helper()
 	home := t.TempDir()
 	setHome(t, home)
-	root := antigravityRoot()
+	root := antigravityRoot(managerEnv)
 	if err := os.MkdirAll(filepath.Join(root, "cache"), 0o755); err != nil {
 		t.Fatal(err)
 	}

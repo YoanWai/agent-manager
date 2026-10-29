@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-func museRoot() string {
-	root := os.Getenv("XDG_DATA_HOME")
+func museRoot(env Env) string {
+	root := env.get("XDG_DATA_HOME")
 	if root == "" {
-		home, err := os.UserHomeDir()
+		home, err := env.homeDir()
 		if err != nil {
 			return ""
 		}
