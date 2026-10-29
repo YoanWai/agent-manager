@@ -236,3 +236,34 @@ func settleBeforeRevive(st *store.Store, hookManager *hooks.Manager, sess store.
 	}
 	return SettleConversation(st, hookManager, sess, style, paneGone, closingAgentWait)
 }
+
+// EnvConversation is the conversation Claude Code runs a process for. It
+// hands it to Bash, hooks and MCP servers, and an MCP server keeps the one
+// it was started with.
+const EnvConversation = "CLAUDE_CODE_SESSION_ID"
+
+// ConversationOwner names the session whose agent reported the
+// conversation in EnvConversation, which only the agents the manager
+// launched do. Nothing answers for a conversation started by hand, one no
+// session reported, and any failure: the caller is then refused rather than
+// guessed.
+func ConversationOwner(configDir string) string {
+	conversation := os.Getenv(EnvConversation)
+	if conversation == "" {
+		return ""
+	}
+	path := filepath.Join(configDir, "state.db")
+	if _, err := os.Stat(path); err != nil {
+		return ""
+	}
+	st, err := store.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer st.Close()
+	owner, err := st.ConversationOwner(conversation)
+	if err != nil {
+		return ""
+	}
+	return owner
+}

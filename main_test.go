@@ -442,15 +442,18 @@ func TestCallerSessionIgnoresWhatAProcessOutsideThePanesInherited(t *testing.T) 
 	t.Setenv("TMUX_PANE", pane)
 
 	t.Setenv(hooks.EnvSessionID, id)
-	if got := callerSession(); got != "" {
+	t.Setenv(sessioncmd.EnvConversation, "")
+	if got := callerSession(t.TempDir()); got != "" {
 		t.Fatalf("callerSession outside every pane, with its variable and pane inherited = %q, want none", got)
 	}
 }
 
-// The ancestry decides whenever it can be read, and only a hidden ancestry,
-// as inside a sandbox's PID namespace, leaves the caller to the variable.
-// There a stale variable still wins: the sandbox shows nothing to check it
-// against, and refusing would leave every sandboxed agent without a caller.
+// A pane above the process decides first. Without one, the session that
+// owns the process's conversation answers, and a conversation no session
+// owns has no caller. Only a hidden ancestry, as inside a sandbox's PID
+// namespace, leaves an unowned conversation to the variable. There a stale
+// variable still wins: the sandbox shows nothing to check it against, and
+// refusing would leave every sandboxed agent without a caller.
 func TestCallerSessionFallsBackToTheVariableOnlyWhenTheAncestryIsHidden(t *testing.T) {
 	isolateTmux(t)
 	t.Setenv("TMUX", "")
@@ -460,17 +463,22 @@ func TestCallerSessionFallsBackToTheVariableOnlyWhenTheAncestryIsHidden(t *testi
 		name     string
 		ancestry string
 		seen     bool
+		owner    string
 		want     string
 	}{
-		{"pane above the process", "ca11ab1e", true, "ca11ab1e"},
-		{"no pane above the process", "", true, ""},
-		{"ancestry hidden", "", false, "deadbeef"},
+		{"pane above the process", "ca11ab1e", true, "", "ca11ab1e"},
+		{"pane above an owned conversation", "ca11ab1e", true, "0a11ed00", "ca11ab1e"},
+		{"owned conversation outside every pane", "", true, "0a11ed00", "0a11ed00"},
+		{"unowned conversation outside every pane", "", true, "", ""},
+		{"owned conversation, ancestry hidden", "", false, "0a11ed00", "0a11ed00"},
+		{"unowned conversation, ancestry hidden", "", false, "", "deadbeef"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			saved := callerAncestry
-			t.Cleanup(func() { callerAncestry = saved })
+			savedAncestry, savedOwner := callerAncestry, callerConversationOwner
+			t.Cleanup(func() { callerAncestry, callerConversationOwner = savedAncestry, savedOwner })
 			callerAncestry = func() (string, bool) { return tc.ancestry, tc.seen }
-			if got := callerSession(); got != tc.want {
+			callerConversationOwner = func(string) string { return tc.owner }
+			if got := callerSession(t.TempDir()); got != tc.want {
 				t.Fatalf("callerSession = %q, want %q", got, tc.want)
 			}
 		})
@@ -484,10 +492,11 @@ func TestCallerSessionOutsideTmuxLeavesTheCommandToExplainIt(t *testing.T) {
 	t.Setenv(hooks.EnvSessionID, "")
 	t.Setenv("TMUX", "")
 	t.Setenv("TMUX_PANE", "")
-	if got := callerSession(); got != "" {
+	t.Setenv(sessioncmd.EnvConversation, "")
+	if got := callerSession(t.TempDir()); got != "" {
 		t.Fatalf("callerSession outside tmux = %q, want empty", got)
 	}
-	_, err := sessioncmd.ReviewScope(t.TempDir(), callerSession(), "branch")
+	_, err := sessioncmd.ReviewScope(t.TempDir(), callerSession(t.TempDir()), "branch")
 	if err == nil {
 		t.Fatal("a command with no caller succeeded")
 	}
