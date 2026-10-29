@@ -236,7 +236,7 @@ func withConfigDir(command cli.Command) func([]string) error {
 		if err != nil {
 			return err
 		}
-		return command(args, sync.OnceValue(callerSession), dir)
+		return command(args, sync.OnceValue(func() string { return callerSession(dir) }), dir)
 	}
 }
 
@@ -245,27 +245,41 @@ func withConfigDir(command cli.Command) func([]string) error {
 // environment is inherited by whatever a pane starts, and a process that
 // outlives its pane carries it on. Claude Code's daemon, started from one
 // session, serves every other session's conversations with that session's
-// id and pane. A process no managed pane started is no session's caller,
-// whatever its environment says. The ancestry also names the caller of an
-// MCP server Muse or Cursor starts with none of the pane's environment.
+// id and pane. The ancestry also names the caller of an MCP server Muse or
+// Cursor starts with none of the pane's environment.
 //
-// Inside a sandbox's PID namespace the ancestry is out of sight, and the
-// environment variable answers: an MCP server launched under Codex is handed
-// that variable and nothing else of the pane's environment.
+// A process no managed pane started speaks for the session that owns its
+// conversation: a conversation the manager launched keeps its session once
+// /background or /fork moves it to the daemon. One nobody launched, such
+// as a claude started by hand in a session's shell, has no owner, and the
+// process is no session's caller, whatever its environment says.
+//
+// Inside a sandbox's PID namespace the ancestry is out of sight. The
+// conversation's owner still answers when there is one, and otherwise the
+// environment variable: an MCP server launched under Codex is handed that
+// variable and nothing else of the pane's environment.
 //
 // Falling back to the pane is what makes a terminal a caller there. A
 // terminal opens on the user's shell with no launch command, so tmux gets
 // no launch script to export the id from, and the shell would otherwise
 // have no way to say which session it is.
-func callerSession() string {
-	if id, seen := callerAncestry(); seen {
+func callerSession(configDir string) string {
+	id, seen := callerAncestry()
+	if id != "" {
 		return id
+	}
+	if owner := callerConversationOwner(configDir); owner != "" || seen {
+		return owner
 	}
 	if id := os.Getenv(hooks.EnvSessionID); id != "" {
 		return id
 	}
 	return sessionFromPane()
 }
+
+// callerConversationOwner is sessioncmd.ConversationOwner, swapped out by
+// the tests that check the order the ways to identify a caller go in.
+var callerConversationOwner = sessioncmd.ConversationOwner
 
 // sessionFromPane asks the manager's tmux server which session owns the
 // pane this command runs in. Every failure answers empty: `update` and the

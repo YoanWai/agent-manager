@@ -82,6 +82,35 @@ func TestTrackConversationTakesTheIDOrAHookInputField(t *testing.T) {
 	}
 }
 
+// Every conversation a launched agent reported names its session, also the
+// ones it has since left: an MCP server keeps the id it started with across
+// /clear and /resume. A conversation started by hand has no owner.
+func TestConversationOwnerNamesTheSessionThatReportedIt(t *testing.T) {
+	configDir, st := conversationStore(t)
+	createConversationRow(t, st, "abcd1234")
+	runningAs(t, "abcd1234", 0)
+	for _, conversation := range []string{"conv-one", "conv-two"} {
+		if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", conversation}, strings.NewReader("")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for conversation, want := range map[string]string{
+		"conv-one":     "abcd1234",
+		"conv-two":     "abcd1234",
+		"hand-started": "",
+		"":             "",
+	} {
+		t.Setenv(EnvConversation, conversation)
+		if got := ConversationOwner(configDir); got != want {
+			t.Errorf("owner of %q = %q, want %q", conversation, got, want)
+		}
+	}
+	t.Setenv(EnvConversation, "conv-one")
+	if got := ConversationOwner(filepath.Join(t.TempDir(), "no-state")); got != "" {
+		t.Fatalf("owner without a state database = %q, want none", got)
+	}
+}
+
 // The id goes on to reach a revive's command line, so anything but a plain
 // token is refused before it is stored.
 func TestTrackConversationRefusesAnIDThatIsNotAPlainToken(t *testing.T) {

@@ -462,8 +462,25 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 		return ReportEarly, nil
 	case storedLaunch > launch || storedTool != tool:
 		return ReportStale, nil
-	case storedID == agentSessionID:
-		return ReportUnchanged, nil
+	}
+	// The agent this launch started is on the conversation, so the session
+	// owns it from now on, also once the agent moves on to another one. A
+	// polled CLI repeats its report, so look before taking the write lock.
+	var owned bool
+	if err := tx.QueryRow(
+		`SELECT EXISTS (SELECT 1 FROM conversation_owners WHERE conversation_id = ? AND session_id = ?)`,
+		agentSessionID, id).Scan(&owned); err != nil {
+		return 0, err
+	}
+	if !owned {
+		if _, err := tx.Exec(
+			`INSERT INTO conversation_owners (conversation_id, session_id) VALUES (?, ?)`,
+			agentSessionID, id); err != nil {
+			return 0, err
+		}
+	}
+	if storedID == agentSessionID {
+		return ReportUnchanged, tx.Commit()
 	}
 	if _, err := tx.Exec(
 		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''
@@ -472,6 +489,31 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 		return 0, err
 	}
 	return ReportAdopted, tx.Commit()
+}
+
+// ConversationOwner names the session whose agent reported the
+// conversation, or nothing when no session did or when more than one did:
+// a conversation two sessions resumed speaks for neither.
+func (s *Store) ConversationOwner(conversationID string) (string, error) {
+	rows, err := s.db.Query(
+		`SELECT o.session_id FROM conversation_owners o JOIN sessions s ON s.id = o.session_id
+		 WHERE o.conversation_id = ? LIMIT 2`, conversationID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var owners []string
+	for rows.Next() {
+		var owner string
+		if err := rows.Scan(&owner); err != nil {
+			return "", err
+		}
+		owners = append(owners, owner)
+	}
+	if err := rows.Err(); err != nil || len(owners) != 1 {
+		return "", err
+	}
+	return owners[0], nil
 }
 
 // LaunchStamp is how a launch is named to the agent it starts: the stored
@@ -623,6 +665,9 @@ func (s *Store) Delete(id string) error {
 	if _, err := tx.Exec(`DELETE FROM remote_terminals WHERE session_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM conversation_owners WHERE session_id = ?`, id); err != nil {
+		return err
+	}
 	res, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id)
 	if err != nil {
 		return err
@@ -670,6 +715,9 @@ func (s *Store) DeleteChild(id, parentID string, kill func() error) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM remote_terminals WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM conversation_owners WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {

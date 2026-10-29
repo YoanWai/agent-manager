@@ -67,7 +67,7 @@ func TestMainHeadlessNoArgsPrintsUsage(t *testing.T) {
 // session its variable names.
 func TestCallerSessionTrustsThePaneThatStartedTheProcess(t *testing.T) {
 	if out := os.Getenv("AGENT_MANAGER_CALLER_OUT"); out != "" {
-		if err := os.WriteFile(out+".part", []byte(callerSession()), 0o644); err != nil {
+		if err := os.WriteFile(out+".part", []byte(callerSession(t.TempDir())), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Rename(out+".part", out); err != nil {

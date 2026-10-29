@@ -1303,6 +1303,61 @@ func TestReportAgentSessionIDFollowsTheLaunchInThePane(t *testing.T) {
 	}
 }
 
+// A session owns every conversation its agent reported, not only the one it
+// is on now: a process keeps the id it was started with while the agent
+// moves on. A conversation two sessions reported belongs to neither.
+func TestReportedConversationsStayOwned(t *testing.T) {
+	st := newTestStore(t)
+	for _, id := range []string{"a", "b"} {
+		if err := st.CreateSession(sample(id, "g")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	owner := func(conversation string) string {
+		t.Helper()
+		got, err := st.ConversationOwner(conversation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	for _, conversation := range []string{"first", "first", "switched"} {
+		if _, err := st.ReportAgentSessionID("a", "claude", conversation, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if owner("first") != "a" || owner("switched") != "a" {
+		t.Fatalf("owners = %q, %q; want a for both conversations a reported", owner("first"), owner("switched"))
+	}
+	if owner("never-reported") != "" {
+		t.Fatal("a conversation no session reported has an owner")
+	}
+
+	if err := st.SetAgentLaunchedAt("a", time.Unix(1_800_000_000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if result, err := st.ReportAgentSessionID("a", "claude", "late", 0); err != nil || result != ReportStale {
+		t.Fatalf("report from the replaced launch: %v %v", result, err)
+	}
+	if owner("late") != "" {
+		t.Fatal("a stale report made its conversation owned")
+	}
+
+	if _, err := st.ReportAgentSessionID("b", "claude", "switched", 0); err != nil {
+		t.Fatal(err)
+	}
+	if owner("switched") != "" {
+		t.Fatal("a conversation two sessions reported has an owner")
+	}
+
+	if err := st.Delete("a"); err != nil {
+		t.Fatal(err)
+	}
+	if owner("first") != "" || owner("switched") != "b" {
+		t.Fatalf("after deleting a: owners = %q, %q; want none and b", owner("first"), owner("switched"))
+	}
+}
+
 func TestReportAgentSessionIDOutranksCaptureAndEndsRecapture(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("a", "g")); err != nil {
