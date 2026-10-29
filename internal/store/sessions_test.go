@@ -1358,6 +1358,43 @@ func TestReportedConversationsStayOwned(t *testing.T) {
 	}
 }
 
+// A conversation a session's settings started outside its pane is owned
+// without moving the session onto it, and the one the session is on counts
+// as owned before any report lands.
+func TestOwnConversationNamesTheSessionWithoutMovingIt(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("a", "g")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAgentSessionID("a", "in-pane"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.OwnConversation("a", "claude", "background"); err != nil {
+		t.Fatal(err)
+	}
+	for _, report := range []struct{ id, tool string }{{"a", "codex"}, {"missing", "claude"}} {
+		if err := st.OwnConversation(report.id, report.tool, "other"); err != nil {
+			t.Fatalf("%+v: %v", report, err)
+		}
+	}
+	sess, err := st.Get("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sess.AgentSessionID != "in-pane" {
+		t.Fatalf("row moved to %q, want it left on in-pane", sess.AgentSessionID)
+	}
+	for conversation, want := range map[string]string{"background": "a", "in-pane": "a", "other": ""} {
+		got, err := st.ConversationOwner(conversation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != want {
+			t.Errorf("owner of %q = %q, want %q", conversation, got, want)
+		}
+	}
+}
+
 func TestReportAgentSessionIDOutranksCaptureAndEndsRecapture(t *testing.T) {
 	st := newTestStore(t)
 	if err := st.CreateSession(sample("a", "g")); err != nil {

@@ -491,13 +491,28 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 	return ReportAdopted, tx.Commit()
 }
 
+// OwnConversation records a conversation the session's agent reported from
+// outside its pane, where Claude Code's daemon runs it under the session's
+// settings after /background, /fork or the agent view. The row stays where
+// it is, and no launch is checked, since the conversation outlives the
+// launch that started it.
+func (s *Store) OwnConversation(id, tool, conversationID string) error {
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO conversation_owners (conversation_id, session_id)
+		 SELECT ?, id FROM sessions WHERE id = ? AND tool = ?`, conversationID, id, tool)
+	return err
+}
+
 // ConversationOwner names the session whose agent reported the
-// conversation, or nothing when no session did or when more than one did:
-// a conversation two sessions resumed speaks for neither.
+// conversation, or the one on it now, or nothing when no session is and
+// when more than one is: a conversation two sessions resumed speaks for
+// neither.
 func (s *Store) ConversationOwner(conversationID string) (string, error) {
 	rows, err := s.db.Query(
 		`SELECT o.session_id FROM conversation_owners o JOIN sessions s ON s.id = o.session_id
-		 WHERE o.conversation_id = ? LIMIT 2`, conversationID)
+		 WHERE o.conversation_id = ?
+		 UNION SELECT id FROM sessions WHERE agent_session_id = ?
+		 LIMIT 2`, conversationID, conversationID)
 	if err != nil {
 		return "", err
 	}
