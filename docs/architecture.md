@@ -39,7 +39,7 @@ Under `internal/`:
   - `ui/spawn/launch`: the spawn and group creation, the catalog and worktree answers, and the base ref and its fetch.
 - `ui/theme`: the built-in palettes and color math, a leaf any UI package may import.
 - `ui/presentation`: pure text helpers shared by `ui` and its feature packages.
-- `ui/surface`: the surface stack's contract, a leaf a feature package implements to put its own screen on the root's stack. `ui/help`, `ui/review`, `ui/notices`, `ui/onboarding`, `ui/connections`, `ui/settings`, `ui/dialogs`, `ui/geometry`, `ui/focus`, `ui/spawn` and `ui/quick` do. See [ADR 0001](adr/0001-surface-stack.md).
+- `ui/surface`: the surface stack's contract, a leaf a feature package implements to put its own screen on the root's stack. `ui/help`, `ui/review`, `ui/notices`, `ui/onboarding`, `ui/connections`, `ui/settings`, `ui/dialogs`, `ui/geometry`, `ui/focus`, `ui/spawn` and `ui/quick` do. See [surface-stack.md](surface-stack.md).
 - `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations.
 - `tmux`: the `Driver` on the dedicated socket, the control-mode client, bindings, attach.
 - `status`: classifies pane output into agent states.
@@ -94,7 +94,7 @@ dispatch; it changes no state.
 
 **Each feature package owns its effects.** `ui/effects` holds the contract and no request type. A feature package declares its requests (`EffectName`, `EffectCopy`, `Run(Services)`), its results, and a `Services` struct of what the work needs. The root names no request. `effects_adapter_executor.go` has two switches: `bindEffect`, one `uieffects.Bind` line per package `Services`, and `applyEffect`, one type-switch case per package result that hands the result to the feature's adapter. There is no root request type or catch-all. A request with no binding fails with "binds no services", and `TestEveryPackageEffectIsBoundAndApplied` fails first.
 
-**One surface stack decides who takes input.** The base screen is the list or Review; cards, resize and focus sit over it as surfaces, and the root walks the stack from the top for keys, mouse, frame and footer. The `mode` enum is gone. [ADR 0001](adr/0001-surface-stack.md) has the contract and the rules.
+**One surface stack decides who takes input.** The base screen is the list or Review; cards, resize and focus sit over it as surfaces, and the root walks the stack from the top for keys, mouse, frame and footer. The `mode` enum is gone. [surface-stack.md](surface-stack.md) has the contract and the rules.
 
 **Features own state behind narrow hosts, and new ones start as child packages.** A feature is a type with its state, keys and view, and it reaches the root only through a small `Root` or host interface it declares. Help, Review, Focus, Rail, Settings, Spawn, Quick, Dialogs, Notices and Connections each live in a child package whose imports `check-ui-boundaries` enforces; a new feature starts as one. The child gets copied values and returns typed requests; root adapters run the store, tmux, git and SSH work. State flows from the package to the root as returned values: `rail.Model` returns a `Decision` carrying an `Intent` and `Mutation`s, and the root applies them. A `Root` or host interface is for reads. Some existing ones still carry writes (`quick.Root.ClearAccepted`); new code returns the value. There is no shared event bus or effect interpreter, because it would hide who owns what. Line counts and field counts do not prove a boundary; the checks above do.
 

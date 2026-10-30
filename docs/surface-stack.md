@@ -1,4 +1,4 @@
-# ADR 0001: a surface stack decides who takes input
+# A surface stack decides who takes input
 
 Status: accepted, landed in #861
 
