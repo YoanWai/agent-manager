@@ -388,9 +388,10 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	return m.refreshCmd()
 }
 
-// choiceSaveRequest persists a CLI's kept choice or recent models. The
-// settings cache already holds the value, so the next form reads it
-// without waiting for the write.
+// choiceSaveRequest persists a spawn pick the form and quick bar read back:
+// a CLI's kept choice, its recent models, or the default tool. The settings
+// cache already holds the value, so the next form reads it without waiting
+// for the write.
 type choiceSaveRequest struct {
 	key   string
 	value string

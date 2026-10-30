@@ -13,16 +13,6 @@ func (m *Model) cachedDefaultToolSelection() ([]string, int) {
 	return m.cachedToolSelection(m.cachedHiddenTools(), "")
 }
 
-func (m *Model) cachedSpawnToolSelection() ([]string, int) {
-	names, index := m.cachedDefaultToolSelection()
-	for i, name := range names {
-		if name == m.ledger.lastSpawnTool {
-			return names, i
-		}
-	}
-	return names, index
-}
-
 func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 	for g := group; g != ""; g = parentGroup(g) {
 		switch m.workspace.groupWorktrees[g] {
