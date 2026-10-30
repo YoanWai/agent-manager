@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -266,7 +267,13 @@ func (m *Model) applyFork(request uiapply.ForkEffect, result uiapply.ForkOutcome
 			m.clearErr()
 			m.focusSession(launched.ID)
 		}
+		if result.Warning != nil {
+			m.reportWarn(result.Warning.Error())
+		}
 		return m.refreshCmd()
+	}
+	if result.Warning != nil {
+		err = fmt.Errorf("%w; %w", err, result.Warning)
 	}
 	if !stillOpen {
 		m.reportErr(err.Error())

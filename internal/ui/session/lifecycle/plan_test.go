@@ -1,6 +1,8 @@
 package lifecycle
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -134,3 +136,39 @@ func TestDropGroupsAndRemoveSessionKeepTheRest(t *testing.T) {
 type errFake struct{}
 
 func (errFake) Error() string { return "boom" }
+
+func TestARelaunchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	result := Result{Warning: errors.New("MCP registration timed out")}
+
+	change := Changes(Request{Target: Target{Action: Restart}}, result, errors.New("second one failed"))
+
+	if change.Warning != nil {
+		t.Fatalf("warning = %v, want it folded into the failure", change.Warning)
+	}
+	if change.Refusal == nil {
+		t.Fatal("refusal = nil, want the failure reported")
+	}
+	if got := change.Refusal.Err.Error(); !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("refusal = %q, want both the failure and the warning", got)
+	}
+}
+
+func TestABatchFailureKeepsTheMCPWarningOfAnEarlierRelaunch(t *testing.T) {
+	t.Parallel()
+	result := Result{Warning: errors.New("MCP registration timed out")}
+
+	change := Changes(Request{Target: Target{Action: Revive, Batch: true}}, result, errors.New("second one failed"))
+	if change.Refusal == nil {
+		t.Fatal("refusal = nil, want the failure reported")
+	}
+	if got := change.Refusal.Err.Error(); !strings.Contains(got, "second one failed") || !strings.Contains(got, "MCP registration timed out") {
+		t.Fatalf("refusal = %q, want both the failure and the warning", got)
+	}
+
+	result.Notice = "revived 1 of 2"
+	change = Changes(Request{Target: Target{Action: Revive, Batch: true}}, result, errors.New("second one failed"))
+	if len(change.Notices) != 1 || !strings.Contains(change.Notices[0], "revived 1 of 2") || !strings.Contains(change.Notices[0], "MCP registration timed out") {
+		t.Fatalf("notices = %q, want the notice with the warning", change.Notices)
+	}
+}

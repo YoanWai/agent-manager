@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -59,6 +60,10 @@ type ForkOutcome struct {
 	ChildID        string
 	Launched       store.Session
 	RecordedForkID string
+	// Warning is a caveat on a fork that went through: the child started
+	// without the agent-manager tools. It is not a launch failure, so it
+	// must not open the retry dialog.
+	Warning error
 }
 
 // inSourceWait bounds how long the tool may take to record the fork once the
@@ -195,6 +200,9 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 		return result, err
 	}
 	result.Launched = launched.Session
+	if launched.Warning != "" {
+		result.Warning = errors.New(launched.Warning)
+	}
 	return result, launched.LabelError
 }
 

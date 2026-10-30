@@ -8,6 +8,7 @@ package mcpreg
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/atomicfile"
 	"github.com/YoanWai/agent-manager/internal/hooks"
@@ -25,6 +27,44 @@ import (
 const serverName = "agent-manager"
 
 const StyleNone = "none"
+
+// RegistrationTimeout bounds one whole registration: every command Apply
+// runs for a tool shares it, so a tool that registers with several commands
+// (Hermes runs up to four) cannot add their delays up. Registration runs on
+// the spawn path, so a CLI that stops answering (a network or auth wait)
+// would otherwise hold later spawns, kills and other manager actions queued
+// behind it for as long as it hangs. It is a variable so tests can shorten it.
+var RegistrationTimeout = 2 * time.Minute
+
+// registrationWaitDelay is how long a command's output pipes may stay open
+// after it exits: a CLI that leaves a background child holding stdout has
+// finished, and waiting for the pipe to close would freeze the manager on
+// the child instead.
+const registrationWaitDelay = time.Second
+
+// TimeoutError reports a registration that used up RegistrationTimeout. The
+// tool is fine and no marker was written, so the next spawn tries again; the
+// session can start now without the agent-manager tools.
+type TimeoutError struct {
+	// Tool is the tool whose registration timed out.
+	Tool  string
+	Limit time.Duration
+}
+
+func (e *TimeoutError) Error() string {
+	return fmt.Sprintf("%s MCP registration did not finish within %s", e.Tool, formatLimit(e.Limit))
+}
+
+func formatLimit(d time.Duration) string {
+	switch {
+	case d >= time.Minute && d%time.Minute == 0:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	case d >= time.Second && d%time.Second == 0:
+		return fmt.Sprintf("%ds", d/time.Second)
+	default:
+		return d.String()
+	}
+}
 
 // HermesMCPUnavailableError reports a Hermes whose optional MCP SDK is not
 // installed, so no registration can succeed until the package is added to
@@ -76,6 +116,9 @@ func Style(toolName, explicit string) string {
 // under hooksDir, or run a one-time registration. exe is the agent-manager
 // binary the generated configs point at.
 func Apply(style, exe, hooksDir, command string, env map[string]string) (string, error) {
+	// Every command a registration runs shares this one deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), RegistrationTimeout)
+	defer cancel()
 	switch style {
 	case "claude":
 		path := filepath.Join(hooksDir, "mcp-claude.json")
@@ -101,22 +144,22 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		env["OPENCODE_CONFIG"] = path
 		return command, nil
 	case "grok":
-		if err := ensureGrokRegistered(exe, hooksDir); err != nil {
+		if err := ensureGrokRegistered(ctx, exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
 	case "gemini":
-		if err := ensureGeminiRegistered(exe, hooksDir); err != nil {
+		if err := ensureGeminiRegistered(ctx, exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
 	case "hermes":
-		if err := ensureHermesRegistered(exe, hooksDir); err != nil {
+		if err := ensureHermesRegistered(ctx, exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
 	case "command-code":
-		if err := ensureCommandCodeRegistered(exe, hooksDir); err != nil {
+		if err := ensureCommandCodeRegistered(ctx, exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
@@ -126,12 +169,12 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		}
 		return command, nil
 	case "cursor":
-		if err := ensureCursorRegistered(exe); err != nil {
+		if err := ensureCursorRegistered(ctx, exe); err != nil {
 			return "", err
 		}
 		return command, nil
 	case "antigravity":
-		if err := ensureAntigravityRegistered(exe, hooksDir); err != nil {
+		if err := ensureAntigravityRegistered(ctx, exe, hooksDir); err != nil {
 			return "", err
 		}
 		return command, nil
@@ -275,7 +318,7 @@ func cursorMCPPath() (string, error) {
 	return filepath.Join(home, ".cursor", "mcp.json"), nil
 }
 
-func ensureCursorRegistered(exe string) error {
+func ensureCursorRegistered(ctx context.Context, exe string) error {
 	path, err := cursorMCPPath()
 	if err != nil {
 		return err
@@ -338,7 +381,7 @@ func ensureCursorRegistered(exe string) error {
 		}
 	}
 	// Enable on every launch so a server the user turned off comes back.
-	return enableCursorServer()
+	return enableCursorServer(ctx)
 }
 
 // cursorJSON accepts the comments and trailing commas in Cursor's mcp.json.
@@ -425,8 +468,11 @@ func stripJSONTrailingCommas(data []byte) []byte {
 	return out
 }
 
-func enableCursorServer() error {
-	out, err := exec.Command("cursor-agent", "mcp", "enable", serverName).CombinedOutput()
+func enableCursorServer(ctx context.Context) error {
+	out, err := command{name: "cursor-agent", args: []string{"mcp", "enable", serverName}}.combinedOutput(ctx)
+	if timedOut(err) {
+		return withTool(err, "cursor")
+	}
 	if err != nil {
 		return fmt.Errorf("cursor-agent mcp enable: %w: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -434,40 +480,40 @@ func enableCursorServer() error {
 }
 
 // Command Code overlays stored env onto process.env without expanding ${VAR}.
-func ensureCommandCodeRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("cmd", "mcp", "add",
+func ensureCommandCodeRegistered(ctx context.Context, exe, hooksDir string) error {
+	add := command{name: "cmd", args: []string{"mcp", "add",
 		"--scope", "user",
-		serverName, "--", exe, "mcp")
-	return ensureRegisteredOnce("command-code", exe, hooksDir, cmd)
+		serverName, "--", exe, "mcp"}}
+	return ensureRegisteredOnce(ctx, "command-code", exe, hooksDir, add)
 }
 
 // ensureGrokRegistered adds the server to grok's user-scope config once
 // per binary path, via grok's own config writer.
-func ensureGrokRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("grok", "mcp", "add",
+func ensureGrokRegistered(ctx context.Context, exe, hooksDir string) error {
+	add := command{name: "grok", args: []string{"mcp", "add",
 		"--scope", "user",
-		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
-		serverName, "--", exe, "mcp")
-	return ensureRegisteredOnce("grok", exe, hooksDir, cmd)
+		"-e", hooks.EnvSessionID + "=${" + hooks.EnvSessionID + "}",
+		serverName, "--", exe, "mcp"}}
+	return ensureRegisteredOnce(ctx, "grok", exe, hooksDir, add)
 }
 
 // ensureGeminiRegistered adds the server to gemini's user-scope
 // settings.json once per binary path, via gemini's own config writer.
 // Gemini expands ${VAR} in a server's env block at launch, so the entry
 // forwards the per-session id env var.
-func ensureGeminiRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("gemini", "mcp", "add",
+func ensureGeminiRegistered(ctx context.Context, exe, hooksDir string) error {
+	add := command{name: "gemini", args: []string{"mcp", "add",
 		"--scope", "user",
-		"-e", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
-		serverName, exe, "mcp")
-	return ensureRegisteredOnce("gemini", exe, hooksDir, cmd)
+		"-e", hooks.EnvSessionID + "=${" + hooks.EnvSessionID + "}",
+		serverName, exe, "mcp"}}
+	return ensureRegisteredOnce(ctx, "gemini", exe, hooksDir, add)
 }
 
 // Antigravity passes a server its own environment and leaves ${VAR} in an
 // env entry unexpanded, so the session id reaches the server by inheritance.
-func ensureAntigravityRegistered(exe, hooksDir string) error {
-	cmd := exec.Command("agy", "mcp", "add", serverName, "--", exe, "mcp")
-	return ensureRegisteredOnce("antigravity", exe, hooksDir, cmd)
+func ensureAntigravityRegistered(ctx context.Context, exe, hooksDir string) error {
+	add := command{name: "agy", args: []string{"mcp", "add", serverName, "--", exe, "mcp"}}
+	return ensureRegisteredOnce(ctx, "antigravity", exe, hooksDir, add)
 }
 
 type hermesMCPEntry struct {
@@ -477,14 +523,14 @@ type hermesMCPEntry struct {
 	Enabled *bool             `json:"enabled"`
 }
 
-func readHermesMCPEntry() (hermesMCPEntry, bool) {
-	cmd := exec.Command("hermes", "config", "get", "mcp_servers."+serverName, "--json")
+func readHermesMCPEntry(ctx context.Context) (hermesMCPEntry, bool) {
+	get := command{name: "hermes", args: []string{"config", "get", "mcp_servers." + serverName, "--json"}}
 	for _, item := range os.Environ() {
 		if !strings.HasPrefix(item, hooks.EnvSessionID+"=") {
-			cmd.Env = append(cmd.Env, item)
+			get.env = append(get.env, item)
 		}
 	}
-	out, err := cmd.Output()
+	out, err := get.output(ctx)
 	if err != nil {
 		return hermesMCPEntry{}, false
 	}
@@ -503,33 +549,43 @@ func validHermesMCPEntry(entry hermesMCPEntry, exe string) bool {
 
 // ensureHermesRegistered accepts the mcp-add defaults after Hermes verifies
 // the server. A stale entry adds an overwrite confirmation first.
-func ensureHermesRegistered(exe, hooksDir string) error {
+func ensureHermesRegistered(ctx context.Context, exe, hooksDir string) error {
 	marker := filepath.Join(hooksDir, "mcp-hermes-registered")
 	if content, err := os.ReadFile(marker); err == nil && string(content) == exe {
 		return nil
 	}
-	_, existed := readHermesMCPEntry()
-	cmd := exec.Command("hermes", "mcp", "add", serverName,
+	_, existed := readHermesMCPEntry(ctx)
+	add := command{name: "hermes", args: []string{"mcp", "add", serverName,
 		"--command", exe,
-		"--env", hooks.EnvSessionID+"=${"+hooks.EnvSessionID+"}",
-		"--args", "mcp")
+		"--env", hooks.EnvSessionID + "=${" + hooks.EnvSessionID + "}",
+		"--args", "mcp"}}
 	if existed {
-		cmd.Stdin = strings.NewReader("y\n\n")
+		add.stdin = "y\n\n"
 	} else {
-		cmd.Stdin = strings.NewReader("\n")
+		add.stdin = "\n"
 	}
-	out, err := cmd.CombinedOutput()
+	out, err := add.combinedOutput(ctx)
+	if timedOut(err) {
+		return withTool(err, "hermes")
+	}
 	// Hermes without its optional SDK refuses to connect but still exits 0
 	// after the save-anyway prompt, so the message is the only signal.
 	if strings.Contains(string(out), "requires the 'mcp' Python SDK") {
-		return HermesMCPUnavailableError{PipCommand: hermesPipCommand()}
+		pipCommand, err := hermesPipCommand(ctx)
+		if err != nil {
+			return err
+		}
+		return HermesMCPUnavailableError{PipCommand: pipCommand}
 	}
 	if err != nil {
-		return fmt.Errorf("hermes mcp add: %w: %s", err, out)
+		return fmt.Errorf("hermes mcp add: %w%s", err, outputSuffix(out))
 	}
-	entry, ok := readHermesMCPEntry()
+	entry, ok := readHermesMCPEntry(ctx)
 	if !ok || !validHermesMCPEntry(entry, exe) {
-		return fmt.Errorf("hermes mcp add did not save an enabled agent-manager server: %s", out)
+		if ctx.Err() != nil {
+			return &TimeoutError{Tool: "hermes", Limit: RegistrationTimeout}
+		}
+		return fmt.Errorf("hermes mcp add did not save an enabled agent-manager server%s", outputSuffix(out))
 	}
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return err
@@ -539,16 +595,25 @@ func ensureHermesRegistered(exe, hooksDir string) error {
 
 // pipx and uv build their environments without a pip module, so the line
 // is only offered where the interpreter has one.
-func hermesPipCommand() string {
-	out, err := exec.Command("hermes", "--version").Output()
+func hermesPipCommand(ctx context.Context) (string, error) {
+	out, err := command{name: "hermes", args: []string{"--version"}}.output(ctx)
 	if err != nil {
-		return ""
+		if timedOut(err) {
+			return "", withTool(err, "hermes")
+		}
+		return "", nil
 	}
 	python := pythonFromVersion(string(out))
-	if python == "" || exec.Command(python, "-m", "pip", "--version").Run() != nil {
-		return ""
+	if python == "" {
+		return "", nil
 	}
-	return tmux.ShellInvoke(python) + " -m pip install mcp"
+	if _, err := (command{name: python, args: []string{"-m", "pip", "--version"}}).output(ctx); err != nil {
+		if timedOut(err) {
+			return "", withTool(err, "hermes")
+		}
+		return "", nil
+	}
+	return tmux.ShellInvoke(python) + " -m pip install mcp", nil
 }
 
 // ensureRegisteredOnce runs a tool's own mcp-add command once per binary
@@ -556,16 +621,80 @@ func hermesPipCommand() string {
 // the binary re-register. The check-then-add window is benign: the add
 // commands update in place, so two racing managers just write the same
 // entry twice.
-func ensureRegisteredOnce(tool, exe, hooksDir string, cmd *exec.Cmd) error {
+func ensureRegisteredOnce(ctx context.Context, tool, exe, hooksDir string, add command) error {
 	marker := filepath.Join(hooksDir, "mcp-"+tool+"-registered")
 	if content, err := os.ReadFile(marker); err == nil && string(content) == exe {
 		return nil
 	}
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("%s mcp add: %v: %s", tool, err, out)
+	if out, err := add.combinedOutput(ctx); err != nil {
+		if timedOut(err) {
+			return withTool(err, tool)
+		}
+		return fmt.Errorf("%s mcp add: %v%s", tool, err, outputSuffix(out))
 	}
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(marker, []byte(exe), 0o644)
+}
+
+// outputSuffix appends a command's output to an error message, leaving a
+// command that printed nothing without a dangling colon.
+func outputSuffix(out []byte) string {
+	if text := strings.TrimSpace(string(out)); text != "" {
+		return ": " + text
+	}
+	return ""
+}
+
+func timedOut(err error) bool {
+	var timeout *TimeoutError
+	return errors.As(err, &timeout)
+}
+
+// withTool names the tool on a timeout error from a command that does not
+// know which tool it registers.
+func withTool(err error, tool string) error {
+	var timeout *TimeoutError
+	if errors.As(err, &timeout) {
+		timeout.Tool = tool
+	}
+	return err
+}
+
+// command is one external command a registration runs. It is bounded by the
+// registration's shared context and, once it exits, by registrationWaitDelay
+// for its output pipes.
+type command struct {
+	name  string
+	args  []string
+	stdin string
+	// env replaces the inherited environment when set.
+	env []string
+}
+
+func (c command) output(ctx context.Context) ([]byte, error) {
+	return c.run(ctx, (*exec.Cmd).Output)
+}
+
+func (c command) combinedOutput(ctx context.Context) ([]byte, error) {
+	return c.run(ctx, (*exec.Cmd).CombinedOutput)
+}
+
+func (c command) run(ctx context.Context, collect func(*exec.Cmd) ([]byte, error)) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, c.name, c.args...)
+	cmd.Env = c.env
+	if c.stdin != "" {
+		cmd.Stdin = strings.NewReader(c.stdin)
+	}
+	cmd.WaitDelay = registrationWaitDelay
+	out, err := collect(cmd)
+	switch {
+	case errors.Is(err, exec.ErrWaitDelay):
+		// It exited 0; only a child it left behind still holds the pipe.
+		err = nil
+	case err != nil && ctx.Err() != nil:
+		err = &TimeoutError{Tool: c.name, Limit: RegistrationTimeout}
+	}
+	return out, err
 }
