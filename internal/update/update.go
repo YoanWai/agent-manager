@@ -27,7 +27,7 @@ const (
 	cacheFile       = "release-catalog.json"
 	legacyCacheFile = "update-check.json"
 	// catalogParser names the shape this build parses a release into. Raise it when that shape changes.
-	catalogParser        = 1
+	catalogParser        = 2
 	checkInterval        = 10 * time.Minute
 	requestBudget        = 4 * time.Second
 	refreshBudget        = 2 * time.Minute
@@ -53,12 +53,6 @@ const (
 // releasesURL is a var so tests can point the fetch at a local server.
 var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases?per_page=100"
 
-// userFacingTypes are the conventional commit types that change what the
-// program does for the person reading the digest. The rest are real work
-// that leaves the running program identical, and every row one of them
-// takes is a row a feature or a fix does not get.
-var userFacingTypes = map[string]bool{"feat": true, "fix": true, "perf": true}
-
 var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)
 	pullSuffix        = regexp.MustCompile(`\s+by\s+(@[A-Za-z0-9-]+(?:\[bot])?)\s+in\s+https://github\.com/\S+\s*$`)
@@ -75,24 +69,26 @@ const (
 // Change is one line of a release's generated list.
 type Change struct {
 	Kind   string `json:"kind"`
+	Scope  string `json:"scope,omitempty"`
 	Text   string `json:"text"`
 	Author string `json:"author,omitempty"`
 }
 
 // Release is one stable GitHub release with a compact, terminal-safe summary.
 // The panel lists Changes under Highlights for the newest release. Changes are every
-// user-facing line of the generated list, kept up to a bound that TotalChanges
+// line of the generated list, kept up to a bound that TotalChanges
 // may exceed.
 // Highlights and Summary keep the backticks their author put around the words to accent.
 type Release struct {
-	Version      string   `json:"version"`
-	URL          string   `json:"url"`
-	Headline     string   `json:"headline,omitempty"`
-	Summary      string   `json:"summary,omitempty"`
-	Highlights   []string `json:"highlights,omitempty"`
-	Thanks       []string `json:"thanks,omitempty"`
-	Changes      []Change `json:"changes,omitempty"`
-	TotalChanges int      `json:"total_changes"`
+	Version      string    `json:"version"`
+	URL          string    `json:"url"`
+	PublishedAt  time.Time `json:"published_at,omitempty"`
+	Headline     string    `json:"headline,omitempty"`
+	Summary      string    `json:"summary,omitempty"`
+	Highlights   []string  `json:"highlights,omitempty"`
+	Thanks       []string  `json:"thanks,omitempty"`
+	Changes      []Change  `json:"changes,omitempty"`
+	TotalChanges int       `json:"total_changes"`
 }
 
 // Result is the locally known release catalog plus an optional release newer
@@ -131,11 +127,12 @@ type legacyCache struct {
 }
 
 type githubRelease struct {
-	TagName    string `json:"tag_name"`
-	HTMLURL    string `json:"html_url"`
-	Body       string `json:"body"`
-	Draft      bool   `json:"draft"`
-	Prerelease bool   `json:"prerelease"`
+	TagName     string    `json:"tag_name"`
+	HTMLURL     string    `json:"html_url"`
+	Body        string    `json:"body"`
+	PublishedAt time.Time `json:"published_at"`
+	Draft       bool      `json:"draft"`
+	Prerelease  bool      `json:"prerelease"`
 }
 
 // Check returns a cache-backed release catalog. Every build checks at most once
@@ -319,6 +316,7 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 		releases = append(releases, Release{
 			Version:      item.TagName,
 			URL:          item.HTMLURL,
+			PublishedAt:  item.PublishedAt,
 			Headline:     headline,
 			Summary:      summary,
 			Highlights:   extractHighlights(item.Body),
@@ -433,7 +431,6 @@ func extractChanges(body string) ([]Change, int) {
 	return changes, total
 }
 
-// A bullet that names no type cannot be judged, so it stays.
 func cleanChange(bullet string) (Change, bool) {
 	change := Change{Kind: KindOther}
 	// Credit outside contributors on their digest lines; the maintainer's
@@ -445,20 +442,14 @@ func cleanChange(bullet string) (Change, bool) {
 	}
 	row := plainText(pullSuffix.ReplaceAllString(bullet, ""))
 	if match := conventionalTitle.FindStringSubmatch(row); match != nil {
-		kind := strings.ToLower(match[1])
-		if !userFacingTypes[kind] {
-			return Change{}, false
-		}
-		change.Kind = KindFeature
-		if kind == KindFix {
+		switch strings.ToLower(match[1]) {
+		case "feat":
+			change.Kind = KindFeature
+		case "fix", "perf":
 			change.Kind = KindFix
 		}
-		description := sentenceCase(match[3])
-		if scope := labelCase(match[2]); scope != "" {
-			row = scope + ": " + description
-		} else {
-			row = description
-		}
+		change.Scope = labelCase(match[2])
+		row = sentenceCase(match[3])
 	} else {
 		row = sentenceCase(row)
 	}

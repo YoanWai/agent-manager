@@ -180,7 +180,7 @@ func releaseRange(catalog update.ReleaseRange) notices.ReleaseRange {
 	for _, release := range catalog.Releases {
 		changes := make([]notices.Change, len(release.Changes))
 		for i, change := range release.Changes {
-			changes[i] = notices.Change{Kind: change.Kind, Text: change.Text, Author: change.Author}
+			changes[i] = notices.Change{Kind: change.Kind, Scope: change.Scope, Text: change.Text, Author: change.Author}
 		}
 		out.Releases = append(out.Releases, notices.Release{
 			Version:      release.Version,

@@ -77,10 +77,12 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 
 	changes, total := extractChanges(body)
 	want := []Change{
-		{Kind: KindFix, Text: "Groups: Make group creation immediate and reliable"},
-		{Kind: KindFeature, Text: "Config: Add Pi as a built-in tool", Author: "@steveprentice"},
-		{Kind: KindFeature, Text: "UI: Add a message browser with scrolling"},
-		{Kind: KindFeature, Text: "MCP editor: Expose tool capabilities"},
+		{Kind: KindFix, Scope: "Groups", Text: "Make group creation immediate and reliable"},
+		{Kind: KindFeature, Scope: "Config", Text: "Add Pi as a built-in tool", Author: "@steveprentice"},
+		{Kind: KindOther, Scope: "Deps", Text: "Bump gopsutil"},
+		{Kind: KindOther, Scope: "Readme", Text: "Add a badge"},
+		{Kind: KindFeature, Scope: "UI", Text: "Add a message browser with scrolling"},
+		{Kind: KindFeature, Scope: "MCP editor", Text: "Expose tool capabilities"},
 	}
 	if total != len(want) || !slices.Equal(changes, want) {
 		t.Fatalf("extractChanges() = %+v total %d, want %+v", changes, total, want)
@@ -144,8 +146,40 @@ func TestCheckFetchesStableCatalogAndFindsLatest(t *testing.T) {
 	if result.Latest != "v0.11.0" || len(result.Releases) != 2 {
 		t.Fatalf("unexpected result: %+v", result)
 	}
-	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != (Change{Kind: KindFeature, Text: "UI: Actual latest"}) {
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0] != (Change{Kind: KindFeature, Scope: "UI", Text: "Actual latest"}) {
 		t.Fatalf("release changes = %+v", got)
+	}
+}
+
+func TestCleanChangeKeepsEveryTypeAndSplitsTheScope(t *testing.T) {
+	cases := map[string]Change{
+		"feat(ui): first-run setup by @YoanWai in https://github.com/YoanWai/agent-manager/pull/919":            {Kind: KindFeature, Scope: "UI", Text: "First-run setup"},
+		"perf(tmux): one spawn per poll by @a in https://github.com/YoanWai/agent-manager/pull/1":               {Kind: KindFix, Scope: "Tmux", Text: "One spawn per poll", Author: "@a"},
+		"test(e2e): await preview redraws by @ribeirojose in https://github.com/YoanWai/agent-manager/pull/862": {Kind: KindOther, Scope: "E2e", Text: "Await preview redraws", Author: "@ribeirojose"},
+		"ci: run staticcheck by @YoanWai in https://github.com/YoanWai/agent-manager/pull/910":                  {Kind: KindOther, Text: "Run staticcheck"},
+		"Untyped line by @b in https://github.com/YoanWai/agent-manager/pull/2":                                 {Kind: KindOther, Text: "Untyped line", Author: "@b"},
+	}
+	for bullet, want := range cases {
+		got, ok := cleanChange(bullet)
+		if !ok || got != want {
+			t.Errorf("cleanChange(%q) = %+v, %v; want %+v", bullet, got, ok, want)
+		}
+	}
+}
+
+func TestFetchCarriesThePublishDate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprint(w, `[{"tag_name":"v0.50.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.50.0","body":"","published_at":"2026-10-30T15:55:28Z"}]`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	releases, _, _, err := fetchReleases(context.Background(), "", requestBudget)
+	if err != nil || len(releases) != 1 {
+		t.Fatalf("releases=%+v err=%v", releases, err)
+	}
+	if want := time.Date(2026, 10, 30, 15, 55, 28, 0, time.UTC); !releases[0].PublishedAt.Equal(want) {
+		t.Fatalf("PublishedAt = %v, want %v", releases[0].PublishedAt, want)
 	}
 }
 
@@ -200,7 +234,7 @@ func TestCatalogBehindTheRunningBuildRefetches(t *testing.T) {
 	}
 	// The notice is built from these lines, so reaching the release is only
 	// half of it: an entry with no changes leaves it as empty as before.
-	if got := result.Releases[0].Changes; len(got) != 1 || got[0].Text != "UI: Refreshed" {
+	if got := result.Releases[0].Changes; len(got) != 1 || got[0].Scope != "UI" || got[0].Text != "Refreshed" {
 		t.Fatalf("changes are %+v, want the fetched release's own", got)
 	}
 	if result.Latest != "" {
@@ -366,7 +400,7 @@ func TestCatalogFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
 	if err != nil || calls.Load() != 1 {
 		t.Fatalf("err=%v calls=%d, want one full fetch despite the fresh timestamp", err, calls.Load())
 	}
-	if got := result.Releases[0].Changes[0].Text; got != "UI: Reparsed" {
+	if got := result.Releases[0].Changes[0].Text; got != "Reparsed" {
 		t.Fatalf("changes = %q, want this build's parse", got)
 	}
 }
@@ -525,9 +559,16 @@ func TestExtractChangesKeepsWhatAReaderCanAct(t *testing.T) {
 
 	changes, total := extractChanges(body)
 	want := []Change{
-		{Kind: KindFeature, Text: "UI: A feature"},
-		{Kind: KindFix, Text: "UI: A fix"},
-		{Kind: KindFeature, Text: "UI: A speedup"},
+		{Kind: KindFeature, Scope: "UI", Text: "A feature"},
+		{Kind: KindFix, Scope: "UI", Text: "A fix"},
+		{Kind: KindFix, Scope: "UI", Text: "A speedup"},
+		{Kind: KindOther, Scope: "Readme", Text: "A badge"},
+		{Kind: KindOther, Scope: "Deps", Text: "A bump"},
+		{Kind: KindOther, Text: "A workflow tweak"},
+		{Kind: KindOther, Text: "A build tweak"},
+		{Kind: KindOther, Text: "A reformat"},
+		{Kind: KindOther, Text: "A case"},
+		{Kind: KindOther, Scope: "UI", Text: "A rename"},
 		{Kind: KindOther, Text: "Ship the two agent skills for install via skills.sh"},
 	}
 	if total != len(want) || !slices.Equal(changes, want) {
@@ -790,6 +831,7 @@ func TestCatalogFileWinsOverTheLegacyFile(t *testing.T) {
 func TestParserNumberPinsTheReleaseShape(t *testing.T) {
 	shapes := map[int][]string{
 		1: {"version", "url", "headline", "summary", "highlights", "thanks", "changes.kind", "changes.text", "changes.author", "total_changes"},
+		2: {"version", "url", "published_at", "headline", "summary", "highlights", "thanks", "changes.kind", "changes.scope", "changes.text", "changes.author", "total_changes"},
 	}
 	want, ok := shapes[catalogParser]
 	if !ok {
@@ -809,7 +851,7 @@ func jsonKeys(structType reflect.Type, prefix string) []string {
 		if elem.Kind() == reflect.Slice {
 			elem = elem.Elem()
 		}
-		if elem.Kind() == reflect.Struct {
+		if elem.Kind() == reflect.Struct && elem != reflect.TypeOf(time.Time{}) {
 			keys = append(keys, jsonKeys(elem, name+".")...)
 			continue
 		}

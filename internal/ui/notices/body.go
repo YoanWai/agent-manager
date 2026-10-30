@@ -233,7 +233,7 @@ func changeCounts(changes []Change) string {
 
 // appendChange sets the author at the right edge of the last wrapped row, or of a row of its own when two spaces do not fit.
 func appendChange(rows []string, change Change, width int, t Theme) []string {
-	rows = appendBullet(rows, []textRun{{text: change.Text}}, width, t.Muted, t.Muted, t.Key)
+	rows = appendBullet(rows, []textRun{{text: change.label()}}, width, t.Muted, t.Muted, t.Key)
 	if change.Author == "" {
 		return rows
 	}
@@ -249,9 +249,9 @@ func appendChange(rows []string, change Change, width int, t Theme) []string {
 
 func measuredChange(change Change) string {
 	if change.Author == "" {
-		return "• " + change.Text
+		return "• " + change.label()
 	}
-	return "• " + change.Text + "  " + change.Author
+	return "• " + change.label() + "  " + change.Author
 }
 
 func label(text string, t Theme) string {

@@ -67,8 +67,16 @@ const (
 
 type Change struct {
 	Kind   string
+	Scope  string
 	Text   string
 	Author string
+}
+
+func (c Change) label() string {
+	if c.Scope == "" {
+		return c.Text
+	}
+	return c.Scope + ": " + c.Text
 }
 
 type Release struct {

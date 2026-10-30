@@ -147,6 +147,15 @@ func TestAuthorSharesTheLastWrappedRowWhenItFits(t *testing.T) {
 	}
 }
 
+func TestChangeScopeRendersAsAPrefix(t *testing.T) {
+	release := pickersRelease()
+	release.Changes = []Change{{Kind: KindFix, Scope: "Codex", Text: "Keep pending messages out of the reply line"}}
+	rows := bodyText(Notice{ReleaseNotes: true, Releases: []Release{release}, RangeComplete: true}, 60)
+	if rowIndex(rows, "• Codex: Keep pending messages out of the reply line") < 0 {
+		t.Fatalf("the scope leads the change text:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
 func TestLongHeadlineWrapsUnderOneRule(t *testing.T) {
 	headline := "Model and reasoning pickers are here for every agent in every session you run now"
 	rows := bodyText(Notice{Headline: headline, Body: []string{"text"}}, 30)
