@@ -19,7 +19,7 @@ class SelectionTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.sandbox = SimpleNamespace(artifacts=Path(self.temp.name), wait=self.wait)
 
-    def wait(self, name, observe, predicate, timeout):
+    def wait(self, name, observe, predicate, timeout=12):
         for _ in range(5):
             value = observe()
             if predicate(value):
@@ -66,6 +66,25 @@ class SelectionTests(unittest.TestCase):
             ssh_scenarios.select(self.sandbox, 'remote-agent', 'remote-agent on box')
         key.assert_called_once_with(self.sandbox, 'j')
         self.assertEqual((self.sandbox.artifacts / 'remote-agent-selected.txt').read_text(), selected)
+
+    def test_remote_attach_waits_for_restored_roster_before_selection(self):
+        stale = ('remote-agent  dead'.ljust(scenarios.RAIL_WIDTH) +
+                 'remote-agent  on box  archived')
+        active = ('remote-agent  idle'.ljust(scenarios.RAIL_WIDTH) +
+                  'web  on box')
+        frames = iter([stale, stale, active])
+        observed = stale
+        def capture(_):
+            nonlocal observed
+            observed = next(frames)
+            return observed
+        def select(_):
+            self.assertEqual(observed, active, 'selection preceded restored roster')
+        with patch.object(ssh_scenarios, 'capture', side_effect=capture), \
+                patch.object(ssh_scenarios, 'select_remote_agent', side_effect=select), \
+                patch.object(ssh_scenarios, 'remote_pane_code', return_value='0'), \
+                patch.object(ssh_scenarios, 'key'), patch.object(ssh_scenarios, 'frame'):
+            ssh_scenarios.attach(self.sandbox, object(), 'fixture-id')
 
     def test_rail_visibility_does_not_prove_selected_row(self):
         frame = 'wanted'.ljust(scenarios.RAIL_WIDTH) + 'other agent'
