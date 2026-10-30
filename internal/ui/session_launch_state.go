@@ -7,8 +7,8 @@ import (
 type launchLedger struct {
 	// worktreeRepos memoizes which spawn directories sit inside a git
 	// repo, so gating the worktree toggle does not shell out to git on
-	// every frame. Entries expire, so a directory git-initialised while
-	// the bar is open stops reading as unavailable.
+	// every frame. A toggle asks again once an entry ages out, so a
+	// directory git-initialised while the bar is open can take a worktree.
 	worktreeRepos map[string]repoAnswer
 	// baseRefs memoizes each repo's branches for the group base pickers.
 	baseRefs          map[string]baseRefsAnswer

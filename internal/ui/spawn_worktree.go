@@ -17,7 +17,7 @@ func (m *Model) formWorktreeOn() bool {
 // directory rules a worktree out.
 func (m *Model) toggleFormWorktree() tea.Cmd {
 	dir := m.formSpawnDir()
-	capable, known := m.cachedWorktreeCapability(dir)
+	capable, known := m.freshWorktreeCapability(dir)
 	if !known {
 		return m.formWorktreeProbeCmd(true)
 	}
@@ -30,9 +30,20 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 	return nil
 }
 
+// cachedWorktreeCapability is the last repo answer for dir however old it
+// is, so a form left open while the prompt is typed keeps showing what git
+// said instead of reading unavailable once the answer ages out.
 func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
 	answer, ok := m.ledger.worktreeRepos[dir]
-	if !ok || answer.at.IsZero() || time.Since(answer.at) >= worktreeLookupTTL {
+	return answer.capable, ok
+}
+
+// freshWorktreeCapability is the cached answer only while it is recent
+// enough to act on, so a toggle asks git again about a directory that may
+// have been git-initialised since.
+func (m *Model) freshWorktreeCapability(dir string) (bool, bool) {
+	answer, ok := m.ledger.worktreeRepos[dir]
+	if !ok || time.Since(answer.at) >= worktreeLookupTTL {
 		return false, false
 	}
 	return answer.capable, true
@@ -108,10 +119,10 @@ func (m *Model) handleWorktreeProbe(msg worktreeProbeMsg) (tea.Model, tea.Cmd) {
 // directory cannot host one.
 const worktreeUnavailable = "unavailable (not a git repo)"
 
-// worktreeLookupTTL bounds how long a directory's repo answer is reused.
-// The quick bar stays open across prompts, so a directory git-initialised
-// meanwhile has to be seen without closing it, while a frame that repaints
-// on every keystroke must not shell out to git each time.
+// worktreeLookupTTL bounds how long a directory's repo answer is acted on.
+// The quick bar stays open across prompts, so a toggle on a directory
+// git-initialised meanwhile has to ask git again, while a frame that
+// repaints on every keystroke must not shell out to git each time.
 const worktreeLookupTTL = 2 * time.Second
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.

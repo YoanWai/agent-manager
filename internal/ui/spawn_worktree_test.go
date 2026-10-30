@@ -91,18 +91,37 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	if err := os.Rename(filepath.Join(seed, ".git"), filepath.Join(dir, ".git")); err != nil {
 		t.Fatal(err)
 	}
-	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
-		t.Fatalf("fresh cache changed without a probe: capable %t known %t", capable, known)
-	}
 	answer := m.ledger.worktreeRepos[dir]
 	answer.at = answer.at.Add(-worktreeLookupTTL)
 	m.ledger.worktreeRepos[dir] = answer
-	if _, known := m.cachedWorktreeCapability(dir); known {
-		t.Fatal("expired capability still appeared current")
+	m.form.FocusField(m.spawnHost(), spawn.FieldWorktree)
+	_, probe := m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if probe == nil {
+		t.Fatal("a toggle on an aged-out answer should ask git again")
 	}
+	m.applyTestMsg(t, probe())
+	if !m.formWorktreeOn() {
+		t.Fatal("a directory git-initialised since the last look should take the toggle")
+	}
+}
+
+func TestAgedRepoAnswerKeepsWorktreeAvailable(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	repo := t.TempDir()
+	initGitRepo(t, repo)
+	m.openForm()
+	m.form.SetDir(repo)
+	m.form.SetWorktree(true)
 	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
-	if capable, known := m.cachedWorktreeCapability(dir); !known || !capable {
-		t.Fatalf("fresh probe cache = capable %t known %t", capable, known)
+	answer := m.ledger.worktreeRepos[m.formSpawnDir()]
+	answer.at = answer.at.Add(-worktreeLookupTTL)
+	m.ledger.worktreeRepos[m.formSpawnDir()] = answer
+	if view := m.viewForm(); strings.Contains(view, worktreeUnavailable) {
+		t.Fatalf("a repo dir read unavailable once its answer aged, got %q", view)
+	}
+	if !m.formWorktreeOn() {
+		t.Fatal("an aged answer turned the worktree off")
 	}
 }
 
