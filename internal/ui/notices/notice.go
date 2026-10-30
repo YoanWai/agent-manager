@@ -7,6 +7,7 @@ package notices
 
 import (
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -79,13 +80,55 @@ func (c Change) label() string {
 	return c.Scope + ": " + c.Text
 }
 
+// Thanks groups, as the release catalog files them.
+const (
+	ThanksBuilt   = "built"
+	ThanksFound   = "found"
+	ThanksStarted = "started"
+)
+
+type Highlight struct {
+	Label string
+	Text  string
+}
+
+func (h Highlight) line() string {
+	return joinWords(h.Label, h.Text)
+}
+
+type Thanks struct {
+	Handle string
+	Group  string
+	Text   string
+	Refs   []string
+}
+
+func (t Thanks) line() string {
+	line := joinWords(t.Handle, t.Text)
+	if len(t.Refs) > 0 {
+		line += " (" + strings.Join(t.Refs, ", ") + ")"
+	}
+	return line
+}
+
+func joinWords(words ...string) string {
+	var present []string
+	for _, word := range words {
+		if word != "" {
+			present = append(present, word)
+		}
+	}
+	return strings.Join(present, " ")
+}
+
 type Release struct {
 	Version      string
 	URL          string
+	PublishedAt  time.Time
 	Headline     string
 	Summary      string
-	Highlights   []string
-	Thanks       []string
+	Highlights   []Highlight
+	Thanks       []Thanks
 	Changes      []Change
 	TotalChanges int
 }

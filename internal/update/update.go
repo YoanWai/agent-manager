@@ -48,7 +48,22 @@ const (
 	highlightsHeading = "## Highlights"
 	thanksHeading     = "## Thank you"
 	changesHeading    = "## What's Changed"
+	// labeledNotesSince is the first release whose highlights open with their label in backticks.
+	labeledNotesSince = "v0.46.0"
 )
+
+// Thanks groups, as the Thank you section's sub-headings file them.
+const (
+	ThanksBuilt   = "built"
+	ThanksFound   = "found"
+	ThanksStarted = "started"
+)
+
+var thanksGroupHeadings = map[string]string{
+	"### built it":          ThanksBuilt,
+	"### found it":          ThanksFound,
+	"### started something": ThanksStarted,
+}
 
 // releasesURL is a var so tests can point the fetch at a local server.
 var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases?per_page=100"
@@ -58,6 +73,8 @@ var (
 	pullSuffix        = regexp.MustCompile(`\s+by\s+(@[A-Za-z0-9-]+(?:\[bot])?)\s+in\s+https://github\.com/\S+\s*$`)
 	markdownLink      = regexp.MustCompile(`\[([^]]+)]\([^)]+\)`)
 	boldLine          = regexp.MustCompile(`^\*\*([^*]+)\*\*$`)
+	highlightLabel    = regexp.MustCompile("^`([^`]+)`\\s*(.*)$")
+	thanksRefs        = regexp.MustCompile(`\s*\((#\d+(?:,\s*#\d+)*)\)$`)
 )
 
 const (
@@ -65,6 +82,20 @@ const (
 	KindFix     = "fix"
 	KindOther   = "other"
 )
+
+// Highlight is one authored bullet. Label is empty for releases before labeledNotesSince.
+type Highlight struct {
+	Label string `json:"label,omitempty"`
+	Text  string `json:"text"`
+}
+
+// Thanks is one contributor line. Handle is empty when the bullet does not open with one.
+type Thanks struct {
+	Handle string   `json:"handle,omitempty"`
+	Group  string   `json:"group"`
+	Text   string   `json:"text"`
+	Refs   []string `json:"refs,omitempty"`
+}
 
 // Change is one line of a release's generated list.
 type Change struct {
@@ -80,15 +111,15 @@ type Change struct {
 // may exceed.
 // Highlights and Summary keep the backticks their author put around the words to accent.
 type Release struct {
-	Version      string    `json:"version"`
-	URL          string    `json:"url"`
-	PublishedAt  time.Time `json:"published_at,omitempty"`
-	Headline     string    `json:"headline,omitempty"`
-	Summary      string    `json:"summary,omitempty"`
-	Highlights   []string  `json:"highlights,omitempty"`
-	Thanks       []string  `json:"thanks,omitempty"`
-	Changes      []Change  `json:"changes,omitempty"`
-	TotalChanges int       `json:"total_changes"`
+	Version      string      `json:"version"`
+	URL          string      `json:"url"`
+	PublishedAt  time.Time   `json:"published_at,omitempty"`
+	Headline     string      `json:"headline,omitempty"`
+	Summary      string      `json:"summary,omitempty"`
+	Highlights   []Highlight `json:"highlights,omitempty"`
+	Thanks       []Thanks    `json:"thanks,omitempty"`
+	Changes      []Change    `json:"changes,omitempty"`
+	TotalChanges int         `json:"total_changes"`
 }
 
 // Result is the locally known release catalog plus an optional release newer
@@ -187,13 +218,29 @@ func legacyCatalog(path string) cache {
 		seeded.Releases = append(seeded.Releases, Release{
 			Version:      release.Version,
 			URL:          release.URL,
-			Highlights:   release.Highlights,
-			Thanks:       release.Thanks,
+			Highlights:   legacyHighlights(release.Highlights),
+			Thanks:       legacyThanks(release.Thanks),
 			Changes:      changes,
 			TotalChanges: release.TotalChanges,
 		})
 	}
 	return seeded
+}
+
+func legacyHighlights(rows []string) []Highlight {
+	var highlights []Highlight
+	for _, row := range rows {
+		highlights = append(highlights, Highlight{Text: row})
+	}
+	return highlights
+}
+
+func legacyThanks(rows []string) []Thanks {
+	var thanks []Thanks
+	for _, row := range rows {
+		thanks = append(thanks, parseThanks(row, ThanksBuilt))
+	}
+	return thanks
 }
 
 func check(ctx context.Context, configDir, current string, force bool) (Result, error) {
@@ -319,7 +366,7 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 			PublishedAt:  item.PublishedAt,
 			Headline:     headline,
 			Summary:      summary,
-			Highlights:   extractHighlights(item.Body),
+			Highlights:   extractHighlights(item.Body, item.TagName),
 			Thanks:       extractThanks(item.Body),
 			Changes:      changes,
 			TotalChanges: total,
@@ -368,30 +415,75 @@ func bulletText(line string) (string, bool) {
 
 // Prose under an authored heading is the release page's own copy, written
 // for a browser rather than a modal, so only bullets travel.
-func extractSectionBullets(body, heading string, limit int, clean func(string) string) []string {
-	var bullets []string
-	for _, line := range sectionLines(body, heading) {
-		text, ok := bulletText(line)
+func extractHighlights(body, tag string) []Highlight {
+	labeled := !Newer(labeledNotesSince, tag)
+	var highlights []Highlight
+	for _, line := range sectionLines(body, highlightsHeading) {
+		bullet, ok := bulletText(line)
 		if !ok {
 			continue
 		}
-		if text = clean(text); text == "" {
+		text := markedText(bullet)
+		if text == "" {
 			continue
 		}
-		bullets = append(bullets, sentenceCase(truncate(text, maxLineLength)))
-		if len(bullets) == limit {
+		text = truncate(text, maxLineLength)
+		if match := highlightLabel.FindStringSubmatch(text); labeled && match != nil {
+			highlights = append(highlights, Highlight{Label: match[1], Text: sentenceCase(match[2])})
+		} else {
+			highlights = append(highlights, Highlight{Text: sentenceCase(text)})
+		}
+		if len(highlights) == maxHighlights {
 			break
 		}
 	}
-	return bullets
+	return highlights
 }
 
-func extractHighlights(body string) []string {
-	return extractSectionBullets(body, highlightsHeading, maxHighlights, markedText)
+func extractThanks(body string) []Thanks {
+	var thanks []Thanks
+	group := ThanksBuilt
+	for _, line := range sectionLines(body, thanksHeading) {
+		if heading, ok := thanksGroupHeadings[strings.ToLower(line)]; ok {
+			group = heading
+			continue
+		}
+		bullet, ok := bulletText(line)
+		if !ok {
+			continue
+		}
+		entry := parseThanks(plainText(bullet), group)
+		if entry.Handle == "" && entry.Text == "" {
+			continue
+		}
+		thanks = append(thanks, entry)
+		if len(thanks) == maxThanks {
+			break
+		}
+	}
+	return thanks
 }
 
-func extractThanks(body string) []string {
-	return extractSectionBullets(body, thanksHeading, maxThanks, plainText)
+// parseThanks splits "@handle what they did (#1, #2)" and keeps the visible line within maxLineLength.
+func parseThanks(line, group string) Thanks {
+	entry := Thanks{Group: group}
+	text := strings.TrimSpace(line)
+	if strings.HasPrefix(text, "@") {
+		handle, rest, _ := strings.Cut(text, " ")
+		entry.Handle, text = handle, strings.TrimSpace(rest)
+	}
+	if match := thanksRefs.FindStringSubmatchIndex(text); match != nil {
+		for _, ref := range strings.Split(text[match[2]:match[3]], ",") {
+			entry.Refs = append(entry.Refs, strings.TrimSpace(ref))
+		}
+		text = text[:match[0]]
+	}
+	budget := maxLineLength - len([]rune(entry.Handle)) - 1
+	if len(entry.Refs) > 0 {
+		budget -= len([]rune(" (" + strings.Join(entry.Refs, ", ") + ")"))
+	}
+	entry.Text = truncate(text, max(budget, 1))
+	return entry
 }
 
 // extractLead reads an optional bold headline, then the summary, under the release's own heading.

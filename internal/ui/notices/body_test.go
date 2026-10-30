@@ -15,11 +15,11 @@ func pickersRelease() Release {
 		Version:  "v0.40.0",
 		Headline: "Model + reasoning pickers are here!",
 		Summary:  "Every session runs on its own model. Press `ctrl+x` for effort.",
-		Highlights: []string{
-			"`Model and reasoning pickers` are here, in the New Session modal",
-			"Antigravity CLI and Oh My Pi are built-in agents",
+		Highlights: []Highlight{
+			{Text: "`Model and reasoning pickers` are here, in the New Session modal"},
+			{Text: "Antigravity CLI and Oh My Pi are built-in agents"},
 		},
-		Thanks: []string{"@someone asked for it (#1)"},
+		Thanks: []Thanks{{Handle: "@someone", Group: ThanksBuilt, Text: "asked for it", Refs: []string{"#1"}}},
 		Changes: []Change{
 			{Kind: KindFeature, Text: "Config: Add Antigravity CLI support", Author: "@mateuszgachowski"},
 			{Kind: KindFix, Text: "UI: Keep the focused pane painted"},
@@ -210,7 +210,7 @@ func TestOlderReleasesShowHeadlineHighlightsAndCounts(t *testing.T) {
 		Version:    "v0.39.0",
 		Headline:   "Mouse rows",
 		Summary:    "An older summary that stays on the web page.",
-		Highlights: []string{"One click focuses a session"},
+		Highlights: []Highlight{{Text: "One click focuses a session"}},
 		Changes: []Change{
 			{Kind: KindFeature, Text: "UI: Row handles"},
 			{Kind: KindFix, Text: "UI: Older fix one"},
@@ -311,7 +311,7 @@ func TestScrollingBodyKeepsItsWidestRowWhole(t *testing.T) {
 }
 
 func TestOlderHeadlineWidensTheModal(t *testing.T) {
-	older := Release{Version: "v0.39.0", Headline: strings.Repeat("h", 80), Highlights: []string{"A highlight"}}
+	older := Release{Version: "v0.39.0", Headline: strings.Repeat("h", 80), Highlights: []Highlight{{Text: "A highlight"}}}
 	n := Notice{ReleaseNotes: true, Releases: []Release{older, pickersRelease()}, RangeComplete: true}
 	want := lipgloss.Width("v0.39.0 · "+older.Headline) + scrollbarWidth
 	if got := innerWidth([]Notice{n}, 300); got != want {
@@ -325,7 +325,7 @@ func TestOlderHeadlineWidensTheModal(t *testing.T) {
 func TestOlderChangesBehindHighlightsDoNotWidenTheModal(t *testing.T) {
 	older := Release{
 		Version:      "v0.39.0",
-		Highlights:   []string{"A highlight"},
+		Highlights:   []Highlight{{Text: "A highlight"}},
 		Changes:      []Change{{Kind: KindFix, Text: strings.Repeat("c", 140)}},
 		TotalChanges: 1,
 	}
@@ -385,7 +385,7 @@ func TestReleaseSummaryMarksOmittedChangesAndPartialRange(t *testing.T) {
 
 func TestReleaseSummaryShowsTheListUnderTheHighlights(t *testing.T) {
 	release := releaseWithTotal("v0.34.0", 17, "UI: Full screen sessions mode")
-	release.Highlights = []string{"The session list can take the whole terminal"}
+	release.Highlights = []Highlight{{Text: "The session list can take the whole terminal"}}
 	body := ansi.Strip(strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n"))
 
 	if !strings.Contains(body, "• The session list can take the whole terminal") {
@@ -400,10 +400,10 @@ func TestReleaseSummaryShowsTheListUnderTheHighlights(t *testing.T) {
 
 func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 	release := releaseWithTotal("v0.35.0", 7, "UI: Add header and stats visibility settings")
-	release.Highlights = []string{"Revive without a captured id opens the tool's own picker"}
-	release.Thanks = []string{
-		"@dolutech asked in #388 and built the picker (#400)",
-		"@fruch reported that a live rename moved the worktree (#418)",
+	release.Highlights = []Highlight{{Text: "Revive without a captured id opens the tool's own picker"}}
+	release.Thanks = []Thanks{
+		{Handle: "@dolutech", Group: ThanksBuilt, Text: "asked in #388 and built the picker", Refs: []string{"#400"}},
+		{Handle: "@fruch", Group: ThanksFound, Text: "reported that a live rename moved the worktree", Refs: []string{"#418"}},
 	}
 	body := ansi.Strip(strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n"))
 
@@ -425,7 +425,7 @@ func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 func TestThanksDrawTheHandleInTheAuthorColor(t *testing.T) {
 	useTrueColor(t)
 	release := releaseOf("v0.45.0", "UI: A change")
-	release.Thanks = []string{"@subbeh built environment profiles (#834)"}
+	release.Thanks = []Thanks{{Handle: "@subbeh", Group: ThanksBuilt, Text: "built environment profiles", Refs: []string{"#834"}}}
 	joined := strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n")
 	if !strings.Contains(joined, lipgloss.NewStyle().Foreground(testTheme().Accent2).Render("@subbeh")) {
 		t.Fatalf("the thanked handle is not in the author color:\n%q", joined)
@@ -434,7 +434,7 @@ func TestThanksDrawTheHandleInTheAuthorColor(t *testing.T) {
 
 func TestReleaseSummaryShowsThanksUnderGeneratedList(t *testing.T) {
 	release := releaseOf("v0.33.0", "UI: A change")
-	release.Thanks = []string{"@pandysp asked for a way to put the preview away in #357"}
+	release.Thanks = []Thanks{{Handle: "@pandysp", Group: ThanksBuilt, Text: "asked for a way to put the preview away in #357"}}
 	body := ansi.Strip(strings.Join(renderBody(Notice{
 		Releases:      []Release{release},
 		RangeComplete: true,

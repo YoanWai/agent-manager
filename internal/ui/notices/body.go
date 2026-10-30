@@ -83,7 +83,7 @@ func measure(n Notice) []string {
 			lines = append(lines, releaseHeading(release, newest))
 		}
 		for _, highlight := range release.Highlights {
-			lines = append(lines, "• "+plainMarks(highlight))
+			lines = append(lines, "• "+plainMarks(highlight.line()))
 		}
 		switch {
 		case newest || len(release.Highlights) == 0:
@@ -94,7 +94,7 @@ func measure(n Notice) []string {
 			lines = append(lines, changeCounts(release.Changes))
 		}
 		for _, thanks := range release.Thanks {
-			lines = append(lines, "• "+thanks)
+			lines = append(lines, "• "+thanks.line())
 		}
 	}
 	return lines
@@ -157,7 +157,7 @@ func releaseSections(release Release, newest, ranged bool, width int, t Theme) [
 		section := []string{label("HIGHLIGHTS", t)}
 		mark := lipgloss.NewStyle().Foreground(t.Accent)
 		for _, highlight := range release.Highlights {
-			section = appendBullet(section, markedRuns(highlight), width, t.Value, mark, t.Key)
+			section = appendBullet(section, markedRuns(highlight.line()), width, t.Value, mark, t.Key)
 		}
 		sections = append(sections, section)
 	}
@@ -171,7 +171,7 @@ func releaseSections(release Release, newest, ranged bool, width int, t Theme) [
 		section := []string{label("THANK YOU", t)}
 		handle := lipgloss.NewStyle().Foreground(t.Accent2)
 		for _, thanks := range release.Thanks {
-			section = appendBullet(section, handleRuns(thanks), width, t.Muted, t.Muted, handle)
+			section = appendBullet(section, handleRuns(thanks.line()), width, t.Muted, t.Muted, handle)
 		}
 		sections = append(sections, section)
 	}

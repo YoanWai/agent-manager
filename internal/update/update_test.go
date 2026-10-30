@@ -414,7 +414,7 @@ func TestLegacyCatalogSeedsTheFirstPaint(t *testing.T) {
 		t.Fatalf("seed = %+v", seeded)
 	}
 	newest := seeded.Releases[0]
-	if !slices.Equal(newest.Highlights, []string{"Pickers are here"}) || !slices.Equal(newest.Thanks, []string{"@someone asked (#1)"}) {
+	if !slices.Equal(newest.Highlights, []Highlight{{Text: "Pickers are here"}}) || !slices.EqualFunc(newest.Thanks, []Thanks{{Handle: "@someone", Group: ThanksBuilt, Text: "asked", Refs: []string{"#1"}}}, sameThanks) {
 		t.Fatalf("the authored sections must carry over: %+v", newest)
 	}
 	if !slices.Equal(newest.Changes, []Change{{Kind: KindOther, Text: "UI: A feature · @someone"}}) || newest.TotalChanges != 1 {
@@ -594,20 +594,20 @@ func TestExtractHighlightsReadsTheAuthoredBullets(t *testing.T) {
 		"**Full Changelog**: https://example.com/compare",
 	}, "\n")
 
-	want := []string{
-		"The session list can take the whole terminal",
-		"Rows carry the agent's `last message` beside the name",
-		"Full notes explain the rest",
+	want := []Highlight{
+		{Text: "The session list can take the whole terminal"},
+		{Text: "Rows carry the agent's `last message` beside the name"},
+		{Text: "Full notes explain the rest"},
 	}
-	if got := extractHighlights(body); fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("extractHighlights() = %q, want %q", got, want)
+	if got := extractHighlights(body, "v0.45.0"); !slices.Equal(got, want) {
+		t.Fatalf("extractHighlights() = %+v, want %+v", got, want)
 	}
 }
 
 func TestExtractHighlightsIsEmptyWithoutTheSection(t *testing.T) {
 	body := "## What's Changed\n* feat(ui): a feature\n"
-	if got := extractHighlights(body); len(got) != 0 {
-		t.Fatalf("extractHighlights() = %q, want none", got)
+	if got := extractHighlights(body, "v0.45.0"); len(got) != 0 {
+		t.Fatalf("extractHighlights() = %+v, want none", got)
 	}
 }
 
@@ -616,12 +616,12 @@ func TestExtractHighlightsStopsAtTheCap(t *testing.T) {
 	for i := 0; i < maxHighlights+3; i++ {
 		lines = append(lines, fmt.Sprintf("- highlight %d", i))
 	}
-	got := extractHighlights(strings.Join(lines, "\n"))
+	got := extractHighlights(strings.Join(lines, "\n"), "v0.45.0")
 	if len(got) != maxHighlights {
 		t.Fatalf("extractHighlights() kept %d, want %d", len(got), maxHighlights)
 	}
-	if got[maxHighlights-1] != fmt.Sprintf("Highlight %d", maxHighlights-1) {
-		t.Fatalf("extractHighlights() last = %q", got[maxHighlights-1])
+	if got[maxHighlights-1].Text != fmt.Sprintf("Highlight %d", maxHighlights-1) {
+		t.Fatalf("extractHighlights() last = %+v", got[maxHighlights-1])
 	}
 }
 
@@ -642,23 +642,23 @@ func TestExtractThanksReadsTheAuthoredBullets(t *testing.T) {
 		"* feat(config): revive without an id opens the tool's session picker",
 	}, "\n")
 
-	want := []string{
-		"@dolutech asked for reboot recovery in #388 and then built the picker (#400)",
-		"@pandysp asked to hide the stats foot and the header in #408 and #409",
-		"@fruch reported that a live rename moved the worktree (#418)",
+	want := []Thanks{
+		{Handle: "@dolutech", Group: ThanksBuilt, Text: "asked for reboot recovery in #388 and then built the picker", Refs: []string{"#400"}},
+		{Handle: "@pandysp", Group: ThanksBuilt, Text: "asked to hide the stats foot and the header in #408 and #409"},
+		{Handle: "@fruch", Group: ThanksBuilt, Text: "reported that a live rename moved the worktree", Refs: []string{"#418"}},
 	}
-	if got := extractThanks(body); fmt.Sprint(got) != fmt.Sprint(want) {
-		t.Fatalf("extractThanks() = %q, want %q", got, want)
+	if got := extractThanks(body); !slices.EqualFunc(got, want, sameThanks) {
+		t.Fatalf("extractThanks() = %+v, want %+v", got, want)
 	}
-	if got := extractHighlights(body); len(got) != 1 {
-		t.Fatalf("highlights leaked thanks: %q", got)
+	if got := extractHighlights(body, "v0.45.0"); len(got) != 1 {
+		t.Fatalf("highlights leaked thanks: %+v", got)
 	}
 }
 
 func TestExtractThanksIsEmptyWithoutTheSection(t *testing.T) {
 	body := "## Highlights\n- a feature\n\n## What's Changed\n* feat(ui): a feature\n"
 	if got := extractThanks(body); len(got) != 0 {
-		t.Fatalf("extractThanks() = %q, want none", got)
+		t.Fatalf("extractThanks() = %+v, want none", got)
 	}
 }
 
@@ -682,24 +682,24 @@ func TestCatalogCarriesHighlightsThroughTheCache(t *testing.T) {
 	defer swapReleasesURL(server.URL)()
 
 	dir := t.TempDir()
-	wantHighlights := []string{"The list can take the whole terminal"}
-	wantThanks := []string{"@pandysp asked for full screen in #357"}
+	wantHighlights := []Highlight{{Text: "The list can take the whole terminal"}}
+	wantThanks := []Thanks{{Handle: "@pandysp", Group: ThanksBuilt, Text: "asked for full screen in #357"}}
 	fetched, err := Check(context.Background(), dir, "v0.33.0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fetched.Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(wantHighlights) {
-		t.Fatalf("fetched highlights = %q, want %q", got, wantHighlights)
+	if got := fetched.Releases[0].Highlights; !slices.Equal(got, wantHighlights) {
+		t.Fatalf("fetched highlights = %+v, want %+v", got, wantHighlights)
 	}
-	if got := fetched.Releases[0].Thanks; fmt.Sprint(got) != fmt.Sprint(wantThanks) {
-		t.Fatalf("fetched thanks = %q, want %q", got, wantThanks)
+	if got := fetched.Releases[0].Thanks; !slices.EqualFunc(got, wantThanks, sameThanks) {
+		t.Fatalf("fetched thanks = %+v, want %+v", got, wantThanks)
 	}
 	cached := Cached(dir, "v0.33.0")
-	if got := cached.Releases[0].Highlights; fmt.Sprint(got) != fmt.Sprint(wantHighlights) {
-		t.Fatalf("cached highlights = %q, want %q", got, wantHighlights)
+	if got := cached.Releases[0].Highlights; !slices.Equal(got, wantHighlights) {
+		t.Fatalf("cached highlights = %+v, want %+v", got, wantHighlights)
 	}
-	if got := cached.Releases[0].Thanks; fmt.Sprint(got) != fmt.Sprint(wantThanks) {
-		t.Fatalf("cached thanks = %q, want %q", got, wantThanks)
+	if got := cached.Releases[0].Thanks; !slices.EqualFunc(got, wantThanks, sameThanks) {
+		t.Fatalf("cached thanks = %+v, want %+v", got, wantThanks)
 	}
 }
 
@@ -755,17 +755,64 @@ func TestExtractLeadBoundsTheSummary(t *testing.T) {
 
 func TestHighlightsKeepBalancedAccentMarks(t *testing.T) {
 	body := "## Highlights\n- press `ctrl+x` to step effort\n- a stray ` mark is dropped\n"
-	want := []string{"Press `ctrl+x` to step effort", "A stray  mark is dropped"}
-	if got := extractHighlights(body); !slices.Equal(got, want) {
-		t.Fatalf("extractHighlights() = %q, want %q", got, want)
+	want := []Highlight{{Text: "Press `ctrl+x` to step effort"}, {Text: "A stray  mark is dropped"}}
+	if got := extractHighlights(body, "v0.45.0"); !slices.Equal(got, want) {
+		t.Fatalf("extractHighlights() = %+v, want %+v", got, want)
 	}
 }
 
 func TestThanksStayPlain(t *testing.T) {
 	body := "## Thank you\n- @someone fixed `the thing` (#12)\n"
-	want := []string{"@someone fixed the thing (#12)"}
-	if got := extractThanks(body); !slices.Equal(got, want) {
-		t.Fatalf("extractThanks() = %q, want %q", got, want)
+	want := []Thanks{{Handle: "@someone", Group: ThanksBuilt, Text: "fixed the thing", Refs: []string{"#12"}}}
+	if got := extractThanks(body); !slices.EqualFunc(got, want, sameThanks) {
+		t.Fatalf("extractThanks() = %+v, want %+v", got, want)
+	}
+}
+
+func sameThanks(a, b Thanks) bool {
+	return a.Handle == b.Handle && a.Group == b.Group && a.Text == b.Text && slices.Equal(a.Refs, b.Refs)
+}
+
+func TestHighlightLabelsStartAtTheCutoff(t *testing.T) {
+	body := "## Highlights\n- `First-run setup` picks your agents.\n- Plain line.\n"
+	want := []Highlight{{Label: "First-run setup", Text: "Picks your agents."}, {Text: "Plain line."}}
+	if got := extractHighlights(body, "v0.46.0"); !slices.Equal(got, want) {
+		t.Fatalf("extractHighlights() = %+v, want %+v", got, want)
+	}
+	old := extractHighlights("## Highlights\n- `agent-manager export` and `import` move settings.\n", "v0.45.0")
+	if wantOld := (Highlight{Text: "`agent-manager export` and `import` move settings."}); len(old) != 1 || old[0] != wantOld {
+		t.Fatalf("a release before the cutoff keeps its backticks in one line, got %+v", old)
+	}
+}
+
+func TestThanksReadGroupsHandlesAndRefs(t *testing.T) {
+	body := "## Thank you\n### Built it\n- @subbeh built environment profiles (#832, #834)\n### Found it\n- @ptrin measured the idle CPU spin (#894)\n### Started something\n- @larroy opened fixes for the worktree row (#929, #930)\n"
+	want := []Thanks{
+		{Handle: "@subbeh", Group: ThanksBuilt, Text: "built environment profiles", Refs: []string{"#832", "#834"}},
+		{Handle: "@ptrin", Group: ThanksFound, Text: "measured the idle CPU spin", Refs: []string{"#894"}},
+		{Handle: "@larroy", Group: ThanksStarted, Text: "opened fixes for the worktree row", Refs: []string{"#929", "#930"}},
+	}
+	if got := extractThanks(body); !slices.EqualFunc(got, want, sameThanks) {
+		t.Fatalf("extractThanks() = %+v, want %+v", got, want)
+	}
+}
+
+func TestUngroupedThanksWithoutRefsStayUnderBuilt(t *testing.T) {
+	want := []Thanks{{Handle: "@someone", Group: ThanksBuilt, Text: "asked for it"}}
+	if got := extractThanks("## Thank you\n- @someone asked for it\n"); !slices.EqualFunc(got, want, sameThanks) {
+		t.Fatalf("extractThanks() = %+v, want %+v", got, want)
+	}
+}
+
+func TestThanksKeepTheLineBoundWithTheirRefs(t *testing.T) {
+	body := "## Thank you\n- @someone " + strings.Repeat("word ", 60) + "(#1, #2)\n"
+	got := extractThanks(body)
+	if len(got) != 1 || !slices.Equal(got[0].Refs, []string{"#1", "#2"}) {
+		t.Fatalf("refs must survive the bound: %+v", got)
+	}
+	line := got[0].Handle + " " + got[0].Text + " (#1, #2)"
+	if visible := len([]rune(line)); visible > maxLineLength {
+		t.Fatalf("thanks line is %d characters, want at most %d", visible, maxLineLength)
 	}
 }
 
@@ -831,7 +878,7 @@ func TestCatalogFileWinsOverTheLegacyFile(t *testing.T) {
 func TestParserNumberPinsTheReleaseShape(t *testing.T) {
 	shapes := map[int][]string{
 		1: {"version", "url", "headline", "summary", "highlights", "thanks", "changes.kind", "changes.text", "changes.author", "total_changes"},
-		2: {"version", "url", "published_at", "headline", "summary", "highlights", "thanks", "changes.kind", "changes.scope", "changes.text", "changes.author", "total_changes"},
+		2: {"version", "url", "published_at", "headline", "summary", "highlights.label", "highlights.text", "thanks.handle", "thanks.group", "thanks.text", "thanks.refs", "changes.kind", "changes.scope", "changes.text", "changes.author", "total_changes"},
 	}
 	want, ok := shapes[catalogParser]
 	if !ok {

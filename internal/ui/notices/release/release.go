@@ -182,13 +182,22 @@ func releaseRange(catalog update.ReleaseRange) notices.ReleaseRange {
 		for i, change := range release.Changes {
 			changes[i] = notices.Change{Kind: change.Kind, Scope: change.Scope, Text: change.Text, Author: change.Author}
 		}
+		highlights := make([]notices.Highlight, len(release.Highlights))
+		for i, highlight := range release.Highlights {
+			highlights[i] = notices.Highlight{Label: highlight.Label, Text: highlight.Text}
+		}
+		thanks := make([]notices.Thanks, len(release.Thanks))
+		for i, entry := range release.Thanks {
+			thanks[i] = notices.Thanks{Handle: entry.Handle, Group: entry.Group, Text: entry.Text, Refs: entry.Refs}
+		}
 		out.Releases = append(out.Releases, notices.Release{
 			Version:      release.Version,
 			URL:          release.URL,
+			PublishedAt:  release.PublishedAt,
 			Headline:     release.Headline,
 			Summary:      release.Summary,
-			Highlights:   release.Highlights,
-			Thanks:       release.Thanks,
+			Highlights:   highlights,
+			Thanks:       thanks,
 			Changes:      changes,
 			TotalChanges: release.TotalChanges,
 		})
