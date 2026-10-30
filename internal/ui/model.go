@@ -226,7 +226,9 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		return nil, err
 	}
 	applyTheme(themes[themeIndex(resolveStartupTheme(st))])
-	driver.SetSessionKeys(sessionKeys)
+	if err := sessioncmd.ApplyBindingSettings(st, driver); err != nil {
+		return nil, err
+	}
 	model := &Model{
 		effects: effectState{lifetime: &effectLifetime{}},
 		poller:  &poller{runner: deps.Execution},

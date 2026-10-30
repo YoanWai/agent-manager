@@ -124,6 +124,16 @@ func (m *Model) requestRefresh() {
 	m.poller.requestRefresh()
 }
 
+// rebindSessions rereads what the in-session bindings are built from and
+// installs them again, for a setting that changes them. It reads the store
+// and runs tmux, so it runs as a command, off the update path.
+func (m *Model) rebindSessions() tea.Msg {
+	if err := sessioncmd.ApplyBindingSettings(m.services.store, m.services.tmux); err != nil {
+		return errMsg{err}
+	}
+	return m.refreshExistingSessionUX()
+}
+
 // refreshExistingSessionUX re-applies the tmux bindings and status bar to
 // sessions that were already running when the manager started, so a session
 // created before an update still gets the current key bindings (the

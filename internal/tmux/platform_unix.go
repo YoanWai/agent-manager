@@ -53,6 +53,21 @@ func rootBinding(key keybind.Key, action ...string) []string {
 	return []string{"bind-key", "-n", key.Tmux(), "if-shell", "-F", ownedBindingTest, strings.Join(action, " "), passThrough}
 }
 
+// promptHeadBinding binds ← to detach when check, run in the shell with the
+// session's name after it, says the caret sits at the head of the agent's
+// prompt, and to reach the agent as itself otherwise. if-shell without -b
+// holds the keys typed after ← until the check answers, so none of them
+// lands ahead of the ← it follows.
+func promptHeadBinding(check string) []string {
+	ask := "if-shell " + quoteCommandArg(check+" #{q:session_name}") + " detach-client 'send-keys Left'"
+	return []string{"bind-key", "-n", "Left", "if-shell", "-F", ownedBindingTest, ask, "send-keys Left"}
+}
+
+// quoteCommandArg quotes s as one word of a tmux command string.
+func quoteCommandArg(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
 // requestAction leaves the request marker and detaches, as the one command
 // string an if-shell branch takes.
 func (d *Driver) requestAction(_ string, name string) []string {

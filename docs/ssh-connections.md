@@ -82,4 +82,4 @@ These are refused on a remote row with a message naming the gap:
 - Kill all and revive all.
 - File reservations and tasks, which stay per host.
 
-Focus and attach on a remote row open an SSH attach in the terminal, not the embedded focus view. Inside it, the host's review and editor keys detach like its back key does, and the manager says they work only for sessions on this machine. The host's own manager never sees the request, since the attach takes it back off that host's tmux server.
+Focus and attach on a remote row open an SSH attach in the terminal, not the embedded focus view. Inside it, `←` at the start of the agent's prompt goes back to the list as it does on this machine, when the host has the ←→ setting on. The host's review and editor keys detach like its back key does, and the manager says they work only for sessions on this machine. The host's own manager never sees the request, since the attach takes it back off that host's tmux server.

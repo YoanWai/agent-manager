@@ -270,7 +270,7 @@ func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status-right-length: %v", err)
 	}
-	if strings.TrimSpace(string(length)) != "100" {
+	if strings.TrimSpace(string(length)) != "120" {
 		t.Fatalf("status-right-length should fit the footer, got %q", length)
 	}
 	left, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
@@ -596,14 +596,16 @@ func TestAttachStatusRightNamesTheKeyTable(t *testing.T) {
 	for _, tc := range []struct {
 		name, primary, secondary string
 		keys                     keybind.Table
+		promptHead               bool
 		want                     string
 	}{
-		{"defaults", "C-b", "None", keybind.DefaultSession(), ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ / C-b d = back `},
-		{"no prefix", "None", "None", keybind.DefaultSession(), ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ = back `},
-		{"custom", "C-b", "None", custom, " agent-manager · Ctrl+g = review · F9 / Alt+q / C-b d = back "},
-		{"prefix shadows a custom key", "M-q", "None", custom, " agent-manager · Ctrl+g = review · F9 / M-q d = back "},
+		{"defaults", "C-b", "None", keybind.DefaultSession(), false, ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ / C-b d = back `},
+		{"no prefix", "None", "None", keybind.DefaultSession(), false, ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ = back `},
+		{"custom", "C-b", "None", custom, false, " agent-manager · Ctrl+g = review · F9 / Alt+q / C-b d = back "},
+		{"prefix shadows a custom key", "M-q", "None", custom, false, " agent-manager · Ctrl+g = review · F9 / M-q d = back "},
+		{"arrow step", "C-b", "None", keybind.DefaultSession(), true, ` agent-manager · Ctrl+r = review · F3 = editor · Ctrl+q / Ctrl+\ / C-b d / ← prompt start = back `},
 	} {
-		if got := attachStatusRight(tc.primary, tc.secondary, tc.keys); got != tc.want {
+		if got := attachStatusRight(tc.primary, tc.secondary, tc.keys, tc.promptHead); got != tc.want {
 			t.Errorf("%s:\n got %q\nwant %q", tc.name, got, tc.want)
 		}
 	}
