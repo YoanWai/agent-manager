@@ -211,7 +211,7 @@ agent-manager
 
 ```bash
 go run .
-env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...   # 端到端测试会驱动一个真实的 tmux 服务器
+mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...   # 端到端测试会驱动一个真实的 tmux 服务器
 ```
 
 CI 运行的检查见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)。如果你让编程智能体处理这个仓库，请让它阅读 [AGENTS.md](AGENTS.md)。

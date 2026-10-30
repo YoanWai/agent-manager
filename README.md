@@ -209,7 +209,7 @@ Configuration (Settings, the editor `o` opens, and the key tables) is in [docs/c
 
 ```bash
 go run .
-env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...   # end-to-end tests drive a real tmux server
+mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...   # end-to-end tests drive a real tmux server
 ```
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the checks CI runs, and [AGENTS.md](AGENTS.md) if you point a coding agent at this repo.
