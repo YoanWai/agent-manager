@@ -86,6 +86,24 @@ class SelectionTests(unittest.TestCase):
                 patch.object(ssh_scenarios, 'key'), patch.object(ssh_scenarios, 'frame'):
             ssh_scenarios.attach(self.sandbox, object(), 'fixture-id')
 
+    def test_archived_selection_waits_for_the_archived_roster(self):
+        active = ('├─ remote-agent  starting'.ljust(scenarios.RAIL_WIDTH) + 'remote-agent  on box  starting up\n' +
+                  '╰─ api  idle'.ljust(scenarios.RAIL_WIDTH))
+        polling = '▾ box  ssh  no agents yet'.ljust(scenarios.RAIL_WIDTH) + 'box  ssh'
+        archived = '╰─ remote-agent  dead'.ljust(scenarios.RAIL_WIDTH) + 'remote-agent  on box  archived'
+        frames = iter([active, polling, archived])
+        observed = active
+        def capture(_):
+            nonlocal observed
+            observed = next(frames)
+            return observed
+        def select(*_):
+            self.assertEqual(observed, archived, 'selection preceded the archived roster')
+        with patch.object(ssh_scenarios, 'capture', side_effect=capture), \
+                patch.object(ssh_scenarios, 'select', side_effect=select) as selected:
+            ssh_scenarios.select_archived_agent(self.sandbox)
+        selected.assert_called_once()
+
     def test_rail_visibility_does_not_prove_selected_row(self):
         frame = 'wanted'.ljust(scenarios.RAIL_WIDTH) + 'other agent'
         self.assertFalse(scenarios.row_selected(frame, 'wanted'))

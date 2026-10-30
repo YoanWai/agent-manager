@@ -191,6 +191,17 @@ def select_remote_agent(sandbox):
     select(sandbox, 'remote-agent', f'{REMOTE_AGENT}  on {CONNECTION}')
 
 
+def rail_lists(frame, name):
+    return any(re.search(r'\b' + re.escape(name) + r'\b', line[:RAIL_WIDTH]) for line in frame.splitlines())
+
+
+def select_archived_agent(sandbox):
+    # The archived list redraws only after the next polls. Until then u lands on a row it cannot restore.
+    sandbox.wait('archived-roster', lambda: capture(sandbox),
+                 lambda value: rail_lists(value, REMOTE_AGENT) and not rail_lists(value, GROUPED_AGENT))
+    select(sandbox, 'archived-agent', f'{REMOTE_AGENT}  on {CONNECTION}')
+
+
 def add_connection(sandbox, name):
     key(sandbox, 'C')
     frame(sandbox, name + '-dialog', 'New SSH Connection')
@@ -235,7 +246,7 @@ def lifecycle(sandbox, remote, agent_id):
                  lambda value: value == '[(1,)]')
     key(sandbox, 't')
     frame(sandbox, 'archived-view', 'ARCHIVED')
-    select(sandbox, 'archived-agent', f'{REMOTE_AGENT}  on {CONNECTION}')
+    select_archived_agent(sandbox)
     key(sandbox, 'u')
     confirm(sandbox, 'remote-restore', f'restore {REMOTE_AGENT} on {CONNECTION}?',
             f'restored {REMOTE_AGENT} on {CONNECTION}')
