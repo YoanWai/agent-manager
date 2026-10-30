@@ -32,7 +32,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
 | `→` | Step into the row: focus the session, or open the group. Settings (`s`) can turn the pair off |
-| `←` | Step out: close the group, or — focused or attached, with the caret at the start of the agent's prompt — back to the manager. In an attach (`A`, or a session on an SSH connection) the host's tmux binds `←` and asks the host's agent-manager where the caret is, so it works on macOS and Linux hosts; Windows keeps `←` for the agent. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
+| `←` | Step out: close the group, or — focused or attached, with the caret at the start of the agent's prompt — back to the manager. In an attach (`A`, or a session on an SSH connection) the host's tmux binds `←` and asks the host's agent-manager where the caret is, so it works on macOS and Linux hosts; Windows keeps `←` for the agent. The tool's input-row rules (`input_prefix`, falling back to `activity_cutoff`) identify the prompt, including markerless composers such as Pi's. If the prompt head cannot be identified, `←` stays with the agent; anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move a session to a group, a terminal into a session, or a group under another group |
 | `r` | Rename session / edit tool; edit group name and default path |
