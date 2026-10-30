@@ -244,9 +244,9 @@ with `gh release edit <tag> --notes-file notes.md`.
   `spawn`, `mcp`, and the rest of the workspace CLI) and boots the TUI.
 - `internal/ui` is the Bubble Tea program: one `Model` that routes messages
   and composes the frame. Help, Review, Focus, the Rail, Settings, the New
-  Session form, the quick bar, the small dialogs and the notices panel live in
-  child packages
-  (`internal/ui/{help,review,focus,rail,settings,spawn,quick,dialogs,notices}`);
+  Session form, the quick bar, the small dialogs, the notices panel and the
+  first-run setup live in child packages
+  (`internal/ui/{help,review,focus,rail,settings,spawn,quick,dialogs,notices,onboarding}`);
   `presentation` holds shared text helpers and `theme` the palettes. Features
   that stay in `ui` each own their state, keys and view through a type with a
   narrow host interface: `pathComplete`, `composer` and

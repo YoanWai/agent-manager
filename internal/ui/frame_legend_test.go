@@ -94,7 +94,7 @@ func TestViewLegendPaintsWaitingMessagesWarm(t *testing.T) {
 	idle := &Model{
 		services: services{store: st, keys: keybind.DefaultSession(), listKeys: keybind.DefaultList()},
 		update:   updateInfo{version: "0.40.0"},
-		notices:  noticesPanel{Panel: uinotices.NewPanel(map[string]bool{uinotices.Welcome: true})},
+		notices:  noticesPanel{Panel: uinotices.NewPanel(nil)},
 	}
 	idleBar := ansi.Strip(paintLegend([]legendSection{idle.viewLegend()}, 160, presentation.DefaultGlyphMode).text)
 	if strings.Contains(idleBar, "unread") {

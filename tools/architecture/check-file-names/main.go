@@ -32,6 +32,7 @@ var packaged = map[string]string{
 	"focus":       "the Focus adapter, its frame view and the pane watcher it holds",
 	"help":        "the Help adapter",
 	"notices":     "the notices adapter, release and feed checks and self-update",
+	"onboarding":  "the first-run setup adapter, its lookup of installed agents and its live preview",
 	"quick":       "the quick bar adapter and its send effect",
 	"rail":        "the Rail adapter",
 	"review":      "the Review adapter",

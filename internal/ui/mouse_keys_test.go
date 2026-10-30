@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/feed"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -65,10 +67,8 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
+	m.notices.feedMessages = []feed.Message{{ID: noticeTip, Title: "A tip", Body: []string{strings.Repeat("a tip wide enough to give the card room for every key ", 2)}}}
 	m.openNotices("")
-	if len(m.activeNotices()) == 0 {
-		t.Fatal("test setup: a fresh model shows the welcome notice")
-	}
 	for _, key := range []string{"↑↓ pick", "pgup/pgdn"} {
 		x, y := paintedCell(t, m, key)
 		if _, ok := m.layout.keyHits.at(x, y); ok {

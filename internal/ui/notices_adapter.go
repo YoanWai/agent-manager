@@ -71,8 +71,6 @@ func (m *Model) noticeSources() uinotices.Sources {
 		WhatsNewVersion:   m.notices.whatsNewVersion,
 		WhatsNewFrom:      m.notices.whatsNewFromVersion,
 		ConfigImportError: m.notices.configImportError,
-		SessionKeys:       m.services.keys,
-		ListKeys:          m.services.listKeys,
 	}
 }
 
@@ -169,12 +167,16 @@ func featureRequestURL() string {
 	return repoURL + "/issues/new?template=feature_request.yml"
 }
 
-// startupNotice decides what greets this launch: the welcome notice the
-// first time the manager ever runs, the what's-new notice the first run
-// after an update, nothing otherwise. It advances the stored version as a
-// side effect, so each greeting fires exactly once; the notice itself
-// stays listed until dismissed.
-func (m *Model) startupNotice() string {
+// setupGreeting is the greeting of the first launch: the first-run setup
+// rather than a notice.
+const setupGreeting = "setup"
+
+// startupGreeting decides what greets this launch: the setup the first time
+// the manager ever runs, the what's-new notice the first run after an
+// update, nothing otherwise. It advances the stored version as a side
+// effect, so each greeting fires exactly once. The what's-new notice stays
+// listed until dismissed.
+func (m *Model) startupGreeting() string {
 	seen, err := m.services.store.Setting(lastSeenVersionSetting)
 	if err != nil {
 		return ""
@@ -187,7 +189,7 @@ func (m *Model) startupNotice() string {
 			m.reportErr(err.Error())
 			return ""
 		}
-		return uinotices.Welcome
+		return setupGreeting
 	}
 	if !update.Newer(m.update.version, seen) {
 		if err := m.services.store.SetSetting(lastSeenVersionSetting, m.update.version); err != nil {
@@ -253,15 +255,20 @@ func (m *Model) openNotices(id string) {
 	m.mode = modeNotices
 }
 
-// openStartupNotice greets the launch when there is something to say:
-// the welcome message on the first run ever, what's new on the first run
-// after an update. A dev build is the developer's own tree, not an
-// install, so it never greets and never advances the stored version.
-func (m *Model) openStartupNotice() {
+// openStartupGreeting greets the launch when there is something to say:
+// the setup on the first run ever, what's new on the first run after an
+// update. A dev build is the developer's own tree, not an install, so it
+// never greets and never advances the stored version. The setup's lookup
+// starts from Init, once the program runs.
+func (m *Model) openStartupGreeting() {
 	if m.update.version == "dev" {
 		return
 	}
-	if id := m.startupNotice(); id != "" {
+	switch id := m.startupGreeting(); id {
+	case "":
+	case setupGreeting:
+		m.openSetup(true)
+	default:
 		m.openNotices(id)
 	}
 }

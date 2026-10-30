@@ -13,7 +13,6 @@ import (
 
 // IDs of the notices that ship in the binary.
 const (
-	Welcome           = "welcome"
 	ConfigNotImported = "config-not-imported"
 )
 

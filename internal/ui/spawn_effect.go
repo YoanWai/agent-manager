@@ -23,6 +23,7 @@ const (
 	spawnForm spawnKind = iota
 	spawnQuick
 	spawnShell
+	spawnImport
 )
 
 // spawnRequest captures everything a spawn needs at dispatch time, so the
@@ -258,7 +259,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 			m.ledger.awaitedRenames[sess.ID] = awaitedRename{generated: sess.Name, prompt: request.prompt}
 		}
-		if request.kind != spawnShell {
+		if request.kind != spawnShell && request.kind != spawnImport {
 			m.rememberSpawnPick(request.toolName, request.pickWorktree)
 			spawn.RememberModel(m.spawnHost(), request.toolName, spawn.Pick(request.choice))
 		}
@@ -278,6 +279,8 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			if m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0 {
 				m.quick.clearAfterSend()
 			}
+		case spawnImport:
+			reveal = m.mode == modeList
 		}
 		m.rebuildRows()
 		if reveal {

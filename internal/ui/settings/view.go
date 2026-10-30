@@ -135,7 +135,7 @@ func (s *State) View(ctx ViewContext) Frame {
 	// define one, and every row they never use crowds the ones they do.
 	s.envsHidden = len(ctx.Envs) == 0
 	if s.envsHidden && s.Field == FieldEnvs {
-		s.Field = FieldDocs
+		s.Field = FieldSetup
 	}
 	fields := make([]int, 0, FieldCount)
 	lines := make([]string, 0, FieldCount)
@@ -161,6 +161,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, actionRow(FieldPrompts, "saved prompts", "manage named instructions"))
 		case FieldEnvs:
 			lines = append(lines, lead(FieldEnvs, "environments")+st.Muted.Render(envSummary(ctx.Envs)))
+		case FieldSetup:
+			lines = append(lines, actionRow(FieldSetup, "first-run setup", "walk through it again"))
 		case FieldDocs:
 			lines = append(lines, ctaRow(FieldDocs, "docs", "open the docs"))
 		case FieldBugReport:
@@ -178,6 +180,8 @@ func (s *State) View(ctx ViewContext) Frame {
 	switch s.Field {
 	case FieldGlyphs:
 		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save and close"}}
+	case FieldSetup:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the setup"}, {"esc", "save and close"}}
 	case FieldDocs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save and close"}}
 	case FieldBugReport, FieldFeatureRequest:

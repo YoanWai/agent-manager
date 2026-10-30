@@ -2,7 +2,6 @@ package ui
 
 import (
 	"github.com/YoanWai/agent-manager/internal/feed"
-	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/x/ansi"
 	"strings"
@@ -16,11 +15,11 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 	m.update.latest = "v1.1.0"
 	m.update.refreshing, m.update.applying = true, true
 	for _, tc := range []struct {
-		mode                                                   presentation.GlyphMode
-		feed, welcome, update, refresh, download, link, cursor string
+		mode                                          presentation.GlyphMode
+		feed, update, refresh, download, link, cursor string
 	}{
-		{presentation.GlyphModeBasic, "i", "i", "^", "R", "v", "@", ">"},
-		{presentation.GlyphModeAdvanced, "◆", "✳", "↑", "↻", "↓", "↗", "▸"},
+		{presentation.GlyphModeBasic, "i", "^", "R", "v", "@", ">"},
+		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "↗", "▸"},
 	} {
 		m.prefs.glyphMode = tc.mode
 		notices := m.activeNotices()
@@ -29,8 +28,6 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 			switch n.ID {
 			case "literal":
 				want = tc.feed
-			case uinotices.Welcome:
-				want = tc.welcome
 			case "update-v1.1.0":
 				want = tc.update
 			}

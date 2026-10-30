@@ -5,18 +5,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/charmbracelet/x/ansi"
 )
 
 func testSources(latest string) Sources {
 	return Sources{
-		Store:       true,
-		Update:      Update{Version: "v0.2.0", Latest: latest},
-		SessionKeys: keybind.DefaultSession(),
-		ListKeys:    keybind.DefaultList(),
+		Store:  true,
+		Update: Update{Version: "v0.2.0", Latest: latest},
+		Feed:   []Message{{ID: testTip, Title: "A tip", URL: RepoURL + "#readme"}},
 	}
 }
+
+const testTip = "feed-tip"
 
 func testFrame() Frame {
 	return Frame{Width: 100, Height: 40, Theme: testTheme()}
@@ -44,12 +44,12 @@ func TestPanelRunsOnCopiedSources(t *testing.T) {
 	src := testSources("v0.3.0")
 	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
-	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", Welcome}) {
+	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", testTip}) {
 		t.Fatalf("notices = %v", got)
 	}
-	p.Open(notices, Welcome)
+	p.Open(notices, testTip)
 	if p.Cursor() != 1 {
-		t.Fatalf("open selected %d, want the welcome", p.Cursor())
+		t.Fatalf("open selected %d, want the tip", p.Cursor())
 	}
 
 	if out := p.Key(key("u"), notices, testFrame()); out.Action != Stay {
@@ -109,16 +109,16 @@ func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 	src := testSources("")
 	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
-	p.Open(notices, Welcome)
-	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != Welcome || !out.Close {
+	p.Open(notices, testTip)
+	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != testTip || !out.Close {
 		t.Fatalf("d on the only notice = %+v", out)
 	}
-	p.Dismiss(Welcome)
+	p.Dismiss(testTip)
 	if notices = p.Active(src); len(notices) != 0 {
 		t.Fatalf("dismissed notices still listed: %v", ids(notices))
 	}
-	p.Restore(Welcome)
-	if !slices.Equal(ids(p.Active(src)), []string{Welcome}) {
+	p.Restore(testTip)
+	if !slices.Equal(ids(p.Active(src)), []string{testTip}) {
 		t.Fatal("a restored notice is listed again")
 	}
 }
@@ -126,11 +126,11 @@ func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 func TestPanelReselectsByID(t *testing.T) {
 	p := NewPanel(map[string]bool{})
 	before := p.Active(testSources(""))
-	p.Open(before, Welcome)
+	p.Open(before, testTip)
 	selected := p.Selected(before)
 	after := p.Active(testSources("v0.3.0"))
 	p.Reselect(after, selected)
-	if after[p.Cursor()].ID != Welcome {
+	if after[p.Cursor()].ID != testTip {
 		t.Fatalf("selection moved to %q", after[p.Cursor()].ID)
 	}
 	p.Reselect(after, "gone")

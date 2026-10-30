@@ -113,6 +113,9 @@ func (m *Model) applySettingsResult(result uisettings.Result) (tea.Model, tea.Cm
 		return m, openLink(requestCLISupportURL())
 	case uisettings.ReportBug:
 		return m, openLink(bugReportURL(m.update.version))
+	case uisettings.OpenSetup:
+		model, save := m.saveAndCloseSettings()
+		return model, tea.Batch(save, m.openSetup(false))
 	case uisettings.Update:
 		if m.update.applying {
 			return m, nil
