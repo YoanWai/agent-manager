@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -23,7 +24,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from scenarios import (FAKE_BIN, FAKE_CLI, READY_MARKER, capture, config_fixture_text,
+from scenarios import (FAKE_BIN, FAKE_CLI, RAIL_WIDTH, READY_MARKER, capture, config_fixture_text,
                        ensure_binary, fake_cli_script, frame, key, last_frame, preview_of, profile_dir,
                        seed_store)
 from smoke import Sandbox
@@ -128,7 +129,7 @@ def write_fixtures(sandbox, remote, binary):
     for path in (bin_dir / FAKE_BIN, bin_dir / 'ssh', shell):
         path.chmod(0o755)
     for profile in (profile_dir(sandbox), remote.profile()):
-        profile.mkdir(parents=True)
+        profile.mkdir(parents=True, exist_ok=True)
         (profile / 'config.toml').write_text(config_fixture_text())
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
     return manager
@@ -157,18 +158,48 @@ def seed_remote(sandbox, remote, manager):
 
 
 def select(sandbox, name, needle):
-    """Moves the cursor until the preview shows needle: down first, then up."""
-    for step in ['j'] * 12 + ['k'] * 24:
-        time.sleep(0.4)  # render settle; the capture right after a keypress can be stale
-        if needle in preview_of(capture(sandbox)):
-            (sandbox.artifacts / (name + '-selected.txt')).write_text(capture(sandbox))
-            return
+    """Moves the cursor until the preview shows needle: down first, then up.
+
+    A capture taken right after the cursor moves can still show the previous
+    row, so the marker has to hold for two captures in a row before the
+    selection counts. Both are observations rather than pauses.
+    """
+    def settled(_):
+        first = capture(sandbox)
+        if needle not in preview_of(first):
+            return False
+        second = capture(sandbox)
+        if needle not in preview_of(second):
+            return False
+        (sandbox.artifacts / (name + '-selected.txt')).write_text(second)
+        return True
+
+    if settled(''):
+        return
+
+    for index, step in enumerate(['j'] * 12 + ['k'] * 24):
         key(sandbox, step)
+        try:
+            sandbox.wait(f'{name}-selected-{index}', lambda: '', settled, timeout=0.6)
+            return
+        except TimeoutError:
+            continue
     raise AssertionError(f'{name} not reachable in the list')
 
 
 def select_remote_agent(sandbox):
     select(sandbox, 'remote-agent', f'{REMOTE_AGENT}  on {CONNECTION}')
+
+
+def rail_lists(frame, name):
+    return any(re.search(r'\b' + re.escape(name) + r'\b', line[:RAIL_WIDTH]) for line in frame.splitlines())
+
+
+def select_archived_agent(sandbox):
+    # The archived list redraws only after the next polls. Until then u lands on a row it cannot restore.
+    sandbox.wait('archived-roster', lambda: capture(sandbox),
+                 lambda value: rail_lists(value, REMOTE_AGENT) and not rail_lists(value, GROUPED_AGENT))
+    select(sandbox, 'archived-agent', f'{REMOTE_AGENT}  on {CONNECTION}')
 
 
 def add_connection(sandbox, name):
@@ -215,7 +246,7 @@ def lifecycle(sandbox, remote, agent_id):
                  lambda value: value == '[(1,)]')
     key(sandbox, 't')
     frame(sandbox, 'archived-view', 'ARCHIVED')
-    select(sandbox, 'archived-agent', f'{REMOTE_AGENT}  on {CONNECTION}')
+    select_archived_agent(sandbox)
     key(sandbox, 'u')
     confirm(sandbox, 'remote-restore', f'restore {REMOTE_AGENT} on {CONNECTION}?',
             f'restored {REMOTE_AGENT} on {CONNECTION}')
@@ -227,6 +258,12 @@ def lifecycle(sandbox, remote, agent_id):
 
 def attach(sandbox, remote, agent_id):
     """Attach runs ssh -t in this terminal; the remote pane fills it until detach."""
+    # The remote write can finish before the manager polls its updated roster.
+    # Navigating the stale list lets that poll move the selection under attach.
+    sandbox.wait('remote-restored-row', lambda: capture(sandbox),
+                 lambda value: any(re.search(re.escape(REMOTE_AGENT) + r'\s+idle\b',
+                                             line[:RAIL_WIDTH])
+                                   for line in value.splitlines()))
     select_remote_agent(sandbox)
     sandbox.wait('remote-pane-ready', lambda: remote_pane_code(sandbox, remote, agent_id), lambda code: code == '0')
     key(sandbox, 'A')

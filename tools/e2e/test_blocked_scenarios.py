@@ -15,7 +15,7 @@ class StoreLockTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.sandbox = SimpleNamespace(home=Path(self.temp.name))
         self.db = profile_dir(self.sandbox) / 'state.db'
-        self.db.parent.mkdir(parents=True)
+        self.db.parent.mkdir(parents=True, exist_ok=True)
         with sqlite3.connect(self.db) as conn:
             conn.execute('CREATE TABLE fixture(value TEXT)')
 

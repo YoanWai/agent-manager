@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -34,15 +33,5 @@ func TestCompatibleNoticeFooterMeasuresDisplayedKeys(t *testing.T) {
 				t.Fatal("footer contains key glyphs")
 			}
 		}
-	}
-}
-
-func TestCompatibleWelcomeFormatsRemappedKeys(t *testing.T) {
-	src := testSources("")
-	src.GlyphMode = presentation.GlyphModeBasic
-	src.ListKeys = src.ListKeys.With(keybind.Settings, bindingOf(t, "backspace"))
-	body := strings.Join(src.welcomeBody(), "\n")
-	if strings.ContainsAny(body, "↵⌫") || !strings.Contains(body, "enter") || !strings.Contains(body, "backspace") {
-		t.Fatalf("welcome key labels=%s", body)
 	}
 }

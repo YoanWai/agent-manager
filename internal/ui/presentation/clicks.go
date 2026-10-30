@@ -16,12 +16,10 @@ type Lines[T any] struct {
 	shown []bool
 }
 
-// Reset starts a new paint.
 func (l *Lines[T]) Reset() {
 	l.items, l.shown = l.items[:0], l.shown[:0]
 }
 
-// Show records the next count lines as showing item.
 func (l *Lines[T]) Show(item T, count int) {
 	for range count {
 		l.items = append(l.items, item)
@@ -29,7 +27,6 @@ func (l *Lines[T]) Show(item T, count int) {
 	}
 }
 
-// Skip records the next count lines as showing nothing a click acts on.
 func (l *Lines[T]) Skip(count int) {
 	var none T
 	for range count {
@@ -38,7 +35,6 @@ func (l *Lines[T]) Skip(count int) {
 	}
 }
 
-// Append records the lines of more, painted after these.
 func (l *Lines[T]) Append(more Lines[T]) {
 	l.items = append(l.items, more.items...)
 	l.shown = append(l.shown, more.shown...)
@@ -49,7 +45,6 @@ func (l *Lines[T]) Cut(count int) {
 	l.items, l.shown = l.items[:count], l.shown[:count]
 }
 
-// At is the item line shows.
 func (l Lines[T]) At(line int) (T, bool) {
 	if line < 0 || line >= len(l.items) || !l.shown[line] {
 		var none T

@@ -146,6 +146,7 @@ func (c *Client) Spawn(ctx context.Context, host string, opts sessioncmd.CreateS
 		{"effort", opts.Effort},
 		{"profile", opts.Profile},
 		{"directory", opts.Directory},
+		{"resume", opts.Resume},
 	} {
 		if flag.value != "" {
 			args = append(args, "--"+flag.name+"="+flag.value)

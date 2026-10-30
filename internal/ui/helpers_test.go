@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,15 +23,21 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sysstat"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uiworkspace "github.com/YoanWai/agent-manager/internal/ui/workspace"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 // buildModel gives the test a model on a tmux server and store of its own,
 // so a test that calls t.Parallel shares nothing with its neighbours but
 // process state. A test stays serial when it touches that state: it swaps a
-// package seam (lookPath, startEditor, captureClipboardImage, ...), sets the
-// environment or the lipgloss color profile, changes the theme or opens
-// Settings (the styles are package-wide), reads or writes the system
+// package seam (lookPath, startEditor, the clipboard image capture, ...),
+// sets the environment or the lipgloss color profile, changes the theme or
+// opens Settings (the styles are package-wide), reads or writes the system
 // clipboard, drives testSocket, or launches a session under a fixed id (its
 // launch script sits in the shared temp dir under that id).
 func buildModel(t *testing.T) *Model {
@@ -232,8 +240,8 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	}
 	m.layout.width = 120
 	m.layout.height = 40
-	m.startup.booting = false
-	m.Update(feedMsg{startup: true})
+	m.startup.Booting = false
+	m.Update(uirelease.FeedMsg{Startup: true})
 	t.Cleanup(func() {
 		for _, s := range m.workspace.sessions {
 			driver.Kill(s.ID)
@@ -286,17 +294,17 @@ func (m *Model) drainEffects(t *testing.T) {
 	t.Helper()
 	for count := 0; count < 100; count++ {
 		m.nextEffectCmd()
-		job := m.effects.input.active
+		job := m.effects.Input.Active
 		if job == nil {
-			job = m.effects.main.active
+			job = m.effects.Main.Active
 		}
 		if job == nil {
-			job = m.effects.remote.active
+			job = m.effects.Remote.Active
 		}
 		if job == nil {
 			return
 		}
-		m.applyTestMsg(t, job.command())
+		m.applyTestMsg(t, job.Command())
 	}
 	t.Fatal("effect queue did not become idle")
 }
@@ -427,38 +435,54 @@ func listSessionIDs(t *testing.T, st *store.Store) []string {
 
 func pickGroup(t *testing.T, m *Model, path string) {
 	t.Helper()
-	for i, opt := range m.form.groups {
-		if opt.path == path && opt.sessID == "" {
-			m.form.groupIndex = i
+	if s, ok := surfaceOf[*uidialogs.GroupFormSurface](m); ok {
+		for i, opt := range s.Parents() {
+			if opt.Path == path && opt.SessionID == "" {
+				s.SelectParent(i)
+				return
+			}
+		}
+		t.Fatalf("group %q not in the card's parents %v", path, s.Parents())
+	}
+	for i, opt := range picker(m).Groups {
+		if opt.Path == path && opt.SessionID == "" {
+			picker(m).GroupIndex = i
 			return
 		}
 	}
-	t.Fatalf("group %q not in picker options %v", path, m.form.groups)
+	t.Fatalf("group %q not in picker options %v", path, picker(m).Groups)
 }
 
 // focusGroupField tabs the open group form to field.
 func focusGroupField(t *testing.T, m *Model, field int) {
 	t.Helper()
 	for range 6 {
-		if m.groupForm.Focus() == field {
+		if m.groupSurface().Focus() == field {
 			return
 		}
-		m.handleGroupFormKey(tea.KeyMsg{Type: tea.KeyTab})
+		m.pressGroupKey(tea.KeyMsg{Type: tea.KeyTab})
 	}
-	t.Fatalf("group form focus = %d, want %d", m.groupForm.Focus(), field)
+	t.Fatalf("group form focus = %d, want %d", m.groupSurface().Focus(), field)
 }
 
 func createSession(t *testing.T, m *Model, name, dir, group string) {
 	t.Helper()
 	m.openForm()
-	m.form.SetName(name)
-	m.form.SetDir(dir)
+	m.form().SetName(name)
+	m.form().SetDir(dir)
 	setFormTool(m, 0)
 	pickGroup(t, m, group)
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
+	requireSpawned(t, m, name)
+}
+
+// requireSpawned fails unless the submit closed the form and landed name's
+// row: a spawn that errors leaves the form up on a list base.
+func requireSpawned(t *testing.T, m *Model, name string) {
+	t.Helper()
+	if !m.onList() || m.form() != nil || !slices.Contains(sessionNames(m), name) {
+		t.Fatalf("after submit, screen = %v, rows = %q, err = %q", m.screenID(), sessionNames(m), m.errBar.text)
 	}
 }
 
@@ -496,16 +520,14 @@ func seedRepo(t *testing.T) string {
 func createWorktreeSession(t *testing.T, m *Model, name, repo string) store.Session {
 	t.Helper()
 	m.openForm()
-	m.form.SetName(name)
-	m.form.SetDir(repo)
+	m.form().SetName(name)
+	m.form().SetDir(repo)
 	setFormTool(m, 0)
-	m.form.SeedWorktree(true)
+	m.form().SeedWorktree(true)
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
-	}
+	requireSpawned(t, m, name)
 	for _, sess := range m.workspace.sessions {
 		if sess.Name == name {
 			if sess.WorktreeBranch == "" {
@@ -575,8 +597,8 @@ func waitForAgent(t *testing.T, m *Model, sessID string, want bool) {
 func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	t.Helper()
 	m.openForm()
-	m.form.SetName(name)
-	m.form.SetDir(dir)
+	m.form().SetName(name)
+	m.form().SetDir(dir)
 	picked := false
 	for i, candidate := range m.services.cfg.AgentToolNames() {
 		if candidate == tool {
@@ -590,9 +612,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	pickGroup(t, m, "")
 	_, cmd := m.submitForm()
 	m.applyCmd(t, cmd)
-	if m.mode != modeList {
-		t.Fatalf("after submit, mode = %v, err = %q", m.mode, m.errBar.text)
-	}
+	requireSpawned(t, m, name)
 }
 
 // spawnSession is the synchronous fixture entry point for tests that need a
@@ -601,23 +621,24 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 // reconciled.
 func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool, choice config.Choice) error {
 	paneW, paneH := m.paneTargetSize()
-	request := spawnRequest{
-		kind:         spawnForm,
-		toolName:     toolName,
-		name:         name,
-		dir:          dir,
-		group:        group,
-		prompt:       prompt,
-		autoNamed:    autoNamed,
-		worktree:     worktree,
-		pickWorktree: worktree,
-		pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
-		choice:       choice,
-		base:         m.groupBase(group),
+	request := uilaunch.Request{
+		ID:           newID(),
+		Kind:         uilaunch.Form,
+		ToolName:     toolName,
+		Name:         name,
+		Dir:          dir,
+		Group:        group,
+		Prompt:       prompt,
+		AutoNamed:    autoNamed,
+		Worktree:     worktree,
+		PickWorktree: worktree,
+		Pane:         sessioncmd.PaneSize{Width: paneW, Height: paneH},
+		Choice:       choice,
+		Base:         m.groupBase(group),
 	}
 	services := effectServices{
 		store: m.services.store, driver: m.services.tmux, gitDrv: m.services.gitDrv, cfg: m.services.cfg,
-		watch: m.focus.runtime.watch,
+		watch: m.focus.runtime.Watch,
 	}
 	if m.poller != nil {
 		services.runner = m.poller.runner
@@ -625,8 +646,8 @@ func (m *Model) spawnSession(toolName, name, dir, group, prompt string, autoName
 	if m.services.lifecycle != nil {
 		services.lifecycle = m.services.lifecycle.Capture(m.services.cfg, m.services.setSnapshot)
 	}
-	result, err := services.runSpawn(request)
-	m.applySpawnEffect(request, result.(spawnEffectResult), err)
+	result, err := uilaunch.Run(services.launchServices(), request)
+	m.applySpawn(request, result, err)
 	return err
 }
 
@@ -685,7 +706,7 @@ func reloadModel(t *testing.T, m *Model) *Model {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	loaded.Update(feedMsg{startup: true})
+	loaded.Update(uirelease.FeedMsg{Startup: true})
 	return loaded
 }
 
@@ -774,9 +795,8 @@ func shotModel() *Model {
 		layout: layoutState{
 			width:  120,
 			height: 34,
-			split:  splitState{ratio: defaultSplitRatio},
+			split:  uigeometry.Gesture{Ratio: uigeometry.DefaultSplitRatio},
 		},
-		mode: modeList,
 		services: services{
 			keys:     keybind.DefaultSession(),
 			listKeys: keybind.DefaultList(),
@@ -785,7 +805,7 @@ func shotModel() *Model {
 			sessions:   sessions,
 			groupPaths: map[string]string{"backend": "/Users/someone/dev/api"},
 			agents:     agentStats{count: 4, cpu: 12, ram: 9, rss: 1_530_000_000},
-			net:        netStats{rates: true, down: 9_400_000, up: 2_100_000},
+			net:        uiworkspace.Net{Rates: true, Down: 9_400_000, Up: 2_100_000},
 			snap: sysstat.Snapshot{
 				CPUOK: true, CPUPercent: 22,
 				MemOK: true, MemPercent: 75, MemUsed: 12_100_000_000, MemTotal: 16_000_000_000,
@@ -827,7 +847,7 @@ func (m *Model) foregroundTestCmd(t *testing.T, cmd tea.Cmd) tea.Cmd {
 			}
 			return
 		}
-		if _, ok := msg.(effectCompletedMsg); ok {
+		if _, ok := msg.(uieffects.Completed); ok {
 			updated, next := m.Update(msg)
 			*m = *updated.(*Model)
 			if next != nil {
@@ -861,4 +881,10 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %v: %v", args, err)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// savedListOpen reports the saved prompts list on the surface stack.
+func (m *Model) savedListOpen() bool {
+	_, ok := surfaceOf[*uifocus.Saved](m)
+	return ok
 }

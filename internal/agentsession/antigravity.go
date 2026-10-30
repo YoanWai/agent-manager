@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-func antigravityRoot() string {
-	home, err := os.UserHomeDir()
+func antigravityRoot(env Env) string {
+	home, err := env.homeDir()
 	if err != nil {
 		return ""
 	}

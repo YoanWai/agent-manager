@@ -31,13 +31,11 @@ func (s keySection) offLabel(action string) string {
 	return s.off
 }
 
-// KeyRow is one action in the picker, in the table at Table.
 type KeyRow struct {
 	Table  int
 	Action keybind.Action
 }
 
-// KeyRows lists every action of the tables in picker order.
 func KeyRows(tables []keybind.Table) []KeyRow {
 	var rows []KeyRow
 	for i, keys := range tables {
@@ -85,7 +83,6 @@ func (s *State) openKeyPicker(ctx Context) {
 	s.KeyReset = false
 }
 
-// PickedRow is the action under the picker's cursor.
 func (s *State) PickedRow() KeyRow {
 	return KeyRows(s.Tables)[s.KeyCursor]
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// fieldLine is a body line's field, and its list entry or -1.
 type fieldLine struct {
 	field Field
 	entry int
@@ -19,7 +18,6 @@ type fieldLine struct {
 // separator space (1).
 const LabelColumn = 16
 
-// savedListRows caps the saved prompts list under its row.
 const savedListRows = 6
 
 // FormFacts are the root facts the form paints: the width a value has,
@@ -210,7 +208,6 @@ func (d *Form) savedDetails(facts FormFacts, room int) (string, presentation.Lin
 	return indent + line + "\n", lines
 }
 
-// FormField paints one labelled row of a form card.
 func FormField(st Styles, label, value string, focused bool) string {
 	marker := "  "
 	style := st.Label

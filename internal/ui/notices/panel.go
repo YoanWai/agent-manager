@@ -24,7 +24,6 @@ type Panel struct {
 	dismissed map[string]bool
 }
 
-// NewPanel starts a panel with the dismissals loaded from settings.
 func NewPanel(dismissed map[string]bool) Panel {
 	return Panel{dismissed: dismissed}
 }
@@ -39,7 +38,6 @@ func (p Panel) Dismissed(id string) bool { return p.dismissed[id] }
 // Dismiss drops a notice from the list ahead of the write that persists it.
 func (p *Panel) Dismiss(id string) { p.dismissed[id] = true }
 
-// Restore lists a notice again after its dismissal failed to persist.
 func (p *Panel) Restore(id string) { delete(p.dismissed, id) }
 
 // Open shows the panel on the notice with id, or on the first one. It opens
@@ -79,7 +77,6 @@ func (p *Panel) Reselect(notices []Notice, id string) {
 	}
 }
 
-// Theme is the root's palette and the card fill the panel draws with.
 type Theme struct {
 	Accent      lipgloss.Color
 	Accent2     lipgloss.Color
@@ -92,8 +89,7 @@ type Theme struct {
 	// Border is the card's frame; Title its legend.
 	Border lipgloss.Style
 	Title  lipgloss.Style
-	// Fill pads a row to width over the card's background.
-	Fill func(row string, width int) string
+	Fill   func(row string, width int) string
 }
 
 const FeedPendingText = "checking messages…"
@@ -113,16 +109,12 @@ type Frame struct {
 	Theme       Theme
 }
 
-// Action is what a key asks the root to do.
 type Action uint8
 
 const (
 	Stay Action = iota
-	// Refresh is one manual pass over releases and the feed.
 	Refresh
-	// StartUpdate starts the self-update from the update notice.
 	StartUpdate
-	// OpenLink opens URL.
 	OpenLink
 	// Dismiss persists dismissing ID, when there is one, and closes the
 	// panel when Close says the list is now empty.
@@ -137,7 +129,6 @@ type Outcome struct {
 	Close  bool
 }
 
-// WheelRows is how far one wheel notch scrolls the body.
 const WheelRows = 3
 
 func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
@@ -213,7 +204,6 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	return max(0, len(body)-room)
 }
 
-// Wheel scrolls the body by step notches of the wheel.
 func (p *Panel) Wheel(step int, notices []Notice, f Frame) {
 	p.scrollBy(notices, step*WheelRows, f)
 }

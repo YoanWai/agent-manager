@@ -21,7 +21,6 @@ type Fork struct {
 	gen int
 }
 
-// Open starts a fork of the named source, its name field seeded from it.
 func (d *Fork) Open(sourceName, sourceGroup string) {
 	name := newField("fork name", 60)
 	name.SetValue(sourceName + "-fork")
@@ -33,19 +32,15 @@ func (d *Fork) Open(sourceName, sourceGroup string) {
 // Gen is the generation of the dialog now open.
 func (d Fork) Gen() int { return d.gen }
 
-// Name is the fork name as a submit would send it.
 func (d Fork) Name() string { return cleanName(d.name.Value()) }
 
-// SetName replaces the typed name.
 func (d *Fork) SetName(name string) { d.name.SetValue(name) }
 
-// ForkAction is what a key asks the root to do.
 type ForkAction uint8
 
 const (
 	ForkStay ForkAction = iota
 	ForkCancel
-	// ForkInvalid carries the error the root reports.
 	ForkInvalid
 	// ForkSubmit carries the name and the generation it was submitted from.
 	ForkSubmit
@@ -76,7 +71,6 @@ func (d *Fork) Key(msg tea.KeyMsg) ForkKey {
 	return ForkKey{Cmd: cmd}
 }
 
-// ForkStyles are the root's text styles and field renderers the card uses.
 type ForkStyles struct {
 	BranchGlyph string
 	Value       lipgloss.Style

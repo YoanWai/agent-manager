@@ -22,7 +22,14 @@ type hermesRow struct {
 
 func writeHermesStore(t *testing.T, rows ...hermesRow) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "state.db")
+	return writeHermesStoreAt(t, filepath.Join(t.TempDir(), "state.db"), rows...)
+}
+
+func writeHermesStoreAt(t *testing.T, path string, rows ...hermesRow) string {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +267,7 @@ func TestCaptureCommandCodeSkipsMalformedTranscripts(t *testing.T) {
 func stubOpencodeJSON(t *testing.T, entries []opencodeListEntry) {
 	t.Helper()
 	saved := opencodeSessionListJSON
-	opencodeSessionListJSON = func(string) ([]opencodeListEntry, bool) { return entries, true }
+	opencodeSessionListJSON = func(string, Env) ([]opencodeListEntry, bool) { return entries, true }
 	t.Cleanup(func() { opencodeSessionListJSON = saved })
 }
 
@@ -362,7 +369,7 @@ func TestCaptureHermesSkipsClaimed(t *testing.T) {
 func TestHermesStateDBFollowsHermesHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HERMES_HOME", home)
-	if got := hermesStateDB(); got != filepath.Join(home, "state.db") {
+	if got := hermesStateDB(managerEnv, ""); got != filepath.Join(home, "state.db") {
 		t.Fatalf("hermesStateDB() = %q", got)
 	}
 }
@@ -374,7 +381,7 @@ func TestHermesStateDBFollowsStickyProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := filepath.Join(home, "profiles", "coder", "state.db")
-	if got := hermesStateDB(); got != want {
+	if got := hermesStateDB(managerEnv, ""); got != want {
 		t.Fatalf("hermesStateDB() = %q want %q", got, want)
 	}
 }
@@ -382,7 +389,7 @@ func TestHermesStateDBFollowsStickyProfile(t *testing.T) {
 func TestHermesStateDBKeepsExplicitProfileHome(t *testing.T) {
 	home := filepath.Join(t.TempDir(), "profiles", "research")
 	t.Setenv("HERMES_HOME", home)
-	if got := hermesStateDB(); got != filepath.Join(home, "state.db") {
+	if got := hermesStateDB(managerEnv, ""); got != filepath.Join(home, "state.db") {
 		t.Fatalf("hermesStateDB() = %q", got)
 	}
 }
@@ -651,7 +658,7 @@ func TestRecaptureBindsAfterAnEmptySnapshot(t *testing.T) {
 func TestRecaptureCommandCodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)
-	root := commandCodeRoot()
+	root := commandCodeRoot(managerEnv)
 	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "old-project", "old.jsonl"),
 		commandCodeSession("old-uuid", "/repo"), base)
@@ -674,7 +681,7 @@ func TestRecaptureCommandCodeBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 func TestRecaptureCommandCodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)
-	root := commandCodeRoot()
+	root := commandCodeRoot(managerEnv)
 	base := time.Now().Add(-time.Hour)
 	writeFile(t, filepath.Join(root, "a", "1.jsonl"),
 		commandCodeSession("first-uuid", "/repo"), base)
@@ -697,7 +704,7 @@ func TestRecaptureCommandCodeRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 func TestRecaptureGeminiBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)
-	root := geminiRoot()
+	root := geminiRoot(managerEnv)
 	base := time.Now().Add(-time.Hour)
 	oursHash := geminiProjectHash("/repo")
 	otherHash := geminiProjectHash("/elsewhere")
@@ -723,7 +730,7 @@ func TestRecaptureGeminiBindsOnlyWhatOutranTheSnapshot(t *testing.T) {
 func TestRecaptureGeminiRefusesTwoThatOutranTheSnapshot(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)
-	root := geminiRoot()
+	root := geminiRoot(managerEnv)
 	base := time.Now().Add(-time.Hour)
 	hash := geminiProjectHash("/repo")
 	writeFile(t, filepath.Join(root, "p/chats/session-1.jsonl"),

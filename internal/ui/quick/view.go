@@ -25,9 +25,8 @@ type Facts struct {
 	Remote          string
 	RemoteSpawn     bool
 	WorktreeInherit bool
-	// LabelWidth is the column the target's label takes.
-	LabelWidth int
-	Styles     spawn.Styles
+	LabelWidth      int
+	Styles          spawn.Styles
 }
 
 // View is the docked prompt: enter answers the selected session, or
@@ -77,7 +76,6 @@ func (q *Bar) View(h Host, facts Facts, width, maxRows int) string {
 	return strings.Join(lines, "\n") + "\n" + bar
 }
 
-// savedListRows caps the saved prompts list above the prompt.
 const savedListRows = 6
 
 // statusRow puts what a spawn launches with against the right edge of

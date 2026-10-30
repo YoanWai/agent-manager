@@ -204,6 +204,31 @@ func TestSendTextWaitsOutTheWindowWhenTheBaselineCaptureFails(t *testing.T) {
 	}
 }
 
+// gemini and hermes read an Enter right after a paste as a line break in it.
+func TestSubmitTextLeavesAGapBetweenThePasteAndTheEnter(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	stub := t.TempDir() + "/tmux"
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	var reads []time.Time
+	_, err := driver.SubmitTextContext(context.Background(), "x1", "hello world", func() (bool, error) {
+		reads = append(reads, time.Now())
+		return len(reads) == 1, nil
+	})
+	if err != nil {
+		t.Fatalf("SubmitTextContext: %v", err)
+	}
+	if len(reads) < 2 {
+		t.Fatalf("the composer was read %d times, want once for the paste and once after the Enter", len(reads))
+	}
+	if gap := reads[1].Sub(reads[0]); gap < pasteSettle {
+		t.Fatalf("the Enter followed the drawn paste within %v, want at least %v", gap, pasteSettle)
+	}
+}
+
 // A clipboard paste forwarded into a focused pane must arrive inside the
 // pane's bracketed-paste markers with no Enter after it, so agent composers
 // keep multi-line text instead of submitting on the first newline.

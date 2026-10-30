@@ -6,7 +6,11 @@ import (
 	"time"
 
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
+	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -20,11 +24,11 @@ func TestFocusDropsTheLastSessionsCaret(t *testing.T) {
 	updated, _ := m.focusSelected()
 	m = updated.(*Model)
 	m.drainEffects(t)
-	if m.mode != modeFocus {
-		t.Fatalf("test setup: focus alpha, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !m.focused() {
+		t.Fatalf("test setup: focus alpha, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
 	m.workspace.preview = "one\ntwo" + strings.Repeat("\n", 38)
-	rows := paneExact(m.workspace.preview, 10, 40, m.paneCaretRow())
+	rows := uipreview.Exact(m.workspace.preview, 10, 40, m.paneCaretRow())
 	if len(rows) != 2 || rows[0] != "one" {
 		t.Fatalf("focused pane = %q, want the painted rows", rows)
 	}
@@ -40,8 +44,8 @@ func TestMouseBackLeavesFocus(t *testing.T) {
 	m.drainEffects(t)
 	updated, _ = m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonBackward})
 	m = updated.(*Model)
-	if m.mode != modeList {
-		t.Fatalf("mouse back should leave focus, mode = %v", m.mode)
+	if !m.onList() {
+		t.Fatalf("mouse back should leave focus, screen = %v", m.screenID())
 	}
 }
 
@@ -56,7 +60,7 @@ func TestPaneBoxMatchesPaintedFrame(t *testing.T) {
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
-	frame := splitLines(preparedView(m))
+	frame := uitheme.SplitLines(preparedView(m))
 	box := m.focus.pane.FrameBox()
 	if !box.Valid {
 		t.Fatal("pane box never recorded")
@@ -131,7 +135,7 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 
 	m, id := focusedShotPane(t, 40, 10, 5, "alpha beta", "gamma delta")
 	request := dragAlph(m, id)
-	inFlight := focusCopiedMsg{chars: 4, gen: request.Generation}
+	inFlight := uifocus.CopiedMessage{Chars: 4, Generation: request.Generation}
 	m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonLeft, X: 12, Y: 6})
 	m.Update(inFlight)
 	if got := m.focus.pane.Status().CopiedChars; got != 0 {
@@ -141,7 +145,7 @@ func TestLateCopyConfirmationIsDroppedAfterTheSelectionGoes(t *testing.T) {
 	// The same confirmation still counts while its own selection stands.
 	m2, id2 := focusedShotPane(t, 40, 10, 5, "alpha beta", "gamma delta")
 	request = dragAlph(m2, id2)
-	m2.Update(focusCopiedMsg{chars: 4, gen: request.Generation})
+	m2.Update(uifocus.CopiedMessage{Chars: 4, Generation: request.Generation})
 	if got := m2.focus.pane.Status().CopiedChars; got != 4 {
 		t.Fatalf("the write for the standing selection was dropped: %d", got)
 	}
@@ -154,11 +158,11 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	m.selectSessionRow(t, "typing")
 	sess := railSelectedSession(m)
 
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	m.focus.runtime.watch.SetFocus(sess.ID)
-	t.Cleanup(m.focus.runtime.watch.Close)
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focus.runtime.Watch.SetFocus(sess.ID)
+	t.Cleanup(m.focus.runtime.Watch.Close)
 	deadline := time.Now().Add(5 * time.Second)
-	for !m.focus.runtime.watch.Serving(sess.ID) {
+	for !m.focus.runtime.Watch.Serving(sess.ID) {
 		if time.Now().After(deadline) {
 			t.Skip("control client never came up on this host")
 		}
@@ -166,9 +170,9 @@ func TestPushedPreviewWinsOverStalePoll(t *testing.T) {
 	}
 
 	fresh := "typed-just-now"
-	updated, _ := m.Update(focusPreviewMsg{sessID: sess.ID, preview: fresh})
+	updated, _ := m.Update(focusruntime.FrameMsg{SessionID: sess.ID, Preview: fresh})
 	*m = *updated.(*Model)
-	updated, _ = m.Update(previewMsg{sessID: sess.ID, preview: "stale-capture"})
+	updated, _ = m.Update(uicapture.Msg{SessID: sess.ID, Preview: "stale-capture"})
 	*m = *updated.(*Model)
 	if m.workspace.preview != fresh {
 		t.Fatalf("stale tick capture overwrote the pushed frame: %q", m.workspace.preview)
@@ -186,11 +190,11 @@ func TestPollPreviewResumesAfterWatcherStops(t *testing.T) {
 	createSession(t, m, "released", t.TempDir(), "")
 	m.selectSessionRow(t, "released")
 	sess := railSelectedSession(m)
-	m.focus.runtime.watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
-	m.focus.runtime.watch.SetFocus(sess.ID)
-	m.focus.runtime.watch.Close()
+	m.focus.runtime.Watch = newFocusWatch(m.services.tmux, func(tea.Msg) {})
+	m.focus.runtime.Watch.SetFocus(sess.ID)
+	m.focus.runtime.Watch.Close()
 
-	updated, _ := m.Update(previewMsg{sessID: sess.ID, preview: "polled"})
+	updated, _ := m.Update(uicapture.Msg{SessID: sess.ID, Preview: "polled"})
 	*m = *updated.(*Model)
 	if m.workspace.preview != "polled" {
 		t.Fatalf("preview after watcher stop = %q, want the polled capture", m.workspace.preview)
@@ -210,7 +214,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	rows[40] = strings.Repeat("─", 60)
 	rows[41] = "  » permission bypass on [shift+tab]"
 	rows[42] = "  ? for shortcuts · PR #390 · taste on"
-	m.mode = modeFocus
+	m.push(newFocusSurface(m))
 	m.workspace.preview = focuswatch.MatchExecShape(strings.Join(rows, "\n"))
 	setFocusPaneFacts(m, "s1", false, false, false, 0, paneCursor{x: 0, y: 46, ok: true})
 	if !m.caretAtInputStart("s1", "command-code") {
@@ -219,7 +223,7 @@ func TestBottomParkedCaretSurvivesControlCapture(t *testing.T) {
 	if got := m.paneCaretRow(); got != -1 {
 		t.Fatalf("paneCaretRow = %d for a parked caret, want -1", got)
 	}
-	window, start := paneWindow(m.workspace.preview, 30, m.paneCaretRow())
+	window, start := uipreview.Window(m.workspace.preview, 30, m.paneCaretRow())
 	if last := window[len(window)-1]; strings.TrimSpace(last) != "? for shortcuts · PR #390 · taste on" {
 		t.Fatalf("crop bottom = %q, want the footer, not blank fill (start=%d)", last, start)
 	}

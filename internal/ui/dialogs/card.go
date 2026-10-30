@@ -13,6 +13,15 @@ type Card struct {
 	Hints [][2]string
 }
 
+// cardChromeX and cardPaddingX are the columns a card spends on its frame
+// and on the padding either side of the body. The root paints the same ones.
+const (
+	cardChromeX  = 2
+	cardPaddingX = 3
+)
+
+func CardInnerWidth(width int) int { return width - cardChromeX - 2*cardPaddingX }
+
 func newField(placeholder string, limit int) textinput.Model {
 	in := textinput.New()
 	in.Placeholder = placeholder

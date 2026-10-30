@@ -146,6 +146,19 @@ CREATE TABLE IF NOT EXISTS settings (
 		)`,
 		`ALTER TABLE sessions ADD COLUMN environment TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE groups ADD COLUMN environment TEXT NOT NULL DEFAULT ''`,
+		// Every conversation a session's agent has reported, not only the
+		// current one: a process keeps the conversation id it started with
+		// while the agent moves on (an MCP server across /clear, /branch
+		// and /resume).
+		`CREATE TABLE IF NOT EXISTS conversation_owners (
+			conversation_id TEXT NOT NULL,
+			session_id      TEXT NOT NULL,
+			PRIMARY KEY (conversation_id, session_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS conversation_owners_session ON conversation_owners (session_id)`,
+		`ALTER TABLE sessions ADD COLUMN released_agent_session_id TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE sessions ADD COLUMN released_launch INTEGER NOT NULL DEFAULT 0`,
+		`CREATE INDEX IF NOT EXISTS sessions_conversation ON sessions (tool, agent_session_id) WHERE agent_session_id != ''`,
 	}
 	for _, migration := range migrations {
 		if _, err := s.db.Exec(migration); err != nil {

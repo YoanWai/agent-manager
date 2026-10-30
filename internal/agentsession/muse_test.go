@@ -36,7 +36,7 @@ func writeMuseSession(t *testing.T, root, relative, id, cwd string, created, mod
 
 func TestMuseCaptureAndRecapture(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	root := museRoot()
+	root := museRoot(managerEnv)
 	cwd := t.TempDir()
 	now := time.Now().Truncate(time.Microsecond)
 	writeMuseSession(t, root, "2026/09/09/old", "old", cwd, now.Add(-time.Hour), now)
@@ -99,12 +99,12 @@ func TestMuseRoot(t *testing.T) {
 	home := t.TempDir()
 	setHome(t, home)
 	t.Setenv("XDG_DATA_HOME", "")
-	if got := museRoot(); got != filepath.Join(home, ".local", "share", "muse", "sessions") {
+	if got := museRoot(managerEnv); got != filepath.Join(home, ".local", "share", "muse", "sessions") {
 		t.Fatal(got)
 	}
 	data := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", data)
-	if got := museRoot(); got != filepath.Join(data, "muse", "sessions") {
+	if got := museRoot(managerEnv); got != filepath.Join(data, "muse", "sessions") {
 		t.Fatal(got)
 	}
 }
@@ -127,7 +127,7 @@ func writeMuseFork(t *testing.T, root, forkID, sourceID string, modified time.Ti
 
 func TestMuseForkedFromReadsTheForkOfTheSource(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	root := museRoot()
+	root := museRoot(managerEnv)
 	forked := time.Now()
 	writeMuseFork(t, root, "earlier-fork", "source", forked.Add(-time.Hour))
 	writeMuseFork(t, root, "other-fork", "other-source", forked)
@@ -152,7 +152,7 @@ func TestMuseForkedFromReadsTheForkOfTheSource(t *testing.T) {
 // when it was made.
 func TestMuseForkedFromSkipsAnEarlierForkStillInUse(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
-	root := museRoot()
+	root := museRoot(managerEnv)
 	forked := time.Now()
 	writeMuseFork(t, root, "busy-fork", "source", forked.Add(-time.Hour))
 	earlier, ok := Forks("muse", "source")

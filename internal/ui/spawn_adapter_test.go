@@ -1,0 +1,315 @@
+package ui
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/launch"
+	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/ui/composer"
+	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	tea "github.com/charmbracelet/bubbletea"
+	"path/filepath"
+)
+
+func formOpen(m *Model) bool { return m.form() != nil }
+
+// picker is the group picker on screen: the move card's, or the form's.
+func picker(m *Model) *spawn.Picker {
+	if s, ok := surfaceOf[*uidialogs.MoveSurface](m); ok {
+		return s.Picker()
+	}
+	return &m.form().Picker
+}
+
+// pushForm puts a bare New Session form on the stack, for a test that needs
+// one open without the reads openForm starts.
+func pushForm(m *Model) *spawn.Surface {
+	prompt := promptField()
+	f := m.newSpawnSurface(&prompt, pathcomplete.State{}, spawn.Form{}, spawn.Picker{})
+	m.push(f)
+	return f
+}
+
+// The form opens by its key, keeps its draft through a stray click and
+// closes on esc, letting go of its images.
+func TestSpawnFormIsASurface(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 34
+	m.Update(key("n"))
+	if !formOpen(m) {
+		t.Fatalf("n did not open the form, err %q", m.errBar.text)
+	}
+	if mustTop(t, m).Dismissible() {
+		t.Fatal("the form holds a draft and must not close on a click")
+	}
+	m.form().SetName("draft")
+	clickBackdrop(t, m)
+	if !formOpen(m) || m.form().Name() != "draft" {
+		t.Fatal("a stray click closed the form")
+	}
+	image := tempImage(t, "draft.png")
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1, Path: image}}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if formOpen(m) || len(m.surfaces) != 0 {
+		t.Fatal("esc did not close the form")
+	}
+	if imageExists(t, image) {
+		t.Fatal("closing the form kept its image")
+	}
+}
+
+// A settings read that lands after its form closed, or on a newer form, is
+// dropped.
+func TestStaleFormCompletionIsDropped(t *testing.T) {
+	m := buildModel(t)
+	m.applyCmd(t, m.openForm())
+	gen := m.formPromptFor().Gen
+	m.closeForm()
+	if _, ok := m.formFor(gen); ok {
+		t.Fatal("a closed form still answers its generation")
+	}
+	m.applyCmd(t, m.openForm())
+	if _, ok := m.formFor(gen); ok {
+		t.Fatal("a newer form answered an older generation")
+	}
+}
+
+func TestClickOnAPathSuggestionCompletesIt(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	m.form().FocusField(m.spawnHost(), spawn.FieldDir)
+	m.form().Complete.Suggestions = []string{"/work/alpha", "/work/beta"}
+	x, y := paintedCell(t, m, "/work/beta")
+	m, cmd := leftClickCmd(m, x, y)
+	if m.form().Dir() != "/work/beta"+string(filepath.Separator) || cmd == nil {
+		t.Fatalf("a click on beta should complete it and read its children, dir %q", m.form().Dir())
+	}
+}
+
+func TestWheelScrollsTheFormsModelList(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	answered(m, claudeLike, claudeAnswer)
+	openFormOnClaude(t, m)
+	x, y := paintedCell(t, m, "model ")
+	m = leftClick(m, x, y)
+	m = leftClick(m, x, y)
+	if !m.form().Choice().ListOpen() {
+		t.Fatal("test setup: two clicks on the model row open its list")
+	}
+	m = wheel(m, tea.MouseButtonWheelDown, x, y)
+	m = wheel(m, tea.MouseButtonWheelDown, x, y)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.form().Choice().Model(); got != "opus" {
+		t.Fatalf("two notches down then enter picked %q, want the second model", got)
+	}
+}
+
+// The quick bar's model sheet takes the wheel the way it takes ↑↓; the
+// session cursor behind the sheet holds still.
+func TestWheelScrollsTheQuickModelSheet(t *testing.T) {
+	m := buildModel(t)
+	m.layout.width, m.layout.height = 120, 40
+	answered(m, claudeLike, claudeAnswer)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("work", dir); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "work")
+	m.openQuickMode()
+	setQuickTool(m, slices.Index(quickTools(m), "claude"))
+	m.quick().RestartChoice(m.spawnHost())
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if m.quick().Picking() != uiquick.PickModel {
+		t.Fatal("test setup: ctrl+l opens the model sheet")
+	}
+	preparedView(m)
+	m = wheel(m, tea.MouseButtonWheelDown, 10, 10)
+	m = wheel(m, tea.MouseButtonWheelDown, 10, 10)
+	if row, ok := m.selectedRow(); !ok || !row.isGroup || row.group != "work" {
+		t.Fatalf("the wheel moved the session cursor behind the sheet to %+v", row)
+	}
+	m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := m.quick().Choice().Model(); got != "haiku" {
+		t.Fatalf("two notches down from the first model then enter picked %q, want the third", got)
+	}
+}
+
+func focusSavedRow(t *testing.T, m *Model) {
+	t.Helper()
+	m.form().FocusField(m.spawnHost(), spawn.FieldSaved)
+	if m.form().Focused() != spawn.FieldSaved {
+		t.Fatal("the saved prompts row took no focus")
+	}
+}
+
+// The form reads the catalog as it opens and offers it on its own row.
+func TestFormOffersSavedPrompts(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	savePrompt(t, m, "Coordinator", "  literal instructions\n\n")
+	m.runBatch(t, m.openForm())
+	if body := formBody(m); !strings.Contains(body, "saved prompts ◂ none ▸") {
+		t.Fatalf("form:\n%s", body)
+	}
+}
+
+// Stepping the row changes the text in front of the task and nothing else,
+// and the form keeps the text it showed when the catalog changes under it.
+func TestFormSavedPromptStepsLeaveTheRestAlone(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	savePrompt(t, m, "A", " \n a\n")
+	savePrompt(t, m, "B", "b")
+	m.runBatch(t, m.openForm())
+	m.formPromptFor().Input.SetValue("  task  ")
+	tools, toolIndex := m.form().Tools()
+	dir, group, worktree, model := m.form().Dir(), picker(m).GroupIndex, m.form().Worktree(), m.form().Choice().Model()
+	focusSavedRow(t, m)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if got := m.form().SavedText(); got != " \n a\n" {
+		t.Fatalf("saved text = %q", got)
+	}
+	if _, err := m.services.store.DeleteSessionPreset("A"); err != nil {
+		t.Fatal(err)
+	}
+	if got := m.form().SavedText(); got != " \n a\n" {
+		t.Fatal("a catalog edit changed the text the form shows")
+	}
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if got := m.form().SavedText(); got != "" {
+		t.Fatalf("stepping past the last kept %q", got)
+	}
+	newTools, newIndex := m.form().Tools()
+	if m.formPromptFor().Input.Value() != "  task  " || newTools[newIndex] != tools[toolIndex] || m.form().Dir() != dir ||
+		picker(m).GroupIndex != group || m.form().Worktree() != worktree || m.form().Choice().Model() != model {
+		t.Fatal("stepping saved prompts changed another field")
+	}
+}
+
+// A click in the open list picks without touching the task, its images or
+// the CLI choices.
+func TestFormSavedPromptClickKeepsTheTask(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	savePrompt(t, m, "Role", "instruct")
+	m.runBatch(t, m.openForm())
+	focusSavedRow(t, m)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyCtrlO})
+	m.formPromptFor().Input.SetValue("task " + composer.Token(1))
+	m.formPromptFor().Attachments = []composer.Attachment{{ID: 1, Path: tempImage(t, "image.png")}}
+	before := m.formPromptFor().Message()
+	model := m.form().Choice().Model()
+	if m, _ = clickBody(t, m, "Role"); m.form().SavedText() != "instruct" {
+		t.Fatalf("a click on Role picked %q", m.form().SavedText())
+	}
+	if m.formPromptFor().Message() != before || len(m.formPromptFor().Attachments) != 1 || m.form().Choice().Model() != model {
+		t.Fatal("the click changed the task or the CLI choice")
+	}
+}
+
+// A catalog that cannot be read says so, and the form still launches
+// without a saved prompt.
+func TestFormSavedPromptsReadFailureShows(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	cmd := m.openForm()
+	m.services.store.Close()
+	m.runBatch(t, cmd)
+	if body := formBody(m); !strings.Contains(body, "Reading saved prompts") {
+		t.Fatalf("form:\n%s", body)
+	}
+	if m.form().SavedText() != "" {
+		t.Fatal("a failed read picked a saved prompt")
+	}
+}
+
+// The spawn carries the text the form showed, as written, in front of the
+// trimmed task, even when the catalog changed after the form read it.
+func TestFormSpawnsWithTheSavedPromptItShowed(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	savePrompt(t, m, "Role", " \n instruction\n\n")
+	m.runBatch(t, m.openForm())
+	pickFormTool(t, m, "ready-tool")
+	focusSavedRow(t, m)
+	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	m.formPromptFor().Input.SetValue("  task  ")
+	m.form().SetName("saved-launch")
+	m.form().SetDir(t.TempDir())
+	if err := m.services.store.SaveSessionPreset("Role", store.SessionPreset{Name: "Role", Instructions: "external replacement"}); err != nil {
+		t.Fatal(err)
+	}
+	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
+	rows := m.sessionRows()
+	if !m.onList() || len(rows) != 1 {
+		t.Fatalf("submit: mode %v err %q rows %d", m.screenID(), m.errBar.text, len(rows))
+	}
+	if !strings.HasSuffix(rows[0].LaunchPrompt, " \n instruction\n\n\n\ntask") {
+		t.Fatalf("launch prompt = %q", rows[0].LaunchPrompt)
+	}
+}
+
+// Saved text that opens with a dash launches behind the rename note, for a
+// CLI that takes the prompt as an argument and one that has it typed.
+func TestFormSavedPromptWithADashLaunches(t *testing.T) {
+	t.Parallel()
+	for _, tool := range []string{"ready-tool", "send-tool"} {
+		t.Run(tool, func(t *testing.T) {
+			m := buildModel(t)
+			savePrompt(t, m, "Bullets", "- literal bullet\n")
+			m.runBatch(t, m.openForm())
+			pickFormTool(t, m, tool)
+			focusSavedRow(t, m)
+			m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+			m.form().SetName("dash-saved")
+			m.form().SetDir(t.TempDir())
+			_, cmd := m.submitForm()
+			m.applyCmd(t, cmd)
+			rows := m.sessionRows()
+			if !m.onList() || len(rows) != 1 {
+				t.Fatalf("submit: mode %v err %q", m.screenID(), m.errBar.text)
+			}
+			prompt := rows[0].LaunchPrompt
+			if tool == "send-tool" {
+				if len(rows[0].PendingInputs) == 0 {
+					t.Fatal("no pending input")
+				}
+				prompt = rows[0].PendingInputs[0]
+			}
+			if strings.HasPrefix(prompt, "-") || !strings.Contains(prompt, launch.RenameAvailableNote) || !strings.HasSuffix(prompt, "- literal bullet\n") {
+				t.Fatalf("prompt = %q", prompt)
+			}
+		})
+	}
+}
+
+// A form submitted before its catalog read lands launches the plain task.
+func TestFormLaunchesBeforeTheSavedPromptsRead(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.formPromptFor().Input.SetValue("task")
+	m.form().SetName("without-saved")
+	m.form().SetDir(t.TempDir())
+	if !strings.Contains(formBody(m), "loading… (optional)") {
+		t.Fatal("the row does not say the read is running")
+	}
+	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
+	rows := m.sessionRows()
+	if !m.onList() || len(rows) != 1 || !strings.HasSuffix(rows[0].LaunchPrompt, "task") {
+		t.Fatalf("submit: mode %v err %q rows %+v", m.screenID(), m.errBar.text, rows)
+	}
+}

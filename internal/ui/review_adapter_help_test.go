@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -13,15 +14,15 @@ func TestReviewUsesConfiguredHelpBinding(t *testing.T) {
 	m := reviewModel(t)
 	m.services.listKeys = m.services.listKeys.With(keybind.Help, bindingOf(t, "H"))
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	if m.mode != modeDiff {
+	if m.helpOpen() || m.base != baseReview {
 		t.Fatal("old Help alias still opens Help")
 	}
 	m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
-	if m.mode != modeHelp {
+	if !m.helpOpen() {
 		t.Fatal("configured Help key does not open Help")
 	}
-	m.handleHelpKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
-	if m.mode != modeDiff {
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("H")})
+	if m.helpOpen() || m.base != baseReview {
 		t.Fatal("configured Help key does not return to Review")
 	}
 	footer := strings.Join(strings.Fields(ansi.Strip(m.viewDiffFooter())), " ")
@@ -31,7 +32,7 @@ func TestReviewUsesConfiguredHelpBinding(t *testing.T) {
 	m.services.listKeys = m.services.listKeys.With(keybind.Help, keybind.Binding{})
 	for _, key := range []string{"?", "H"} {
 		m.handleDiffKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
-		if m.mode != modeDiff {
+		if m.helpOpen() || m.base != baseReview {
 			t.Fatalf("disabled Help opens via %s", key)
 		}
 	}
@@ -53,10 +54,10 @@ func TestReviewMixedHelpBindingsMatchCatalogAndModalHints(t *testing.T) {
 	}
 	for _, closeKey := range []string{"b", "H"} {
 		m.handleDiffKey(runeKey("H"))
-		if m.mode != modeHelp {
+		if !m.helpOpen() {
 			t.Fatal("H did not open Help")
 		}
-		content := m.help.state.Content(m.helpContext(100))
+		content := helpSurfaceOf(m).State().Content(uihelp.ContextFor(helpHost{m}, 100))
 		body := strings.Join(strings.Fields(ansi.Strip(strings.Join(content.Lines, "\n"))), " ")
 		if !strings.Contains(body, "H this key map") || strings.Contains(body, "b / H this key map") {
 			t.Fatalf("Review catalog: %s", body)
@@ -70,19 +71,24 @@ func TestReviewMixedHelpBindingsMatchCatalogAndModalHints(t *testing.T) {
 		if !foundClose {
 			t.Fatalf("modal close keys not advertised: %+v", content.Hints)
 		}
-		m.handleHelpKey(runeKey(closeKey))
-		if m.mode != modeDiff {
+		m.handleKey(runeKey(closeKey))
+		if m.helpOpen() || m.base != baseReview {
 			t.Fatalf("advertised %s did not close Help", closeKey)
 		}
 	}
 	m.services.listKeys = keys.With(keybind.Help, bindingOf(t, "c", "H"))
 	m = clickLabel(t, m, "c comment")
-	if !m.review.Snapshot().Annotating || m.mode != modeDiff {
+	if !m.review.Snapshot().Annotating || m.helpOpen() {
 		t.Fatal("comment footer opened Help")
 	}
 	m.handleDiffKey(namedKey(tea.KeyEsc))
 	m = clickLabel(t, m, "H keys")
-	if m.mode != modeHelp {
+	if !m.helpOpen() {
 		t.Fatal("Help footer did not open Help")
 	}
+}
+
+func (m *Model) helpOpen() bool {
+	_, ok := surfaceOf[*uihelp.Surface](m)
+	return ok
 }

@@ -153,6 +153,20 @@ const (
 	echoPoll = 25 * time.Millisecond
 )
 
+// gemini and hermes read an Enter within 40 and 50 ms of a paste as a line break in it.
+const pasteSettle = 100 * time.Millisecond
+
+func pause(ctx context.Context, wait time.Duration) error {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // An agent clears its composer within a frame of reading the Enter; one that
 // still holds the paste after a second of a still pane dropped it, and gets
 // it again. A pane that keeps redrawing is still taking the Enter, so it is
@@ -180,19 +194,12 @@ func (d *Driver) pasteAndEnterContext(ctx context.Context, id, text string, draf
 	if baseline != nil {
 		// Without a baseline, text already on screen reads as the new paste,
 		// so the pane gets the whole window to draw it rather than a match.
-		timer := time.NewTimer(echoWait)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return result, ctx.Err()
-		case <-timer.C:
-		}
-	} else {
-		if err := d.awaitPasteEchoContext(ctx, target, before, text, drafted); err != nil {
-			return result, err
-		}
+		err = pause(ctx, echoWait)
+	} else if err = d.awaitPasteEchoContext(ctx, target, before, text, drafted); err == nil {
+		err = pause(ctx, pasteSettle)
+	}
+	if err != nil {
+		return result, err
 	}
 	_, err = d.runContextStarted(ctx, func() { result.Phase = SendPhaseSubmitStarted }, "send-keys", "-t", target, "Enter")
 	if err != nil {
