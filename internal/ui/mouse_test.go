@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
@@ -1472,6 +1473,9 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 // in full screen.
 func messagesCell(t *testing.T, m *Model) (x, y int) {
 	t.Helper()
+	if len(m.activeNotices()) == 0 {
+		m.notices.feedMessages = []feed.Message{{ID: noticeTip, Title: "A tip"}}
+	}
 	for row, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
 		if col := strings.Index(line, "unread"); col >= 0 {
 			return ansi.StringWidth(line[:col]), row

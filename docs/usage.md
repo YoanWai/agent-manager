@@ -39,7 +39,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move in the **keybindings** row of Settings, and so does every key of the list itself (see [Key bindings](configuration.md#key-bindings)) |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
-| `→` | Step into the row: focus the session, or open the group. In beta; Settings (`s`) can turn the pair off |
+| `→` | Step into the row: focus the session, or open the group. Settings (`s`) can turn the pair off |
 | `←` | Step out: close the group, or — focused, with the caret at the start of the agent's prompt — back to the manager. This needs the tool's prompt marker (its `activity_cutoff`) on the caret's row, so a CLI without one keeps `←` entirely; anywhere else in the prompt it moves the caret as usual |
 | `K` / `J` (or `shift+↑` / `shift+↓`) | Reorder session or group among its visible siblings |
 | `m` | Move a session to a group, a terminal into a session, or a group under another group |

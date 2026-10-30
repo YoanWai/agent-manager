@@ -78,9 +78,6 @@ func (s *State) View(ctx ViewContext) Frame {
 		return s.viewKeyPicker(ctx)
 	}
 	st := ctx.Styles
-	// The beta tag borrows the messages modal's yellow, so the row reads as
-	// the one still under test.
-	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	toolValue := ""
 	if len(s.ToolNames) > 0 {
 		toolValue = s.ToolNames[s.ToolIndex]
@@ -176,11 +173,7 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, versionRow(ctx, lead, actionRow))
 		default:
 			setting := byField[field]
-			line := row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s))))
-			if setting.Beta {
-				line += betaTag
-			}
-			lines = append(lines, line)
+			lines = append(lines, row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s)))))
 		}
 	}
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save and close"}}

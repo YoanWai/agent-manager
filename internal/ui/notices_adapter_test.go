@@ -41,9 +41,14 @@ func noticeModel(st *store.Store, version string) *Model {
 			Panel:               uinotices.NewPanel(loadDismissed(st)),
 			whatsNewVersion:     loadWhatsNewVersion(st),
 			whatsNewFromVersion: loadWhatsNewFromVersion(st),
+			feedMessages:        []feed.Message{{ID: noticeTip, Title: "A tip", Body: []string{"details"}, URL: "https://example.com/tip"}},
 		},
 	}
 }
+
+// noticeTip is the feed message every noticeModel lists, a notice to open
+// and dismiss now that none ship in the binary.
+const noticeTip = "feed-tip"
 
 // noticeModalFloor is the panel's narrowest content column.
 const noticeModalFloor = 62
@@ -64,21 +69,21 @@ func persistNoticeDismissal(t *testing.T, m *Model, id string) {
 
 func TestActiveNoticesPinnedByDefault(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	if ids := noticeIDs(m.activeNotices()); !slices.Equal(ids, []string{uinotices.ArrowStep}) {
-		t.Fatalf("a fresh store should list the built-in notices alone, got %v", ids)
+	if ids := noticeIDs(m.activeNotices()); !slices.Equal(ids, []string{noticeTip}) {
+		t.Fatalf("a fresh store should list the feed alone, got %v", ids)
 	}
 }
 
 func TestDismissPersistsAcrossRestart(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	persistNoticeDismissal(t, m, uinotices.ArrowStep)
-	if contains(noticeIDs(m.activeNotices()), uinotices.ArrowStep) {
+	persistNoticeDismissal(t, m, noticeTip)
+	if contains(noticeIDs(m.activeNotices()), noticeTip) {
 		t.Fatal("dismissed notice still active")
 	}
 
 	reopened := noticeModel(st, "v0.2.0")
-	if contains(noticeIDs(reopened.activeNotices()), uinotices.ArrowStep) {
+	if contains(noticeIDs(reopened.activeNotices()), noticeTip) {
 		t.Fatal("dismissal did not survive restart")
 	}
 }
@@ -333,8 +338,6 @@ func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 		Title:  "One title everywhere",
 		Body:   []string{"details"},
 	}}
-	persistNoticeDismissal(t, m, uinotices.ArrowStep)
-
 	m.openNotices("feed-canonical")
 	modal := ansi.Strip(preparedView(m))
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
@@ -420,7 +423,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
 	frame := ansi.Strip(preparedView(m))
-	for _, want := range []string{"messages", "New in beta: step in and out", "Settings (s)", "dismiss"} {
+	for _, want := range []string{"messages", "A tip", "details", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
 		}
@@ -650,7 +653,8 @@ func TestLateDismissedReleaseKeepsModalSelection(t *testing.T) {
 
 func TestLateFeedKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.handleNoticesKey(key("down"))
+	m.update.latest = "v9.9.9"
+	m.openNotices("update-v9.9.9")
 	selected := m.activeNotices()[m.notices.Cursor()].ID
 
 	m.Update(feedMsg{messages: []feed.Message{{ID: "feed-late", Banner: "late", Title: "Late"}}})
@@ -1106,7 +1110,7 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 
 func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	m.openNotices(uinotices.ArrowStep)
+	m.openNotices(noticeTip)
 	_, cmd := m.handleNoticesKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd != nil || m.update.applying {
 		t.Fatal("u on a plain notice must not start an update")
@@ -1203,25 +1207,6 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 	msg, ok := cmd().(updateAppliedMsg)
 	if !ok || msg.err == nil || msg.err.Error() != advice {
 		t.Fatalf("want the advice as the error, got %#v", cmd())
-	}
-}
-
-func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
-	m := noticeModel(noticeStore(t), "v0.2.0")
-	found := false
-	for _, n := range m.activeNotices() {
-		if n.ID == uinotices.ArrowStep {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("arrow-step beta notice missing from active notices")
-	}
-	persistNoticeDismissal(t, m, uinotices.ArrowStep)
-	for _, n := range m.activeNotices() {
-		if n.ID == uinotices.ArrowStep {
-			t.Fatal("dismissed notice still listed")
-		}
 	}
 }
 
