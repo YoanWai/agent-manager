@@ -321,6 +321,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	hostname, _, _ = strings.Cut(hostname, ".")
+	from := "--from=" + senderName("lead", hostname)
 	remoteSession := sessioncmd.Session{ID: "r1", Name: "remote-worker", Tool: "claude", Status: "idle"}
 	remoteTerminal := sessioncmd.Terminal{ID: "t1", Name: "shell"}
 	f := newRemoteFixture(t, "cafe", func(destination string, words []string) ([]byte, []byte, error) {
@@ -330,7 +331,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		switch strings.Join(words[:min(2, len(words))], " ") {
 		case "read --json":
 			return mustJSON(t, sessioncmd.SessionScreen{Session: remoteSession, Output: "remote screen"}), nil, nil
-		case "send --from=lead on " + hostname:
+		case "send " + from:
 			return mustJSON(t, sessioncmd.SendResult{MessageID: 3, QueuePosition: 1, ManagerAwake: true}), nil, nil
 		case "terminal read":
 			return mustJSON(t, sessioncmd.TerminalScreen{Terminal: remoteTerminal, Output: "$ ls"}), nil, nil
@@ -356,7 +357,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 	}{
 		{"read_session", map[string]any{"session_id": "gpu::r1"}, []string{"read", "--json", "--", "r1"}, "remote screen"},
 		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main"},
-			[]string{"send", "--from=lead on " + hostname, "--json", "--", "r1", "rebase on main"}, "queued a message for session gpu::r1"},
+			[]string{"send", from, "--json", "--", "r1", "rebase on main"}, "queued a message for session gpu::r1"},
 		{"kill_session", map[string]any{"session_id": "gpu::r1"}, []string{"kill", "--json", "--", "r1"}, "killed remote-worker (id gpu::r1)"},
 		{"revive_session", map[string]any{"session_id": "gpu::r1"}, []string{"revive", "--json", "--", "r1"}, "revived remote-worker (id gpu::r1)"},
 		{"archive_session", map[string]any{"session_id": "gpu::r1"}, []string{"archive", "--json", "--", "r1"}, "(id gpu::r1)"},
@@ -373,7 +374,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		{"create_session", map[string]any{"host": "gpu", "prompt": "fix it", "saved": "reviewer"},
 			[]string{"spawn", "--json", "--prompt=saved:reviewer\n\nfix it"}, "created remote-worker (id gpu::r1)"},
 		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "saved": "reviewer"},
-			[]string{"send", "--from=lead on " + hostname, "--json", "--", "r1", "saved:reviewer\n\nrebase on main"}, "queued a message for session gpu::r1"},
+			[]string{"send", from, "--json", "--", "r1", "saved:reviewer\n\nrebase on main"}, "queued a message for session gpu::r1"},
 		{"create_group", map[string]any{"host": "gpu", "path": "work", "directory": "/srv"}, []string{"create-group", "--json", "--directory=/srv", "--", "work"}, "created group work on gpu"},
 		{"delete_group", map[string]any{"host": "gpu", "path": "work"}, []string{"delete-group", "--json", "--", "work"}, "deleted work; 1 session(s) moved to the root group: gpu::r1 on gpu"},
 	} {

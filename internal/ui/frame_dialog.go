@@ -3,6 +3,7 @@ package ui
 import (
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -56,7 +57,7 @@ func (m *Model) flexChromeRows(hint [][2]string) int {
 }
 
 func (m *Model) chromeRowsAt(width int, hint [][2]string) int {
-	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(width)), "\n") + 1
+	rows := 5 + strings.Count(legendInline(hint, cardInnerWidth(width), m.prefs.glyphMode), "\n") + 1
 	if m.errBar.text != "" {
 		rows += 2
 	}
@@ -76,7 +77,7 @@ func (m *Model) flexCardWidth(title, body string, hint [][2]string) int {
 	}
 	measure(body)
 	measure(cardTitle(title))
-	measure(legendInline(hint, 1<<30))
+	measure(legendInline(hint, 1<<30, m.prefs.glyphMode))
 	if m.errBar.text != "" {
 		measure(m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph))
 	}
@@ -128,13 +129,14 @@ func (r cardRect) bodyAt(x, y int) (col, line int, ok bool) {
 
 // cardTitleRow sets the title into the top edge, so the frame names the
 // dialog instead of spending a content row on it.
-func cardTitleRow(width int, title string, border lipgloss.Style) string {
+func cardTitleRow(width int, title string, border lipgloss.Style, mode presentation.GlyphMode) string {
+	g := presentation.ChromeFor(mode)
 	label := " " + cardTitle(title) + " "
 	dashes := width - 4 - lipgloss.Width(label)
 	if dashes < 0 {
 		dashes = 0
 	}
-	head := border.Render("╭──") + label + border.Render(strings.Repeat("─", dashes)+"╮")
+	head := border.Render(g.TopLeftGlyph+"──") + label + border.Render(strings.Repeat("─", dashes)+g.TopRightGlyph)
 	return paint(head, width, blockHex())
 }
 
@@ -164,5 +166,5 @@ func (m *Model) dialogRenderContext() dialogRenderContext {
 	if m.errBar.text != "" {
 		status = m.statusMessage(m.glyphs().CardErrorGlyph, m.glyphs().FinishedGlyph, m.glyphs().WarningGlyph)
 	}
-	return dialogRenderContext{width: m.layout.width, height: m.layout.height, status: status}
+	return dialogRenderContext{glyphMode: m.prefs.glyphMode, width: m.layout.width, height: m.layout.height, status: status}
 }

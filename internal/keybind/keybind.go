@@ -60,7 +60,7 @@ func Normalize(tea string) string {
 
 // Parse reads one key written by name: a character, a key name, ctrl+<key>,
 // alt+<key>, shift+<arrow> or f1..f12. esc and ctrl+c are not keys a table
-// may take, since esc cancels everywhere and ctrl+c always quits.
+// may take. esc cancels everywhere. ctrl+c quits outside a focused session.
 func Parse(spec string) (Key, error) {
 	// The bare space bar is named before trimming would erase it.
 	name := Normalize(strings.TrimSpace(Normalize(spec)))
@@ -69,7 +69,7 @@ func Parse(spec string) (Key, error) {
 	case name == "":
 		return Key{}, errors.New("a key is empty; write a character, a key name, ctrl+<key>, alt+<key> or f1..f12")
 	case lower == "esc" || lower == "ctrl+c":
-		return Key{}, fmt.Errorf("%q stays as it is: esc cancels and ctrl+c quits everywhere", spec)
+		return Key{}, fmt.Errorf("%q stays as it is: esc cancels, and ctrl+c quits outside a focused session", spec)
 	case utf8.RuneCountInString(name) == 1:
 		return Key{tea: name}, nil
 	case strings.HasPrefix(lower, "ctrl+"):

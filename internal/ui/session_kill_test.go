@@ -1,10 +1,13 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/status"
-	tea "github.com/charmbracelet/bubbletea"
+	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/status"
+	"github.com/YoanWai/agent-manager/internal/store"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestKillEndsTheSessionAndKeepsItRevivable(t *testing.T) {
@@ -223,5 +226,85 @@ func TestKillAgentConfirmNamesExtraTerminals(t *testing.T) {
 	want := "kill coder and 2 terminals? frees their RAM, v revives them."
 	if m.confirm.label != want {
 		t.Fatalf("label = %q, want %q", m.confirm.label, want)
+	}
+}
+
+func TestFilteredKillTargetsAndEffects(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		t.Run(fmt.Sprint(all), func(t *testing.T) {
+			m := buildModel(t)
+			seedGroups(t, m, "work", "hidden/deep")
+			for _, name := range []string{"needle-one", "needle-two", "other"} {
+				createSession(t, m, name, t.TempDir(), "work")
+			}
+			createSession(t, m, "needle-hidden", t.TempDir(), "hidden/deep")
+			inventory := append([]store.Session(nil), m.workspace.sessions...)
+			if err := m.services.store.SetGroupArchived("hidden", true); err != nil {
+				t.Fatal(err)
+			}
+			m.applyCmd(t, m.refreshCmd())
+			m.rail.SetSearch("needle", false)
+			m.selectGroupRow(t, "work")
+			if all {
+				m.killAllLive()
+			} else {
+				m.killSelected()
+			}
+			if len(m.confirm.sessions) != 2 || !strings.Contains(m.confirm.label, "(2") {
+				t.Fatalf("targets=%+v label=%q", m.confirm.sessions, m.confirm.label)
+			}
+			confirmKill(t, m)
+			for _, sess := range inventory {
+				want := sess.Name == "other" || sess.Name == "needle-hidden"
+				if got := m.services.tmux.Exists(sess.ID); got != want {
+					t.Errorf("%s live=%v want=%v", sess.Name, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestKillRootLabelAndEffects(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "root-agent", t.TempDir(), "")
+	m.selectGroupRow(t, "")
+	m.killSelected()
+	if !strings.Contains(m.confirm.label, "group root (1 live sessions)") {
+		t.Fatalf("label=%q", m.confirm.label)
+	}
+	confirmKill(t, m)
+	m.selectGroupRow(t, "")
+	m.killSelected()
+	if m.errBar.text != "no live sessions to kill in root" {
+		t.Fatalf("notice=%q", m.errBar.text)
+	}
+}
+
+func TestArchivedLiveRowsRefuseUIKill(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "archived-live", t.TempDir(), "")
+	sess := m.workspace.sessions[0]
+	if err := m.services.store.SetArchived(sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, sess.Name)
+	for _, action := range []string{"selected", "all", "x", "X"} {
+		m.mode = modeList
+		var cmd tea.Cmd
+		switch action {
+		case "selected":
+			_, cmd = m.killSelected()
+		case "all":
+			_, cmd = m.killAllLive()
+		default:
+			_, cmd = m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(action)})
+		}
+		m.applyCmd(t, cmd)
+		m.drainEffects(t)
+		if m.mode != modeList || !m.services.tmux.Exists(sess.ID) {
+			t.Errorf("%s: mode=%v live=%v", action, m.mode, m.services.tmux.Exists(sess.ID))
+		}
 	}
 }

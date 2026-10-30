@@ -40,7 +40,7 @@ func pollMessage(result execution.Result) tea.Msg {
 	}
 	s := result.Snapshot
 	return refreshMsg{sessions: s.Sessions, listedAt: s.ListedAt, groups: s.Groups, groupPaths: s.GroupPaths,
-		groupWorktrees: s.GroupWorktrees, groupBases: s.GroupBases, archivedGroups: s.ArchivedGroups, snap: s.Snap, snapOK: s.SnapOK,
+		groupWorktrees: s.GroupWorktrees, groupBases: s.GroupBases, groupEnvs: s.GroupEnvs, envProfiles: s.EnvProfiles, envKeys: s.EnvKeys, archivedGroups: s.ArchivedGroups, snap: s.Snap, snapOK: s.SnapOK,
 		proc: s.Proc, procFor: s.ProcFor, preview: s.Preview, agents: agentStats{count: s.Agents.Count, cpu: s.Agents.CPU, ram: s.Agents.RAM, rss: s.Agents.RSS},
 		queuedMessages: s.QueuedMessages, paneLines: s.PaneLines, panePrompts: s.PanePrompts, panes: s.Panes,
 		tmuxSocket: s.TmuxSocket, leadingManager: s.LeadingManager, focusID: s.FocusID, turnsEnded: s.TurnsEnded, followWarning: s.FollowWarning}
@@ -65,7 +65,6 @@ func storedPreview(st *store.Store, driver *tmux.Driver, id string) (string, err
 
 const quoteHistoryLines = 300
 
-func oneLine(name string) string  { return strings.Join(strings.Fields(name), " ") }
 func paneBooted(pane string) bool { return strings.TrimSpace(ansi.Strip(pane)) != "" }
 func ignoreDeletedSession(err error) error {
 	if errors.Is(err, store.ErrSessionGone) {

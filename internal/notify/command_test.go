@@ -27,7 +27,7 @@ func TestCommandEnvContract(t *testing.T) {
 			"AM_TOOL=claude",
 			"AM_CWD=/src/api-worktrees/am-x",
 			"AM_BRANCH=am/fix-login",
-			"AM_TITLE=deploy · claude",
+			"AM_TITLE=deploy · am-x · am/fix-login · claude",
 			"AM_BODY=" + want[1],
 		}
 		if !slices.Equal(got, expected) {

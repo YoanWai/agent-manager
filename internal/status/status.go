@@ -1,9 +1,11 @@
 package status
 
 import (
-	"github.com/YoanWai/agent-manager/internal/config"
+	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/config"
 )
 
 const (
@@ -107,6 +109,9 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 				return nil, err
 			}
 			*opt.target = re
+		}
+		if tr.dialogAsks != nil && tr.dialogAsks.NumSubexp() == 0 {
+			return nil, fmt.Errorf("tool %s: dialog_question needs a group for the question", name)
 		}
 		engine.tools[name] = tr
 	}

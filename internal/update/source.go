@@ -1,6 +1,7 @@
 package update
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -38,6 +39,9 @@ func DetectManager(execPath string) Manager {
 	}
 	slashPath := filepath.ToSlash(path)
 	switch {
+	case scoopManaged(slashPath):
+		// Scoop refuses to update an app while its binary is running.
+		return Manager{Name: "Scoop", Advice: "installed with Scoop. Close agent-manager, then run: scoop update agent-manager. For a global install, add --global in an elevated PowerShell."}
 	case homebrewTree(slashPath) == "Caskroom":
 		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
 	case buildSource == "Homebrew" || homebrewTree(slashPath) != "":
@@ -51,6 +55,44 @@ func DetectManager(execPath string) Manager {
 		return archManager()
 	}
 	return Manager{}
+}
+
+func scoopManaged(path string) bool {
+	path = strings.ToLower(strings.ReplaceAll(path, `\`, "/"))
+	if scoopLayout(path) {
+		return true
+	}
+	for _, key := range []string{"SCOOP", "SCOOP_GLOBAL"} {
+		root := os.Getenv(key)
+		if root == "" {
+			continue
+		}
+		// The running binary is already resolved. A Scoop root can be a
+		// junction or a Windows short path, so resolve it the same way
+		// before comparing prefixes.
+		if resolved, err := filepath.EvalSymlinks(root); err == nil {
+			root = resolved
+		}
+		root = strings.TrimRight(strings.ToLower(strings.ReplaceAll(root, `\`, "/")), "/")
+		if root != "" && strings.HasPrefix(path, root+"/apps/agent-manager/") {
+			return true
+		}
+	}
+	return false
+}
+
+// scoopLayout matches Scoop's default tree: a directory named scoop, then
+// apps, then agent-manager. The name has to be the whole segment. A
+// directory such as not-scoop is a normal install, and the in-place
+// updater still replaces that binary.
+func scoopLayout(path string) bool {
+	parts := strings.Split(path, "/")
+	for i := 0; i+3 < len(parts); i++ {
+		if parts[i] == "scoop" && parts[i+1] == "apps" && parts[i+2] == "agent-manager" {
+			return true
+		}
+	}
+	return false
 }
 
 // homebrewTree reports which Homebrew install tree the path sits in:

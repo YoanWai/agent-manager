@@ -82,6 +82,35 @@ func TestTrackConversationTakesTheIDOrAHookInputField(t *testing.T) {
 	}
 }
 
+// Every conversation a launched agent reported names its session, also the
+// ones it has since left: an MCP server keeps the id it started with across
+// /clear and /resume. A conversation started by hand has no owner.
+func TestConversationOwnerNamesTheSessionThatReportedIt(t *testing.T) {
+	configDir, st := conversationStore(t)
+	createConversationRow(t, st, "abcd1234")
+	runningAs(t, "abcd1234", 0)
+	for _, conversation := range []string{"conv-one", "conv-two"} {
+		if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", conversation}, strings.NewReader("")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for conversation, want := range map[string]string{
+		"conv-one":     "abcd1234",
+		"conv-two":     "abcd1234",
+		"hand-started": "",
+		"":             "",
+	} {
+		t.Setenv(EnvConversation, conversation)
+		if got := ConversationOwner(configDir); got != want {
+			t.Errorf("owner of %q = %q, want %q", conversation, got, want)
+		}
+	}
+	t.Setenv(EnvConversation, "conv-one")
+	if got := ConversationOwner(filepath.Join(t.TempDir(), "no-state")); got != "" {
+		t.Fatalf("owner without a state database = %q, want none", got)
+	}
+}
+
 // The id goes on to reach a revive's command line, so anything but a plain
 // token is refused before it is stored.
 func TestTrackConversationRefusesAnIDThatIsNotAPlainToken(t *testing.T) {
@@ -124,7 +153,7 @@ func TestTrackConversationOutsideAStampedLaunchWritesNothing(t *testing.T) {
 
 // A teammate, a CLI the agent ran as a tool and one typed into the pane by
 // hand carry the session's environment too, but only the launched agent
-// reports.
+// moves the row.
 func TestTrackConversationFromAnotherProcessWritesNothing(t *testing.T) {
 	configDir, st := conversationStore(t)
 	createConversationRow(t, st, "abcd1234")
@@ -136,6 +165,40 @@ func TestTrackConversationFromAnotherProcessWritesNothing(t *testing.T) {
 		}
 		if got := storedConversation(t, st, "abcd1234"); got != "" {
 			t.Fatalf("agent pid %q: row is on %q, want it untouched", agentPID, got)
+		}
+	}
+}
+
+// A conversation the session's settings started outside its pane, in
+// Claude Code's daemon after /background, /fork or the agent view, reports
+// through the same hook with the session's environment. It is owned, so its
+// processes still name the session, but the row stays on the pane's
+// conversation. It outlives the launch that started it, so a launch a revive
+// replaced still counts. Another tool's hook in the pane records nothing.
+func TestTrackConversationOutsideThePaneOwnsTheConversation(t *testing.T) {
+	configDir, st := conversationStore(t)
+	createConversationRow(t, st, "abcd1234")
+	runningAs(t, "abcd1234", 0)
+	t.Setenv(hooks.EnvAgentPID, strconv.Itoa(os.Getpid()))
+	if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", "background"}, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAgentLaunchedAt("abcd1234", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := TrackConversation(configDir, []string{"--tool", "pi", "--id", "before-revive"}, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	if err := TrackConversation(configDir, []string{"--tool", "claude", "--id", "other-tool"}, strings.NewReader("")); err != nil {
+		t.Fatal(err)
+	}
+	if got := storedConversation(t, st, "abcd1234"); got != "" {
+		t.Fatalf("row is on %q, want it untouched", got)
+	}
+	for conversation, want := range map[string]string{"background": "abcd1234", "before-revive": "abcd1234", "other-tool": ""} {
+		t.Setenv(EnvConversation, conversation)
+		if got := ConversationOwner(configDir); got != want {
+			t.Errorf("owner of %q = %q, want %q", conversation, got, want)
 		}
 	}
 }

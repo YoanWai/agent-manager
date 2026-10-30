@@ -30,11 +30,21 @@ archives:
 
 checksum:
   name_template: checksums.txt
+  # Hashed in place. The attestation step reads these digests from
+  # checksums.txt; it does not open the files. A before-hook copy into dist
+  # fails the release: dist must be empty when the dist pipe runs.
+  extra_files:
+    - glob: ./install.ps1
+    - glob: ./install.sh
 
 changelog:
   use: github-native
 
 release:
+  # Same bytes checksum.extra_files hashes, so the asset digest matches the attestation.
+  extra_files:
+    - glob: ./install.ps1
+    - glob: ./install.sh
   header: |
     Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side, each in its own tmux session, with live status, a project tree, quick prompt mode, and full-file diff review. Runs on macOS, Linux and Windows (with psmux), and inside WSL2. [See it running](https://github.com/YoanWai/agent-manager#agent-manager).
 
@@ -44,7 +54,7 @@ release:
     ```bash
     # macOS / Linux
     brew install agent-manager
-    curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
+    curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh && sh install.sh
     mise use -g ubi:YoanWai/agent-manager
     go install github.com/YoanWai/agent-manager@latest
 
@@ -53,9 +63,23 @@ release:
     ```
 
     ```powershell
-    # Windows
-    irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
+    # Windows. The Scoop bucket can lag this release.
+    scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
+    scoop install yoanwai/agent-manager
+
+    # Download install.ps1 (attached below, listed in checksums.txt), read it,
+    # then run it. Windows PowerShell 5.1 has no &&.
+    irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+    if ($?) {
+      Get-Content .\install.ps1
+      Unblock-File .\install.ps1
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+    }
     ```
+
+    `install.sh` is attached too. `gh attestation verify <file> --repo YoanWai/agent-manager` checks build provenance once `gh` is logged in.
+
+    The shell short form runs the script without a local copy: `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`.
 
     Prebuilt macOS, Linux and Windows binaries are attached below.
 

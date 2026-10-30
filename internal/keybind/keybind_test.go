@@ -47,7 +47,7 @@ func TestParseSpellsEachSideOfTheKey(t *testing.T) {
 	}
 }
 
-// esc cancels and ctrl+c quits everywhere, a modifier the terminal folds
+// esc cancels and ctrl+c quits outside a focused session, a modifier the terminal folds
 // into another key would take that key instead, and the combinations
 // Bubble Tea v1 cannot read would never fire.
 func TestParseRefusesWhatCannotBeAKey(t *testing.T) {

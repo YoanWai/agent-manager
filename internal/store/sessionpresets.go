@@ -10,8 +10,8 @@ import (
 )
 
 type SessionPreset struct {
-	Name         string
-	Instructions string
+	Name         string `json:"name"`
+	Instructions string `json:"instructions"`
 }
 
 func (s *Store) SessionPresets() ([]SessionPreset, error) {
@@ -43,7 +43,7 @@ func (s *Store) SessionPreset(name string) (SessionPreset, bool, error) {
 	return preset, true, nil
 }
 
-func (s *Store) SaveSessionPreset(previousName string, preset SessionPreset) error {
+func checkSessionPreset(preset SessionPreset) error {
 	if !utf8.ValidString(preset.Name) || strings.ContainsFunc(preset.Name, unicode.IsControl) {
 		return errors.New("that name cannot be saved")
 	}
@@ -57,6 +57,14 @@ func (s *Store) SaveSessionPreset(previousName string, preset SessionPreset) err
 	if !utf8.ValidString(preset.Instructions) || len(preset.Instructions) > 64*1024 || strings.TrimSpace(preset.Instructions) == "" {
 		return errors.New("text is empty or too long")
 	}
+	return nil
+}
+
+func (s *Store) SaveSessionPreset(previousName string, preset SessionPreset) error {
+	if err := checkSessionPreset(preset); err != nil {
+		return err
+	}
+	preset.Name = strings.TrimSpace(preset.Name)
 	if previousName == "" {
 		_, err := s.db.Exec(`INSERT INTO session_presets (name, instructions) VALUES (?, ?)`, preset.Name, preset.Instructions)
 		return err

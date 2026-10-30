@@ -230,6 +230,10 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err != nil {
 		return Terminal{}, err
 	}
+	environment, err := runtime.environmentFor(caller, group, nil)
+	if err != nil {
+		return Terminal{}, err
+	}
 	sess := store.Session{
 		ID:                   uuid.NewString()[:8],
 		Name:                 name,
@@ -239,6 +243,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		Status:               status.Starting,
 		ParentID:             parentID,
 		OpenedWithoutSession: caller.ID == "",
+		Environment:          environment,
 	}
 	lifecycle, err := t.lifecycle(runtime, nil)
 	if err != nil {

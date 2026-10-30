@@ -2,10 +2,12 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -114,7 +116,8 @@ type Tool struct {
 	InputPlaceholder string `toml:"input_placeholder"`
 	// UserEcho marks a line where the tool echoes a submitted prompt into
 	// its transcript, which is how the last thing sent to a session is
-	// read back regardless of who typed it or from where.
+	// read back regardless of who typed it or from where. A group, when
+	// the pattern has one, is the prompt itself.
 	UserEcho string `toml:"user_echo"`
 	// ToolRow marks a transcript row the tool draws behind the same marker
 	// as an echoed prompt (opencode's command, its output and a written
@@ -185,12 +188,126 @@ type Config struct {
 	Tools map[string]Tool
 }
 
+// testConfigDir is the directory this test process uses instead of the
+// user config it started with. startupConfigEnv carries that user config
+// to a subprocess, and startupXDGEnv the XDG_CONFIG_HOME it started with.
+// A subprocess keeps a HOME, APPDATA, or XDG_CONFIG_HOME it was given, and
+// a relative XDG_CONFIG_HOME still fails. An XDG_CONFIG_HOME the process
+// inherited is the user config, so the planted directory still replaces it.
+const startupConfigEnv = "AGENT_MANAGER_STARTUP_CONFIG"
+const startupXDGEnv = "AGENT_MANAGER_STARTUP_XDG"
+
+var (
+	testConfigDir   string
+	startupXDG      string
+	startupXDGNoted bool
+)
+
+func init() {
+	if !testing.Testing() || os.Getenv("AGENT_MANAGER_CONFIG_DIR") != "" {
+		return
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return
+	}
+	dir, err := os.MkdirTemp("", "agent-manager-test-")
+	if err != nil {
+		panic(err)
+	}
+	testConfigDir = dir
+	startupXDG = os.Getenv("XDG_CONFIG_HOME")
+	startupXDGNoted = true
+	os.Setenv("AGENT_MANAGER_CONFIG_DIR", dir)
+	os.Setenv(startupConfigEnv, base)
+	os.Setenv(startupXDGEnv, startupXDG)
+}
+
 func Dir() (string, error) {
+	if dir := chosenConfigDir(); dir != "" {
+		return dir, nil
+	}
+	if base, ok := chosenXDG(); ok {
+		// The same rejection os.UserConfigDir makes on a Unix Go that
+		// checks the variable. Darwin's UserConfigDir never reads it.
+		if !filepath.IsAbs(base) {
+			return "", errors.New("path in $XDG_CONFIG_HOME is relative")
+		}
+		return filepath.Join(base, "agent-manager"), nil
+	}
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
+	if dir := harnessConfigDir(base); dir != "" {
+		return dir, nil
+	}
 	return filepath.Join(base, "agent-manager"), nil
+}
+
+// chosenConfigDir is AGENT_MANAGER_CONFIG_DIR when this process asked for
+// it. The directory planted for go test does not count once HOME, APPDATA,
+// XDG_CONFIG_HOME, or their Darwin and Windows equivalents no longer
+// resolve to the user config this process started with.
+func chosenConfigDir() string {
+	override := os.Getenv("AGENT_MANAGER_CONFIG_DIR")
+	if override == "" {
+		return ""
+	}
+	if testConfigDir != "" && override != testConfigDir {
+		return override
+	}
+	if testConfigDir != "" {
+		return ""
+	}
+	// A subprocess inherited the directory planted for the test. It applies
+	// only while this process still resolves the user config recorded then.
+	if startup := os.Getenv(startupConfigEnv); startup != "" {
+		base, err := os.UserConfigDir()
+		if err != nil || base != startup || xdgChanged(os.Getenv("XDG_CONFIG_HOME")) {
+			return ""
+		}
+	}
+	return override
+}
+
+// chosenXDG is XDG_CONFIG_HOME when this process set it to something other
+// than the value it started with. The inherited value is the user config.
+func chosenXDG() (string, bool) {
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if !xdgChanged(base) || base == "" {
+		return "", false
+	}
+	return base, true
+}
+
+func xdgChanged(base string) bool {
+	if startupXDGNoted {
+		return base != startupXDG
+	}
+	recorded, ok := os.LookupEnv(startupXDGEnv)
+	if !ok {
+		return base != ""
+	}
+	return base != recorded
+}
+
+func harnessConfigDir(base string) string {
+	if !testing.Testing() || base != os.Getenv(startupConfigEnv) {
+		return ""
+	}
+	if testConfigDir != "" {
+		return testConfigDir
+	}
+	return os.Getenv("AGENT_MANAGER_CONFIG_DIR")
+}
+
+func dirInside(path, dir string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // WithChoice puts the choice's flags on every line that launches the tool.

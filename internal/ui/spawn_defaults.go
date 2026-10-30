@@ -55,6 +55,17 @@ func (m *Model) groupBase(group string) string {
 	return ""
 }
 
+// groupEnv is the environment profile a spawn into group preselects: the
+// nearest ancestor group's choice, or "" for none.
+func (m *Model) groupEnv(group string) string {
+	for g := group; g != ""; g = parentGroup(g) {
+		if env := m.workspace.groupEnvs[g]; env != "" {
+			return env
+		}
+	}
+	return ""
+}
+
 // groupBaseTarget names the base picker a branch read answers.
 type groupBaseTarget uint8
 

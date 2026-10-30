@@ -49,6 +49,46 @@ func TestSendModeSurfacesSendFailureAndDoesNotRetry(t *testing.T) {
 	}
 }
 
+// A launch input counts as sent only once the composer empties, and one no Enter submits is reported and retired.
+func TestPendingInputCountsAsSentOnceTheComposerEmpties(t *testing.T) {
+	for _, tool := range []string{"collapsing-tool", "slow-submit-tool", "guarded-tool", "stuck-tool"} {
+		t.Run(tool, func(t *testing.T) {
+			m := buildModel(t)
+			sendMode := m.cfg.Tools[tool]
+			sendMode.PromptMode = "send"
+			m.cfg.Tools[tool] = sendMode
+			if err := m.spawnSession(tool, "worker", t.TempDir(), "", "rebase on main\n\nthen run the suite", false, false); err != nil {
+				t.Fatalf("spawn: %v", err)
+			}
+			sess, err := m.store.Get(m.sessionRows()[0].ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pane := settledPane(t, m, sess.ID, "❯")
+
+			sent, err := m.poller.maybeSendPendingInput(sess, pane, true)
+			if tool == "stuck-tool" {
+				if sent || !errors.Is(err, tmux.ErrUnsubmitted) {
+					t.Fatalf("an input no Enter submitted reported %v, %v", sent, err)
+				}
+				if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
+					t.Fatalf("an input left in the composer is still queued: %q", inputs)
+				}
+				return
+			}
+			if err != nil || !sent {
+				t.Fatalf("maybeSendPendingInput = %v, %v", sent, err)
+			}
+			if inputs := sessionPendingInputs(t, m, sess.ID); len(inputs) != 0 {
+				t.Fatalf("a submitted input is still queued: %q", inputs)
+			}
+			if after, redrawn := promptRedrawn(t, m, sess.ID); !redrawn {
+				t.Fatalf("the input sits in the composer unsubmitted:\n%s", after)
+			}
+		})
+	}
+}
+
 // A dialog leaves the tool's input line drawn underneath it, so the
 // activity region reports ready while typing would answer the dialog.
 // The rule pass is what tells the two apart.
@@ -623,8 +663,72 @@ func TestInboxPressesEnterAgainWhileThePasteSitsInTheComposer(t *testing.T) {
 	if state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
 		t.Fatalf("a message the second Enter submitted was recorded as %+v", state)
 	}
-	if after, err := m.tmux.CapturePane(sess.ID); err != nil || !strings.HasSuffix(strings.TrimRight(ansi.Strip(after), "\n "), "❯") {
-		t.Fatalf("the composer still holds the paste (%v):\n%s", err, after)
+	if after, redrawn := promptRedrawn(t, m, sess.ID); !redrawn {
+		t.Fatalf("the composer still holds the paste:\n%s", after)
+	}
+}
+
+// The blank row a line break leaves under the paste is still the composer.
+func TestInboxPressesEnterAgainWhenTheFirstOneBreaksTheLine(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "guarded-tool")
+	id := queueMessage(t, m, sess.ID, "rebase on main\n\nthen run the suite")
+	pane := settledPane(t, m, sess.ID, "❯")
+
+	if _, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
+		t.Fatalf("maybeDeliverInbox: %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("a message the second Enter submitted was recorded as %+v", state)
+	}
+	if after, redrawn := promptRedrawn(t, m, sess.ID); !redrawn {
+		t.Fatalf("a message recorded as delivered sits in the composer:\n%s", after)
+	}
+}
+
+// promptRedrawn reports whether the newest prompt row is empty, which the test tools draw once they take a submit.
+func promptRedrawn(t *testing.T, m *harness, sessionID string) (string, bool) {
+	t.Helper()
+	pane, err := m.tmux.CapturePane(sessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clean := ansi.Strip(pane)
+	rows := strings.Split(clean, "\n")
+	for i := len(rows) - 1; i >= 0; i-- {
+		if strings.HasPrefix(rows[i], "❯") {
+			return clean, strings.TrimSpace(rows[i]) == "❯"
+		}
+	}
+	return clean, false
+}
+
+// An agent that took the Enter can draw its turn starting before it clears
+// the composer. An Enter pressed again then lands on the empty prompt that
+// follows, so a pane that is still redrawing is waited on instead.
+func TestInboxWaitsOnAComposerThatClearsAfterRedrawing(t *testing.T) {
+	m := buildModel(t)
+	sess := spawnedSession(t, m, "slow-submit-tool")
+	id := queueMessage(t, m, sess.ID, "rebase on main\nthen run the suite")
+	pane := settledPane(t, m, sess.ID, "❯")
+
+	if _, err := m.poller.maybeDeliverInbox(sess, pane, status.Idle, true); err != nil {
+		t.Fatalf("maybeDeliverInbox: %v", err)
+	}
+	state, err := m.store.Message(id, "sender01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.DeliveredAt.IsZero() || !state.DroppedAt.IsZero() {
+		t.Fatalf("a message the first Enter submitted was recorded as %+v", state)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if after, err := m.tmux.CapturePane(sess.ID); err != nil || strings.Contains(after, "!extra") {
+		t.Fatalf("an Enter was pressed after the agent took the message (%v):\n%s", err, after)
 	}
 }
 

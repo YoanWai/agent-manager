@@ -3,15 +3,9 @@ package ui
 import (
 	"github.com/YoanWai/agent-manager/internal/diff"
 	"github.com/YoanWai/agent-manager/internal/git"
-	"github.com/YoanWai/agent-manager/internal/store"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
-
-func (m *Model) reviewKey() string {
-	state := m.review.Snapshot()
-	return state.SessionID + "\x00" + state.RepoSelected
-}
 
 func (m *Model) reviewedMarkKey(path string) string {
 	return m.review.Snapshot().Scope.String() + "\x00" + path
@@ -44,7 +38,6 @@ func (m *Model) toggleReviewed() tea.Cmd          { return m.reviewCommands(m.re
 func (m *Model) toggleCodeOnly() tea.Cmd          { return m.reviewCommands(m.review.ToggleCodeOnly()) }
 func (m *Model) fileReviewed(path string) bool    { return m.review.FileReviewed(path) }
 func (m *Model) moveDiffCursor(delta, height int) { m.review.MoveCursor(delta, height) }
-func (m *Model) jumpChange(delta int)             { m.review.JumpChange(delta, m.diffCodeHeight()) }
 func (m *Model) setCursorDiffLine(line int)       { m.review.SetCursorDiffLine(line, m.diffCodeHeight()) }
 func (m *Model) switchDiffFile(delta int) tea.Cmd {
 	return m.reviewCommands(m.review.SwitchFile(delta))
@@ -58,20 +51,6 @@ func (m *Model) fileDiffByPath(path string) *diff.FileDiff {
 		}
 	}
 	return nil
-}
-
-func (m *Model) diffLoadCmd(sess store.Session, scope git.Scope, generation int, repo string, refresh bool) tea.Cmd {
-	state := m.review.Snapshot()
-	return m.reviewLoadCmd(uireview.LoadRequest{
-		Target: reviewTarget(sess), Scope: scope, Generation: generation,
-		RepoWanted: repo, Refresh: refresh, Resolve: true,
-		Restored: map[string]bool{sess.ID + "\x00" + state.RepoSelected: len(m.review.SavedState().Comments) > 0 || len(m.review.SavedState().Reviewed) > 0},
-	})
-}
-
-func (m *Model) diffProbeCmd(sess store.Session, scope git.Scope) tea.Cmd {
-	state := m.review.Snapshot()
-	return m.reviewProbeCmd(uireview.ProbeRequest{Target: reviewTarget(sess), Scope: scope, RepoSelected: state.RepoSelected, GitRoot: state.Set.Repo.Root})
 }
 
 func seedReviewForTest(m *Model, target uireview.Target, scope git.Scope, repo string, set diff.Set, apply bool) uireview.LoadRequest {

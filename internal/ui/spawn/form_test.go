@@ -87,7 +87,7 @@ func TestFormDialogThroughAFakeHost(t *testing.T) {
 	if request.Spawn == nil {
 		t.Fatalf("enter built no spawn: %v", h.errs)
 	}
-	if got, want := *request.Spawn, (Request{Tool: "plain", Name: "fix", Dir: "/", Worktree: true, WorktreeSet: true}); got != want {
+	if got, want := *request.Spawn, (Request{Tool: "plain", Name: "fix", Dir: "/", EnvSet: true, Worktree: true, WorktreeSet: true}); got != want {
 		t.Fatalf("spawn = %+v, want %+v", got, want)
 	}
 	h.prompt.text = "-rf"

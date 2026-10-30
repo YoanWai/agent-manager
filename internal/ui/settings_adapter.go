@@ -275,12 +275,22 @@ func (m *Model) applySettingsPrefs() {
 	}
 }
 
+// settingsEnvs are the defined environment profiles the dialog lists.
+func (m *Model) settingsEnvs() []uisettings.Env {
+	envs := make([]uisettings.Env, len(m.workspace.envProfiles))
+	for i, name := range m.workspace.envProfiles {
+		envs[i] = uisettings.Env{Name: name, Keys: m.workspace.envKeys[name]}
+	}
+	return envs
+}
+
 // viewSettings frames the dialog in the root's card chrome.
 func (m *Model) viewSettings() string {
 	frame := m.settings.dialog.View(uisettings.ViewContext{
 		GlyphMode:  m.prefs.glyphMode,
 		Session:    m.services.keys,
 		List:       m.services.listKeys,
+		Envs:       m.settingsEnvs(),
 		Version:    m.update.version,
 		Latest:     m.update.latest,
 		Applying:   m.update.applying,

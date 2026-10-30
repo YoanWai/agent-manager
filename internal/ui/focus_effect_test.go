@@ -49,6 +49,9 @@ func TestFocusFenceKeepsNewerSelection(t *testing.T) {
 func TestFocusDeadSessionNeverEnters(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	if err := m.services.store.SetKeys(m.services.listKeys.With(keybind.Revive, bindingOf(t, "U")).With(keybind.Restart, bindingOf(t))); err != nil {
+		t.Fatal(err)
+	}
 	createSession(t, m, "alpha", t.TempDir(), "")
 	sess := m.sessionRows()[0]
 	if err := m.services.tmux.Kill(sess.ID); err != nil {
@@ -63,8 +66,8 @@ func TestFocusDeadSessionNeverEnters(t *testing.T) {
 	if m.mode != modeList {
 		t.Fatalf("a dead pane should not enter focus, mode = %v", m.mode)
 	}
-	if m.errBar.text != deadSessionHint {
-		t.Fatalf("err = %q, want %q", m.errBar.text, deadSessionHint)
+	if m.errBar.text != "session is dead - press U to revive" {
+		t.Fatalf("err = %q, want %q", m.errBar.text, "session is dead - press U to revive")
 	}
 }
 
@@ -153,6 +156,9 @@ func TestAckIgnoresGoneSession(t *testing.T) {
 func TestAttachDeadSessionReportsFromCompletion(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
+	if err := m.services.store.SetKeys(m.services.listKeys.With(keybind.Revive, bindingOf(t, "U")).With(keybind.Restart, bindingOf(t))); err != nil {
+		t.Fatal(err)
+	}
 	createSession(t, m, "alpha", t.TempDir(), "")
 	sess := m.sessionRows()[0]
 	if err := m.services.tmux.Kill(sess.ID); err != nil {
@@ -165,8 +171,8 @@ func TestAttachDeadSessionReportsFromCompletion(t *testing.T) {
 	}
 	m.applyTestMsg(t, cmd())
 	m.drainEffects(t)
-	if m.errBar.text != deadSessionHint {
-		t.Fatalf("err = %q, want %q", m.errBar.text, deadSessionHint)
+	if m.errBar.text != "session is dead - press U to revive" {
+		t.Fatalf("err = %q, want %q", m.errBar.text, "session is dead - press U to revive")
 	}
 }
 

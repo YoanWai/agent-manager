@@ -65,6 +65,14 @@ type Result struct {
 	Cmd tea.Cmd
 }
 
+// step moves the cursor a row, past the environments row while it is off.
+func (s *State) step(delta int) {
+	s.Field = (s.Field + delta + FieldCount) % FieldCount
+	if s.Field == FieldEnvs && s.envsHidden {
+		s.Field = (s.Field + delta + FieldCount) % FieldCount
+	}
+}
+
 // Key runs one key on the open dialog.
 func (s *State) Key(msg tea.KeyMsg, ctx Context) Result {
 	if s.Prompts.open {
@@ -81,9 +89,9 @@ func (s *State) Key(msg tea.KeyMsg, ctx Context) Result {
 	}
 	switch msg.String() {
 	case "up", "k":
-		s.Field = (s.Field + FieldCount - 1) % FieldCount
+		s.step(-1)
 	case "down", "j":
-		s.Field = (s.Field + 1) % FieldCount
+		s.step(1)
 	case "left", "h":
 		return s.Cycle(-1)
 	case "right", "l":

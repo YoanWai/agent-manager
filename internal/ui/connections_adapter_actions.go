@@ -428,6 +428,7 @@ func (d *formDialog) aimRemote(target formRemote) {
 	d.TakePath("")
 	d.SetDirPlaceholder("the group's directory on " + target.host)
 	d.SeedWorktree(false)
+	d.Env().Seed(nil, "")
 }
 
 // remoteFormRequest takes the form requests that differ on a connection:

@@ -194,11 +194,11 @@ func paint(text string, width int, bg string) string {
 		return ""
 	}
 	text = ansi.Truncate(text, width, "")
-	padding := max(width-ansi.StringWidth(text), 0)
+	padded := text + strings.Repeat(" ", max(width-ansi.StringWidth(text), 0))
 	if bg == "" {
-		return text + strings.Repeat(" ", padding)
+		return padded
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color(bg)).Render(text + strings.Repeat(" ", padding))
+	return presentation.Fill(padded, bg)
 }
 
 func rowColumns(lead, meta string, width int) string {

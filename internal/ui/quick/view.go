@@ -81,7 +81,7 @@ func (q *Bar) View(h Host, facts Facts, width, maxRows int) string {
 const savedListRows = 6
 
 // statusRow puts what a spawn launches with against the right edge of
-// the row: the CLI, model, effort, profile and worktree, each a stretch a
+// the row: the CLI, model, effort, profile, environment and worktree, each a stretch a
 // click steps the way its key does.
 func (q *Bar) statusRow(h Host, facts Facts, left string, width, line int) string {
 	st := facts.Styles
@@ -111,6 +111,13 @@ func (q *Bar) statusRow(h Host, facts Facts, left string, width, line int) strin
 	}
 	if spawn.HasProfiles(h, toolName) {
 		segments = append(segments, segment{orDefault(ch.ProfileName(h, toolName), "default profile"), ClickProfile})
+	}
+	if target, _ := h.Target(); q.envShown(target) {
+		env := st.Subtle.Render("no env")
+		if name := q.env.For(target.Env); name != "" {
+			env = st.Subtle.Render("env ") + st.Value.Render(name)
+		}
+		segments = append(segments, segment{env, ClickEnv})
 	}
 	worktree := st.Subtle.Render(presentation.GlyphsFor(st.GlyphMode).WorktreeGlyph + " off")
 	switch {

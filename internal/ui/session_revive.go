@@ -1,22 +1,24 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"time"
+
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
-	"time"
 )
-
-// deadSessionHint names both ways back from a dead row: revive resumes the
-// conversation it held, restart drops it.
-const deadSessionHint = "session is dead - press v to revive or R to restart"
 
 // reviveSelected relaunches a dead session's tmux session under the same
 // id, keeping its name, group, and history. Tools with a revive_command
 // resume where they left off (e.g. claude --continue). On a group row it
 // revives the whole subtree, mirroring the group kill.
 func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
+	if m.rail.ShowArchived() {
+		return m, nil
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil
@@ -36,24 +38,23 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 			m.mode = modeConfirmDelete
 			return m, nil
 		}
-		return m.reviveMany(sessions, "no dead sessions to revive in "+entry.group)
+		return m.reviveMany(sessions, "no dead sessions to revive in "+displayGroup(entry.group))
 	}
-	set := m.sessionAndChildren(entry.sess)
-	dead := false
+	set := activeSessions(m.sessionAndChildren(entry.sess))
+	var dead []store.Session
 	for _, sess := range set {
 		if !m.sessionWindowProjectedLive(sess.ID) {
-			dead = true
-			break
+			dead = append(dead, sess)
 		}
 	}
-	if len(set) > 1 && dead {
+	if len(set) > 1 && len(dead) > 0 {
 		m.confirm.confirmTarget = confirmTarget{
 			action:   actionRevive,
-			sessions: set,
-			label: followConfirmLabel("revive", entry.sess.Name, len(set)-1,
+			sessions: dead,
+			label: sessionActionLabel("revive", entry.sess, dead,
 				"brings it back.",
 				"brings them back."),
-			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
+			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID, members: set},
 		}
 		m.mode = modeConfirmDelete
 		return m, nil
@@ -65,6 +66,9 @@ func (m *Model) reviveSelected() (tea.Model, tea.Cmd) {
 // reviveAllDead relaunches every dead session in the current view, resuming
 // each by its captured id where one exists.
 func (m *Model) reviveAllDead() (tea.Model, tea.Cmd) {
+	if m.rail.ShowArchived() {
+		return m, nil
+	}
 	sessions := m.listedSessions()
 	if dead := deadSessions(sessions); len(dead) > 1 {
 		m.confirm.confirmTarget = confirmTarget{
@@ -90,7 +94,7 @@ func (m *Model) reviveMany(sessions []store.Session, emptyNotice string) (tea.Mo
 func deadSessions(sessions []store.Session) []store.Session {
 	var dead []store.Session
 	for _, sess := range sessions {
-		if sess.Status == status.Dead {
+		if !sess.Archived && sess.Status == status.Dead {
 			dead = append(dead, sess)
 		}
 	}
@@ -146,5 +150,53 @@ func (m *Model) bindReviveLocally(id string, launchedAt time.Time) {
 		// A killed or archived row still holds its last pane; that would
 		// count as painted and hide the loader.
 		m.workspace.preview = ""
+	}
+}
+
+func activeSessions(sessions []store.Session) []store.Session {
+	var active []store.Session
+	for _, sess := range sessions {
+		if !sess.Archived {
+			active = append(active, sess)
+		}
+	}
+	return active
+}
+
+func deadSessionError(st *store.Store, id string) error {
+	sess, err := st.RequireSession(id)
+	if err != nil {
+		return err
+	}
+	keys, err := st.ListKeys()
+	if err != nil {
+		return err
+	}
+	if sess.Archived {
+		return errors.New(archivedSessionHint(keys))
+	}
+	return errors.New(deadSessionHint(keys))
+}
+
+func archivedSessionHint(keys keybind.Table) string {
+	binding := keys.Binding(keybind.Restore).Label()
+	if binding == "" {
+		return "session is archived - choose Restore from its row menu"
+	}
+	return fmt.Sprintf("session is archived - press %s to restore", binding)
+}
+
+func deadSessionHint(keys keybind.Table) string {
+	revive := keys.Binding(keybind.Revive).Label()
+	restart := keys.Binding(keybind.Restart).Label()
+	switch {
+	case revive == "" && restart == "":
+		return "session is dead - choose Revive from its row menu"
+	case revive == "":
+		return fmt.Sprintf("session is dead - press %s to restart or choose Revive from its row menu", restart)
+	case restart == "":
+		return fmt.Sprintf("session is dead - press %s to revive", revive)
+	default:
+		return fmt.Sprintf("session is dead - press %s to revive or %s to restart", revive, restart)
 	}
 }

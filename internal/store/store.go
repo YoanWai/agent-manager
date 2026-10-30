@@ -2,7 +2,10 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -35,6 +38,9 @@ func Open(path string) (*Store, error) {
 	} else if realDir, evalErr := filepath.EvalSymlinks(filepath.Dir(absPath)); evalErr == nil {
 		absPath = filepath.Join(realDir, filepath.Base(absPath))
 	}
+	if err := restrictToOwner(absPath); err != nil {
+		return nil, err
+	}
 	db, err := sql.Open("sqlite", absPath+busyTimeout)
 	if err != nil {
 		return nil, err
@@ -54,6 +60,24 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	return store, nil
+}
+
+// restrictToOwner keeps the database readable by this user alone, since
+// environment profiles store tokens in it. SQLite gives its WAL and shared
+// memory files the database's own mode, so creating it 0600 covers them; a
+// database from an earlier release, created 0644, is tightened in place.
+func restrictToOwner(path string) error {
+	file, err := os.OpenFile(path, os.O_RDONLY|os.O_CREATE, 0o600)
+	if err != nil {
+		return fmt.Errorf("open store: %w", err)
+	}
+	file.Close()
+	for _, name := range []string{path, path + "-wal", path + "-shm"} {
+		if err := os.Chmod(name, 0o600); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("restrict store: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *Store) Close() error {

@@ -10,7 +10,9 @@ import (
 )
 
 func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
-	for _, size := range [][2]int{{34, 12}, {80, 11}} {
+	// One row shorter than the symbols line. Save lives in the footer, so the
+	// body spends that row on a field.
+	for _, size := range [][2]int{{34, 11}, {80, 10}} {
 		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
 			m := buildModel(t)
 			m.layout.width, m.layout.height = size[0], size[1]
@@ -27,7 +29,8 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			if m, _ = clickBody(t, m, "symbols"); m.prefs.glyphMode != presentation.GlyphModeBasic {
 				t.Fatal("revealed symbols row was not clickable")
 			}
-			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+			// The environments row between them waits for a profile.
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs - 1 {
 				m = wheelOnCard(m, tea.MouseButtonWheelDown)
 			}
 			if m.settings.dialog.Field != uisettings.FieldDocs || !paints(m, "docs") {
@@ -41,7 +44,7 @@ func TestSettingsWheelReachesSymbolsAndDocsInShortWindows(t *testing.T) {
 			if opened != docsURL {
 				t.Fatal("docs click did not follow the scrolled row")
 			}
-			for range uisettings.FieldDocs - uisettings.FieldGlyphs {
+			for range uisettings.FieldDocs - uisettings.FieldGlyphs - 1 {
 				m = wheelOnCard(m, tea.MouseButtonWheelUp)
 			}
 			if m.settings.dialog.Field != uisettings.FieldGlyphs || !paints(m, "symbols") {

@@ -2,14 +2,11 @@
 
 package agentsession
 
-import (
-	"os"
-	"path/filepath"
-)
+import "path/filepath"
 
 // hermesDefaultHome is where hermes keeps its data when HERMES_HOME is unset.
-func hermesDefaultHome() (string, error) {
-	home, err := os.UserHomeDir()
+func hermesDefaultHome(env Env) (string, error) {
+	home, err := env.homeDir()
 	if err != nil {
 		return "", err
 	}

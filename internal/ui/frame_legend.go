@@ -40,16 +40,16 @@ type legendPart struct {
 	label string
 }
 
-func (s legendSection) parts() []legendPart {
+func (s legendSection) parts(mode presentation.GlyphMode) []legendPart {
 	var parts []legendPart
 	for _, lead := range s.leads {
 		if lead[0] != "" {
-			parts = append(parts, legendPart{keyCapLead(lead[0], lead[1]), lead[0]})
+			parts = append(parts, legendPart{keyCapLead(presentation.KeyLabel(mode, lead[0]), lead[1]), lead[0]})
 		}
 	}
 	for _, alert := range s.alerts {
 		if alert[0] != "" {
-			parts = append(parts, legendPart{keyCapAlert(alert[0], alert[1]), alert[0]})
+			parts = append(parts, legendPart{keyCapAlert(presentation.KeyLabel(mode, alert[0]), alert[1]), alert[0]})
 		}
 	}
 	if s.hint != "" {
@@ -57,9 +57,9 @@ func (s legendSection) parts() []legendPart {
 	}
 	for _, pair := range s.pairs {
 		if s.quiet {
-			parts = append(parts, legendPart{keyCapQuiet(pair[0], pair[1]), pair[0]})
+			parts = append(parts, legendPart{keyCapQuiet(presentation.KeyLabel(mode, pair[0]), pair[1]), pair[0]})
 		} else {
-			parts = append(parts, legendPart{keyCap(pair[0], pair[1]), pair[0]})
+			parts = append(parts, legendPart{keyCap(presentation.KeyLabel(mode, pair[0]), pair[1]), pair[0]})
 		}
 	}
 	return parts
@@ -74,21 +74,21 @@ type legend struct {
 
 // paintLegend renders a legend as the app's footer, one tier per line where
 // the terminal allows it and the tail marked when it does not.
-func paintLegend(sections []legendSection, width int) legend {
-	indent := strings.Repeat(" ", railGutter)
+func paintLegend(sections []legendSection, width int, mode presentation.GlyphMode) legend {
+	indent := strings.Repeat(" ", min(railGutter, max(width, 0)))
 	sep := subtleStyle().Render(" · ")
 	more := subtleStyle().Render("…")
 
 	var out []string
 	var hits keyHits
 	for i, section := range sections {
-		parts := section.parts()
+		parts := section.parts(mode)
 		if len(parts) == 0 || len(out) >= legendMaxRows {
 			continue
 		}
 		maxRows := legendMaxRows
 		for _, next := range sections[i+1:] {
-			if len(next.parts()) > 0 {
+			if len(next.parts(mode)) > 0 {
 				maxRows--
 			}
 		}
@@ -96,7 +96,7 @@ func paintLegend(sections []legendSection, width int) legend {
 		if section.quiet {
 			title = legendTitleStyle().Render(section.title)
 		}
-		column := max(legendTitleColumn, ansi.StringWidth(title)+legendGap)
+		column := min(max(legendTitleColumn, ansi.StringWidth(title)+legendGap), max(width-ansi.StringWidth(indent)-2, 0))
 		head := indent + padRight(title, column)
 		cont := indent + strings.Repeat(" ", column)
 		line, lineWidth, started := head, ansi.StringWidth(head), false
@@ -118,25 +118,35 @@ func paintLegend(sections []legendSection, width int) legend {
 			switch {
 			case !started:
 				x = lineWidth
-				line, lineWidth, started = line+part.text, lineWidth+partWidth, true
+				started = true
 			case lineWidth+gapWidth+partWidth <= avail:
 				x = lineWidth + gapWidth
-				line += gap + part.text
-				lineWidth += gapWidth + partWidth
+				line += gap
 			case len(out) < maxRows-1:
 				out = append(out, line)
 				x = ansi.StringWidth(cont)
-				line, lineWidth = cont+part.text, x+partWidth
+				line = cont
 			default:
 				cut = true
 			}
 			if cut {
 				break
 			}
-			hits = hits.add(x, x+partWidth, len(out), part.label)
+			// A wrapped part is the first part on its new row, too.
+			avail = width
+			if len(out) >= maxRows-1 {
+				avail = width - 1 - ansi.StringWidth(more)
+			}
+			text := ansi.Truncate(part.text, max(avail-x, 0), "…")
+			partWidth = ansi.StringWidth(text)
+			line += text
+			lineWidth = x + partWidth
+			if partWidth > 0 {
+				hits = hits.add(x, lineWidth, len(out), part.label)
+			}
 		}
 		if cut {
-			line += " " + more
+			line += ansi.Truncate(" "+more, max(width-lineWidth, 0), "")
 		}
 		out = append(out, line)
 	}
@@ -145,18 +155,18 @@ func paintLegend(sections []legendSection, width int) legend {
 
 // legendInline renders one tier as a single untitled run, for the foot of a
 // modal card where the tier's subject is the card's own title.
-func legendInline(pairs [][2]string, width int) string {
-	return paintInline(pairs, width).text
+func legendInline(pairs [][2]string, width int, mode presentation.GlyphMode) string {
+	return paintInline(pairs, width, mode).text
 }
 
-func paintInline(pairs [][2]string, width int) legend {
+func paintInline(pairs [][2]string, width int, mode presentation.GlyphMode) legend {
 	gap := strings.Repeat(" ", legendGap)
 	var lines []string
 	var parts []string
 	var hits keyHits
 	lineWidth := 0
 	for _, pair := range pairs {
-		part := hintCap(pair[0], pair[1])
+		part := hintCap(presentation.KeyLabel(mode, pair[0]), pair[1])
 		partWidth := ansi.StringWidth(part)
 		if len(parts) > 0 && lineWidth+legendGap+partWidth > width {
 			lines = append(lines, strings.Join(parts, gap))

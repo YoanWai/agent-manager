@@ -48,6 +48,20 @@ func TestUpdateReportsAdviceOnlyManagers(t *testing.T) {
 	}
 }
 
+func TestUpdateScoopRequiresClosedManager(t *testing.T) {
+	swapUpdateSeams(t, `C:\Users\Jane\scoop\apps\agent-manager\current\agent-manager.exe`,
+		update.Manager{}, update.Result{}, nil)
+	updateDetect = update.DetectManager
+	updateRefresh = func(context.Context, string, string) (update.Result, error) {
+		t.Fatal("Scoop update must not download or replace its managed binary")
+		return update.Result{}, nil
+	}
+	err := runUpdate("0.43.0")(&bytes.Buffer{}, nil, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "Close agent-manager, then run: scoop update agent-manager") {
+		t.Fatalf("Scoop update returned %v", err)
+	}
+}
+
 func TestUpdateDelegatedRunsTheManagerCommand(t *testing.T) {
 	swapUpdateSeams(t, "agent-manager", update.Manager{Name: "true", Command: []string{"true"}}, update.Result{}, nil)
 	var out bytes.Buffer

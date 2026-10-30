@@ -240,6 +240,149 @@ func TestLastMessageQuotesAnOpenDialogsQuestion(t *testing.T) {
 	}
 }
 
+// A permission ask replaces the composer, and its selected option sits one
+// column in, so the prompt echo above is the newest cutoff and the question
+// is below it. Frame from a live Claude Code session on 2026-10-10.
+func TestLastMessageQuotesAPermissionAsk(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "⏺ Ran. Exit clean, no output (headers discarded to /dev/null as requested).\n" +
+		"\n" +
+		"✻ Crunched for 8s · done 23:37\n" +
+		"\n" +
+		"❯ Use the Write tool to create the file /etc/amhk-probe.txt containing hi. Use no other tool.\n" +
+		"\n" +
+		"  Writing /etc/amhk-probe.txt\n" +
+		"────────────\n" +
+		" Create file\n" +
+		" ../../../../../../../../etc/amhk-probe.txt\n" +
+		"╌╌╌╌╌╌╌╌╌╌╌╌\n" +
+		"  1 hi\n" +
+		"╌╌╌╌╌╌╌╌╌╌╌╌\n" +
+		"\n" +
+		" Do you want to create amhk-probe.txt?\n" +
+		" ❯ 1. Yes\n" +
+		"   2. Yes, and switch to accept edits (auto-approve file edits and common file commands) for this session\n" +
+		"   3. No\n" +
+		"\n" +
+		" Esc to cancel · Tab to amend\n"
+	quote, anchored, ok := engine.LastMessage("claude", pane)
+	if !ok || !anchored || quote != "Do you want to create amhk-probe.txt?" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the permission ask", quote, anchored, ok)
+	}
+}
+
+// The trust dialog opens before any composer exists, so there is no
+// cutoff to read a region from; the question still has to be the quote.
+// Frame from a live Claude Code session on 2026-10-10.
+func TestLastMessageQuotesTheTrustDialogsQuestion(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "────────────\n" +
+		" Accessing workspace:\n" +
+		" /private/tmp/amnb1/work\n" +
+		" Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from\n" +
+		" your team). If not, take a moment to review what's in this folder first.\n" +
+		" Claude Code'll be able to read, edit, and execute files here.\n" +
+		" Security guide\n" +
+		" ❯ No, exit\n" +
+		"   Yes, I trust this folder\n" +
+		" Enter to confirm · Esc to cancel\n"
+	quote, anchored, ok := engine.LastMessage("claude", pane)
+	if !ok || !anchored || quote != "Is this a project you created or one you trust?" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the trust question", quote, anchored, ok)
+	}
+}
+
+// Grok's approval dialog replaces the composer, so the pane has no
+// cutoff. The quote is the approval line nearest the options. The
+// 1/3:select footer is what a row would show if the dialog had no
+// question. Frame from a live grok Build pane (2026-07-18).
+func TestLastMessageQuotesAGrokApproval(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "  ┃  Remove victim2.txt file\n" +
+		"  ┃  rm victim2.txt\n" +
+		"  ┃\n" +
+		"  ┃  1 (●) Yes, and don't ask again for anything (always-approve mode)\n" +
+		"  ┃  2 (○) Yes, proceed\n" +
+		"  ┃  3 (○) No, reject (type to add feedback)\n" +
+		"  ┃\n" +
+		"\n" +
+		"  1/3:select  │  Ctrl+o:always-approve  │  Ctrl+c:cancel"
+	quote, anchored, ok := engine.LastMessage("grok", pane)
+	if !ok || !anchored || quote != "rm victim2.txt" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the approval line, not the select footer", quote, anchored, ok)
+	}
+}
+
+// A permission question wider than the pane wraps before its question
+// mark, on rows that are not drawn in a box. The quote is the whole
+// question. A boxed question still joins the same way it did.
+func TestLastMessageJoinsWrappedQuestions(t *testing.T) {
+	engine := defaultEngine(t)
+	t.Run("unboxed claude permission", func(t *testing.T) {
+		pane := "⏺ The file is ready.\n" +
+			"\n" +
+			"❯ Use the Write tool to create a file with a very long name.\n" +
+			"\n" +
+			" Do you want to create a file whose name is far too long to\n" +
+			" fit before the question mark?\n" +
+			" ❯ 1. Yes\n" +
+			"   2. No\n"
+		quote, anchored, ok := engine.LastMessage("claude", pane)
+		want := "Do you want to create a file whose name is far too long to fit before the question mark?"
+		if !ok || !anchored || quote != want {
+			t.Fatalf("quote = %q anchored=%v ok=%v, want the wrapped permission question", quote, anchored, ok)
+		}
+	})
+	t.Run("boxed gemini", func(t *testing.T) {
+		pane := " > Ask me which shell I prefer.\n" +
+			"▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀\n\n" +
+			"╭──────────────────────────────────────────────────────────────────────╮\n" +
+			"│ ? Ask User                                                           │\n" +
+			"│ Which shell do you prefer for daily work on remote servers and on   │\n" +
+			"│ local machines alike?                                                      │\n" +
+			"│                                                                      │\n" +
+			"│ ● 1. bash                                                            │\n" +
+			"│   2. zsh                                                             │\n" +
+			"╰──────────────────────────────────────────────────────────────────────╯"
+		want := "Which shell do you prefer for daily work on remote servers and on local machines alike?"
+		if line, anchored, ok := engine.LastMessage("gemini", pane); !ok || !anchored || line != want {
+			t.Fatalf("wrapped boxed question = %q anchored=%v ok=%v, want %q", line, anchored, ok, want)
+		}
+	})
+}
+
+// command-code's approval dialog draws its selected option on the
+// composer row, so the question sits at the end of the region above it.
+// Frame from a live Command Code v1.79.2 session on 2026-10-11.
+func TestLastMessageQuotesACommandCodeApproval(t *testing.T) {
+	engine := defaultEngine(t)
+	pane := "⠶ total 0\n" +
+		"    drwxr-xr-x@  3 yoan  wheel   96 Oct 11 00:05 .\n" +
+		"  The /tmp/amnb2/work directory exists and contains a single .commandcode\n" +
+		"  subdirectory.\n" +
+		"\n" +
+		"❯ Use your file write tool to create probe.txt in the current directory\n" +
+		"  containing the word hi. Use no other tool.\n" +
+		"\n" +
+		"────────────\n" +
+		"Create File\n" +
+		"\n" +
+		"Do you want to create probe.txt?\n" +
+		"\n" +
+		"❯ 1. Yes\n" +
+		"  2. Yes, allow all edits this session [shift+tab]\n" +
+		"  3. No, tell Command Code what to do differently\n" +
+		"\n" +
+		"↑/↓ navigate · enter select · Run cmd --yolo to bypass all permissions (Docs ↗)\n"
+	quote, anchored, ok := engine.LastMessage("command-code", pane)
+	if !ok || !anchored || quote != "Do you want to create probe.txt?" {
+		t.Fatalf("quote = %q anchored=%v ok=%v, want the approval question", quote, anchored, ok)
+	}
+	if state, _ := engine.Match("command-code", pane); state != Waiting {
+		t.Fatalf("state = %q, want waiting", state)
+	}
+}
+
 // Echo shapes verified live on 2026-08-23: codex v0.56 (trust dialog and
 // composer share the › marker), gemini v0.53 (> echo, ✦ reply), opencode
 // v1.18.21 (┃ gutter echo above the reply, composer block on the cutoff).

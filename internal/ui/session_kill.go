@@ -10,6 +10,9 @@ import (
 // under the selected group, freeing the RAM their agents hold while the
 // rows stay put for v to revive.
 func (m *Model) killSelected() (tea.Model, tea.Cmd) {
+	if m.rail.ShowArchived() {
+		return m, nil
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil
@@ -17,7 +20,7 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 	if entry.isGroup {
 		live := m.liveSessions(m.sessionsInGroup(entry.group))
 		if len(live) == 0 {
-			m.reportErr("no live sessions to kill in " + entry.group)
+			m.reportErr("no live sessions to kill in " + displayGroup(entry.group))
 			return m, nil
 		}
 		m.confirm.confirmTarget = confirmTarget{
@@ -26,28 +29,22 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 			action:   actionKill,
 			sessions: live,
 			label: fmt.Sprintf("kill group %s (%d live sessions)? frees their RAM, v revives them.",
-				entry.group, len(live)),
+				displayGroup(entry.group), len(live)),
 		}
 	} else {
-		sessions := m.sessionAndChildren(entry.sess)
-		live := false
-		for _, sess := range sessions {
-			if m.sessionWindowProjectedLive(sess.ID) {
-				live = true
-				break
-			}
-		}
-		if !live {
+		members := m.sessionAndChildren(entry.sess)
+		sessions := m.liveSessions(members)
+		if len(sessions) == 0 {
 			m.reportErr(entry.sess.Name + " is already dead")
 			return m, nil
 		}
 		m.confirm.confirmTarget = confirmTarget{
 			action:   actionKill,
 			sessions: sessions,
-			label: followConfirmLabel("kill", entry.sess.Name, len(sessions)-1,
+			label: sessionActionLabel("kill", entry.sess, sessions,
 				"frees its RAM, v revives it.",
 				"frees their RAM, v revives them."),
-			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID},
+			selection: lifecycleSelection{kind: lifecycleSelectionSession, rootID: entry.sess.ID, members: members},
 		}
 	}
 	m.mode = modeConfirmDelete
@@ -57,6 +54,9 @@ func (m *Model) killSelected() (tea.Model, tea.Cmd) {
 // killAllLive asks to end every live session in the current view, the
 // batch counterpart to V.
 func (m *Model) killAllLive() (tea.Model, tea.Cmd) {
+	if m.rail.ShowArchived() {
+		return m, nil
+	}
 	live := m.liveSessions(m.listedSessions())
 	if len(live) == 0 {
 		m.reportErr("no live sessions to kill")
@@ -94,14 +94,6 @@ func (m *Model) sessionWindowProjectedLive(id string) bool {
 	return launched
 }
 
-// unwatch stops the focus watcher before a session is killed on purpose:
-// the client going away then is the plan, not a loss to report.
-func (m *Model) unwatch(id string) {
-	if m.focus.runtime.watch != nil {
-		m.focus.runtime.watch.Unwatch(id)
-	}
-}
-
 // killSession ends one session's tmux window, freeing everything its agent
 // held, while the store row keeps the name, group, history and conversation
 // id that revive needs. The pane is captured first so the preview still
@@ -112,4 +104,17 @@ func (m *Model) watchedSession() string {
 		return ""
 	}
 	return m.focus.runtime.watch.Watching()
+}
+
+func sessionActionLabel(verb string, root store.Session, sessions []store.Session, one, many string) string {
+	for _, session := range sessions {
+		if session.ID == root.ID {
+			return followConfirmLabel(verb, root.Name, len(sessions)-1, one, many)
+		}
+	}
+	unit, suffix := "terminal", one
+	if len(sessions) != 1 {
+		unit, suffix = "terminals", many
+	}
+	return fmt.Sprintf("%s %d %s of %s? %s", verb, len(sessions), unit, root.Name, suffix)
 }

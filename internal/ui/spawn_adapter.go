@@ -246,6 +246,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 	m.rebuildGroupOptions(m.contextGroup())
 	m.form.SetDir(m.capturedGroupDefaultDir(m.selectedGroupPath()))
 	m.form.SeedWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
+	m.form.Env().Seed(m.workspace.envProfiles, m.groupEnv(m.selectedGroupPath()))
 	if target, ok := m.remoteTarget(); ok {
 		m.form.aimRemote(target)
 	}
@@ -275,8 +276,6 @@ func (m *Model) applyCachedFormDefaults() tea.Cmd {
 	m.syncFormFieldWidths()
 	return m.ensureCatalog(toolName)
 }
-
-func (m *Model) formTool() string { return m.form.Tool() }
 
 func (m *Model) selectedGroupPath() string { return m.form.groupPath() }
 
@@ -348,6 +347,7 @@ func (m *Model) moveGroupCursor(delta int) tea.Cmd {
 	}
 	if m.mode == modeForm {
 		m.form.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
+		m.form.Env().Default(m.groupEnv(m.selectedGroupPath()))
 	}
 	if m.mode == modeGroupForm && m.groupForm.DirAuto() {
 		m.groupForm.SetDir(m.capturedAncestorGroupDir(m.selectedGroupPath()))
@@ -395,7 +395,7 @@ func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {
-	return launch.Environment(m.services.hooks, toolName, tool, baseCommand, id, cwd, launchedAt)
+	return launch.Environment(m.services.hooks, toolName, tool, baseCommand, id, cwd, launchedAt, nil)
 }
 
 func (m *Model) routeSpawnMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {

@@ -2,6 +2,7 @@ package notify
 
 import (
 	"errors"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -161,6 +162,96 @@ func TestNotifyDarwinPostsThroughHelper(t *testing.T) {
 				t.Fatalf("nothing else should run once the helper posted, got %v", rec.calls())
 			}
 		})
+	}
+}
+
+// The banner says what the row says: the question a waiting session asks,
+// the prompt a finished one was given. It is one line, bounded, and the
+// state word stays when the row has nothing to quote. Errors keep the
+// state word alone, since the row's line there is the turn that failed.
+func TestNotifyBodyCarriesTheRowsLine(t *testing.T) {
+	tests := []struct {
+		name string
+		kind Kind
+		text string
+		body string
+	}{
+		{"waiting question", Waiting, "Do you want to create probe.txt?", "◆ Waiting: Do you want to create probe.txt?"},
+		{"finished prompt", Finished, "write three sentences about rivers", "● Finished: write three sentences about rivers"},
+		{"errored keeps the state", Errored, "curl: (6) Could not resolve host", "✕ Errored"},
+		{"nothing to quote", Waiting, "", "◆ Waiting for your input"},
+		{"multiline squashed", Finished, "first\nsecond\tthird", "● Finished: first second third"},
+		{"long line cut", Finished, strings.Repeat("x", 200), "● Finished: " + strings.Repeat("x", bodyTextCap-1) + "…"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer restore()()
+			plainMac(t)
+			var posted []string
+			macPost = func(sessionID, subtitle, body, sound string) error {
+				posted = []string{sessionID, subtitle, body, sound}
+				return nil
+			}
+			emitSeq = func(string) error { return nil }
+			Notify(Event{ID: "sess-1", Session: "deploy", Tool: "codex", Kind: test.kind, Text: test.text})
+			if len(posted) != 4 || posted[2] != test.body {
+				t.Fatalf("body = %q, want %q", posted, test.body)
+			}
+		})
+	}
+}
+
+// The title says where the session runs: its directory's name and, for a
+// worktree the manager made, the branch, so sessions sharing a name read
+// apart. A session with no directory keeps the plain name and tool.
+func TestNotifyTitleNamesTheDirectoryAndBranch(t *testing.T) {
+	tests := []struct {
+		name  string
+		event Event
+		title string
+	}{
+		{"dir and branch", Event{Session: "deploy", Tool: "codex", Dir: "/home/me/src/api", Branch: "am/fix-login"}, "deploy · api · am/fix-login · codex"},
+		{"worktree names the repo", Event{Session: "deploy", Tool: "codex", Dir: "/src/api-worktrees/deploy", Repo: "/src/api", Branch: "am/deploy"}, "deploy · api · am/deploy · codex"},
+		{"dir only", Event{Session: "deploy", Tool: "codex", Dir: "/home/me/src/api"}, "deploy · api · codex"},
+		{"no dir", Event{Session: "deploy", Tool: "codex"}, "deploy · codex"},
+		{"root dir", Event{Session: "deploy", Tool: "codex", Dir: "/"}, "deploy · / · codex"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			defer restore()()
+			plainMac(t)
+			var posted []string
+			macPost = func(sessionID, subtitle, body, sound string) error {
+				posted = []string{sessionID, subtitle, body, sound}
+				return nil
+			}
+			emitSeq = func(string) error { return nil }
+			test.event.Kind = Finished
+			Notify(test.event)
+			if len(posted) != 4 || posted[1] != test.title {
+				t.Fatalf("title = %q, want %q", posted, test.title)
+			}
+		})
+	}
+}
+
+// A session sitting on a Windows drive root names that root. path.Base
+// of the slash form is "C:", which is not the directory.
+func TestNotifyTitleKeepsAWindowsDriveRoot(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("drive roots are a Windows path")
+	}
+	defer restore()()
+	plainMac(t)
+	var posted []string
+	macPost = func(sessionID, subtitle, body, sound string) error {
+		posted = []string{sessionID, subtitle, body, sound}
+		return nil
+	}
+	emitSeq = func(string) error { return nil }
+	Notify(Event{Session: "deploy", Tool: "codex", Kind: Finished, Dir: `C:\`})
+	if len(posted) != 4 || posted[1] != `deploy · C:\ · codex` {
+		t.Fatalf("title = %q, want the drive root", posted)
 	}
 }
 
@@ -384,12 +475,26 @@ func TestNotifyNativeFailureRingsBell(t *testing.T) {
 }
 
 func TestSanitizeSquashesControlCharacters(t *testing.T) {
-	got := sanitize("line one\nline two\x1b]pwn\x07\ttab")
-	if strings.ContainsAny(got, "\n\x1b\x07\t") {
+	got := sanitize("line one\nline two\x1b]pwn\x07\ttab\u009b31m\u009d777;x")
+	if strings.ContainsAny(got, "\n\x1b\x07\t\u009b\u009d") {
 		t.Fatalf("control characters should be gone, got %q", got)
 	}
-	if got != "line one line two ]pwn tab" {
+	if got != "line one line two ]pwn tab 31m 777;x" {
 		t.Fatalf("unexpected squash %q", got)
+	}
+}
+
+// The agent's line reaches notify-send, whose daemons read the body as
+// markup, so a tag it wrote shows as text rather than rendering.
+func TestNotifyLinuxEscapesMarkupInTheBody(t *testing.T) {
+	defer restore()()
+	rec := linuxDesktop(t)
+	rec.outputByCommand["notify-send --help"] = "Usage: notify-send [OPTION…] <SUMMARY> [BODY]"
+	emitSeq = func(string) error { return nil }
+	Notify(Event{Session: "deploy", Tool: "claude", Kind: Waiting, Text: "Allow <b>rm -rf</b> & more?"})
+	call := rec.calls()[1]
+	if got := call[len(call)-1]; got != "◆ Waiting: Allow &lt;b&gt;rm -rf&lt;/b&gt; &amp; more? — deploy · claude" {
+		t.Fatalf("notify-send body = %q", got)
 	}
 }
 

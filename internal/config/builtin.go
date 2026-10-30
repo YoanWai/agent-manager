@@ -53,6 +53,11 @@ trailing_note = "^※"
 # ("❯ 1. Spaces"), where a numbered draft would sit; this footer under it
 # is what tells the two apart
 dialog_footer = "(?m)^\\s*Enter to select\\b"
+# a permission ask replaces the composer and indents its selected option
+# one column, so the prompt echo stays the newest cutoff and the question
+# sits below it; the trust dialog asks before any composer exists and
+# runs its question into a parenthetical on the same row
+dialog_question = "(?m)^ (?:Quick safety check: )?((?:Do you want|Is this a project)[^?\\n]*\\?)"
 # work that outlives its turn and reports back, drawn in the shape of a
 # turn-end summary: background agents and dynamic workflows ("✻ Waiting for
 # 2 background agents and 1 dynamic workflow to finish") and a slow MCP call
@@ -197,11 +202,22 @@ user_echo = "^› "
 limit_line = "(?m)You've hit your usage limit"
 rules = [
   # bottom-pane dialogs (command approval, choice prompts, first-run trust)
-  # select a numbered option and block on the user's answer
+  # select a numbered option and block on the user's answer. 0.163 draws a
+  # startup picker on the composer marker, so the selected row is the
+  # cutoff and the footer is "enter confirm · esc skip" or "enter continue"
+  # rather than "Press enter to confirm". "Trusting hooks..." keeps the
+  # header and drops both the number and the footer.
   { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
   { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
   { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
-  { state = "waiting", pattern = "(?m)^\\s*enter select · esc back\\b" },
+  # the shared picker's footer names its accept and cancel keys, each with a
+  # label of the view's own ("enter select · esc back" on the model picker,
+  # "enter confirm · esc skip" on the startup hook review); the picker replaces
+  # the composer, so its footer is the last row, which the same words in a
+  # running turn's output never are
+  { state = "waiting", pattern = "(?m)^[ \\t]*enter [a-z]+(?: [a-z]+)* · esc [a-z][^\\n]*\\s*\\z" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*Hooks need review\\b" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*enter(?:/esc)? (?:confirm|continue)\\b[^\\n]*\\s*\\z" },
   # active status row is the final row above the input box; anchoring its full
   # shape keeps an answer that quotes "esc to interrupt" from looking active
   { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied )[^\\n]*\\n)*[ \\t\\n]*\\z" },
@@ -266,6 +282,13 @@ turn_end = "(?m)^\\s*Worked for [\\dhms. ]+s\\.?(?:\\s|$).*\\bstop\\b"
 chrome_line = "^\\s*[┃❙│─━╭╮╰╯█▴▾]*\\s*$|^.* │ \\[Dashboard\\]$|^\\s*⎇ |^\\s*Help improve Grok\\b|^\\s*Off by default\\. Opt-in|^\\s*Read Terms and Privacy Policy|^\\s*minimal ·|^\\s*Grok \\d|^\\s*◆ (?:user_prompt_submit|session_start)\\b|^\\s*✓ |^\\s*Shift\\+Tab:"
 # the duration line sits under the reply; LastMessage steps over it so the row quotes the reply
 trailing_note = "^Worked for "
+# a sent prompt: indented under fullscreen with a clock at the row's right
+# edge, which the group leaves out, and flush-left under --minimal
+user_echo = "^\\s*❯ (.*?)(?:\\s{2,}\\d{1,2}:\\d{2} [AP]M)?$"
+# an approval dialog replaces the composer, so nothing matches the cutoff
+# and the select footer would otherwise be the quote. The line nearest
+# the options is the ask; a radio row is not.
+dialog_question = "(?m)^\\s*┃\\s+(.+?)\\s*$"
 # Transcript prompts and their wrapped rows are not Grok replies.
 chrome_block = "^\\s+❯ |^\\s*Help improve Grok\\b|^\\s*[▾▸] Queued \\d+"
 limit_line = "(?i)You've hit the rate limit|You hit your free usage limit|You've reached your free Grok Build usage limit|usage limit reached|out of credits"
@@ -339,6 +362,8 @@ rules = [
 # Antigravity CLI (agy), Google's successor to Gemini CLI
 [tools.antigravity]
 command = "agy"
+# 1.3.4 is the first agy that takes a model's base id without --effort.
+minimum_version = "1.3.4"
 session_report = "antigravity"
 # agy reads a startup prompt only from -p, which exits after one turn, or -i
 prompt_flag = "-i"
@@ -350,6 +375,10 @@ resume_by_id_command = "agy --conversation {id}"
 resume_picker_command = "agy"
 resume_picker_keys = "/resume"
 revive_command = "agy -c"
+catalog = "antigravity"
+catalog_command = "agy models"
+model_args = "--model {model}"
+effort_args = "--effort {effort}"
 default_status = "idle"
 # the composer row: ">" at rest, "!" in bash mode
 activity_cutoff = "(?m)^[>!]"
@@ -546,6 +575,10 @@ chrome_line = "^\\s*[─]{4,}\\s*$|^# .*$|^[ \\t█]*$|^\\s*\\? for shortcuts.*$
 # It shows on a pristine prompt only: once a prompt has been typed the
 # composer clears to a bare marker, which reads as empty just the same.
 composer_placeholder = "Ask your question..."
+# an approval dialog draws its selected option on the composer's own row
+# ("❯ 1. Yes"), with its question just above; this footer under it is what
+# tells the dialog from a numbered draft
+dialog_footer = "(?m)^\\s*↑/↓ (?:to )?navigate\\b"
 rules = [
   # selection dialogs (trust, tool approval, pickers) number their options
   # behind the prompt marker

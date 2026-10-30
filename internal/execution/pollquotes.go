@@ -38,7 +38,9 @@ func isManagerEcho(line string) bool {
 // prompt sent to it. The visible pane is the first source; when an
 // anchor scrolled off it, the recovery is the tool's own transcript for
 // Claude Code (which repaints in place, so tmux holds no history for
-// it), and a deeper pane capture for everything else.
+// it), and a deeper pane capture for everything else. pi and omp draw a
+// prompt with no marker at all, so theirs is read from their session file
+// every time.
 func (p *Runner) rowLines(ctx context.Context, sess store.Session, pane, dir string) (quote, prompt string) {
 	clean := p.engine.Plain(sess.Tool, pane)
 	quote, anchored, ok := p.engine.LastMessage(sess.Tool, clean)
@@ -51,12 +53,13 @@ func (p *Runner) rowLines(ctx context.Context, sess store.Session, pane, dir str
 	}
 	quoteAdrift := ok && !anchored && p.engine.HasMessageStart(sess.Tool)
 	promptAdrift := echoOK && prompt == ""
-	if (quoteAdrift || promptAdrift) && p.mcpStyles[sess.Tool] == "claude" && sess.AgentSessionID != "" {
-		tailPrompt, tailReply := p.claudeTail(sess, dir)
+	promptUnreadable := !echoOK
+	if (quoteAdrift || promptAdrift || promptUnreadable) && agentsession.KeepsTranscript(p.reportStyles[sess.Tool]) && sess.AgentSessionID != "" {
+		tailPrompt, tailReply := p.transcriptTail(sess, dir)
 		if quoteAdrift && tailReply != "" {
 			quote = tailReply
 		}
-		if promptAdrift && tailPrompt != "" {
+		if (promptAdrift || promptUnreadable) && tailPrompt != "" {
 			prompt = tailPrompt
 		}
 	} else if quoteAdrift || promptAdrift {
@@ -76,15 +79,18 @@ func (p *Runner) rowLines(ctx context.Context, sess store.Session, pane, dir str
 	return capRunes(quote, rowQuoteCap), capRunes(prompt, rowQuoteCap)
 }
 
-// claudeTail is the newest prompt and reply in a Claude Code session's
-// own transcript, flattened to single lines.
-func (p *Runner) claudeTail(sess store.Session, dir string) (prompt, reply string) {
-	source, err := resolveClaudeTranscript(dir, sess.Cwd, sess.AgentSessionID)
+// transcriptTail is the newest prompt and reply in a session's own
+// transcript, flattened to single lines. Claude moves the transcript with
+// a session that changes directory, so dir, where the agent sits now, is
+// tried before the launch directory.
+func (p *Runner) transcriptTail(sess store.Session, dir string) (prompt, reply string) {
+	style := p.reportStyles[sess.Tool]
+	source, err := resolveTranscript(style, dir, sess.Cwd, sess.AgentSessionID)
 	if err != nil {
 		return "", ""
 	}
-	dir, path, info := source.directory, source.path, source.info
-	if cached, ok := p.claudeTails[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
+	path, info := source.path, source.info
+	if cached, ok := p.transcripts[sess.ID]; ok && cached.path == path && cached.size == info.Size() && cached.modTime.Equal(info.ModTime()) {
 		return cached.prompt, cached.reply
 	}
 	cleanUser := func(text string) string {
@@ -94,14 +100,22 @@ func (p *Runner) claudeTail(sess store.Session, dir string) (prompt, reply strin
 		}
 		return cleaned
 	}
-	tailPrompt, tailReply, ok := agentsession.ClaudeTranscriptTail(dir, sess.AgentSessionID, cleanUser)
+	tailPrompt, tailReply, ok := agentsession.TranscriptTail(style, path, cleanUser)
 	if !ok {
 		return "", ""
 	}
-	prompt = oneLine(tailPrompt)
-	reply = oneLine(tailReply)
-	p.claudeTails[sess.ID] = claudeTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
+	prompt = transcriptLine(tailPrompt)
+	reply = transcriptLine(tailReply)
+	p.transcripts[sess.ID] = transcriptTailCache{path: path, size: info.Size(), modTime: info.ModTime(), prompt: prompt, reply: reply}
 	return prompt, reply
+}
+
+// transcriptLine flattens transcript text to one row. A pane reaches the
+// row through capture-pane, which drops escapes and controls on the way;
+// a file holds whatever was typed or pasted into it, so the row strips
+// them itself.
+func transcriptLine(text string) string {
+	return oneLine(sanitizeBody(ansi.Strip(text)))
 }
 
 func capRunes(text string, limit int) string {
@@ -128,28 +142,34 @@ func lastMeaningfulPaneLine(pane string) string {
 	return ""
 }
 
-type claudeTranscriptSource struct {
-	directory string
-	path      string
-	info      os.FileInfo
+type transcriptSource struct {
+	path string
+	info os.FileInfo
 }
 
-func resolveClaudeTranscript(liveDir, launchDir, sessionID string) (claudeTranscriptSource, error) {
+func resolveTranscript(style, liveDir, launchDir, sessionID string) (transcriptSource, error) {
 	for _, directory := range []string{liveDir, launchDir} {
 		if directory == "" {
 			continue
 		}
-		path, err := agentsession.ClaudeTranscriptPath(directory, sessionID)
+		path, err := agentsession.TranscriptPath(style, directory, sessionID)
 		if err != nil {
-			return claudeTranscriptSource{}, err
+			// A missing file is tried in the other directory. A style this
+			// package does not read is not that: rowLines only calls here
+			// after KeepsTranscript, so returning the error keeps a caller
+			// that skipped the check from looking like an empty transcript.
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return transcriptSource{}, err
 		}
 		info, err := os.Stat(path)
 		if err == nil {
-			return claudeTranscriptSource{directory: directory, path: path, info: info}, nil
+			return transcriptSource{path: path, info: info}, nil
 		}
 		if !errors.Is(err, os.ErrNotExist) {
-			return claudeTranscriptSource{}, err
+			return transcriptSource{}, err
 		}
 	}
-	return claudeTranscriptSource{}, os.ErrNotExist
+	return transcriptSource{}, os.ErrNotExist
 }

@@ -564,3 +564,32 @@ func TestInstallStartGivesTheInstallerShellTheKeys(t *testing.T) {
 		t.Fatal("a start behind a closed dialog deleted the draft image")
 	}
 }
+
+func TestInstallRepairEscapesArchivedGroupAndKeepsRetry(t *testing.T) {
+	m := buildModel(t)
+	dir := t.TempDir()
+	for _, group := range []string{"work", "work/closed"} {
+		if err := m.services.store.CreateGroup(group, dir); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.services.store.SetGroupArchived("work/closed", true); err != nil {
+		t.Fatal(err)
+	}
+	installFixture(t, m, "sleep 30")
+	retry := spawnRequest{id: "original", group: "work/closed"}
+	request := installStartRequest{id: newID(), binary: "test-cli", command: "sleep 30", group: "work/closed", effectRetry: retry}
+	request.toolName, _ = m.shellTool()
+	m.enqueueEffect(request, 0, false)
+	completed := m.nextEffectCmd()().(effectCompletedMsg)
+	if completed.err != nil {
+		t.Fatal(completed.err)
+	}
+	result := completed.result.(installStartResult)
+	if result.session.Group != "work" {
+		t.Fatalf("install repair group=%q, want active ancestor", result.session.Group)
+	}
+	if result.install == nil || result.install.effectRetry.(spawnRequest).group != "work/closed" {
+		t.Fatal("repair changed original retry placement")
+	}
+}

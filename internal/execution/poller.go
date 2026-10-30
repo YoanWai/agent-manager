@@ -2,9 +2,11 @@ package execution
 
 import (
 	"errors"
+	"maps"
 	"os"
 	"slices"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 
 	"sync"
@@ -37,7 +39,7 @@ type Runner struct {
 	gitDrv        *git.Driver
 	statusSources map[string]string
 	sessionStores map[string]string
-	claudeTails   map[string]claudeTailCache
+	transcripts   map[string]transcriptTailCache
 	mcpStyles     map[string]string
 	reportStyles  map[string]string
 	shellTools    map[string]bool
@@ -92,6 +94,11 @@ type Runner struct {
 	// store, which decides who speaks for sessions no socket has claimed.
 	leading bool
 	tick    int
+	// statsSampledAt is when machine gauges were last sampled. The gate is
+	// wall clock, not pass parity: RequestRefresh pokes fire extra passes,
+	// and parity would sample on nearly every poke, so the panel would
+	// repaint faster than the gauges move.
+	statsSampledAt time.Time
 	// prevTreeCPU / prevTreeAt drive interval agent CPU: cumulative
 	// CPU-seconds per pane root from the last poll, so host share uses
 	// the same "over this window" idea as the computer gauge.
@@ -155,9 +162,9 @@ var managerEchoOpenings = []string{
 	"[agent-manager] ",
 }
 
-// claudeTailCache keeps one transcript's extraction keyed to its file
+// transcriptTailCache keeps one transcript's extraction keyed to its file
 // stats, so an unchanged transcript is not re-read every tick.
-type claudeTailCache struct {
+type transcriptTailCache struct {
 	path    string
 	size    int64
 	modTime time.Time
@@ -289,8 +296,14 @@ func (p *Runner) step(ctx context.Context) Result {
 	if captureErr != nil {
 		return Result{Err: captureErr}
 	}
-	// Machine gauges change slowly; sample them every other poll.
-	sampleStats := p.tick%2 == 0
+	// Machine gauges change slowly; sample them on wall-clock spacing so
+	// poke-driven passes do not advance the cadence. The stamp is this
+	// pass's start, so the poll grid lands on the spacing; the slack keeps
+	// wake jitter from deferring a due sample by a whole poll. It commits
+	// at the sample itself: a pass that fails earlier leaves the sample
+	// due, so the retry takes it instead of skipping a fresh one.
+	sampleStats := time.Since(p.statsSampledAt) >= statsSampleEvery-statsSampleSlack
+	sampledAt := time.Now()
 	socket := p.tmux.SocketPath()
 	// Delivering a queued message needs this process, so stamp a heartbeat
 	// the session tools can read to tell a sender whether anyone is home.
@@ -401,7 +414,7 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 		newStatus := status.Dead
 		if !live {
-			followFailures[sess.ID] = p.followConversation(&sessions[i], false, true)
+			followFailures[sess.ID] = followDuringPoll(p, &sessions[i], false, true)
 		}
 		if pid := panes[sess.ID].PID; pid > 0 {
 			stat := trees[pid]
@@ -441,7 +454,11 @@ func (p *Runner) step(ctx context.Context) Result {
 			// tree of one process means the agent is gone. A failed ps
 			// sample proves nothing, so it counts as alive.
 			agentAlive := !stat.OK || stat.Procs > 1
-			followFailures[sess.ID] = p.followConversation(&sessions[i], agentAlive, false)
+			followFailures[sess.ID] = followDuringPoll(p, &sessions[i], agentAlive, false)
+			// The row may have moved onto another conversation. The copy
+			// taken at the start of the pass still names the previous one,
+			// and the quote read next is that conversation's.
+			sess = sessions[i]
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
 				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(ctx, sess, pane, panes[sess.ID].Path)
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
@@ -517,7 +534,7 @@ func (p *Runner) step(ctx context.Context) Result {
 				// Managers sharing a server derive the same transition; only
 				// the one whose write moved the stored status announces it.
 				if changed {
-					p.notifyTransition(sess, newStatus)
+					p.notifyTransition(sess, newStatus, panePrompts[sess.ID], paneLastLines[sess.ID])
 				}
 			}
 		}
@@ -557,10 +574,21 @@ func (p *Runner) step(ctx context.Context) Result {
 	if err != nil {
 		return Result{Err: err}
 	}
+	profiles, err := p.store.EnvProfiles()
+	if err != nil {
+		return Result{Err: err}
+	}
+	envNames := make([]string, len(profiles))
+	envKeys := make(map[string][]string, len(profiles))
+	for i, profile := range profiles {
+		envNames[i] = profile.Name
+		envKeys[profile.Name] = slices.Sorted(maps.Keys(profile.Vars))
+	}
 	names := make([]string, len(groups))
 	paths := make(map[string]string, len(groups))
 	worktrees := make(map[string]string, len(groups))
 	bases := make(map[string]string, len(groups))
+	environments := make(map[string]string, len(groups))
 	archivedGroups := make(map[string]bool, len(groups))
 	for i, g := range groups {
 		names[i] = g.Name
@@ -570,6 +598,9 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 		if g.Base != "" {
 			bases[g.Name] = g.Base
+		}
+		if g.Environment != "" {
+			environments[g.Name] = g.Environment
 		}
 		if g.Archived {
 			archivedGroups[g.Name] = true
@@ -596,6 +627,9 @@ func (p *Runner) step(ctx context.Context) Result {
 		GroupPaths:     paths,
 		GroupWorktrees: worktrees,
 		GroupBases:     bases,
+		GroupEnvs:      environments,
+		EnvProfiles:    envNames,
+		EnvKeys:        envKeys,
 		ArchivedGroups: archivedGroups,
 		Proc:           proc,
 		ProcFor:        selectedID,
@@ -614,6 +648,7 @@ func (p *Runner) step(ctx context.Context) Result {
 		}
 	}
 	if sampleStats {
+		p.statsSampledAt = sampledAt
 		msg.Snap = sysstat.Sample("/")
 		msg.SnapOK = true
 	}
@@ -644,6 +679,15 @@ const (
 	// that is milliseconds old belongs to a paste in flight; only one this
 	// old belongs to a manager that died between the two.
 	inboxClaimGrace = 30 * time.Second
+)
+
+// statsSampleEvery is the wall-clock spacing between machine-gauge
+// samples: twice the poll interval, matching the every-other-pass cadence
+// this replaced. statsSampleSlack is the wake jitter a due sample still
+// fires within, so pass latency cannot defer it by a whole poll.
+const (
+	statsSampleEvery = 2 * config.PollInterval
+	statsSampleSlack = 250 * time.Millisecond
 )
 
 // launchPromptGrace releases pending input for a session whose prompt

@@ -1,0 +1,35 @@
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+│                                            ⠀⠀⠀⣀⣤⣤⣀⠀⠀⡠                                            │
+│                                            ⠀⢀⡾⠋⠁⠀⢁⢴⡎⠀                                            │
+│                                            ⠀⢸⡇⠀⠀⠐⠁⢀⣿⠀                                            │
+│                                            ⠀⢈⠗⢀⣀⣀⣠⡾⠃⠀                                            │
+│                                            ⠐⠁⠀⠈⠉⠉⠉⠀⠀⠀                                            │
+│                                                                                                  │
+│ Grok Build  v1.0.50                                                                              │
+│ /private/tmp/amecho/work                                                                         │
+│ Model · Grok 4.7                                                                                 │
+│ /help for commands                                                                               │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+❯ Reply with exactly the word OK and nothing else. This sentence is only padding so that the prompt
+  wraps onto a second row in the pane.
+
+OK
+Worked for 1.7s
+
+❯ Now reply with exactly the word YES.
+
+YES
+Worked for 1.5s
+minimal · /help
+❯
+Grok 4.7 (high) · always-approve · 17K / 256K (7%) · ctrl+o transcript
+
+
+
+
+
+
+

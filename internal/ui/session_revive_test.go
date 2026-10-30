@@ -12,6 +12,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/hooks"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
@@ -449,17 +450,30 @@ func TestReviveRunningAgentRevivesDeadChild(t *testing.T) {
 	}
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "coder")
+	parent, _ := m.selected()
+	parentPID := m.workspace.panes[parent.ID].PID
 	_, cmd := m.reviveSelected()
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.mode != modeConfirmDelete {
 		t.Fatalf("mode = %v, want the revive confirm", m.mode)
 	}
+	if len(m.confirm.sessions) != 1 || m.confirm.sessions[0].ID != shell.ID {
+		t.Fatalf("revive targets = %+v", m.confirm.sessions)
+	}
+	if want := "revive 1 terminal of coder? brings it back."; m.confirm.label != want {
+		t.Fatalf("label=%q want=%q", m.confirm.label, want)
+	}
 	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if !m.services.tmux.Exists(shell.ID) {
 		t.Fatal("child still dead")
+	}
+	m.applyCmd(t, m.refreshCmd())
+	after, err := m.services.store.Get(parent.ID)
+	if err != nil || m.workspace.panes[parent.ID].PID != parentPID || after.AgentSessionID != parent.AgentSessionID || !after.AgentLaunchedAt.Equal(parent.AgentLaunchedAt) {
+		t.Fatalf("parent changed: before=%+v after=%+v err=%v", parent, after, err)
 	}
 }
 
@@ -518,10 +532,8 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	// survives the settings flag a hooked tool launches with.
 	hooked := m.services.cfg.Tools[sess.Tool]
 	hooked.Command = "sh -c 'cat'"
-	assignment := func(key, value string) string { return key + "='" + value + "'" }
 	if runtime.GOOS == "windows" {
 		hooked.Command = testfixture.ModeCommand("cat-stdin")
-		assignment = func(key, value string) string { return "$env:" + key + " = '" + value + "'" }
 	}
 	hooked.StatusSource = "claude-hooks"
 	m.services.cfg.Tools[sess.Tool] = hooked
@@ -542,24 +554,10 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 		t.Fatal("revive must keep the window it relaunched in")
 	}
 
-	wantID := assignment("AGENT_MANAGER_SESSION_ID", sess.ID)
-	wantStatus := assignment("AGENT_MANAGER_STATUS_FILE", m.services.hooks.StatusFile(sess.ID))
-	// AgentRunning observes the child process as soon as it forks. tmux can
-	// paint the exported command a moment later, so wait on the values this
-	// assertion owns instead of treating process startup as redraw completion.
-	deadline := time.Now().Add(5 * time.Second)
-	var pane string
-	for {
-		pane, _ = m.services.tmux.CapturePane(sess.ID)
-		// The pane wraps the line it was sent at its own width.
-		typed := strings.ReplaceAll(ansi.Strip(pane), "\n", "")
-		if strings.Contains(typed, wantID) && strings.Contains(typed, wantStatus) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("relaunch did not paint its session identity and hook status file; pane:\n%s", pane)
-		}
-		time.Sleep(50 * time.Millisecond)
+	// The relaunch hands its environment over in a file the shell sources,
+	// so only that file's path is typed, never a value.
+	if pane, _ := m.services.tmux.CapturePane(sess.ID); strings.Contains(strings.ReplaceAll(ansi.Strip(pane), "\n", ""), "AGENT_MANAGER_SESSION_ID") {
+		t.Fatalf("relaunch typed the session identity into the pane:\n%s", pane)
 	}
 	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
@@ -588,7 +586,7 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 		t.Fatalf("read the shell environment: %v", err)
 	}
 	want := sess.ID + " " + m.services.hooks.StatusFile(sess.ID)
-	deadline = time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for {
 		if data, err := os.ReadFile(marker); err == nil && strings.TrimSpace(string(data)) == want {
 			break
@@ -661,5 +659,214 @@ func TestRestartStampsTheLaunchItExported(t *testing.T) {
 	want := fmt.Sprintf("%d\n--session-id\n%s\n", store.LaunchStamp(stored.AgentLaunchedAt), stored.AgentSessionID)
 	if args := readWhenWritten(t, argsFile); !strings.HasPrefix(args, want) || stored.AgentLaunchedAt.IsZero() {
 		t.Fatalf("launch = %q, want it to open with %q", args, want)
+	}
+}
+
+func TestArchivedRelaunchDoesNotOfferConfirmation(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "zone")
+	_, _, stash := seedRestoreScenario(t, m, "zone")
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	for _, group := range []bool{false, true} {
+		for _, action := range []string{"revive", "all", "restart"} {
+			if group {
+				m.selectGroupRow(t, "zone")
+			} else {
+				m.selectSessionRow(t, stash.Name)
+			}
+			switch action {
+			case "revive":
+				m.reviveSelected()
+			case "all":
+				m.reviveAllDead()
+			case "restart":
+				m.restartSelected()
+			}
+			m.drainEffects(t)
+			if m.mode == modeConfirmDelete || m.services.tmux.Exists(stash.ID) {
+				t.Fatalf("archived group=%v action=%s: mode=%v pane=%v", group, action, m.mode, m.services.tmux.Exists(stash.ID))
+			}
+		}
+	}
+}
+
+func TestReviveParentExcludesArchivedChildren(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "parent", t.TempDir(), "")
+	parent := m.sessionRows()[0]
+	child := store.Session{ID: newID(), Name: "archived-child", Tool: parent.Tool, Cwd: parent.Cwd, ParentID: parent.ID, Status: status.Dead, Archived: true}
+	if err := m.services.store.CreateSession(child); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.tmux.Kill(parent.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "parent")
+	m.reviveSelected()
+	m.drainEffects(t)
+	if m.mode == modeConfirmDelete || !m.services.tmux.Exists(parent.ID) || m.services.tmux.Exists(child.ID) {
+		t.Fatalf("parent=%v child=%v mode=%v err=%s", m.services.tmux.Exists(parent.ID), m.services.tmux.Exists(child.ID), m.mode, m.errBar.text)
+	}
+}
+
+func TestArchivedDeadHintUsesRestoreBinding(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "archived", t.TempDir(), "")
+	sess := m.sessionRows()[0]
+	if err := m.services.store.SetArchived(sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	keys := m.services.listKeys.With(keybind.Restore, bindingOf(t, "U"))
+	if err := m.services.store.SetKeys(keys); err != nil {
+		t.Fatal(err)
+	}
+	if err := deadSessionError(m.services.store, sess.ID); err == nil || err.Error() != "session is archived - press U to restore" {
+		t.Fatalf("hint = %v", err)
+	}
+}
+
+func TestArchivedHintWithUnboundRestoreNamesRowMenu(t *testing.T) {
+	keys := keybind.DefaultList().With(keybind.Restore, keybind.Binding{})
+	if got := archivedSessionHint(keys); got != "session is archived - choose Restore from its row menu" {
+		t.Fatalf("hint = %q", got)
+	}
+}
+
+func TestFilteredReviveTargetsAndEffects(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		t.Run(fmt.Sprint(all), func(t *testing.T) {
+			m := buildModel(t)
+			seedGroups(t, m, "work", "hidden/deep")
+			for _, name := range []string{"needle-one", "needle-two", "other"} {
+				createSession(t, m, name, t.TempDir(), "work")
+			}
+			createSession(t, m, "needle-hidden", t.TempDir(), "hidden/deep")
+			inventory := append([]store.Session(nil), m.workspace.sessions...)
+			for _, sess := range inventory {
+				if err := m.services.tmux.Kill(sess.ID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := m.services.store.SetGroupArchived("hidden", true); err != nil {
+				t.Fatal(err)
+			}
+			m.applyCmd(t, m.refreshCmd())
+			m.rail.SetSearch("needle", false)
+			m.selectGroupRow(t, "work")
+			if all {
+				m.reviveAllDead()
+			} else {
+				m.reviveSelected()
+			}
+			if len(m.confirm.sessions) != 2 || !strings.Contains(m.confirm.label, "(2") {
+				t.Fatalf("targets=%+v label=%q", m.confirm.sessions, m.confirm.label)
+			}
+			_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+			m.applyCmd(t, cmd)
+			m.drainEffects(t)
+			for _, sess := range inventory {
+				want := sess.Name == "needle-one" || sess.Name == "needle-two"
+				if got := m.services.tmux.Exists(sess.ID); got != want {
+					t.Errorf("%s live=%v want=%v err=%s", sess.Name, got, want, m.errBar.text)
+				}
+			}
+		})
+	}
+}
+
+func TestReviveDeadChildRejectsChangedFamily(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "parent", t.TempDir(), "")
+	m.selectSessionRow(t, "parent")
+	child := spawnTerminal(t, m)
+	if err := m.services.tmux.Kill(child.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "parent")
+	m.reviveSelected()
+	if len(m.confirm.sessions) != 1 {
+		t.Fatalf("targets=%+v", m.confirm.sessions)
+	}
+	extra := store.Session{ID: newID(), Name: "extra", Tool: child.Tool, Cwd: child.Cwd, ParentID: child.ParentID, Status: status.Dead}
+	if err := m.services.store.CreateSession(extra); err != nil {
+		t.Fatal(err)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	m.drainEffects(t)
+	if !strings.Contains(m.errBar.text, "sessions changed since confirmation") {
+		t.Fatalf("notice=%q", m.errBar.text)
+	}
+	if m.services.tmux.Exists(child.ID) || m.services.tmux.Exists(extra.ID) {
+		t.Fatal("changed family revived")
+	}
+}
+
+func TestReviveRootLabelAndEmptyNotice(t *testing.T) {
+	m := buildModel(t)
+	for _, name := range []string{"one", "two"} {
+		createSession(t, m, name, t.TempDir(), "")
+	}
+	for _, sess := range m.workspace.sessions {
+		if err := m.services.tmux.Kill(sess.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "")
+	m.reviveSelected()
+	if want := "revive group root (2 dead sessions)? brings them back."; m.confirm.label != want {
+		t.Fatalf("label=%q", m.confirm.label)
+	}
+	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	m.drainEffects(t)
+	m.selectGroupRow(t, "")
+	_, cmd = m.reviveSelected()
+	m.applyCmd(t, cmd)
+	m.drainEffects(t)
+	if m.errBar.text != "no dead sessions to revive in root" {
+		t.Fatalf("notice=%q", m.errBar.text)
+	}
+}
+
+func TestDeadSessionErrorPreservesGoneIdentity(t *testing.T) {
+	m := buildModel(t)
+	createSession(t, m, "deleted", t.TempDir(), "")
+	sess := m.workspace.sessions[0]
+	if err := m.services.store.Delete(sess.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := deadSessionError(m.services.store, sess.ID); !errors.Is(err, store.ErrSessionGone) {
+		t.Fatalf("deleted row error=%v", err)
+	}
+}
+
+func TestDeadRecoveryHintFollowsSavedBindings(t *testing.T) {
+	cases := []struct {
+		revive, restart []string
+		want            string
+	}{
+		{[]string{"U", "alt+v"}, []string{"N"}, "session is dead - press U / alt+v to revive or N to restart"},
+		{nil, []string{"N"}, "session is dead - press N to restart or choose Revive from its row menu"},
+		{[]string{"U"}, nil, "session is dead - press U to revive"},
+		{nil, nil, "session is dead - choose Revive from its row menu"},
+	}
+	for _, test := range cases {
+		t.Run(test.want, func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "dead", t.TempDir(), "")
+			sess := m.workspace.sessions[0]
+			keys := m.services.listKeys.With(keybind.Revive, bindingOf(t, test.revive...)).With(keybind.Restart, bindingOf(t, test.restart...))
+			if err := m.services.store.SetKeys(keys); err != nil {
+				t.Fatal(err)
+			}
+			if err := deadSessionError(m.services.store, sess.ID); err == nil || err.Error() != test.want {
+				t.Fatalf("hint=%v want %q", err, test.want)
+			}
+		})
 	}
 }

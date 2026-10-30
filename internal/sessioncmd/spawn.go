@@ -1,11 +1,14 @@
 package sessioncmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/agentsession"
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/store"
@@ -36,6 +39,12 @@ type CreateSessionOptions struct {
 	Model   string
 	Effort  string
 	Profile string
+	// Environment names the environment profile it launches under. Nil
+	// inherits the group's, then the caller's; a pointer to an empty string
+	// launches under the manager's environment alone.
+	Environment *string
+	// Resume is the tool's own id for a saved conversation to open instead.
+	Resume string
 }
 
 func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session, error) {
@@ -69,6 +78,10 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
+	environment, err := runtime.environmentFor(caller, group, opts.Environment)
+	if err != nil {
+		return Session{}, err
+	}
 	prompt := strings.TrimSpace(opts.Prompt)
 	if opts.Preset != "" {
 		text, err := savedText(runtime.store, opts.Preset, prompt)
@@ -79,14 +92,24 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	}
 	name := strings.TrimSpace(opts.Name)
 	autoNamed := name == ""
+	chosen := tool.WithChoice(choice)
+	resume, err := runtime.resumable(resumeRequest{
+		toolName: toolName, tool: chosen, id: opts.Resume, dir: dir, environment: environment, profile: choice.Profile,
+		worktree: opts.Worktree, named: !autoNamed, prompted: prompt != "",
+	})
+	if err != nil {
+		return Session{}, err
+	}
 	id := uuid.NewString()[:8]
 	if autoNamed {
 		name = toolName + "-" + id[:4]
 	}
 
-	wantWorktree, err := runtime.worktreeWanted(group, opts.Worktree)
-	if err != nil {
-		return Session{}, err
+	wantWorktree := false
+	if resume == "" {
+		if wantWorktree, err = runtime.worktreeWanted(group, opts.Worktree); err != nil {
+			return Session{}, err
+		}
 	}
 	base, err := runtime.groupBase(group)
 	if err != nil {
@@ -112,17 +135,63 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if worktreeGit != nil {
 		worktree = &WorktreeRequest{Base: base, Fetch: fetchSetting != "off"}
 	}
-	chosen := tool.WithChoice(choice)
+	plan := launch.Assemble(toolName, chosen, prompt, autoNamed, proactive)
+	if resume != "" {
+		plan = launch.AssembleResume(toolName, chosen, prompt, resume, autoNamed, proactive)
+	}
 	launched, err := lifecycle.Spawn(SpawnRequest{
-		Session:  store.Session{ID: id, Name: name, Tool: toolName, Cwd: dir, Group: group, Choice: choice},
+		Session:  store.Session{ID: id, Name: name, Tool: toolName, Cwd: dir, Group: group, Choice: choice, Environment: environment},
 		Tool:     chosen,
-		Plan:     launch.Assemble(toolName, chosen, prompt, autoNamed, proactive),
+		Plan:     plan,
 		Worktree: worktree,
 	})
 	if err != nil {
 		return Session{}, err
 	}
 	return runtime.sessionInfo(launched.Session, true, false), nil
+}
+
+type resumeRequest struct {
+	toolName, id, dir, environment, profile string
+	tool                                    config.Tool
+	worktree                                *bool
+	named, prompted                         bool
+}
+
+// resumable admits a conversation saved in the directory and held by no row.
+func (r *runtime) resumable(req resumeRequest) (string, error) {
+	resume := strings.TrimSpace(req.id)
+	if resume == "" {
+		return "", nil
+	}
+	if !agentsession.ValidSessionID(resume) {
+		return "", fmt.Errorf("resume %q is not a conversation id", resume)
+	}
+	if req.worktree != nil && *req.worktree {
+		return "", errors.New("a resumed conversation opens in the directory it was saved in; omit worktree or pass false")
+	}
+	if !req.named && !req.prompted {
+		return "", errors.New("a resume without a prompt sends the agent nothing, so it cannot name itself; pass a name")
+	}
+	if err := r.store.ConversationFree(req.toolName, resume); err != nil {
+		return "", err
+	}
+	profile, err := r.store.LaunchEnv(req.environment)
+	if err != nil {
+		return "", err
+	}
+	env := agentsession.Env(launch.Variables(profile, req.tool))
+	saved, err := agentsession.Saved(req.tool.SessionStore, req.tool.SessionReport, resume, agentsession.Launch{Cwd: req.dir, Env: env, Profile: req.profile})
+	if errors.Is(err, agentsession.ErrNoStore) {
+		return resume, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("cannot check conversation %s: %w", resume, err)
+	}
+	if !saved {
+		return "", fmt.Errorf("%s has no conversation %s saved in %s", req.toolName, resume, req.dir)
+	}
+	return resume, nil
 }
 
 // toolFor is the CLI a spawn runs when it names none. A terminal or a script
@@ -227,6 +296,63 @@ func groupBase(st *store.Store, group string) (string, error) {
 	return "", nil
 }
 
+// environmentFor is the environment profile a new pane launches under: the
+// one asked for, else the nearest default of the group it joins, else the
+// caller's own, so a helper an agent opens keeps its account and config.
+func (r *runtime) environmentFor(caller store.Session, group string, explicit *string) (string, error) {
+	environment := ""
+	switch {
+	case explicit != nil:
+		environment = strings.TrimSpace(*explicit)
+	default:
+		inherited, err := groupEnvironment(r.store, group)
+		if err != nil {
+			return "", err
+		}
+		environment = inherited
+		if environment == "" {
+			environment = caller.Environment
+		}
+	}
+	if environment == "" {
+		return "", nil
+	}
+	if _, found, err := r.store.EnvProfile(environment); err != nil || found {
+		return environment, err
+	}
+	profiles, err := r.store.EnvProfiles()
+	if err != nil {
+		return "", err
+	}
+	names := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		names = append(names, profile.Name)
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("environment %q does not exist, and none is defined; create one with agent-manager env set", environment)
+	}
+	return "", fmt.Errorf("environment %q does not exist; defined are %s", environment, strings.Join(names, ", "))
+}
+
+// groupEnvironment is the environment profile a spawn into group
+// preselects: the nearest ancestor's choice, or "" for none.
+func groupEnvironment(st *store.Store, group string) (string, error) {
+	groups, err := st.Groups()
+	if err != nil {
+		return "", err
+	}
+	chosen := make(map[string]string, len(groups))
+	for _, candidate := range groups {
+		chosen[candidate.Name] = candidate.Environment
+	}
+	for current := group; current != ""; current = parentGroup(current) {
+		if environment := chosen[current]; environment != "" {
+			return environment, nil
+		}
+	}
+	return "", nil
+}
+
 // createTarget resolves the group and directory a new pane opens in.
 // A nil requested group inherits the caller's; an explicit one must
 // already exist. An explicit directory wins outright; a caller that named
@@ -239,10 +365,9 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		return "", "", err
 	}
 	byName := make(map[string]store.Group, len(groups))
-	archived := make(map[string]bool, len(groups))
+	archived := store.ArchivedGroups(groups)
 	for _, candidate := range groups {
 		byName[candidate.Name] = candidate
-		archived[candidate.Name] = candidate.Archived
 	}
 	if requestedGroup != nil {
 		group = strings.TrimSpace(*requestedGroup)

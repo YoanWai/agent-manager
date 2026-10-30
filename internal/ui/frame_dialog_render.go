@@ -1,11 +1,16 @@
 package ui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+)
 
 type dialogRenderContext struct {
-	width  int
-	height int
-	status string
+	glyphMode presentation.GlyphMode
+	width     int
+	height    int
+	status    string
 }
 
 // dialogBox is a card's own lines, before the backdrop surrounds them, and
@@ -23,7 +28,7 @@ func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2
 		return paint(border.Render(left+strings.Repeat("─", width-2)+right), width, blockHex())
 	}
 
-	lines := []string{cardTitleRow(width, title, border), row("")}
+	lines := []string{cardTitleRow(width, title, border, ctx.glyphMode), row("")}
 	if body != "" {
 		for _, line := range strings.Split(body, "\n") {
 			lines = append(lines, row(line))
@@ -38,13 +43,13 @@ func dialogBox(ctx dialogRenderContext, width int, title, body string, hint [][2
 	var hits keyHits
 	if len(hint) > 0 {
 		lines = append(lines, rule("├", "┤"))
-		foot := paintInline(hint, inner)
+		foot := paintInline(hint, inner, ctx.glyphMode)
 		hits = foot.hits.moved(cardBodyColumn, len(lines))
 		for _, line := range strings.Split(foot.text, "\n") {
 			lines = append(lines, row(line))
 		}
 	}
-	lines = append(lines, rule("╰", "╯"))
+	lines = append(lines, rule(presentation.ChromeFor(ctx.glyphMode).BottomLeftGlyph, presentation.ChromeFor(ctx.glyphMode).BottomRightGlyph))
 	return lines, hits
 }
 

@@ -20,19 +20,26 @@ class SandboxTests(unittest.TestCase):
 
     def test_inherited_tmux_and_git_cannot_select_live_resources(self):
         with patch.dict(os.environ, {'TMUX': '/live/socket,1,0', 'GIT_DIR': '/live/repo',
-                                     'GIT_CONFIG_COUNT': '1', 'AGENT_MANAGER_SESSION_ID': 'live-session'}):
+                                     'GIT_CONFIG_COUNT': '1', 'AGENT_MANAGER_SESSION_ID': 'live-session',
+                                     'AGENT_MANAGER_CONFIG_DIR': '/live/config'}):
             isolated = Sandbox(Path(self.temp.name) / 'inherited-evidence')
         try:
             self.assertNotIn('TMUX', isolated.env)
             self.assertNotIn('GIT_DIR', isolated.env)
             self.assertNotIn('GIT_CONFIG_COUNT', isolated.env)
             self.assertNotIn('AGENT_MANAGER_SESSION_ID', isolated.env)
+            self.assertNotIn('AGENT_MANAGER_CONFIG_DIR', isolated.env)
             self.assertLess(len(str(isolated.socket_dir / 'tmux-99999/agentmgr')), 104)
             self.assertTrue(isolated.socket_dir.is_dir())
             self.assertEqual(isolated.env['HOME'], str(isolated.home))
         finally:
             with patch.object(isolated, 'tmux', return_value=subprocess.CompletedProcess([], 0, '', '')):
                 isolated.close()
+
+    def test_sandbox_routes_http_to_a_closed_port(self):
+        self.assertEqual(self.sandbox.env['HTTPS_PROXY'], 'http://127.0.0.1:1')
+        self.assertEqual(self.sandbox.env['HTTP_PROXY'], 'http://127.0.0.1:1')
+        self.assertNotIn('NO_PROXY', self.sandbox.env)
 
     def test_fixture_shell_delegates_command_execution(self):
         result = subprocess.run([self.sandbox.env['SHELL'], '-c', 'printf command-ready'],

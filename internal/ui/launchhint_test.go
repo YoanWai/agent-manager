@@ -346,6 +346,9 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
+	if err := m.services.store.CreateSession(sess); err != nil {
+		t.Fatal(err)
+	}
 	m.confirm.confirmTarget = confirmTarget{action: actionRestart, sessions: []store.Session{sess}}
 	m.mode = modeConfirmDelete
 
@@ -423,9 +426,8 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("the image file must outlive the refusal, stat err = %v", err)
 	}
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	m.Update(tea.KeyMsg{Type: tea.KeyEscape})
 	m.drainEffects(t)
-	m = updated.(*Model)
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("the image file should be gone, stat err = %v", err)
 	}
@@ -643,8 +645,16 @@ func TestLaunchHintStrayKeysKeepTheDialog(t *testing.T) {
 		t.Fatalf("mode = %v, want the dialog kept", m.mode)
 	}
 	pressInLaunchHint(t, m, 'q')
+	if m.mode != modeLaunchHint {
+		t.Fatalf("mode = %v, want unadvertised q to keep the dialog", m.mode)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeLaunchHint {
+		t.Fatal("unadvertised Enter closed launch hint")
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if m.mode != modeList {
-		t.Fatalf("mode = %v, want q to close", m.mode)
+		t.Fatal("Escape did not close launch hint")
 	}
 }
 
@@ -883,8 +893,7 @@ func TestLaunchHintQuitsOnCtrlC(t *testing.T) {
 	m := buildModel(t)
 	m.reportLaunchError(config.MissingToolError{Binary: "claude"})
 
-	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
-	m = updated.(*Model)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("ctrl+c in the dialog should quit")
 	}

@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -62,23 +61,23 @@ func resolvePath(p string) string {
 func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]bool, terminal string) (string, bool) {
 	switch sessionStore {
 	case "codex":
-		return captureCodex(codexRoot(), cwd, launchedAt, claimed)
+		return captureCodex(codexRoot(managerEnv), cwd, launchedAt, claimed)
 	case "opencode":
 		return captureOpencode(cwd, launchedAt, claimed)
 	case "gemini":
-		return captureGemini(geminiRoot(), cwd, launchedAt, claimed)
+		return captureGemini(geminiRoot(managerEnv), cwd, launchedAt, claimed)
 	case "hermes":
-		return captureHermes(hermesStateDB(), cwd, launchedAt, claimed)
+		return captureHermes(hermesStateDB(managerEnv, ""), cwd, launchedAt, claimed)
 	case "command-code":
-		return captureCommandCode(commandCodeRoot(), cwd, launchedAt, claimed)
+		return captureCommandCode(commandCodeRoot(managerEnv), cwd, launchedAt, claimed)
 	case "muse":
-		return captureMuse(museRoot(), cwd, launchedAt, claimed)
+		return captureMuse(museRoot(managerEnv), cwd, launchedAt, claimed)
 	case "antigravity":
-		return captureAntigravity(antigravityRoot(), cwd, launchedAt, claimed)
+		return captureAntigravity(antigravityRoot(managerEnv), cwd, launchedAt, claimed)
 	case "omp":
-		return captureOmp(ompRoot(), cwd, terminal, launchedAt, claimed)
+		return captureOmp(ompRoot(managerEnv), cwd, terminal, launchedAt, claimed)
 	case "cursor":
-		return captureCursor(cwd, launchedAt, claimed)
+		return captureCursor(cursorConfigDir(managerEnv), cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
@@ -91,25 +90,29 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 // merely predate the launch. ok=false when the store cannot be read; the
 // relaunch proceeds without a snapshot and recapture refuses to guess.
 func Snapshot(sessionStore, cwd string) (map[string]int64, bool) {
+	return snapshotUnder(sessionStore, cwd, "", managerEnv)
+}
+
+func snapshotUnder(sessionStore, cwd, profile string, env Env) (map[string]int64, bool) {
 	switch sessionStore {
 	case "codex":
-		return snapshotCodex(codexRoot(), cwd)
+		return snapshotCodex(codexRoot(env), cwd)
 	case "opencode":
-		return snapshotOpencode(cwd)
+		return snapshotOpencode(cwd, env)
 	case "gemini":
-		return snapshotGemini(geminiRoot(), cwd)
+		return snapshotGemini(geminiRoot(env), cwd)
 	case "hermes":
-		return snapshotHermes(hermesStateDB(), cwd)
+		return snapshotHermes(hermesStateDB(env, profile), cwd)
 	case "command-code":
-		return snapshotCommandCode(commandCodeRoot(), cwd)
+		return snapshotCommandCode(commandCodeRoot(env), cwd)
 	case "muse":
-		return snapshotMuse(museRoot(), cwd)
+		return snapshotMuse(museRoot(env), cwd)
 	case "antigravity":
-		return snapshotAntigravity(antigravityRoot(), cwd)
+		return snapshotAntigravity(antigravityRoot(env), cwd)
 	case "omp":
-		return snapshotOmp(ompRoot(), cwd)
+		return snapshotOmp(ompRoot(env), cwd)
 	case "cursor":
-		return snapshotCursor(cwd)
+		return snapshotCursor(cursorConfigDir(env), cwd)
 	default:
 		return nil, false
 	}
@@ -129,23 +132,23 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 	var cands []candidate
 	switch sessionStore {
 	case "codex":
-		cands = recaptureCodex(codexRoot(), cwd, snapshot, claimed)
+		cands = recaptureCodex(codexRoot(managerEnv), cwd, snapshot, claimed)
 	case "gemini":
-		cands = recaptureGemini(geminiRoot(), cwd, snapshot, claimed)
+		cands = recaptureGemini(geminiRoot(managerEnv), cwd, snapshot, claimed)
 	case "command-code":
-		cands = recaptureCommandCode(commandCodeRoot(), cwd, snapshot, claimed)
+		cands = recaptureCommandCode(commandCodeRoot(managerEnv), cwd, snapshot, claimed)
 	case "opencode":
 		cands = recaptureOpencode(cwd, snapshot, claimed)
 	case "hermes":
-		return recaptureHermes(hermesStateDB(), cwd, snapshot, claimed)
+		return recaptureHermes(hermesStateDB(managerEnv, ""), cwd, snapshot, claimed)
 	case "muse":
-		cands = recaptureMuse(museRoot(), cwd, snapshot, claimed)
+		cands = recaptureMuse(museRoot(managerEnv), cwd, snapshot, claimed)
 	case "antigravity":
-		cands = recaptureAntigravity(antigravityRoot(), cwd, snapshot, claimed)
+		cands = recaptureAntigravity(antigravityRoot(managerEnv), cwd, snapshot, claimed)
 	case "omp":
-		cands = recaptureOmp(ompRoot(), cwd, snapshot, claimed)
+		cands = recaptureOmp(ompRoot(managerEnv), cwd, snapshot, claimed)
 	case "cursor":
-		cands = recaptureCursor(cwd, snapshot, claimed)
+		cands = recaptureCursor(cursorConfigDir(managerEnv), cwd, snapshot, claimed)
 	default:
 		return "", false
 	}
@@ -162,7 +165,7 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 func Forks(sessionStore, sourceID string) (map[string]bool, bool) {
 	switch sessionStore {
 	case "muse":
-		forks, err := museForks(museRoot(), sourceID, time.Time{})
+		forks, err := museForks(museRoot(managerEnv), sourceID, time.Time{})
 		if err != nil {
 			return nil, false
 		}
@@ -181,7 +184,7 @@ func Forks(sessionStore, sourceID string) (map[string]bool, bool) {
 func ForkedFrom(sessionStore, sourceID string, since time.Time, earlier map[string]bool) (string, bool) {
 	switch sessionStore {
 	case "muse":
-		forks, err := museForks(museRoot(), sourceID, since.Add(-clockSlack))
+		forks, err := museForks(museRoot(managerEnv), sourceID, since.Add(-clockSlack))
 		if err != nil {
 			return "", false
 		}
@@ -253,8 +256,8 @@ func recaptureCommandCode(root, cwd string, snapshot map[string]int64, claimed m
 	return recaptureCandidates(cands, err, snapshot)
 }
 
-func snapshotOpencode(cwd string) (map[string]int64, bool) {
-	entries, ok := opencodeSessionListJSON(cwd)
+func snapshotOpencode(cwd string, env Env) (map[string]int64, bool) {
+	entries, ok := opencodeSessionListJSON(cwd, env)
 	if !ok {
 		return nil, false
 	}
@@ -272,7 +275,7 @@ func snapshotOpencode(cwd string) (map[string]int64, bool) {
 // recaptureOpencode is the snapshot's counterpart: the same one-subprocess
 // list, admitting the conversation whose update time outran the snapshot.
 func recaptureOpencode(cwd string, snapshot map[string]int64, claimed map[string]bool) []candidate {
-	entries, ok := opencodeSessionListJSON(cwd)
+	entries, ok := opencodeSessionListJSON(cwd, managerEnv)
 	if !ok {
 		return nil
 	}
@@ -399,8 +402,8 @@ func recaptureHermes(path, cwd string, snapshot map[string]int64, claimed map[st
 	return cands[0].id, true
 }
 
-func commandCodeRoot() string {
-	home, err := os.UserHomeDir()
+func commandCodeRoot(env Env) string {
+	home, err := env.homeDir()
 	if err != nil {
 		return ""
 	}
@@ -478,23 +481,28 @@ func commandCodeMeta(path string) (id, cwd string, err error) {
 	return line.ID, line.Cwd, nil
 }
 
-func hermesStateDB() string {
-	root := strings.TrimSpace(os.Getenv("HERMES_HOME"))
+func hermesStateDB(env Env, profile string) string {
+	root := strings.TrimSpace(env.get("HERMES_HOME"))
 	if root != "" && filepath.Base(filepath.Dir(root)) == "profiles" {
-		return filepath.Join(root, "state.db")
+		if profile == "" {
+			return filepath.Join(root, "state.db")
+		}
+		root = filepath.Dir(filepath.Dir(root))
 	}
 	if root == "" {
-		home, err := hermesDefaultHome()
+		home, err := hermesDefaultHome(env)
 		if err != nil {
 			return ""
 		}
 		root = home
 	}
-	if data, err := os.ReadFile(filepath.Join(root, "active_profile")); err == nil {
-		profile := strings.TrimSpace(string(data))
-		if profile != "default" && hermesProfilePattern.MatchString(profile) {
-			return filepath.Join(root, "profiles", profile, "state.db")
+	if profile == "" {
+		if data, err := os.ReadFile(filepath.Join(root, "active_profile")); err == nil {
+			profile = strings.TrimSpace(string(data))
 		}
+	}
+	if profile != "" && profile != "default" && hermesProfilePattern.MatchString(profile) {
+		return filepath.Join(root, "profiles", profile, "state.db")
 	}
 	return filepath.Join(root, "state.db")
 }
@@ -540,11 +548,11 @@ func captureHermes(path, cwd string, launchedAt time.Time, claimed map[string]bo
 	return pickEarliest(cands)
 }
 
-func codexRoot() string {
-	if home := os.Getenv("CODEX_HOME"); home != "" {
+func codexRoot(env Env) string {
+	if home := env.get("CODEX_HOME"); home != "" {
 		return filepath.Join(home, "sessions")
 	}
-	home, err := os.UserHomeDir()
+	home, err := env.homeDir()
 	if err != nil {
 		return ""
 	}
@@ -557,10 +565,10 @@ func codexRoot() string {
 // which a hardcoded store path does not survive. The command runs in cwd
 // because `opencode session list` is scoped to the calling directory's
 // project, so a session's own conversations only surface from its cwd.
-func runOpencode(cwd string, args ...string) ([]byte, error) {
+func runOpencode(cwd string, env Env, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), opencodeCLITimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "opencode", args...)
+	cmd := env.command(ctx, "opencode", args...)
 	cmd.Dir = cwd
 	return cmd.Output()
 }
@@ -592,8 +600,8 @@ type opencodeListEntry struct {
 }
 
 // A package variable so tests substitute canned output.
-var opencodeSessionListJSON = func(cwd string) ([]opencodeListEntry, bool) {
-	out, err := runOpencode(cwd, "session", "list", "--format", "json", "--standalone")
+var opencodeSessionListJSON = func(cwd string, env Env) ([]opencodeListEntry, bool) {
+	out, err := runOpencode(cwd, env, "session", "list", "--format", "json", "--standalone")
 	if err != nil {
 		return nil, false
 	}
@@ -724,7 +732,7 @@ func codexMeta(path string) (id, cwd string, err error) {
 // keeps those whose directory matches and that were created at or after
 // launch, and returns the earliest such conversation not already claimed.
 func captureOpencode(cwd string, launchedAt time.Time, claimed map[string]bool) (string, bool) {
-	entries, ok := opencodeSessionListJSON(cwd)
+	entries, ok := opencodeSessionListJSON(cwd, managerEnv)
 	if !ok {
 		return "", false
 	}
@@ -759,5 +767,5 @@ func SessionFile(sessionStore, id string) (string, error) {
 	if !SupportsSessionFile(sessionStore) {
 		return "", fmt.Errorf("session_store %q keeps no session file to fork from", sessionStore)
 	}
-	return geminiSessionFileIn(geminiRoot(), id)
+	return geminiSessionFileIn(geminiRoot(managerEnv), id)
 }
