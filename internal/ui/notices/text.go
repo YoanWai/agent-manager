@@ -24,6 +24,14 @@ func markedRuns(text string) []textRun {
 	return runs
 }
 
+func handleRuns(text string) []textRun {
+	handle, rest, _ := strings.Cut(text, " ")
+	if !strings.HasPrefix(handle, "@") {
+		return []textRun{{text: text}}
+	}
+	return []textRun{{text: handle, accent: true}, {text: " " + rest}}
+}
+
 // Where two phrases start at one place the longer wins.
 // An empty phrase would loop forever here, and feed.sanitize drops them.
 func phraseRuns(text string, phrases []string) []textRun {

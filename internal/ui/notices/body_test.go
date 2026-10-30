@@ -413,6 +413,16 @@ func TestReleaseSummaryShowsThanksUnderHighlights(t *testing.T) {
 	}
 }
 
+func TestThanksDrawTheHandleInTheAuthorColor(t *testing.T) {
+	useTrueColor(t)
+	release := releaseOf("v0.45.0", "UI: A change")
+	release.Thanks = []string{"@subbeh built environment profiles (#834)"}
+	joined := strings.Join(renderBody(Notice{Releases: []Release{release}, RangeComplete: true}, modalInner, testTheme(), presentation.DefaultGlyphMode), "\n")
+	if !strings.Contains(joined, lipgloss.NewStyle().Foreground(testTheme().Accent2).Render("@subbeh")) {
+		t.Fatalf("the thanked handle is not in the author color:\n%q", joined)
+	}
+}
+
 func TestReleaseSummaryShowsThanksUnderGeneratedList(t *testing.T) {
 	release := releaseOf("v0.33.0", "UI: A change")
 	release.Thanks = []string{"@pandysp asked for a way to put the preview away in #357"}

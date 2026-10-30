@@ -158,7 +158,7 @@ func releaseSections(release Release, newest, ranged bool, width int, t Theme) [
 		section := []string{label("HIGHLIGHTS", t)}
 		mark := lipgloss.NewStyle().Foreground(t.Accent)
 		for _, highlight := range release.Highlights {
-			section = appendBullet(section, markedRuns(highlight), width, t.Value, mark, t)
+			section = appendBullet(section, markedRuns(highlight), width, t.Value, mark, t.Key)
 		}
 		sections = append(sections, section)
 	}
@@ -170,8 +170,9 @@ func releaseSections(release Release, newest, ranged bool, width int, t Theme) [
 	}
 	if len(release.Thanks) > 0 {
 		section := []string{label("THANK YOU", t)}
+		handle := lipgloss.NewStyle().Foreground(t.Accent2)
 		for _, thanks := range release.Thanks {
-			section = appendBullet(section, []textRun{{text: thanks}}, width, t.Muted, t.Muted, t)
+			section = appendBullet(section, handleRuns(thanks), width, t.Muted, t.Muted, handle)
 		}
 		sections = append(sections, section)
 	}
@@ -233,7 +234,7 @@ func changeCounts(changes []Change) string {
 
 // appendChange sets the author at the right edge of the last wrapped row, or of a row of its own when two spaces do not fit.
 func appendChange(rows []string, change Change, width int, t Theme) []string {
-	rows = appendBullet(rows, []textRun{{text: change.Text}}, width, t.Muted, t.Muted, t)
+	rows = appendBullet(rows, []textRun{{text: change.Text}}, width, t.Muted, t.Muted, t.Key)
 	if change.Author == "" {
 		return rows
 	}
@@ -262,13 +263,13 @@ func headingStyle(t Theme) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(t.Bright).Bold(true)
 }
 
-func appendBullet(rows []string, runs []textRun, width int, base, mark lipgloss.Style, t Theme) []string {
+func appendBullet(rows []string, runs []textRun, width int, base, mark, accent lipgloss.Style) []string {
 	for index, line := range wrapRuns(runs, max(width-2, 1)) {
 		prefix := "  "
 		if index == 0 {
 			prefix = mark.Render("• ")
 		}
-		rows = append(rows, prefix+renderRuns(line, base, t.Key))
+		rows = append(rows, prefix+renderRuns(line, base, accent))
 	}
 	return rows
 }
