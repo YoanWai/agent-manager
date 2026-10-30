@@ -250,7 +250,7 @@ with `gh release edit <tag> --notes-file notes.md`.
   `presentation`, `theme` and `surface` are shared). Cards, resize and
   focus are surfaces on a stack over the base screen (list or Review), read
   from the top for input; there is no mode enum
-  ([docs/surface-stack.md](docs/surface-stack.md)). A package never imports the
+  ([docs/architecture.md](docs/architecture.md#decisions)). A package never imports the
   root and changes root state only by returning values (`rail.Decision`,
   `rail.Intent`); its `Root` and host interfaces are for reads. Store, tmux
   and Git work runs on the ordered effect lane: `ui/effects` holds the

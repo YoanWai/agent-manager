@@ -8,7 +8,7 @@ import tea "github.com/charmbracelet/bubbletea"
 // Surface is a layer over the base screen that takes input before it:
 // focus, and the cards over the list, Review or a focused session. The root
 // walks the stack from the top for keys, mouse, frame and footer, so no
-// other code asks which overlay is open. See docs/surface-stack.md.
+// other code asks which overlay is open. See docs/architecture.md.
 //
 // A surface owns its state and reaches the root only through Host, so it
 // can be built and driven in a test without the root.
