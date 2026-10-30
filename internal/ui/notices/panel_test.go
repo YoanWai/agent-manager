@@ -44,7 +44,7 @@ func TestPanelRunsOnCopiedSources(t *testing.T) {
 	src := testSources("v0.3.0")
 	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
-	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", Welcome, ArrowStep}) {
+	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", Welcome}) {
 		t.Fatalf("notices = %v", got)
 	}
 	p.Open(notices, Welcome)
@@ -107,18 +107,18 @@ func TestUpdateNoticeHighlightsPressU(t *testing.T) {
 
 func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 	src := testSources("")
-	p := NewPanel(map[string]bool{Welcome: true})
+	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
-	p.Open(notices, ArrowStep)
-	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != ArrowStep || !out.Close {
+	p.Open(notices, Welcome)
+	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != Welcome || !out.Close {
 		t.Fatalf("d on the only notice = %+v", out)
 	}
-	p.Dismiss(ArrowStep)
+	p.Dismiss(Welcome)
 	if notices = p.Active(src); len(notices) != 0 {
 		t.Fatalf("dismissed notices still listed: %v", ids(notices))
 	}
-	p.Restore(ArrowStep)
-	if !slices.Equal(ids(p.Active(src)), []string{ArrowStep}) {
+	p.Restore(Welcome)
+	if !slices.Equal(ids(p.Active(src)), []string{Welcome}) {
 		t.Fatal("a restored notice is listed again")
 	}
 }
@@ -126,11 +126,11 @@ func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 func TestPanelReselectsByID(t *testing.T) {
 	p := NewPanel(map[string]bool{})
 	before := p.Active(testSources(""))
-	p.Open(before, ArrowStep)
+	p.Open(before, Welcome)
 	selected := p.Selected(before)
 	after := p.Active(testSources("v0.3.0"))
 	p.Reselect(after, selected)
-	if after[p.Cursor()].ID != ArrowStep {
+	if after[p.Cursor()].ID != Welcome {
 		t.Fatalf("selection moved to %q", after[p.Cursor()].ID)
 	}
 	p.Reselect(after, "gone")

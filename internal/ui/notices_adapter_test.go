@@ -1218,25 +1218,6 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 	}
 }
 
-func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
-	m := noticeModel(noticeStore(t), "v0.2.0")
-	found := false
-	for _, n := range m.activeNotices() {
-		if n.ID == uinotices.ArrowStep {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("arrow-step beta notice missing from active notices")
-	}
-	persistNoticeDismissal(t, m, uinotices.ArrowStep)
-	for _, n := range m.activeNotices() {
-		if n.ID == uinotices.ArrowStep {
-			t.Fatal("dismissed notice still listed")
-		}
-	}
-}
-
 func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34

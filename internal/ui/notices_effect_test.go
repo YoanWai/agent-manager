@@ -80,8 +80,6 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")
-	// Leave one visible card so accepting its dismissal closes the modal.
-	m.notices.Dismiss(uinotices.ArrowStep)
 	m.openNotices(uinotices.Welcome)
 
 	_, _ = m.handleNoticesKey(key("x"))
