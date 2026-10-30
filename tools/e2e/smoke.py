@@ -77,11 +77,16 @@ class Sandbox:
                     stream.write(json.dumps(dict(step=name, seconds=round(time.monotonic()-started, 3))) + '\n')
                 (self.artifacts / (name + '.txt')).write_text(last)
                 return last
-            if time.monotonic() >= deadline:
+            now = time.monotonic()
+            if now >= deadline:
                 (self.artifacts / (name + '-failure.txt')).write_text(last)
                 raise TimeoutError(f'{name}: condition not observed within {timeout}s')
             # Poll cadence only: transitions always require observable conditions.
-            time.sleep(0.05)
+            # It widens with the time already spent, so a condition that stays
+            # false costs a few observations rather than a pane capture every
+            # 50ms for twelve seconds. A manager under a held write lock is slow
+            # enough that constant captures starve it.
+            time.sleep(min(0.05 * (1 + (now - started) // 2), 0.5))
 
     def start_manager(self, session, cwd, binary):
         # remain-on-exit permits exit-code inspection instead of mistaking a vanished pane for success.

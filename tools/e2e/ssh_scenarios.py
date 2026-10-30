@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -23,7 +24,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from scenarios import (FAKE_BIN, FAKE_CLI, READY_MARKER, capture, config_fixture_text,
+from scenarios import (FAKE_BIN, FAKE_CLI, RAIL_WIDTH, READY_MARKER, capture, config_fixture_text,
                        ensure_binary, fake_cli_script, frame, key, last_frame, preview_of, profile_dir,
                        seed_store)
 from smoke import Sandbox
@@ -157,13 +158,32 @@ def seed_remote(sandbox, remote, manager):
 
 
 def select(sandbox, name, needle):
-    """Moves the cursor until the preview shows needle: down first, then up."""
-    for step in ['j'] * 12 + ['k'] * 24:
-        time.sleep(0.4)  # render settle; the capture right after a keypress can be stale
-        if needle in preview_of(capture(sandbox)):
-            (sandbox.artifacts / (name + '-selected.txt')).write_text(capture(sandbox))
-            return
+    """Moves the cursor until the preview shows needle: down first, then up.
+
+    A capture taken right after the cursor moves can still show the previous
+    row, so the marker has to hold for two captures in a row before the
+    selection counts. Both are observations rather than pauses.
+    """
+    def settled(_):
+        first = capture(sandbox)
+        if needle not in preview_of(first):
+            return False
+        second = capture(sandbox)
+        if needle not in preview_of(second):
+            return False
+        (sandbox.artifacts / (name + '-selected.txt')).write_text(second)
+        return True
+
+    if settled(''):
+        return
+
+    for index, step in enumerate(['j'] * 12 + ['k'] * 24):
         key(sandbox, step)
+        try:
+            sandbox.wait(f'{name}-selected-{index}', lambda: '', settled, timeout=0.6)
+            return
+        except TimeoutError:
+            continue
     raise AssertionError(f'{name} not reachable in the list')
 
 
@@ -227,6 +247,12 @@ def lifecycle(sandbox, remote, agent_id):
 
 def attach(sandbox, remote, agent_id):
     """Attach runs ssh -t in this terminal; the remote pane fills it until detach."""
+    # The remote write can finish before the manager polls its updated roster.
+    # Navigating the stale list lets that poll move the selection under attach.
+    sandbox.wait('remote-restored-row', lambda: capture(sandbox),
+                 lambda value: any(re.search(re.escape(REMOTE_AGENT) + r'\s+idle\b',
+                                             line[:RAIL_WIDTH])
+                                   for line in value.splitlines()))
     select_remote_agent(sandbox)
     sandbox.wait('remote-pane-ready', lambda: remote_pane_code(sandbox, remote, agent_id), lambda code: code == '0')
     key(sandbox, 'A')
