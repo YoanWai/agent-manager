@@ -483,7 +483,19 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	if _, fresh := m.freshWorktreeCapability(dir); fresh {
 		t.Fatal("expired capability still appeared fresh for a toggle")
 	}
-	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
+	if view := ansi.Strip(m.viewForm()); !strings.Contains(view, uilaunch.WorktreeUnavailable) {
+		t.Fatalf("an aged answer should read unavailable until the toggle asks again: %q", view)
+	}
+	m.form().SetWorktree(false)
+	m.form().FocusField(m.spawnHost(), spawn.FieldWorktree)
+	_, probe := m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if probe == nil {
+		t.Fatal("a toggle on an aged answer should ask git again")
+	}
+	m.applyTestMsg(t, probe())
+	if view := ansi.Strip(m.viewForm()); !m.formWorktreeOn() || strings.Contains(view, uilaunch.WorktreeUnavailable) {
+		t.Fatalf("a repo initialised while the form was open should take the toggle: %q", view)
+	}
 	if capable, known := m.cachedWorktreeCapability(dir); !known || !capable {
 		t.Fatalf("fresh probe cache = capable %t known %t", capable, known)
 	}
