@@ -132,7 +132,7 @@ func (m *Model) dispatchQuickSpawn(request uilaunch.Request, reader directoryPre
 }
 
 // toggleQuickWorktree flips the worktree choice, or probes the target first
-// when its repo verdict is not cached.
+// when its repo verdict is unknown or stale.
 func (m *Model) toggleQuickWorktree() tea.Cmd {
 	q := m.quick()
 	if _, remote := m.remoteTarget(); remote {
@@ -140,7 +140,7 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 		return nil
 	}
 	dir := m.quickTargetDir()
-	capable, known := m.cachedWorktreeCapability(dir)
+	capable, known := m.freshWorktreeCapability(dir)
 	if !known {
 		return m.quickWorktreeProbeCmd(true)
 	}
