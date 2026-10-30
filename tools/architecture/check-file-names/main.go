@@ -38,6 +38,7 @@ var packaged = map[string]string{
 	"help":         "the Help adapter: the context and root reads the key map paints from",
 	"launchhint":   "the launch fix adapter, its copy and the CLI install effect",
 	"notices":      "the notices adapter",
+	"onboarding":   "the first-run setup adapter, live preview and import effects",
 	"pathcomplete": "the directory completer's adapter: which field a read lands on",
 	"preview":      "the session preview adapter, its poll and the detail view",
 	"quick":        "the quick bar adapter and its send effect",

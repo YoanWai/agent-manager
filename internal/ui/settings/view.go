@@ -74,9 +74,6 @@ func (s *State) View(ctx ViewContext) Frame {
 		return s.viewKeyPicker(ctx)
 	}
 	st := ctx.Styles
-	// The beta tag borrows the messages modal's yellow, so the row reads as
-	// the one still under test.
-	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	toolValue := ""
 	if len(s.ToolNames) > 0 {
 		toolValue = s.ToolNames[s.ToolIndex]
@@ -134,7 +131,7 @@ func (s *State) View(ctx ViewContext) Frame {
 	// define one, and every row they never use crowds the ones they do.
 	s.envsHidden = len(ctx.Envs) == 0
 	if s.envsHidden && s.Field == FieldEnvs {
-		s.Field = FieldDocs
+		s.Field = FieldSetup
 	}
 	fields := make([]int, 0, FieldCount)
 	lines := make([]string, 0, FieldCount)
@@ -160,6 +157,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, actionRow(FieldPrompts, "saved prompts", "manage named instructions"))
 		case FieldEnvs:
 			lines = append(lines, lead(FieldEnvs, "environments")+st.Muted.Render(envSummary(ctx.Envs)))
+		case FieldSetup:
+			lines = append(lines, actionRow(FieldSetup, "first-run setup", "walk through it again"))
 		case FieldDocs:
 			lines = append(lines, ctaRow(FieldDocs, "docs", "open the docs"))
 		case FieldBugReport:
@@ -170,17 +169,15 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, versionRow(ctx, lead, actionRow))
 		default:
 			setting := byField[field]
-			line := row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s))))
-			if setting.Beta {
-				line += betaTag
-			}
-			lines = append(lines, line)
+			lines = append(lines, row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s)))))
 		}
 	}
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save and close"}}
 	switch s.Field {
 	case FieldGlyphs:
 		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save and close"}}
+	case FieldSetup:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the setup"}, {"esc", "save and close"}}
 	case FieldDocs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save and close"}}
 	case FieldBugReport, FieldFeatureRequest:

@@ -75,6 +75,14 @@ func (m *Model) vruleColumn(height int) []string {
 // bleedColumn finishes a pane's right edge: a half block in the pane's
 // tone on the backdrop, extending the fill half a cell past the seam.
 func (m *Model) bleedColumn(height int) []string {
+	box := m.focus.pane.FrameBox()
+	if m.focused() && box.Valid {
+		return m.tracedBleedColumn(height, box.Y-m.listChromeRows(), box.Height)
+	}
+	return m.tracedBleedColumn(height, 0, 0)
+}
+
+func (m *Model) tracedBleedColumn(height, top, rows int) []string {
 	background := uitheme.PanelHex()
 	cell := uitheme.Paint(lipgloss.NewStyle().Foreground(uitheme.ColorBg()).Render("▐"), 1, background)
 	if m.prefs.glyphMode.Effective() == presentation.GlyphModeBasic {
@@ -85,18 +93,13 @@ func (m *Model) bleedColumn(height int) []string {
 	for i := range lines {
 		lines[i] = cell
 	}
-	// Focus mode lights this column beside the pane rows alone, so the edge
-	// traces the agent's terminal rather than the whole content panel. The
-	// top corner sits on the rule row just above the capture.
-	box := m.focus.pane.FrameBox()
-	if m.focused() && box.Valid {
+	if rows > 0 {
 		edge := uitheme.Paint(uitheme.FocusEdgeStyle().Render("│"), 1, background)
 		corner := uitheme.Paint(uitheme.FocusEdgeStyle().Render(m.chrome().TopLeftGlyph), 1, background)
-		top := box.Y - m.listChromeRows()
 		if top-1 >= 0 && top-1 < len(lines) {
 			lines[top-1] = corner
 		}
-		for row := top; row < top+box.Height; row++ {
+		for row := top; row < top+rows; row++ {
 			if row >= 0 && row < len(lines) {
 				lines[row] = edge
 			}

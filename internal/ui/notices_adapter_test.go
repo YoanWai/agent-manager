@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
 	"github.com/YoanWai/agent-manager/internal/feed"
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -34,8 +36,10 @@ func noticeStore(t *testing.T) *store.Store {
 }
 
 func noticeModel(st *store.Store, version string) *Model {
+	release := uirelease.New(st, version)
+	release.Feed = []feed.Message{{ID: noticeTip, Title: "A tip", Body: []string{"details"}, URL: "https://example.com/tip"}}
 	return &Model{
-		release: uirelease.New(st, version),
+		release: release,
 		poller:  &poller{runner: execution.New(execution.Dependencies{Store: st}, execution.Options{})},
 		services: services{
 			store:    st,
@@ -47,6 +51,10 @@ func noticeModel(st *store.Store, version string) *Model {
 		},
 	}
 }
+
+// noticeTip is the feed message every noticeModel lists, a notice to open
+// and dismiss now that none ship in the binary.
+const noticeTip = "feed-tip"
 
 // noticeModalFloor is the panel's narrowest content column.
 const noticeModalFloor = 62
@@ -67,37 +75,21 @@ func persistNoticeDismissal(t *testing.T, m *Model, id string) {
 
 func TestActiveNoticesPinnedByDefault(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	ids := noticeIDs(m.activeNotices())
-	if !contains(ids, uinotices.Welcome) {
-		t.Fatalf("want %s among %v", uinotices.Welcome, ids)
-	}
-	var welcome uinotices.Notice
-	for _, n := range m.activeNotices() {
-		if n.ID == uinotices.Welcome {
-			welcome = n
-		}
-	}
-	joined := strings.Join(welcome.Body, " ")
-	if !strings.Contains(joined, "Settings (s)") || !strings.Contains(joined, "A bug or an idea?") {
-		t.Fatalf("welcome should point at Settings for a bug or an idea: %q", joined)
-	}
-	for _, n := range m.activeNotices() {
-		if n.ID != uinotices.Welcome && n.URL == uinotices.BugReportURL(m.release.Version) {
-			t.Fatalf("standalone bug-report notice still active: %q", n.ID)
-		}
+	if ids := noticeIDs(m.activeNotices()); !slices.Equal(ids, []string{noticeTip}) {
+		t.Fatalf("a fresh store should list the feed alone, got %v", ids)
 	}
 }
 
 func TestDismissPersistsAcrossRestart(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	persistNoticeDismissal(t, m, uinotices.Welcome)
-	if contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
+	persistNoticeDismissal(t, m, noticeTip)
+	if contains(noticeIDs(m.activeNotices()), noticeTip) {
 		t.Fatal("dismissed notice still active")
 	}
 
 	reopened := noticeModel(st, "v0.2.0")
-	if contains(noticeIDs(reopened.activeNotices()), uinotices.Welcome) {
+	if contains(noticeIDs(reopened.activeNotices()), noticeTip) {
 		t.Fatal("dismissal did not survive restart")
 	}
 }
@@ -203,7 +195,7 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 		uiRelease("v0.2.0", "Notices: Summarize releases"),
 		uiRelease("v0.1.0", "Starting release"),
 	}
-	if got := m.startupNotice(); got != "whatsnew-v0.5.0" {
+	if got := m.startupGreeting(); got != "whatsnew-v0.5.0" {
 		t.Fatalf("startup notice = %q", got)
 	}
 	m.openNotices("whatsnew-v0.5.0")
@@ -230,7 +222,7 @@ func TestVersionDowngradeDoesNotClaimAnUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := noticeModel(st, "v0.4.0")
-	if got := m.startupNotice(); got != "" {
+	if got := m.startupGreeting(); got != "" {
 		t.Fatalf("downgrade should not open what's new, got %q", got)
 	}
 	if m.release.WhatsNewVersion == "v0.4.0" {
@@ -250,15 +242,15 @@ func TestVersionDowngradeDoesNotClaimAnUpdate(t *testing.T) {
 func TestStartupNoticeFirstLaunch(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	if got := m.startupNotice(); got != uinotices.Welcome {
-		t.Fatalf("first launch should open the welcome notice, got %q", got)
+	if got := m.startupGreeting(); got != setupGreeting {
+		t.Fatalf("first launch should open the setup, got %q", got)
 	}
 	if seen, _ := st.Setting(uirelease.LastSeenSetting); seen != "v0.2.0" {
 		t.Fatalf("last seen version not recorded, got %q", seen)
 	}
 
 	again := noticeModel(st, "v0.2.0")
-	if got := again.startupNotice(); got != "" {
+	if got := again.startupGreeting(); got != "" {
 		t.Fatalf("same version must not reopen a notice, got %q", got)
 	}
 }
@@ -269,7 +261,7 @@ func TestStartupNoticeVersionChange(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := noticeModel(st, "v0.2.0")
-	got := m.startupNotice()
+	got := m.startupGreeting()
 	if got != "whatsnew-v0.2.0" {
 		t.Fatalf("version change should open what's new, got %q", got)
 	}
@@ -287,12 +279,12 @@ func TestWhatsNewSurvivesRestartUntilDismissed(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := noticeModel(st, "v0.2.0")
-	if m.startupNotice() == "" {
+	if m.startupGreeting() == "" {
 		t.Fatal("want an auto-opened notice")
 	}
 
 	reopened := noticeModel(st, "v0.2.0")
-	if reopened.startupNotice() != "" {
+	if reopened.startupGreeting() != "" {
 		t.Fatal("startup notice must fire once per version")
 	}
 	if !contains(noticeIDs(reopened.activeNotices()), "whatsnew-v0.2.0") {
@@ -307,8 +299,8 @@ func TestWhatsNewSurvivesRestartUntilDismissed(t *testing.T) {
 func TestFreshInstallNeverShowsWhatsNew(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	if got := m.startupNotice(); got != uinotices.Welcome {
-		t.Fatalf("want welcome, got %q", got)
+	if got := m.startupGreeting(); got != setupGreeting {
+		t.Fatalf("want the setup, got %q", got)
 	}
 	for _, id := range noticeIDs(m.activeNotices()) {
 		if strings.HasPrefix(id, "whatsnew-") {
@@ -352,8 +344,6 @@ func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 		Title:  "One title everywhere",
 		Body:   []string{"details"},
 	}}
-	persistNoticeDismissal(t, m, uinotices.Welcome)
-
 	m.openNotices("feed-canonical")
 	modal := ansi.Strip(preparedView(m))
 	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
@@ -417,7 +407,7 @@ func TestOpenNoticesFromList(t *testing.T) {
 func TestNoticesViewListsAndDetails(t *testing.T) {
 	m := modalModel(t)
 	frame := ansi.Strip(preparedView(m))
-	for _, want := range []string{"messages", "Welcome to agent-manager", "Settings (s)", "A bug or an idea?", "dismiss"} {
+	for _, want := range []string{"messages", "A tip", "details", "dismiss"} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("modal missing %q:\n%s", want, frame)
 		}
@@ -599,30 +589,27 @@ func TestNoticesEscCloses(t *testing.T) {
 func TestDevBuildNeverGreets(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "dev")
-	m.openStartupNotice()
-	if m.noticesOpen() {
-		t.Fatal("a dev build must not open the startup modal")
+	m.openStartupGreeting()
+	if !m.listClear() {
+		t.Fatal("a dev build must not open a startup greeting")
 	}
 	if seen, _ := st.Setting(uirelease.LastSeenSetting); seen != "" {
 		t.Fatalf("a dev build must not advance the stored version, got %q", seen)
 	}
 }
 
-func TestStartupOpensNoticesModalOncePerVersion(t *testing.T) {
+func TestStartupOpensTheSetupOnce(t *testing.T) {
 	st := noticeStore(t)
 	m := noticeModel(st, "v0.2.0")
-	m.openStartupNotice()
-	if !m.noticesOpen() {
-		t.Fatalf("first launch should open the notices modal, screen = %v", m.screenID())
-	}
-	if selected := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()]; selected.ID != uinotices.Welcome {
-		t.Fatalf("welcome should be selected, got %q", selected.ID)
+	m.openStartupGreeting()
+	if !m.setupOpen() {
+		t.Fatalf("first launch should open the setup, mode=%v", m.screenID())
 	}
 
 	again := noticeModel(st, "v0.2.0")
-	again.openStartupNotice()
-	if again.noticesOpen() {
-		t.Fatal("a later launch of the same version must not reopen the modal")
+	again.openStartupGreeting()
+	if !again.listClear() {
+		t.Fatalf("a later launch of the same version must not greet again, mode=%v", again.screenID())
 	}
 }
 
@@ -650,7 +637,8 @@ func TestLateDismissedReleaseKeepsModalSelection(t *testing.T) {
 
 func TestLateFeedKeepsModalSelection(t *testing.T) {
 	m := modalModel(t)
-	m.handleKey(key("down"))
+	m.release.Latest = "v9.9.9"
+	m.openNotices("update-v9.9.9")
 	selected := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID
 
 	m.Update(uirelease.FeedMsg{Messages: []feed.Message{{ID: "feed-late", Banner: "late", Title: "Late"}}})
@@ -907,23 +895,32 @@ func TestNewerReleaseOpensNoticesModal(t *testing.T) {
 	}
 }
 
-func TestFeedArrivingDuringWelcomeStaysOnWelcome(t *testing.T) {
+func TestFeedArrivingDuringSetupWaitsForTheList(t *testing.T) {
 	m := footModel(t)
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.services.cfg = cfg
 	m.layout.width, m.layout.height = 100, 34
-	m.openStartupNotice()
-	if !m.noticesOpen() {
-		t.Fatal("first launch should open welcome")
+	m.openStartupGreeting()
+	if !m.setupOpen() {
+		t.Fatal("first launch should open the setup")
 	}
 
 	m.Update(uirelease.FeedMsg{Messages: []feed.Message{{ID: "feed-new", Banner: "new", Title: "Just in"}}})
-	if !m.noticesOpen() {
-		t.Fatalf("screen = %v, want notices", m.screenID())
+	if !m.setupOpen() {
+		t.Fatalf("a feed message took the screen from the setup, mode=%v", m.screenID())
 	}
-	if got := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID; got != uinotices.Welcome {
-		t.Fatalf("welcome should stay selected, got %q", got)
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune("y")}} {
+		_, cmd := m.handleKey(key)
+		if cmd != nil {
+			m.routeSetupMsg(cmd())
+		}
 	}
-	if !contains(noticeIDs(m.activeNotices()), "feed-new") {
-		t.Fatal("feed should still be listed")
+	m.flushPendingNotice()
+	if !m.noticesOpen() || m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID != "feed-new" {
+		t.Fatalf("the waiting message should open once the setup closes, mode=%v", m.screenID())
 	}
 }
 
@@ -1112,7 +1109,7 @@ func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 
 func TestUOutsideUpdateNoticeDoesNothing(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	m.openNotices(uinotices.Welcome)
+	m.openNotices(noticeTip)
 	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	if cmd != nil || m.release.Applying {
 		t.Fatal("u on a plain notice must not start an update")
@@ -1189,25 +1186,6 @@ func TestUpdateWithoutRunnableManagerSurfacesAdvice(t *testing.T) {
 	}
 }
 
-func TestArrowStepNoticeListedUntilDismissed(t *testing.T) {
-	m := noticeModel(noticeStore(t), "v0.2.0")
-	found := false
-	for _, n := range m.activeNotices() {
-		if n.ID == uinotices.ArrowStep {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("arrow-step beta notice missing from active notices")
-	}
-	persistNoticeDismissal(t, m, uinotices.ArrowStep)
-	for _, n := range m.activeNotices() {
-		if n.ID == uinotices.ArrowStep {
-			t.Fatal("dismissed notice still listed")
-		}
-	}
-}
-
 func TestEmptyNoticesPanelStillOpensAndOffersRefresh(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 100, 34
@@ -1268,14 +1246,14 @@ func TestNoticesWaitForADragOrTheRowMenu(t *testing.T) {
 
 func TestDismissNoticeDeduplicatesPendingEffect(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
-	m.dismissNotice(uinotices.Welcome)
-	m.dismissNotice(uinotices.Welcome)
+	m.dismissNotice(noticeTip)
+	m.dismissNotice(noticeTip)
 
 	if len(m.effects.Main.Pending) != 1 {
 		t.Fatalf("duplicate dismissal queued %d effects, want 1", len(m.effects.Main.Pending))
 	}
 	request, ok := m.effects.Main.Pending[0].Request.(uinotices.DismissRequest)
-	if !ok || request.ID != uinotices.Welcome {
+	if !ok || request.ID != noticeTip {
 		t.Fatalf("queued request = %#v", m.effects.Main.Pending[0].Request)
 	}
 	m.drainEffects(t)
@@ -1287,10 +1265,10 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")
-	m.openNotices(uinotices.Welcome)
+	m.openNotices(noticeTip)
 
 	_, _ = m.handleKey(key("x"))
-	if contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
+	if contains(noticeIDs(m.activeNotices()), noticeTip) {
 		t.Fatal("accepted dismissal stayed visible while its write was pending")
 	}
 	cmd := m.nextEffectCmd()
@@ -1299,10 +1277,10 @@ func TestDismissNoticeFailureRestoresNotice(t *testing.T) {
 	}
 	m.applyCmd(t, cmd)
 
-	if !contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
+	if !contains(noticeIDs(m.activeNotices()), noticeTip) {
 		t.Fatal("failed persistence did not restore the notice")
 	}
-	if !m.noticesOpen() || m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID != uinotices.Welcome {
+	if !m.noticesOpen() || m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()].ID != noticeTip {
 		t.Fatalf("failed dismissal did not restore its modal selection: screen = %v cursor=%d", m.screenID(), noticesSurfaceOf(m).Panel().Cursor())
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {
@@ -1316,7 +1294,7 @@ func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 		t.Fatalf("seed malformed setting: %v", err)
 	}
 	m := noticeModel(st, "v0.2.0")
-	m.openNotices(uinotices.Welcome)
+	m.openNotices(noticeTip)
 	_, _ = m.handleKey(key("x"))
 	cmd := m.nextEffectCmd()
 
@@ -1327,7 +1305,7 @@ func TestDismissNoticeFailureDoesNotReopenAfterNewerInput(t *testing.T) {
 	if !m.onList() {
 		t.Fatalf("failed old dismissal stole focus from newer input: screen = %v", m.screenID())
 	}
-	if !contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
+	if !contains(noticeIDs(m.activeNotices()), noticeTip) {
 		t.Fatal("failed old dismissal did not restore the notice card")
 	}
 }
@@ -1339,8 +1317,7 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	}
 	m := noticeModel(st, "v0.2.0")
 	// Leave one visible card so accepting its dismissal closes the modal.
-	m.notices.Dismiss(uinotices.ArrowStep)
-	m.openNotices(uinotices.Welcome)
+	m.openNotices(noticeTip)
 
 	_, _ = m.handleKey(key("x"))
 	cmd := m.nextEffectCmd()
@@ -1357,7 +1334,7 @@ func TestDismissNoticeFailureDuringQuitRestoresWithoutReopening(t *testing.T) {
 	if !m.onList() {
 		t.Fatalf("failed dismissal reopened over quit: screen = %v", m.screenID())
 	}
-	if !contains(noticeIDs(m.activeNotices()), uinotices.Welcome) {
+	if !contains(noticeIDs(m.activeNotices()), noticeTip) {
 		t.Fatal("failed dismissal did not restore the notice data")
 	}
 	if !strings.Contains(m.errBar.text, "decode setting") {
@@ -1372,11 +1349,11 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 	m.release.Latest = "v1.1.0"
 	m.release.Refreshing, m.release.Applying = true, true
 	for _, tc := range []struct {
-		mode                                                   presentation.GlyphMode
-		feed, welcome, update, refresh, download, link, cursor string
+		mode                                          presentation.GlyphMode
+		feed, update, refresh, download, link, cursor string
 	}{
-		{presentation.GlyphModeBasic, "i", "i", "^", "R", "v", "@", ">"},
-		{presentation.GlyphModeAdvanced, "◆", "✳", "↑", "↻", "↓", "↗", "▸"},
+		{presentation.GlyphModeBasic, "i", "^", "R", "v", "@", ">"},
+		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "↗", "▸"},
 	} {
 		m.prefs.glyphMode = tc.mode
 		notices := m.activeNotices()
@@ -1385,8 +1362,6 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 			switch n.ID {
 			case "literal":
 				want = tc.feed
-			case uinotices.Welcome:
-				want = tc.welcome
 			case "update-v1.1.0":
 				want = tc.update
 			}
@@ -1418,6 +1393,8 @@ func TestClickOnAMessageTitleSelectsIt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
+	m.release.Feed = []feed.Message{{ID: "feed-first", Title: "Hold off on v0.2.0", Body: []string{"details"}}}
+	m.release.Latest = "v9.9.9"
 	m.openNotices("")
 	notices := m.activeNotices()
 	if len(notices) < 2 {
@@ -1631,8 +1608,8 @@ func TestNoticesSurfaceClosesOnEscAndBackdrop(t *testing.T) {
 func TestNoticesSurfaceFencesAStaleDismissalCompletion(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.2.0")
 	m.layout.width, m.layout.height = 120, 34
-	m.openNotices(uinotices.Welcome)
-	job := &uieffects.Job{Request: uinotices.DismissRequest{ID: uinotices.Welcome, ForegroundGen: m.gens.foreground, Modal: true}}
+	m.openNotices(noticeTip)
+	job := &uieffects.Job{Request: uinotices.DismissRequest{ID: noticeTip, ForegroundGen: m.gens.foreground, Modal: true}}
 
 	m.Pop()
 	m.openHelp()

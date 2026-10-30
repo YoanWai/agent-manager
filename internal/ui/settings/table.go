@@ -17,7 +17,6 @@ type Setting struct {
 	// True and False are the stored spellings of the flag's two sides.
 	True, False           string
 	TrueLabel, FalseLabel string
-	Beta                  bool
 	Proactive             bool
 }
 
@@ -47,7 +46,7 @@ var table = []Setting{
 	{Spec: Spec{Key: FocusKeySetting, Values: []string{"focus", "attach"}, Default: "focus", Row: "session keys"}, Field: FieldFocusKey,
 		Flag: func(s *State) *bool { return &s.EnterFocuses }, True: "focus", False: "attach", TrueLabel: "↵ focus · A attach", FalseLabel: "↵ attach · A focus"},
 	{Spec: Spec{Key: ArrowStepSetting, Values: onOff, Default: "on", Row: "←→ step in/out"}, Field: FieldArrowStep,
-		Flag: func(s *State) *bool { return &s.ArrowStep }, True: "on", False: "off", Beta: true},
+		Flag: func(s *State) *bool { return &s.ArrowStep }, True: "on", False: "off"},
 	{Spec: Spec{Key: MouseSetting, Values: onOff, Default: "on", Row: "mouse"}, Field: FieldMouse,
 		Flag: func(s *State) *bool { return &s.MouseDisabled }, True: "off", False: "on"},
 	{Spec: Spec{Key: WorktreeSetting, Values: onOff, Default: "off", Row: "spawn in worktree"}, Field: FieldWorktree,

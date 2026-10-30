@@ -224,7 +224,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 	} else {
 		model.prefs.glyphMode = presentation.GlyphMode(glyph.Value)
 	}
-	model.openStartupNotice()
+	model.openStartupGreeting()
 	model.release.IndexRanges()
 	model.review = uireview.New(model.defaultSplitLayout())
 	model.prepareFrame()
@@ -233,5 +233,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckStartupFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), uicomposer.SweepCmd, uicomposer.SweepTick(), uistartup.CheckPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.setupOnLaunch(), m.refreshExistingSessionUX, m.release.Check(), m.release.CheckStartupFeed(), uirelease.Tick(), m.bannerTick(), m.workspace.capture.Tick(previewCaptures{m}), m.startStartupTick(), uicomposer.SweepCmd, uicomposer.SweepTick(), uistartup.CheckPaneShell)
 }

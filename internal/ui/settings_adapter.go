@@ -76,6 +76,10 @@ func (m *Model) applySettingsResult(d *uisettings.State, result uisettings.Resul
 		return openLink(uinotices.SupportRequestURL()), false
 	case uisettings.ReportBug:
 		return openLink(uinotices.BugReportURL(m.release.Version)), false
+	case uisettings.OpenSetup:
+		request := openSetupMsg{Screen: m.screenID(), ForegroundGen: m.gens.foreground}
+		request.Screen.depth--
+		return func() tea.Msg { return request }, true
 	case uisettings.Update:
 		if m.release.Applying {
 			return nil, false

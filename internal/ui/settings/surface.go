@@ -63,7 +63,7 @@ func (s *Surface) apply(h surface.Host, result Result) tea.Cmd {
 		return cmd
 	}
 	h.Pop()
-	return nil
+	return cmd
 }
 
 func (s *Surface) View(surface.Host, string) string { return s.root.Paint(&s.state) }

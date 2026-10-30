@@ -245,7 +245,7 @@ with `gh release edit <tag> --notes-file notes.md`.
 - `internal/ui` is the Bubble Tea program: one `Model` that routes messages
   and composes the frame. Each feature is a child package
   (`internal/ui/<feature>`: help, review, focus, rail, settings, spawn, quick,
-  dialogs, notices, connections, geometry, composer, pathcomplete, preview,
+  dialogs, notices, onboarding, connections, geometry, composer, pathcomplete, preview,
   frame, statusbar, startup, session, launchhint, terminal, workspace;
   `presentation`, `theme` and `surface` are shared). Cards, resize and
   focus are surfaces on a stack over the base screen (list or Review), read

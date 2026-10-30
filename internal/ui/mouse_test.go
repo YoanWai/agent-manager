@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/feed"
 	"go/ast"
 	"os"
 	"os/exec"
@@ -1492,6 +1493,9 @@ func TestWheelSwallowedInResizeMode(t *testing.T) {
 // in full screen.
 func messagesCell(t *testing.T, m *Model) (x, y int) {
 	t.Helper()
+	if len(m.activeNotices()) == 0 {
+		m.release.Feed = []feed.Message{{ID: noticeTip, Title: "A tip"}}
+	}
 	for row, line := range strings.Split(ansi.Strip(preparedView(m)), "\n") {
 		if col := strings.Index(line, "unread"); col >= 0 {
 			return ansi.StringWidth(line[:col]), row
@@ -2066,8 +2070,12 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Binary: "tool"})
 	},
-	"help.Surface":             func(t *testing.T, m *Model) { m.openHelp() },
-	"notices.Surface":          func(t *testing.T, m *Model) { m.Update(key("M")) },
+	"help.Surface": func(t *testing.T, m *Model) { m.openHelp() },
+	"notices.Surface": func(t *testing.T, m *Model) {
+		m.release.Feed = []feed.Message{{ID: noticeTip, Title: "A tip"}}
+		m.Update(key("M"))
+	},
+	"onboarding.Surface":       func(t *testing.T, m *Model) { m.openSetup(true) },
 	"settings.Surface":         func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
 	"dialogs.GroupFormSurface": func(t *testing.T, m *Model) { m.openGroupForm() },
 	"connections.Surface":      func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
@@ -2478,10 +2486,9 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
+	m.release.Feed = []feed.Message{{ID: noticeTip, Title: "A tip", Body: []string{strings.Repeat("a tip wide enough to give the card room for every key ", 2)}}}
 	m.openNotices("")
-	if len(m.activeNotices()) == 0 {
-		t.Fatal("test setup: a fresh model shows the welcome notice")
-	}
+
 	for _, key := range []string{"↑↓ pick", "pgup/pgdn"} {
 		x, y := paintedCell(t, m, key)
 		if _, ok := m.layout.keyHits.At(x, y); ok {

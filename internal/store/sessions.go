@@ -149,6 +149,9 @@ func (s *Store) createSession(sess Session, anchorID string, requireActive bool)
 		if err := validateActivePlacement(tx, sess, anchorID); err != nil {
 			return err
 		}
+		if err := conversationFree(tx, sess.Tool, sess.AgentSessionID); err != nil {
+			return err
+		}
 	}
 	_, err = tx.Exec(
 		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, environment, sort_order)
@@ -413,8 +416,9 @@ func (s *Store) BindAgentSessionID(id, agentSessionID string, launchedAt time.Ti
 	// bind that answered the previous launch.
 	res, err := s.db.Exec(
 		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''
-		 WHERE id = ? AND agent_session_id = '' AND agent_launched_at = ?`,
-		agentSessionID, id, encodeTime(launchedAt))
+		 WHERE id = ? AND agent_session_id = '' AND agent_launched_at = ?
+		 AND NOT EXISTS (SELECT 1 FROM sessions held WHERE held.tool = sessions.tool AND held.agent_session_id = ?)`,
+		agentSessionID, id, encodeTime(launchedAt), agentSessionID)
 	if err != nil {
 		return false, err
 	}
@@ -442,17 +446,20 @@ const (
 // ReportAgentSessionID moves a session onto the conversation its agent says
 // it switched to, but only for the launch now in the pane. launch is the
 // LaunchStamp the agent was started with. A report overrides a captured id,
-// and ends a picker recapture by clearing its snapshot.
+// takes the conversation from any other row holding it, and ends a picker
+// recapture by clearing its snapshot. A launch that lost a conversation this
+// way cannot take it back while another row holds it, since its CLI keeps
+// naming it from old state.
 func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int64) (ConversationReport, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
-	var storedTool, storedID string
-	var storedLaunch int64
-	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id FROM sessions WHERE id = ?`, id).
-		Scan(&storedTool, &storedLaunch, &storedID)
+	var storedTool, storedID, releasedID string
+	var storedLaunch, releasedLaunch int64
+	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id, released_agent_session_id, released_launch FROM sessions WHERE id = ?`, id).
+		Scan(&storedTool, &storedLaunch, &storedID, &releasedID, &releasedLaunch)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return ReportEarly, nil
@@ -462,6 +469,15 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 		return ReportEarly, nil
 	case storedLaunch > launch || storedTool != tool:
 		return ReportStale, nil
+	}
+	if releasedID == agentSessionID && releasedLaunch == launch {
+		var holders int
+		if err := tx.QueryRow(`SELECT count(*) FROM sessions WHERE tool = ? AND agent_session_id = ? AND id != ?`, tool, agentSessionID, id).Scan(&holders); err != nil {
+			return 0, err
+		}
+		if holders > 0 {
+			return ReportStale, nil
+		}
 	}
 	// The agent this launch started is on the conversation, so the session
 	// owns it from now on, also once the agent moves on to another one. A
@@ -481,6 +497,13 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 	}
 	if storedID == agentSessionID {
 		return ReportUnchanged, tx.Commit()
+	}
+	// A row that held the conversation lets go of it for the rest of its launch.
+	if _, err := tx.Exec(
+		`UPDATE sessions SET released_agent_session_id = agent_session_id, released_launch = agent_launched_at, agent_session_id = ''
+		 WHERE tool = ? AND agent_session_id = ? AND id != ?`,
+		tool, agentSessionID, id); err != nil {
+		return 0, err
 	}
 	if _, err := tx.Exec(
 		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''

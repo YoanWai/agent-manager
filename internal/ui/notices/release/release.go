@@ -111,7 +111,9 @@ func Dismissed(st Store) map[string]bool {
 	return dismissed
 }
 
-// Greet decides what greets this launch: the welcome notice the first time
+const SetupGreeting = "setup"
+
+// Greet decides what greets this launch: the first-run setup the first time
 // the manager ever runs, the what's-new notice the first run after an
 // update, nothing otherwise. It advances the stored version as a side
 // effect, so each greeting fires exactly once; the notice itself stays
@@ -128,7 +130,7 @@ func (s *State) Greet(st Store) (string, error) {
 		if err := st.SetSetting(LastSeenSetting, s.Version); err != nil {
 			return "", err
 		}
-		return notices.Welcome, nil
+		return SetupGreeting, nil
 	}
 	if !update.Newer(s.Version, seen) {
 		return "", st.SetSetting(LastSeenSetting, s.Version)

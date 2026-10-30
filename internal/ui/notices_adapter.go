@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	uirelease "github.com/YoanWai/agent-manager/internal/ui/notices/release"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -27,8 +28,6 @@ func (m *Model) noticeSources() uinotices.Sources {
 	sources.GlyphMode = m.prefs.glyphMode
 	sources.Store = m.services.store != nil
 	sources.ConfigImportError = m.notices.ImportError
-	sources.SessionKeys = m.services.keys
-	sources.ListKeys = m.services.listKeys
 	return sources
 }
 
@@ -53,9 +52,11 @@ func (m *Model) noticesFrame() uinotices.Frame {
 	}
 }
 
-// startupNotice is what greets this launch; uirelease.State.Greet decides
+const setupGreeting = uirelease.SetupGreeting
+
+// startupGreeting is what greets this launch; uirelease.State.Greet decides
 // and records it.
-func (m *Model) startupNotice() string {
+func (m *Model) startupGreeting() string {
 	id, err := m.release.Greet(m.services.store)
 	if err != nil {
 		m.reportErr(err.Error())
@@ -73,15 +74,19 @@ func (m *Model) openNotices(id string) {
 	m.push(uinotices.NewSurface(noticesRoot{m}, m.notices.Panel, id))
 }
 
-// openStartupNotice greets the launch when there is something to say:
-// the welcome message on the first run ever, what's new on the first run
+// openStartupGreeting greets the launch when there is something to say:
+// the setup on the first run ever, what's new on the first run
 // after an update. A dev build is the developer's own tree, not an
 // install, so it never greets and never advances the stored version.
-func (m *Model) openStartupNotice() {
+func (m *Model) openStartupGreeting() {
 	if m.release.Version == "dev" {
 		return
 	}
-	if id := m.startupNotice(); id != "" {
+	switch id := m.startupGreeting(); id {
+	case "":
+	case setupGreeting:
+		m.openSetup(true)
+	default:
 		m.openNotices(id)
 	}
 }

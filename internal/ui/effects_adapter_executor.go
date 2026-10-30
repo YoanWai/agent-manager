@@ -21,6 +21,7 @@ import (
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
+	onboardingruntime "github.com/YoanWai/agent-manager/internal/ui/onboarding/runtime"
 	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
 	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
@@ -67,6 +68,7 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 			return uipersist.Services{Writer: uipersist.StoreWriter{Store: services.store}, Keys: services.keySaver(), Presets: services.store}
 		}),
 		uieffects.Binder[uinotices.Services](m.noticesServices),
+		uieffects.Binder(func() onboardingruntime.Services { return onboardingruntime.Services{} }),
 		uieffects.Binder[uitheme.Services](themeHost{m}.Services),
 		uieffects.Binder(func() uilifecycle.Services { return capture().lifecycleServices() }),
 		uieffects.Binder(func() uilaunch.Services { return capture().launchServices() }),
@@ -98,6 +100,8 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return nil
 	}
 	switch request := job.Request.(type) {
+	case onboardingruntime.ProbeRequest:
+		return m.applySetupProbe(request, as[onboardingruntime.ProbeResult](result), err)
 	case uiinstall.StartRequest:
 		return m.ledger.install.Started(installRoot{m}, request, as[uiinstall.StartResult](result), err)
 	case uiinstall.SettleRequest:

@@ -32,6 +32,9 @@ func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if model, cmd, ok := m.routeSpawnMsg(msg); ok {
 		return model, cmd
 	}
+	if model, cmd, ok := m.routeSetupMsg(msg); ok {
+		return model, cmd
+	}
 	if model, cmd, ok := m.routeSettingsMsg(msg); ok {
 		return model, cmd
 	}

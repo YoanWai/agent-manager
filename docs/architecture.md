@@ -22,6 +22,7 @@ Under `internal/`:
 - `remote`: drives another host's agent-manager over `ssh`, and holds the rule that a session drives only the remote terminals it opened. `remote/value`: what a connection is, row refs and failure kinds, with no SSH.
 - `ui/spawn`, `ui/quick`: the New Session form with its model choice, and the quick bar; the root keeps their prompt box and runs their spawn.
 - `ui/dialogs`: the confirm, rename, move, fork and launch fix dialogs.
+- `ui/onboarding`: first-run setup, feature-owned surface, live preview, and saved-conversation import.
 - `ui/notices`: the messages panel, its notice list and release-note rendering.
 - `ui/notices/release`: the panel's runtime: release and feed checks, the what's-new greeting recorded in settings, and the self-update.
 - `ui/focus/watch`: the focused pane's watcher: control-mode client, polled fallback, pushed frames.
@@ -38,7 +39,7 @@ Under `internal/`:
   - `ui/spawn/launch`: the spawn and group creation, the catalog and worktree answers, and the base ref and its fetch.
 - `ui/theme`: the built-in palettes and color math, a leaf any UI package may import.
 - `ui/presentation`: pure text helpers shared by `ui` and its feature packages.
-- `ui/surface`: the surface stack's contract, a leaf a feature package implements to put its own screen on the root's stack. `ui/help`, `ui/review`, `ui/notices`, `ui/connections`, `ui/settings`, `ui/dialogs`, `ui/geometry`, `ui/focus`, `ui/spawn` and `ui/quick` do. See [ADR 0001](adr/0001-surface-stack.md).
+- `ui/surface`: the surface stack's contract, a leaf a feature package implements to put its own screen on the root's stack. `ui/help`, `ui/review`, `ui/notices`, `ui/onboarding`, `ui/connections`, `ui/settings`, `ui/dialogs`, `ui/geometry`, `ui/focus`, `ui/spawn` and `ui/quick` do. See [ADR 0001](adr/0001-surface-stack.md).
 - `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations.
 - `tmux`: the `Driver` on the dedicated socket, the control-mode client, bindings, attach.
 - `status`: classifies pane output into agent states.

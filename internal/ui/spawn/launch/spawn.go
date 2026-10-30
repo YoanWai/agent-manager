@@ -24,6 +24,7 @@ const (
 	Form Kind = iota
 	Quick
 	Shell
+	Import
 )
 
 // Request captures everything a spawn needs at dispatch time, so the worker

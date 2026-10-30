@@ -55,7 +55,7 @@ func (s *State) clickRow(col, line int, ctx Context) Result {
 		return Result{}
 	}
 	switch field {
-	case FieldKeybindings, FieldCLIs, FieldBugReport, FieldFeatureRequest:
+	case FieldKeybindings, FieldCLIs, FieldSetup, FieldBugReport, FieldFeatureRequest:
 		return s.Key(enterKey, ctx)
 	case FieldUpdate:
 		if ctx.UpdateReady {

@@ -528,7 +528,7 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 	if request.AutoNamed {
 		m.ledger.lifecycle.AwaitRename(sess.ID, sess.Name, request.Prompt)
 	}
-	if request.Kind != uilaunch.Shell {
+	if request.Kind != uilaunch.Shell && request.Kind != uilaunch.Import {
 		m.ledger.spawner.RememberSpawn(request.ToolName, request.PickWorktree)
 		spawn.RememberModel(m.spawnHost(), request.ToolName, spawn.Pick(request.Choice))
 	}
@@ -548,6 +548,8 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 		if q, ok := m.quickFor(request.ComposerGen); ok {
 			m.clearAccepted(request.ComposerGen, request.Draft, q.CloseAfterSend)
 		}
+	case uilaunch.Import:
+		reveal = m.base == baseList && !m.focused() && !m.cardOpen()
 	}
 	m.rebuildRows()
 	if reveal {

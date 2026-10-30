@@ -63,6 +63,7 @@ func TestCtrlCQuitsThroughEveryCardOverTheList(t *testing.T) {
 		"help":       func(t *testing.T, m *Model) { m.openHelp() },
 		"notices":    func(t *testing.T, m *Model) { m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("M")}) },
 		"settings":   func(t *testing.T, m *Model) { m.applyCmd(t, m.openSettings()) },
+		"onboarding": func(t *testing.T, m *Model) { m.openSetup(true) },
 		"group form": func(t *testing.T, m *Model) { m.openGroupForm() },
 		"connection": func(t *testing.T, m *Model) { m.openConnectionDialog(remote.Connection{}) },
 	} {

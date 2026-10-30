@@ -108,7 +108,7 @@ type Host interface {
 Every surface lives in its feature's package, behind a `Root` interface
 the package declares: `help.Surface` reads the root through `help.Root`, and
 the same holds for `review`, `notices`, `connections`, `settings`,
-`geometry` (resize), `focus`, `spawn`, `quick` and the cards of `dialogs`
+`geometry` (resize), `focus`, `spawn`, `quick`, `onboarding` and the cards of `dialogs`
 (`ConfirmRoot`, `ForkRoot`, `MoveRoot`, `RenameRoot`, `GroupFormRoot`,
 `LaunchHintRoot`). The root keeps the adapter: a `<feature>Root` type that
 answers the interface, in `<feature>_adapter.go` or

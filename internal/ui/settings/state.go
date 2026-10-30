@@ -27,8 +27,8 @@ const (
 	// leaves the terminal's own colors, anything else paints the theme's.
 	BackgroundSetting = "background"
 	FocusKeySetting   = "focus_key"
-	// ArrowStepSetting is the beta ←→ pair: "off" turns it off, anything
-	// else leaves it on.
+	// ArrowStepSetting is the ←→ step in/out pair: "off" turns it off,
+	// anything else leaves it on.
 	ArrowStepSetting = "arrow_step_keys"
 	// MouseSetting is app-wide mouse reporting: "off" gives the rail and
 	// content column back to the terminal's own click-drag text selection,
@@ -78,6 +78,7 @@ const (
 	FieldCLIs
 	FieldPrompts
 	FieldEnvs
+	FieldSetup
 	FieldDocs
 	FieldBugReport
 	FieldFeatureRequest

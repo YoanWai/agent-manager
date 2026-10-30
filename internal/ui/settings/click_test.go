@@ -176,7 +176,7 @@ func TestClickOnSavedPrompts(t *testing.T) {
 	if clickText(t, &s, ctx, view, "beta"); s.Prompts.cursor != 1 || s.Prompts.Editing() {
 		t.Fatalf("first click should move to beta, cursor %d editing %v", s.Prompts.cursor, s.Prompts.Editing())
 	}
-	if clickText(t, &s, ctx, view, "agents add these"); s.Prompts.cursor != 1 {
+	if clickText(t, &s, ctx, view, "agents save these"); s.Prompts.cursor != 1 {
 		t.Fatal("the hint line under the list is no prompt")
 	}
 	if clickText(t, &s, ctx, view, "beta"); !s.Prompts.Editing() || s.Prompts.name.Value() != "beta" {
