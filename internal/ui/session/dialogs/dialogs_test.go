@@ -1,10 +1,12 @@
 package dialogs
 
 import (
+	"fmt"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -17,6 +19,7 @@ type view struct {
 	groups   []string
 	archived bool
 	live     map[string]bool
+	keys     map[string]string
 }
 
 func (v view) Sessions() []store.Session { return v.sessions }
@@ -24,6 +27,13 @@ func (v view) Listed() []store.Session   { return v.listed }
 func (v view) Groups() []string          { return v.groups }
 func (v view) ArchivedView() bool        { return v.archived }
 func (v view) Live(id string) bool       { return v.live[id] }
+
+func (v view) KeyHint(action, format string) string {
+	if v.keys[action] == "" {
+		return ""
+	}
+	return fmt.Sprintf(format, v.keys[action])
+}
 
 func row(sess store.Session) Row { return Row{Kind: SessionRow, Group: sess.Group, Sess: sess} }
 
@@ -50,6 +60,33 @@ func TestKillRefusesARowWithNoLiveWindow(t *testing.T) {
 	intent := Kill(view{sessions: []store.Session{dead}}, row(dead))
 	if !strings.Contains(intent.Notice, "already dead") {
 		t.Fatalf("notice = %q, want a refusal", intent.Notice)
+	}
+}
+
+func TestCardsNameTheBoundKeys(t *testing.T) {
+	t.Parallel()
+	sess := store.Session{ID: "a", Name: "agent", Group: "work", Status: status.Working}
+	rebound := map[string]string{keybind.Revive: "Z", keybind.Archived: "T"}
+	group := Row{Kind: GroupRow, Group: "work"}
+	cases := []struct {
+		name string
+		keys map[string]string
+		ask  func(View) Intent
+		want string
+	}{
+		{"kill a session", rebound, func(v View) Intent { return Kill(v, row(sess)) }, "kill agent? frees its RAM, Z revives it."},
+		{"kill a group", rebound, func(v View) Intent { return Kill(v, group) }, "kill group work (1 live sessions)? frees their RAM, Z revives them."},
+		{"kill all", rebound, func(v View) Intent { return KillAll(v) }, "kill every live session (1)? frees their RAM, Z revives them."},
+		{"archive", rebound, func(v View) Intent { return Archive(v, row(sess)) }, "archive agent? frees its RAM, T to find it."},
+		{"kill with no revive key", nil, func(v View) Intent { return Kill(v, row(sess)) }, "kill agent? frees its RAM."},
+		{"kill all with no revive key", nil, func(v View) Intent { return KillAll(v) }, "kill every live session (1)? frees their RAM."},
+		{"archive with no archived view key", nil, func(v View) Intent { return Archive(v, row(sess)) }, "archive agent? frees its RAM."},
+	}
+	for _, tc := range cases {
+		v := view{sessions: []store.Session{sess}, listed: []store.Session{sess}, live: map[string]bool{"a": true}, keys: tc.keys}
+		if got := tc.ask(v).Card.Label; got != tc.want {
+			t.Errorf("%s: label = %q, want %q", tc.name, got, tc.want)
+		}
 	}
 }
 
