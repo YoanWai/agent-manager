@@ -39,6 +39,17 @@ func TestMarkedRunsAccentTheBacktickSpans(t *testing.T) {
 	}
 }
 
+func TestHandleRunsAccentOnlyTheLeadingHandle(t *testing.T) {
+	got := handleRuns("@subbeh built environment profiles (#834)")
+	want := []textRun{{text: "@subbeh", accent: true}, {text: " built environment profiles (#834)"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("handleRuns() = %+v, want %+v", got, want)
+	}
+	if runs := handleRuns("thanks to everyone who tested @subbeh's build"); len(runs) != 1 || runs[0].accent {
+		t.Fatalf("a line without a leading handle is one plain run: %+v", runs)
+	}
+}
+
 func TestPhraseRunsAccentEveryOccurrence(t *testing.T) {
 	got := phraseRuns("ctrl+l opens it and ctrl+l closes it", []string{"ctrl+l"})
 	want := []textRun{{text: "ctrl+l", accent: true}, {text: " opens it and "}, {text: "ctrl+l", accent: true}, {text: " closes it"}}
