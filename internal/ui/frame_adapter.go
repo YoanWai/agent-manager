@@ -380,6 +380,16 @@ func (m *Model) listGlyph(actions ...string) string {
 	return presentation.KeyLabel(m.prefs.glyphMode, joined)
 }
 
+// listKeyHint fills format with the key bound to action, and is empty while
+// nothing is bound, so a sentence never names a key that does nothing.
+func (m *Model) listKeyHint(action, format string) string {
+	glyph := m.listGlyph(action)
+	if glyph == "" {
+		return ""
+	}
+	return fmt.Sprintf(format, glyph)
+}
+
 func (m *Model) messagesAlert() (glyph, label string) {
 	glyph = m.listGlyph(keybind.Messages)
 	if glyph == "" {

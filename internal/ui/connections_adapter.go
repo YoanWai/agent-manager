@@ -63,7 +63,7 @@ func (m *Model) connectionIntent(intent uirail.Intent) (tea.Cmd, bool) {
 		return m.queueRemote(newTerminalCall(row.Host, group)), true
 	}
 	if row.Kind == uiconnections.SessionRow {
-		call := uiconnections.SessionCall(row, intent.Kind)
+		call := uiconnections.SessionCall(row, intent.Kind, m.listKeyHint)
 		if cmd, ok := m.remoteSessionIntent(row, call); ok {
 			return cmd, true
 		}
