@@ -27,9 +27,11 @@ type Remote struct{ Host, Group string }
 func (r Remote) On() bool { return r.Host != "" }
 
 type SurfaceRoot interface {
-	FormKey(msg tea.KeyMsg) tea.Cmd
-	FormClick(line int) tea.Cmd
-	FormWheel(step int) tea.Cmd
+	// Host is what the form's keys read and change on the root: the
+	// prompt box, the directory completer and the choice settings.
+	Host() FormHost
+	// Run does what a key, a click or the wheel asked of the root.
+	Run(request FormRequest) tea.Cmd
 	FormView() string
 	TakeForeground()
 	// ReleasePrompt lets go of the prompt box's images; a spawn has already
@@ -57,17 +59,20 @@ func (s *Surface) AimRemote(target Remote) {
 
 func (s *Surface) Key(_ surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
 	s.root.TakeForeground()
-	return true, s.root.FormKey(msg)
+	cmd, request := s.HandleKey(s.root.Host(), TypedText(msg))
+	return true, tea.Batch(cmd, s.root.Run(request))
 }
 
-func (s *Surface) Click(_ surface.Host, line int) tea.Cmd { return s.root.FormClick(line) }
+func (s *Surface) Click(_ surface.Host, line int) tea.Cmd {
+	return s.root.Run(s.Form.Click(s.root.Host(), line))
+}
 
 func (s *Surface) Wheel(_ surface.Host, arrow tea.KeyMsg) tea.Cmd {
 	step := 1
 	if arrow.Type == tea.KeyUp {
 		step = -1
 	}
-	return s.root.FormWheel(step)
+	return s.root.Run(s.Form.Wheel(s.root.Host(), step))
 }
 
 // View is the form's card, which takes the frame while it is up.

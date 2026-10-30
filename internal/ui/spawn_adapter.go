@@ -71,11 +71,6 @@ func (m *Model) selectedGroupPath() string {
 	return ""
 }
 
-func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, request := m.form().HandleKey(m.spawnHost(), composer.TypedText(msg))
-	return m, tea.Batch(cmd, m.runFormRequest(request, systemDirectoryPreflight{git: m.services.gitDrv}))
-}
-
 // runFormRequest executes what a form key or click asked of the root.
 func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPreflight) tea.Cmd {
 	if cmd, taken := m.remoteFormRequest(request); taken {
@@ -111,14 +106,6 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 		return m.nextEffectCmd()
 	}
 	return nil
-}
-
-func (m *Model) handleFormClick(line int) (tea.Model, tea.Cmd) {
-	return m, m.runFormRequest(m.form().Form.Click(m.spawnHost(), line), nil)
-}
-
-func (m *Model) formWheel(step int) tea.Cmd {
-	return m.runFormRequest(m.form().Form.Wheel(m.spawnHost(), step), nil)
 }
 
 // moveGroupCursor moves within the form's group picker, wrapping at the
@@ -214,17 +201,11 @@ type spawnFormRoot struct {
 	prompt *composer.Composer
 }
 
-func (r spawnFormRoot) FormKey(msg tea.KeyMsg) tea.Cmd {
-	_, cmd := r.handleFormKey(msg)
-	return cmd
-}
+func (r spawnFormRoot) Host() spawn.FormHost { return r.spawnHost() }
 
-func (r spawnFormRoot) FormClick(line int) tea.Cmd {
-	_, cmd := r.handleFormClick(line)
-	return cmd
+func (r spawnFormRoot) Run(request spawn.FormRequest) tea.Cmd {
+	return r.runFormRequest(request, systemDirectoryPreflight{git: r.services.gitDrv})
 }
-
-func (r spawnFormRoot) FormWheel(step int) tea.Cmd { return r.formWheel(step) }
 
 func (r spawnFormRoot) FormView() string { return r.viewForm() }
 
