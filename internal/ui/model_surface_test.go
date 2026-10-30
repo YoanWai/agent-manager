@@ -146,3 +146,18 @@ func TestPopRunsLeaveOnce(t *testing.T) {
 		t.Fatalf("after clearSurfaces: Leave ran %d times, %d surfaces left", spy.left, len(m.surfaces))
 	}
 }
+
+// pop clears the slot it leaves behind, so the backing array does not keep
+// a closed surface and its state alive until the slot is reused.
+func TestPopReleasesTheClosedSurface(t *testing.T) {
+	m := buildModel(t)
+	m.push(uifocus.OpenSaved(focusSavedRoot{m}, 0, m.spawnStyles()))
+	m.push(uifocus.OpenSaved(focusSavedRoot{m}, 1, m.spawnStyles()))
+	m.Pop()
+	m.clearSurfaces()
+	for i, s := range m.surfaces[:cap(m.surfaces)] {
+		if s != nil {
+			t.Fatalf("slot %d still holds %T after it was popped", i, s)
+		}
+	}
+}
