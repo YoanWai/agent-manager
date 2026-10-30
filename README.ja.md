@@ -211,7 +211,7 @@ agent-manager
 
 ```bash
 go run .
-mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...   # エンドツーエンドテストは実際の tmux サーバーを動かします
+mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest SHELL=/bin/sh go test -race ./...   # エンドツーエンドテストは実際の tmux サーバーを動かします
 ```
 
 CI が実行するチェックは [CONTRIBUTING.md](.github/CONTRIBUTING.md) を、このリポジトリでコーディングエージェントを使う場合は [AGENTS.md](AGENTS.md) を参照してください。
