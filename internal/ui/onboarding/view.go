@@ -99,6 +99,7 @@ func (m *Model) View(ctx ViewContext) Frame {
 		total += gutter + previewWidth
 	}
 	left := max((ctx.Width-total)/2, 0)
+	m.options = columnSpan{left: left, width: columnWidth}
 	column, items := m.column(ctx, p, columnWidth, bodyRows)
 	var preview []string
 	if previewWidth > 0 {
@@ -139,6 +140,10 @@ func (m *Model) View(ctx ViewContext) Frame {
 	}
 	return Frame{Lines: lines, Left: left}
 }
+
+type columnSpan struct{ left, width int }
+
+func (s columnSpan) holds(col int) bool { return col >= s.left && col < s.left+s.width }
 
 // columns sizes the step's column and the preview beside it. A terminal
 // too narrow for both keeps the column alone.

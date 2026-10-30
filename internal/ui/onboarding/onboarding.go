@@ -99,6 +99,9 @@ type Model struct {
 	notice                  string
 	done                    bool
 	lines                   presentation.Lines[int]
+	// options are the columns the last frame painted the options in, so a
+	// click on the preview beside them changes nothing.
+	options columnSpan
 	// beat counts the animation ticks since the open step came on screen.
 	beat int
 	// leaving is the question esc asks before the setup closes.
@@ -205,10 +208,10 @@ func (m *Model) Key(msg tea.KeyMsg) Outcome {
 	return Outcome{}
 }
 
-// Click acts on the option painted on line of the last frame.
-func (m *Model) Click(line int) Outcome {
+// Click acts on the option painted at col and line of the last frame.
+func (m *Model) Click(col, line int) Outcome {
 	row, ok := m.lines.At(line)
-	if !ok || m.leaving {
+	if !ok || m.leaving || !m.options.holds(col) {
 		return Outcome{}
 	}
 	m.notice = ""

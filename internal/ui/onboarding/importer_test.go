@@ -51,8 +51,8 @@ func TestOnlyInstalledCheckedAgentsRunTheImport(t *testing.T) {
 func TestImportRowsTakeTheMouse(t *testing.T) {
 	m := importStep(t)
 	frame := m.View(viewContext(120, 33))
-	m.Click(rowOf(t, frame, "[ ] claude"))
-	m.Click(rowOf(t, frame, "Going back"))
+	m.Click(frame.Left, rowOf(t, frame, "[ ] claude"))
+	m.Click(frame.Left, rowOf(t, frame, "Going back"))
 	request, ok := m.pendingImport()
 	if !ok || !slices.Equal(request.From, []string{"claude"}) || request.Days != 14 {
 		t.Fatalf("after two clicks the import is %+v, ready %v", request, ok)

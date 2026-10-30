@@ -62,18 +62,22 @@ func TestClickActsOnThePaintedOption(t *testing.T) {
 	walkTo(t, &m, Agents)
 	frame := m.View(viewContext(120, 33))
 	row := rowOf(t, frame, "codex")
-	m.Click(row)
+	m.Click(110, row)
+	if m.chosen.Hidden["codex"] {
+		t.Fatal("a click on the preview beside codex unchecked it")
+	}
+	m.Click(frame.Left, row)
 	if !m.chosen.Hidden["codex"] {
 		t.Fatal("a click on codex did not uncheck it")
 	}
-	m.Click(0)
+	m.Click(frame.Left, 0)
 	if len(m.chosen.Hidden) != 1 {
 		t.Fatal("a click off the options changed them")
 	}
 
 	walkTo(t, &m, Theme)
 	frame = m.View(viewContext(120, 33))
-	m.Click(rowOf(t, frame, "nord"))
+	m.Click(frame.Left, rowOf(t, frame, "nord"))
 	if m.chosen.Theme != "nord" {
 		t.Fatalf("a click on nord chose %q", m.chosen.Theme)
 	}

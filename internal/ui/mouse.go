@@ -255,7 +255,7 @@ func (m *Model) clickCard(col, line int) (tea.Model, tea.Cmd) {
 	case modeFocus:
 		return m, m.handleFocusSavedClick(line)
 	case modeOnboarding:
-		return m.applySetupOutcome(m.startup.setup.Click(line))
+		return m.applySetupOutcome(m.startup.setup.Click(col, line))
 	}
 	return m, nil
 }
