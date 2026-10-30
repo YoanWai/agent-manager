@@ -259,7 +259,7 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 			m.ledger.awaitedRenames[sess.ID] = awaitedRename{generated: sess.Name, prompt: request.prompt}
 		}
-		if request.kind != spawnShell {
+		if request.kind != spawnShell && request.kind != spawnImport {
 			m.rememberSpawnPick(request.toolName, request.pickWorktree)
 			spawn.RememberModel(m.spawnHost(), request.toolName, spawn.Pick(request.choice))
 		}

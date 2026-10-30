@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/store"
 	uionboarding "github.com/YoanWai/agent-manager/internal/ui/onboarding"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
@@ -273,5 +274,15 @@ func TestSetupImportStartsTheImportAgent(t *testing.T) {
 	if request.kind != spawnImport || request.toolName != "claude" || request.name != importSessionName ||
 		!strings.Contains(request.prompt, "Bring my past claude conversations from the last 7 days") {
 		t.Fatalf("queued %+v", request)
+	}
+}
+
+func TestSetupImportKeepsTheRememberedSpawnPick(t *testing.T) {
+	m := setupModel(t)
+	m.rememberSpawnPick("codex", true)
+	request := spawnRequest{kind: spawnImport, toolName: "claude", name: importSessionName}
+	m.applySpawnEffect(request, spawnEffectResult{session: store.Session{ID: "import", Name: importSessionName, Tool: "claude"}}, nil)
+	if m.ledger.lastSpawnTool != "codex" || !m.ledger.lastSpawnWorktree {
+		t.Fatalf("the import replaced the remembered pick: %q worktree %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
 	}
 }
