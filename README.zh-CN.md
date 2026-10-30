@@ -51,9 +51,9 @@ agent-manager 是你已有 CLI 之上的一层薄壳。每个会话启动的都�
 
 在会话上按 `f`，可以把它的对话分叉成一个单独命名的新会话继续。
 
-整个管理器都支持鼠标。滚轮移动光标，单击会话即可聚焦，单击它的行或按鼠标后退键即可返回。拖动行首的把手（Advanced 模式为 `⠿`，Compatible 模式为 `=`）可以排序，或移动到另一个分组。每行末尾的 `[…]` 打开该行的操作菜单。列表和预览之间的分隔线可以拖动。只要还有未读消息，单击按键说明里的 `messages` 就能打开它。在聚焦的面板里，拖动即选中并复制文本，单击链接会在浏览器中打开。设置里有鼠标开关，方便在需要终端原生选择的地方关闭它。设置 → **symbols** 可以在 **Advanced** 几何符号（默认）和 **Compatible** ASCII 符号之间切换，并带实时预览。
+整个管理器都支持鼠标。滚轮移动光标，单击会话即可聚焦，单击它的行或按鼠标后退键即可返回。拖动行的手柄（Advanced 模式为 `⠿`，Compatible 模式为 `=`）可以排序，或移动到另一个分组。每行末尾的 `[…]` 打开该行的操作菜单。列表和预览之间的分隔线可以拖动。只要还有未读消息，单击按键说明里的 `messages` 就能打开它。在聚焦的面板里，拖动即选中并复制文本，单击链接会在浏览器中打开。设置里有鼠标开关，方便在需要终端原生选择的地方关闭它。设置 → **symbols** 可以在 **Advanced** 几何符号（默认）和 **Compatible** ASCII 符号之间切换，并带实时预览。
 
-![Advanced 模式几何符号下的鼠标演示：滚轮移动光标，单击聚焦和离开会话，拖动 ⠿ 把手排序，[…] 打开行操作](docs/demo-mouse.gif)
+![Advanced 模式几何符号下的鼠标演示：滚轮移动光标，单击聚焦和离开会话，拖动 ⠿ 手柄排序，[…] 打开行操作](docs/demo-mouse.gif)
 
 和智能体一起用的工具也在同一个列表里：`T` 在选中的智能体或分组下打开一个 shell，用来构建、跑 Git 和临时命令。智能体可以启动另一个智能体、给它发消息，并等待它完成：每个支持 MCP 的会话在启动时都带有这些工具。
 
@@ -86,7 +86,7 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-安装的是该 bucket 中发布的版本，Scoop 会一并安装 psmux。bucket 是自动更新的，所以可能落后于最新发布。更新时先关闭 agent-manager，再运行 `scoop update agent-manager`。全局安装需要在管理员权限的 PowerShell 中运行 `scoop update agent-manager --global`。应用内更新器会显示这些说明，不会替换 Scoop 管理的二进制文件。
+安装的是该 bucket 中发布的版本，Scoop 会一并安装 psmux。bucket 是单独更新的，所以可能落后于最新发布。更新时先关闭 agent-manager，再运行 `scoop update agent-manager`。全局安装需要在管理员权限的 PowerShell 中运行 `scoop update agent-manager --global`。应用内更新器会显示这些说明，不会替换 Scoop 管理的二进制文件。
 
 <!--
 winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
@@ -177,14 +177,14 @@ agent-manager
 
 | 按键 | 作用 |
 |-----|--------|
-| `n` | 新建会话（名称、工具、该工具提供的模型、推理强度和配置、环境配置、目录、可选的初始提示词、分组） |
+| `n` | 新建会话（名称、工具、该工具提供的模型、推理强度和 profile、环境配置、目录、可选的初始提示词、分组） |
 | `space` | 快速提示模式：回复选中的会话，或在选中的分组里启动智能体 |
 | `enter` | 原地聚焦会话；按键发给智能体，列表保持可见 |
 | 单击 / 双击 | 从行或预览聚焦会话 / 折叠或展开分组。全屏布局中单击选中，双击聚焦 |
 | 拖动 `⠿` / `=` | 排序、放入另一个分组，或把终端挂到某个智能体下 |
 | `[…]` / 右键 | 行操作：进入、提示、审查、分叉、重命名、移动、归档、结束、删除等 |
 | 单击列表 / 鼠标后退键 | 聚焦时：返回列表。单击另一行会聚焦那一行 |
-| `→` / `←` | 进入和退出：`→` 聚焦会话或展开分组，`←` 折叠分组，在聚焦的智能体提示开头时返回列表。可以在设置里关闭这对按键 |
+| `→` / `←` | 进入和退出：`→` 聚焦会话或展开分组，`←` 折叠分组，或在聚焦智能体的提示词开头处返回列表。可以在设置里关闭这对按键 |
 | `ctrl+r` | 以完整文件 diff 审查会话的改动；`c` 评论一行，`C` 发送一轮编号的审查，已发送的评论会保留并显示为未处理或已处理 |
 | `x` / `v` | 结束会话以释放内存 / 在原对话上恢复 |
 | `R` | 以空上下文重启会话：名称、分组、目录和工具不变，对话重新开始 |
@@ -193,7 +193,7 @@ agent-manager
 
 会话可以在独立的 git worktree 中启动（`<repo>-worktrees/<name>`，分支 `am/<name>`）。在 `n` 表单中切换，快速提示模式中按 `ctrl+t`，或在设置里设为默认。
 
-会话也可以使用自己的模型、推理强度和配置，在 `n` 表单中选择，快速提示模式中按 `ctrl+l`、`ctrl+x` 和 `ctrl+y`，或使用 `spawn --model --effort --profile`。列表在运行时从各个 CLI 读取，所以 CLI 发布新模型的当天就能用上，重启、恢复和分叉都会保留这些选择（见 [Model, effort and profile](docs/usage.md#model-effort-and-profile)）。
+会话也可以使用自己的模型、推理强度和 profile，在 `n` 表单中选择，快速提示模式中按 `ctrl+l`、`ctrl+x` 和 `ctrl+y`，或使用 `spawn --model --effort --profile`。列表在运行时从各个 CLI 读取，所以 CLI 发布新模型的当天就能用上，重启、恢复和分叉都会保留这些选择（见 [Model, effort and profile](docs/usage.md#model-effort-and-profile)）。
 
 会话还可以在环境配置下启动。环境配置是一组命名的环境变量，例如第二个 `CLAUDE_CONFIG_DIR`，用 `agent-manager env set` 定义，可以按会话选择，也可以设为分组的默认值（见 [Environment profiles](docs/usage.md#environment-profiles)）。
 

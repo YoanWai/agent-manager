@@ -65,7 +65,7 @@ agent-manager は、すでにお使いの CLI の上にかぶせる薄いレイ�
 
 ## 対応ツール
 
-ステータス検出は **Claude Code**、**OpenCode**、**Codex**、**Grok Build**、**Gemini CLI**、**Antigravity CLI**、**Pi**、**Command Code**、**Hermes Agent**、**Muse Code**、**Oh My Pi**、**Cursor CLI** に対応しています。各ツールの起動、復帰、分岐、ステータスのルールはバイナリに組み込まれているので（Hermes、Antigravity、Oh My Pi、Cursor CLI は分岐に非対応）、アップグレードするだけで全ツールのルールが最新になります（[Configuration](docs/configuration.md#agent-clis) を参照）。リストにない CLI は [機能リクエスト](https://github.com/YoanWai/agent-manager/issues/new/choose) からどうぞ。
+ステータス検出は **Claude Code**、**OpenCode**、**Codex**、**Grok Build**、**Gemini CLI**、**Antigravity CLI**、**Pi**、**Command Code**、**Hermes Agent**、**Muse Code**、**Oh My Pi**、**Cursor CLI** に対応しています。各ツールの起動、復帰、分岐、ステータスのルールはバイナリに組み込まれているので（Hermes、Antigravity、Oh My Pi、Cursor CLI は分岐に非対応）、アップグレードするだけで全ツールのルールが最新になります（[Configuration](docs/configuration.md#agent-clis) を参照）。リストにない CLI は[機能リクエスト](https://github.com/YoanWai/agent-manager/issues/new/choose)からどうぞ。
 
 ## インストール
 
@@ -86,7 +86,7 @@ scoop bucket add yoanwai https://github.com/YoanWai/scoop-bucket
 scoop install yoanwai/agent-manager
 ```
 
-その bucket で公開されているバージョンがインストールされ、Scoop が psmux も一緒にインストールします。bucket は自動で更新されるため、最新リリースより遅れることがあります。更新するときは agent-manager を閉じてから `scoop update agent-manager` を実行します。グローバルインストールの場合は、管理者権限の PowerShell で `scoop update agent-manager --global` を実行します。アプリ内のアップデーターは Scoop のバイナリを置き換えず、この手順を表示します。
+その bucket で公開されているバージョンがインストールされ、Scoop が psmux も一緒にインストールします。bucket は独立して更新されるため、最新リリースより遅れることがあります。更新するときは agent-manager を閉じてから `scoop update agent-manager` を実行します。グローバルインストールの場合は、管理者権限の PowerShell で `scoop update agent-manager --global` を実行します。アプリ内のアップデーターは Scoop のバイナリを置き換えず、この手順を表示します。
 
 <!--
 winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
@@ -124,7 +124,7 @@ curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.
 
 ### 検証済み zip（Windows）
 
-お使いのアーキテクチャ向けの Windows zip と `checksums.txt` を同じ [リリース](https://github.com/YoanWai/agent-manager/releases/latest) からダウンロードします。展開する前に、zip の SHA-256 を `checksums.txt` の該当行と照合してください。[Windows の手動インストール](docs/install.md#download-and-verify-the-zip) に、PowerShell のコマンド、任意の来歴証明（provenance）の検証、依存関係のセットアップがあります。
+お使いのアーキテクチャ向けの Windows zip と `checksums.txt` を同じ[リリース](https://github.com/YoanWai/agent-manager/releases/latest)からダウンロードします。展開する前に、zip の SHA-256 を `checksums.txt` の該当行と照合してください。[Windows の手動インストール](docs/install.md#download-and-verify-the-zip)に、PowerShell のコマンド、任意の来歴証明（provenance）の検証、依存関係のセットアップがあります。
 
 ### インストールスクリプト（Windows）
 
@@ -199,7 +199,7 @@ agent-manager
 
 ![セッションツリー。プレビューに Claude Code セッションの最新の回答が表示されている](docs/screenshot-sessions.png)
 
-![ターミナル全体を使ったセッションリスト。1 行ずつの行と下部のコンピューター統計、そこから 1 つのセッションに全画面でフォーカス](docs/demo-fullscreen.gif)
+![ターミナル全体を使ったセッションリスト。各セッションが 1 行で、下部にコンピューターの統計。そこから 1 つのセッションに全画面でフォーカス](docs/demo-fullscreen.gif)
 
 ![同じ全画面リストの comfortable 密度。各セッションが 3 行で、名前の下にタスクとエージェントの最新メッセージ](docs/demo-fullscreen-comfortable.gif)
 
@@ -224,7 +224,7 @@ Discord の [Agent Manager Community](https://discord.gg/ecS88An7pF) に参加�
 
 **コントリビューターとコラボレーターを募集しています。** agent-manager は一緒に開発してくれる人を積極的に探しています。誰も担当していない issue は自由に取り組めます。issue にコメントして担当を宣言してください。継続的にコントリビュートしてくれる人はコラボレーターに招待します。[Discord](https://discord.gg/ecS88An7pF) の #dev で気軽に声をかけてください。
 
-バグ報告、機能のアイデア、プルリクエストを歓迎します。開発環境と CI のチェックは [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。質問や共有したいセットアップは [Discussions](https://github.com/YoanWai/agent-manager/discussions) へどうぞ。セキュリティの問題は [非公開のセキュリティアドバイザリ](https://github.com/YoanWai/agent-manager/security/advisories/new) から報告してください。詳しくは [SECURITY.md](.github/SECURITY.md) を参照してください。
+バグ報告、機能のアイデア、プルリクエストを歓迎します。開発環境と CI のチェックは [CONTRIBUTING.md](.github/CONTRIBUTING.md) にあります。質問や共有したいセットアップは [Discussions](https://github.com/YoanWai/agent-manager/discussions) へどうぞ。セキュリティの問題は[非公開のセキュリティアドバイザリ](https://github.com/YoanWai/agent-manager/security/advisories/new)から報告してください。詳しくは [SECURITY.md](.github/SECURITY.md) を参照してください。
 
 ### コントリビューター
 
