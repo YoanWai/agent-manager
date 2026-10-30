@@ -1,12 +1,13 @@
 package rail
 
 import (
+	"strings"
+	"testing"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/x/ansi"
-	"strings"
-	"testing"
 )
 
 func TestContentMarksPreserveQuotedTextForEveryTool(t *testing.T) {
@@ -14,7 +15,7 @@ func TestContentMarksPreserveQuotedTextForEveryTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const text = "❯↳⌕⚙⚠✔✖↓■ 界e\u0301"
+	const text = "❯↳⌕⚙⚠✔✖↓■ ↵⌫🬹🬂🬨 ◂▸╭╮╰╯━╸┃┄▀▄▐▜▟▍▎▏▌║ 界e\u0301"
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
 		r := renderer{ctx: RenderContext{GlyphMode: mode, Theme: theme.Palettes[0]}, palette: newPalette(theme.Palettes[0])}
 		prompt, reply := "> ", "< "

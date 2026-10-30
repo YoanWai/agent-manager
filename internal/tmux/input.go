@@ -153,10 +153,27 @@ const (
 	echoPoll = 25 * time.Millisecond
 )
 
+// gemini and hermes read an Enter within 40 and 50 ms of a paste as a line break in it.
+const pasteSettle = 100 * time.Millisecond
+
+func pause(ctx context.Context, wait time.Duration) error {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 // An agent clears its composer within a frame of reading the Enter; one that
-// still holds the paste a second later dropped it, and gets it again.
+// still holds the paste after a second of a still pane dropped it, and gets
+// it again. A pane that keeps redrawing is still taking the Enter, so it is
+// waited on up to submitCap before the next one.
 const (
 	submitWait  = time.Second
+	submitCap   = 5 * time.Second
 	submitTries = 3
 )
 
@@ -177,19 +194,12 @@ func (d *Driver) pasteAndEnterContext(ctx context.Context, id, text string, draf
 	if baseline != nil {
 		// Without a baseline, text already on screen reads as the new paste,
 		// so the pane gets the whole window to draw it rather than a match.
-		timer := time.NewTimer(echoWait)
-		select {
-		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
-			return result, ctx.Err()
-		case <-timer.C:
-		}
-	} else {
-		if err := d.awaitPasteEchoContext(ctx, target, before, text, drafted); err != nil {
-			return result, err
-		}
+		err = pause(ctx, echoWait)
+	} else if err = d.awaitPasteEchoContext(ctx, target, before, text, drafted); err == nil {
+		err = pause(ctx, pasteSettle)
+	}
+	if err != nil {
+		return result, err
 	}
 	_, err = d.runContextStarted(ctx, func() { result.Phase = SendPhaseSubmitStarted }, "send-keys", "-t", target, "Enter")
 	if err != nil {
@@ -206,7 +216,7 @@ func (d *Driver) pasteAndEnterContext(ctx context.Context, id, text string, draf
 // paste, a bounded number of times, and reports a paste no Enter submitted.
 func (d *Driver) confirmSubmit(ctx context.Context, target string, drafted func() (bool, error)) error {
 	for try := 1; ; try++ {
-		cleared, err := composerCleared(ctx, drafted)
+		cleared, err := d.composerCleared(ctx, target, drafted)
 		if err != nil || cleared {
 			return err
 		}
@@ -219,8 +229,18 @@ func (d *Driver) confirmSubmit(ctx context.Context, target string, drafted func(
 	}
 }
 
-func composerCleared(ctx context.Context, drafted func() (bool, error)) (bool, error) {
-	deadline := time.Now().Add(submitWait)
+// composerCleared waits for the composer to empty. Every redraw restarts
+// the wait: an agent that took the Enter can draw its turn starting before
+// it clears the composer, and an Enter pressed then lands on the empty
+// prompt that follows. A pane it cannot capture could be redrawing, so its
+// error is returned rather than taken for a still pane.
+func (d *Driver) composerCleared(ctx context.Context, target string, drafted func() (bool, error)) (bool, error) {
+	now := time.Now()
+	deadline, last := now.Add(submitWait), now.Add(submitCap)
+	pane, err := d.capturePlainContext(ctx, target)
+	if err != nil {
+		return false, err
+	}
 	for {
 		typed, err := drafted()
 		if err != nil {
@@ -229,7 +249,8 @@ func composerCleared(ctx context.Context, drafted func() (bool, error)) (bool, e
 		if !typed {
 			return true, nil
 		}
-		if time.Now().After(deadline) {
+		now = time.Now()
+		if now.After(deadline) || now.After(last) {
 			return false, nil
 		}
 		timer := time.NewTimer(echoPoll)
@@ -238,6 +259,13 @@ func composerCleared(ctx context.Context, drafted func() (bool, error)) (bool, e
 			timer.Stop()
 			return false, ctx.Err()
 		case <-timer.C:
+		}
+		next, err := d.capturePlainContext(ctx, target)
+		if err != nil {
+			return false, err
+		}
+		if next != pane {
+			pane, deadline = next, time.Now().Add(submitWait)
 		}
 	}
 }
@@ -327,7 +355,13 @@ func (d *Driver) pasteContext(ctx context.Context, id, text string) (SendResult,
 	// them. Codex uses paste-burst detection without these markers and can
 	// consume the immediately following Enter as part of the paste, leaving
 	// the prompt in its composer instead of submitting it.
-	if _, err := d.runInContext(ctx, func() { result.Phase = SendPhasePasteStarted }, id, "paste-buffer", "-p", "-d", "-b", buf, "-t", target); err != nil {
+	//
+	// -r keeps the buffer's own linefeeds instead of rewriting them to
+	// carriage returns. Inside the markers both are payload, but an agent's
+	// paste detection reads a CR as a typed Enter: without -r, pasting into
+	// a working session can submit partway through and leave the rest to
+	// queue as follow-up prompts. tmux 3.1, the oldest supported, has -r.
+	if _, err := d.runInContext(ctx, func() { result.Phase = SendPhasePasteStarted }, id, "paste-buffer", "-p", "-r", "-d", "-b", buf, "-t", target); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 		_, _ = d.runInContext(cleanupCtx, nil, id, "delete-buffer", "-b", buf)
 		cancel()

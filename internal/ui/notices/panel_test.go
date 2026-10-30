@@ -30,11 +30,21 @@ func ids(notices []Notice) []string {
 	return out
 }
 
+func TestPendingFeedNamesThePanelTail(t *testing.T) {
+	frame := testFrame()
+	frame.FeedPending = true
+	panel := NewPanel(nil)
+	got := ansi.Strip(strings.Join(panel.View(nil, frame), "\n"))
+	if !strings.Contains(got, FeedPendingText) {
+		t.Fatalf("a pending feed should say so in the panel:\n%s", got)
+	}
+}
+
 func TestPanelRunsOnCopiedSources(t *testing.T) {
 	src := testSources("v0.3.0")
 	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
-	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", Welcome, ArrowStep}) {
+	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", Welcome}) {
 		t.Fatalf("notices = %v", got)
 	}
 	p.Open(notices, Welcome)
@@ -70,20 +80,45 @@ func TestPanelRunsOnCopiedSources(t *testing.T) {
 	}
 }
 
+func TestUpdateNoticeHighlightsPressU(t *testing.T) {
+	useTrueColor(t)
+	p := NewPanel(map[string]bool{})
+	notices := p.Active(testSources("v0.3.0"))
+	view := strings.Join(p.View(notices, testFrame()), "\n")
+	theme := testTheme()
+	for _, want := range []string{
+		theme.Key.Render("Press u to update to v0.3.0 and restart."),
+		theme.Key.Render("u update"),
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("update notice missing highlighted %q", ansi.Strip(want))
+		}
+	}
+	plain := ansi.Strip(view)
+	if strings.Contains(plain, "`") {
+		t.Fatalf("accent marks reached the screen:\n%s", plain)
+	}
+	p.Key(key("down"), notices, testFrame())
+	next := strings.Join(p.View(notices, testFrame()), "\n")
+	if strings.Contains(next, theme.Key.Render("u update")) || strings.Contains(ansi.Strip(next), "Press u to update") {
+		t.Fatalf("press u stays on the update notice only:\n%s", ansi.Strip(next))
+	}
+}
+
 func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 	src := testSources("")
-	p := NewPanel(map[string]bool{Welcome: true})
+	p := NewPanel(map[string]bool{})
 	notices := p.Active(src)
-	p.Open(notices, ArrowStep)
-	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != ArrowStep || !out.Close {
+	p.Open(notices, Welcome)
+	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != Welcome || !out.Close {
 		t.Fatalf("d on the only notice = %+v", out)
 	}
-	p.Dismiss(ArrowStep)
+	p.Dismiss(Welcome)
 	if notices = p.Active(src); len(notices) != 0 {
 		t.Fatalf("dismissed notices still listed: %v", ids(notices))
 	}
-	p.Restore(ArrowStep)
-	if !slices.Equal(ids(p.Active(src)), []string{ArrowStep}) {
+	p.Restore(Welcome)
+	if !slices.Equal(ids(p.Active(src)), []string{Welcome}) {
 		t.Fatal("a restored notice is listed again")
 	}
 }
@@ -91,11 +126,11 @@ func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 func TestPanelReselectsByID(t *testing.T) {
 	p := NewPanel(map[string]bool{})
 	before := p.Active(testSources(""))
-	p.Open(before, ArrowStep)
+	p.Open(before, Welcome)
 	selected := p.Selected(before)
 	after := p.Active(testSources("v0.3.0"))
 	p.Reselect(after, selected)
-	if after[p.Cursor()].ID != ArrowStep {
+	if after[p.Cursor()].ID != Welcome {
 		t.Fatalf("selection moved to %q", after[p.Cursor()].ID)
 	}
 	p.Reselect(after, "gone")
@@ -129,7 +164,7 @@ func TestPanelFootKeysSitOnTheirLabels(t *testing.T) {
 			for _, foot := range feet {
 				labels[foot.Label] = true
 			}
-			if !labels["r"] || !labels["↵"] || !labels["x"] || !labels["esc"] {
+			if !labels["r"] || !labels["↵"] || !labels["x"] || !labels["esc/q"] {
 				t.Fatalf("width %d: the edge names r, ↵, x and esc at least, got %+v", width, feet)
 			}
 			for _, foot := range feet {

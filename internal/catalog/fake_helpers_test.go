@@ -312,6 +312,14 @@ func runFake(name string) error {
 			}
 			return nil
 		})
+	case "antigravity":
+		fmt.Fprintln(os.Stderr, "Fetching available models...")
+		return printFixture(os.Stdout, "antigravity_models.txt")
+	case "antigravity-signed-out":
+		if err := printFixture(os.Stderr, "antigravity_models_signed_out.txt"); err != nil {
+			return err
+		}
+		os.Exit(1)
 	case "opencode":
 		return printFixture(os.Stdout, "opencode_models.txt")
 	case "opencode-unavailable":

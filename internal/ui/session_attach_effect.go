@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"github.com/YoanWai/agent-manager/internal/status"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -31,7 +30,7 @@ func (s effectServices) runAttach(request attachRequest) (effectResult, error) {
 			return
 		}
 		if !exists {
-			result.fatal = errors.New(deadSessionHint)
+			result.fatal = deadSessionError(s.store, request.id)
 			return
 		}
 		sess, readErr := s.store.Get(request.id)

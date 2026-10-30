@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"time"
 	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
@@ -152,6 +153,7 @@ func (m *Model) leaveFocusMode() tea.Cmd {
 	// click that comes back here, focusing it again instead of leaving.
 	m.rail.ResetClickHistory()
 	m.flushPendingNotice()
+	m.mouse.flickAt = time.Now()
 	return nil
 }
 

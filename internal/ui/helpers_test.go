@@ -233,6 +233,7 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	m.layout.width = 120
 	m.layout.height = 40
 	m.startup.booting = false
+	m.Update(feedMsg{startup: true})
 	t.Cleanup(func() {
 		for _, s := range m.workspace.sessions {
 			driver.Kill(s.ID)
@@ -251,8 +252,33 @@ func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 		m.drainEffects(t)
 		cmd = m.refreshCmd()
 	}
-	m.applyTestMsg(t, cmd())
+	msg := cmd()
+	m.applyTestMsg(t, msg)
 	m.drainEffects(t)
+	m.applyRequestedRefresh(t, msg)
+}
+
+// applyRequestedRefresh runs the pass a fenced listing asks the poller for.
+// Windows advances the monotonic clock once per interrupt, so a listing taken
+// in the tick an effect finished in compares equal to it and is fenced.
+func (m *Model) applyRequestedRefresh(t *testing.T, msg tea.Msg) {
+	t.Helper()
+	for attempt := 0; ; attempt++ {
+		listing, ok := msg.(refreshMsg)
+		if !ok || !m.listingFenced(listing.listedAt) {
+			return
+		}
+		if attempt == 100 {
+			t.Fatal("listing stayed fenced after 100 passes")
+		}
+		time.Sleep(time.Millisecond)
+		msg = m.refreshCmd()()
+		if failed, ok := msg.(errMsg); ok {
+			t.Fatalf("refresh after a fenced listing: %v", failed.err)
+		}
+		m.applyTestMsg(t, msg)
+		m.drainEffects(t)
+	}
 }
 
 // drainEffects drives only finite UI effects; recurring preview/poll timers stay idle.
@@ -413,7 +439,7 @@ func pickGroup(t *testing.T, m *Model, path string) {
 // focusGroupField tabs the open group form to field.
 func focusGroupField(t *testing.T, m *Model, field int) {
 	t.Helper()
-	for range 5 {
+	for range 6 {
 		if m.groupForm.Focus() == field {
 			return
 		}
@@ -659,6 +685,7 @@ func reloadModel(t *testing.T, m *Model) *Model {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	loaded.Update(feedMsg{startup: true})
 	return loaded
 }
 

@@ -59,7 +59,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("filter to what needs attention (waiting, finished, errored)", keybind.Filter)
 	h.action("archived view", keybind.Archived)
 	h.action("hide / show empty groups", keybind.EmptyGroups)
-	h.action("fold / unfold every group", keybind.FoldAll)
+	h.action("fold / unfold every group (active view)", keybind.FoldAll)
 	h.action("resize the split (←→ or hl, or drag; ↵ commits, esc cancels)", keybind.Resize)
 	h.action("settings (also in the root row menu)", keybind.Settings)
 	h.action("messages", keybind.Messages)
@@ -141,7 +141,7 @@ func connectionRowHelpRows(list keybind.Table) [][2]string {
 // the rows that pair would answer are left out rather than named as dead.
 func helpSections(ctx Context) []helpSection {
 	list := ctx.ListKeys
-	return []helpSection{
+	sections := []helpSection{
 		{title: "list", rows: listHelpRows(list, ctx.ArrowStep, ctx.Glyphs)},
 		{title: "session under the cursor", rows: sessionRowHelpRows(list)},
 		{title: "the mark on a session row", rows: markHelpRows(list, ctx.Glyphs)},
@@ -155,6 +155,7 @@ func helpSections(ctx Context) []helpSection {
 			{ctx.QuickKeys.Model, "pick the spawn's model from the ones the tool lists; type to filter"},
 			{ctx.QuickKeys.Effort, "step the spawn's reasoning effort through the model's levels"},
 			{ctx.QuickKeys.Profile, "step the spawn's profile, for a tool that has them"},
+			{ctx.QuickKeys.Env, "step the spawn's environment profile; a group's own starts it"},
 			{"click", "step a spawn choice the way its key does, or pick a listed model"},
 			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
 			{"ctrl+v", "paste an image as a chip at the cursor"},
@@ -171,7 +172,7 @@ func helpSections(ctx Context) []helpSection {
 			{"click", "focused: open the link under it, else a tracking agent gets it"},
 			{"alt+drag", "focused: pass a whole drag to that agent UI"},
 		})},
-		reviewHelpSection(list),
+		reviewHelpSection(list, ctx.ReviewHelpKey),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
 			{"click unread", "in the key legend, shown while any remain"},
 			{"click", "select a title, click it again to open its link"},
@@ -189,7 +190,7 @@ func helpSections(ctx Context) []helpSection {
 			{"↑↓ / wheel", "pick a field"},
 			{"←→", "change the value, including Compatible / Advanced symbols"},
 			{"click", "pick a field, click it again to change or run it"},
-			{"click once", "save and close, the docs, saved prompts and the symbols preview"},
+			{"click once", "the docs, saved prompts and the symbols preview"},
 			{"↵", "run the field's action, like saved prompts or the docs"},
 			{"esc", "save and close"},
 		}},
@@ -205,6 +206,7 @@ func helpSections(ctx Context) []helpSection {
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
 			{"type", "in the model field, filter what the tool lists; tab fills one in"},
+			{"ctrl+o", "in the model field, open or close the whole list"},
 			{"click", "focus a field, click it again to change it, or pick a listed entry"},
 			{"click outside", "close the card as esc does, unless it holds a draft"},
 			{"↵", "confirm"},
@@ -217,6 +219,19 @@ func helpSections(ctx Context) []helpSection {
 			{"esc", "close"},
 		}},
 	}
+	return formatSections(sections, ctx.Glyphs.Mode)
+}
+
+func formatSections(sections []helpSection, mode presentation.GlyphMode) []helpSection {
+	for i := range sections {
+		sections[i].title = presentation.KeyLabel(mode, sections[i].title)
+		for j := range sections[i].rows {
+			for col := range sections[i].rows[j] {
+				sections[i].rows[j][col] = presentation.KeyLabel(mode, sections[i].rows[j][col])
+			}
+		}
+	}
+	return sections
 }
 
 func sessionHelpRows(keys keybind.Table, arrowStep bool, mouseRows [][2]string) [][2]string {
@@ -262,8 +277,8 @@ func titledWith(name string, list keybind.Table, actions ...string) string {
 	return name + " (" + strings.Join(glyphs, ", ") + ")"
 }
 
-func reviewHelpSection(list keybind.Table) helpSection {
-	return helpSection{title: titledWith("review", list, keybind.Review), rows: [][2]string{
+func reviewHelpSection(list keybind.Table, helpKey keybind.Binding) helpSection {
+	rows := [][2]string{
 		{"", "Tell your agent what to review in Agent Manager; they set it up."},
 		{"click", "open a file, move to a code line, or run a header key"},
 		{"c", "comment on the line"},
@@ -283,14 +298,17 @@ func reviewHelpSection(list keybind.Table) helpSection {
 		{"n / N", "next / previous change"},
 		{"u", "unified / split layout"},
 		{"o / f3", "open the current file in your editor"},
-		{"?", "this key map"},
-		{"esc / q", "close the review"},
-	}}
+	}
+	if label := helpKey.Label(); label != "" {
+		rows = append(rows, [2]string{label, "this key map"})
+	}
+	rows = append(rows, [2]string{"esc / q", "close the review"})
+	return helpSection{title: titledWith("review", list, keybind.Review), rows: rows}
 }
 
 func (s State) visibleSections(ctx Context) []helpSection {
 	if s.scope == Review {
-		return []helpSection{reviewHelpSection(ctx.ListKeys)}
+		return formatSections([]helpSection{reviewHelpSection(ctx.ListKeys, ctx.ReviewHelpKey)}, ctx.Glyphs.Mode)
 	}
 	return helpSections(ctx)
 }

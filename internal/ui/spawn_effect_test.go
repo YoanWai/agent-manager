@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -648,5 +649,81 @@ func TestGroupCompletionPreservesEditedForm(t *testing.T) {
 	}
 	if !hasWorkspaceGroup(m, "first") {
 		t.Fatal("completion lost the committed group")
+	}
+}
+
+func TestFormSpawnFromArchiveRevealsActiveSession(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.rail.SetArchived(true)
+	m.rail.SetHideEmptyGroups(true)
+	m.openForm()
+	m.form.SetName("new-active")
+	m.form.SetDir(t.TempDir())
+	_, cmd := m.submitForm()
+	m.applyCmd(t, cmd)
+	if m.rail.ShowArchived() {
+		t.Fatal("accepted active creation left archive view on screen")
+	}
+	if !m.rail.HideEmptyGroups() {
+		t.Fatal("new session cleared hide-empty preference")
+	}
+	found := false
+	for _, entry := range railRows(m) {
+		if !entry.isGroup && entry.sess.Name == "new-active" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("accepted new session is hidden")
+	}
+}
+
+func TestQuickSpawnRefusesGroupArchivedAfterDispatch(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	dir := t.TempDir()
+	if err := m.services.store.CreateGroup("closed", dir); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "closed")
+	m.openQuickMode()
+	_, cmd := m.quickSpawn("closed", "task")
+	if err := m.services.store.SetGroupArchived("closed", true); err != nil {
+		t.Fatal(err)
+	}
+	m.applyCmd(t, cmd)
+	if len(m.workspace.sessions) != 0 {
+		t.Fatal("queued quick prompt created a session inside an archived group")
+	}
+}
+
+func TestFormSpawnCompletionKeepsNewerArchiveView(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	cmd := submitFormSpawn(t, m, "accepted", t.TempDir())
+	m.mode = modeList
+	m.rail.SetArchived(true)
+	m.applyCmd(t, cmd)
+	if !m.rail.ShowArchived() {
+		t.Fatal("older form completion changed newer archive view")
+	}
+}
+
+func TestTerminalCompletionPreservesListNavigation(t *testing.T) {
+	for _, archived := range []bool{false, true} {
+		t.Run(fmt.Sprint(archived), func(t *testing.T) {
+			m := buildModel(t)
+			createSession(t, m, "api", t.TempDir(), "")
+			m.selectSessionRow(t, "api")
+			_, cmd := m.openTerminal()
+			m.rail.SetSearch("api", false)
+			m.rail.SetArchived(archived)
+			m.applyCmd(t, cmd)
+			if m.rail.Search() != "api" || m.rail.ShowArchived() != archived {
+				t.Fatalf("terminal completion changed navigation: search=%q archived=%v", m.rail.Search(), m.rail.ShowArchived())
+			}
+		})
 	}
 }

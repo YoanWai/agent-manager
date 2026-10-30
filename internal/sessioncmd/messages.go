@@ -29,7 +29,7 @@ func (r *runtime) deliverable(target store.Session) error {
 		return fmt.Errorf("session %s is archived, so Agent Manager no longer polls it; restore it with %s first", target.ID, r.words.Restore)
 	}
 	if r.cfg.Tools[target.Tool].ActivityCutoff == "" {
-		return fmt.Errorf("Agent Manager cannot tell when %s is ready to read a message: %s", target.ID, unreadableTool(r.cfg, target.Tool))
+		return fmt.Errorf("session %s gives Agent Manager no way to tell when it is ready to read a message: %s", target.ID, unreadableTool(r.cfg, target.Tool))
 	}
 	return nil
 }

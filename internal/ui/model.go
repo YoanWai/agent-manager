@@ -3,6 +3,7 @@ package ui
 import (
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/execution"
@@ -121,6 +122,14 @@ type mouseCapture struct {
 	// pressed is what the last left press landed on, which its release
 	// clicks when it comes back up over the same one.
 	pressed clickTarget
+	// flickAt is the last wheel notch of a trackpad flick that was still
+	// arriving when focus left, or zero once it has settled. The notches
+	// belong to the session just left, so the list swallows them until the
+	// first gap wider than wheelSettleGap.
+	flickAt time.Time
+	// renamePress is a left press on the group edit's fields, which a
+	// release reported without its button needs before it clicks.
+	renamePress bool
 }
 
 type settingsFeature struct {
@@ -258,6 +267,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			whatsNewVersion:     loadWhatsNewVersion(st),
 			whatsNewFromVersion: loadWhatsNewFromVersion(st),
 			configImportError:   configImportError,
+			feedPending:         true,
 		},
 	}
 	if deps.ProfileDir != "" {
@@ -284,5 +294,5 @@ func newView(deps Dependencies, version string) (*Model, error) {
 
 func (m *Model) Init() tea.Cmd {
 	m.syncPollInput()
-	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
+	return tea.Batch(m.syncPaneTheme(), m.refreshExistingSessionUX, m.checkForUpdate, m.checkStartupFeed, m.updateTick(), m.bannerTick(), m.previewTick(), m.startStartupTick(), m.sweepPastes, m.pasteSweepTick(), checkPaneShell)
 }

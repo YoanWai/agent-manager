@@ -15,29 +15,41 @@ func HasTextBeforeCaret(engine *Engine, tool, row string, caretX int) bool {
 	return textBetween(row, ansi.StringWidth(prefix), caretX)
 }
 
-// HasDraftBeforeCaret is HasTextBeforeCaret for a draft that may wrap: a
-// tool that draws its marker on the first composer row only (omp) leaves the
-// caret on a markerless row once the draft wraps. Such a row holds a draft
-// when it has text before the caret and the unbroken rows above it lead to a
-// marker row that carries text too.
+// HasDraftBeforeCaret is HasTextBeforeCaret for a draft over the rows between the caret and the marker row.
 func HasDraftBeforeCaret(engine *Engine, tool string, rows []string, caretX, caretY int) bool {
 	row := rows[caretY]
 	if _, ok := engine.InputPrefix(tool, row); ok {
 		return HasTextBeforeCaret(engine, tool, row, caretX)
 	}
-	if !textBetween(row, 0, caretX) {
+	// cursor and command-code park the caret below everything they draw.
+	if blankRows(rows[caretY:]) {
 		return false
 	}
+	chrome := engine.tools[tool].chromeLine
+	drafted := textBetween(row, 0, caretX)
 	for y := caretY - 1; y >= 0; y-- {
 		above := rows[y]
 		if prefix, ok := engine.InputPrefix(tool, above); ok {
-			return strings.TrimSpace(above[len(prefix):]) != ""
+			return drafted || strings.TrimSpace(above[len(prefix):]) != ""
 		}
-		if strings.TrimSpace(above) == "" || engine.MatchesActivityCutoff(tool, above) {
+		if strings.TrimSpace(above) == "" {
+			continue
+		}
+		if engine.MatchesActivityCutoff(tool, above) || (chrome != nil && chrome.MatchString(strings.TrimRight(above, " \t"))) {
+			return false
+		}
+		drafted = true
+	}
+	return false
+}
+
+func blankRows(rows []string) bool {
+	for _, row := range rows {
+		if strings.TrimSpace(row) != "" {
 			return false
 		}
 	}
-	return false
+	return true
 }
 
 func textBetween(row string, from, caretX int) bool {

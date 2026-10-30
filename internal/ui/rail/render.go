@@ -90,7 +90,7 @@ func (r *renderer) railLines() []Line {
 func (r renderer) searchFieldLine() string {
 	indent := strings.Repeat(" ", railInset)
 	glyph := r.palette.key.Render(r.glyphs().SearchGlyph + " ")
-	caret := r.ctx.CursorMarker + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render("▏")
+	caret := r.ctx.CursorMarker + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render(r.chrome().CursorGlyph)
 	hint := r.palette.keyCap("esc", "close")
 	if !r.model.searching {
 		caret, hint = "", r.palette.keyCap("esc", "clear")
@@ -287,7 +287,7 @@ func (r renderer) listHint(action, label string) string {
 	if glyph == "" {
 		return ""
 	}
-	return r.palette.keyCap(glyph, label)
+	return r.palette.keyCap(presentation.KeyLabel(r.ctx.GlyphMode, glyph), label)
 }
 
 func (r *renderer) entryRowLines(row treeRow, index int, tone string) []Line {
@@ -366,7 +366,7 @@ func (r renderer) treeGuidesAt(index int) string {
 		case continues:
 			guides.WriteString("├─ ")
 		default:
-			guides.WriteString("╰─ ")
+			guides.WriteString(r.chrome().BottomLeftGlyph + "─ ")
 		}
 	}
 	return r.palette.subtle.Render(guides.String())
@@ -631,3 +631,5 @@ func withRowHandle(text, lead, handle string) renderedTreeRow {
 	}
 	return row
 }
+
+func (r renderer) chrome() presentation.ChromeSet { return presentation.ChromeFor(r.ctx.GlyphMode) }

@@ -69,7 +69,7 @@ func (s effectServices) runLifecycle(request lifecycleRequest) (effectResult, er
 			}
 			result.archive, operationErr = s.lifecycle.RestoreForHuman(sessioncmd.ArchiveSelection{Sessions: target.sessions, GroupPath: groupPath(target)}, request.pane)
 			for _, sess := range result.archive.Sessions {
-				if wasDead[sess.ID] {
+				if wasDead[sess.ID] && s.driver.Exists(sess.ID) {
 					result.launches = append(result.launches, relaunchedSession{sess.ID, sessioncmd.RelaunchResult{LaunchedAt: sess.AgentLaunchedAt}})
 				}
 			}
@@ -184,9 +184,28 @@ func (s effectServices) validateLifecycleSelection(target confirmTarget) (confir
 	}
 	if selection.archivedOnly {
 		current = archivedSessions(current)
+	} else if target.action == actionRevive {
+		current = activeSessions(current)
 	}
-	if !sameSessionIDs(current, target.sessions) {
+	expected := target.sessions
+	if selection.members != nil {
+		expected = selection.members
+	}
+	if !sameSessionIDs(current, expected) {
 		return target, fmt.Errorf("sessions changed since confirmation; review the selection and try again")
+	}
+	if selection.members != nil {
+		ids := make(map[string]bool, len(target.sessions))
+		for _, session := range target.sessions {
+			ids[session.ID] = true
+		}
+		var selected []store.Session
+		for _, session := range current {
+			if ids[session.ID] {
+				selected = append(selected, session)
+			}
+		}
+		current = selected
 	}
 	target.sessions = current
 	return target, nil

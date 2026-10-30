@@ -170,6 +170,6 @@ func FuzzMountEntry(f *testing.F) {
 			t.Fatalf("line %q parsed with no filesystem type", line)
 		}
 		parsed.isWindowsDrive()
-		underMount(parsed.point, parsed.point)
+		_ = underMount(parsed.point, parsed.point)
 	})
 }

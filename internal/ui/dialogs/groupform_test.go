@@ -144,10 +144,11 @@ func TestGroupFormViewFollowsTheFocus(t *testing.T) {
 		Value:        plain,
 		Worktrees:    []string{"inherit", "on", "off"},
 		Base:         "auto",
+		Env:          "none",
 		SuggestHints: [][2]string{{"tab", "complete"}},
 	}
 	card := d.View(view)
-	if card.Title != "✦ New Group" || card.Body != "name=input\nparent=[root]\npath=input\nworktree=◂ inherit ▸\nbase=auto" {
+	if card.Title != "✦ New Group" || card.Body != "name=input\nparent=[root]\npath=input\nworktree=◂ inherit ▸\nbase=auto\nenv=none" {
 		t.Fatalf("card = %+v", card)
 	}
 	if card.Hints[0] != [2]string{"tab/↑↓", "move"} {
@@ -156,13 +157,13 @@ func TestGroupFormViewFollowsTheFocus(t *testing.T) {
 	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 3)
 	view.Parent = "work"
 	card = d.View(view)
-	if card.Body != "name=input\nparent=[work]\npath=input\nworktree=◂ inherit ▸\nbase=auto\n\npicker" || card.Hints[0] != [2]string{"←→", "pick parent"} {
+	if card.Body != "name=input\nparent=[work]\npath=input\nworktree=◂ inherit ▸\nbase=auto\nenv=none\n\npicker" || card.Hints[0] != [2]string{"←→", "pick parent"} {
 		t.Fatalf("parent card = %+v", card)
 	}
 	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 3)
 	view.Suggestions = func() string { return "suggestions" }
 	card = d.View(view)
-	if card.Body != "name=input\nparent=[work]\npath=input\nsuggestions\nworktree=◂ inherit ▸\nbase=auto" || card.Hints[0] != [2]string{"tab", "complete"} {
+	if card.Body != "name=input\nparent=[work]\npath=input\nsuggestions\nworktree=◂ inherit ▸\nbase=auto\nenv=none" || card.Hints[0] != [2]string{"tab", "complete"} {
 		t.Fatalf("path card = %+v", card)
 	}
 	d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 3)
@@ -172,7 +173,7 @@ func TestGroupFormViewFollowsTheFocus(t *testing.T) {
 }
 
 // Each painted line answers for its field: a click focuses a field, a
-// second click steps the worktree or the base, and a parent or a path
+// second click steps the worktree, the base or the env, and a parent or a path
 // suggestion is picked by its own line.
 func TestGroupFormClicksFollowThePaintedLines(t *testing.T) {
 	d := NewGroupForm("", 1)
@@ -187,6 +188,7 @@ func TestGroupFormClicksFollowThePaintedLines(t *testing.T) {
 		Value:     plain,
 		Worktrees: []string{"inherit", "on", "off"},
 		Base:      "auto",
+		Env:       "none",
 	}
 	d.View(view)
 	if got := d.Click(3, paths, 3); got.Action != GroupFormStay || d.Focus() != GroupFormWorktreeField || d.Worktree() != 0 {
@@ -199,9 +201,13 @@ func TestGroupFormClicksFollowThePaintedLines(t *testing.T) {
 	if got := d.Click(4, paths, 3); got.Action != GroupFormStepBase || got.Delta != 1 {
 		t.Fatalf("second click on base = %+v", got)
 	}
+	d.Click(5, paths, 3)
+	if got := d.Click(5, paths, 3); got.Action != GroupFormStepEnv || got.Delta != 1 {
+		t.Fatalf("second click on env = %+v", got)
+	}
 	d.Click(1, paths, 3)
 	d.View(view)
-	if got := d.Click(7, paths, 3); got.Action != GroupFormPickParent || got.Entry != 1 {
+	if got := d.Click(8, paths, 3); got.Action != GroupFormPickParent || got.Entry != 1 {
 		t.Fatalf("a click on the second parent = %+v", got)
 	}
 	if got := d.Wheel(-1); got.Action != GroupFormStepParent || got.Delta != -1 {
@@ -215,5 +221,30 @@ func TestGroupFormClicksFollowThePaintedLines(t *testing.T) {
 	}
 	if got := d.Wheel(1); got.Action != GroupFormStay {
 		t.Fatalf("the wheel off the parent field = %+v", got)
+	}
+}
+
+// With no environment choice to show, the env row is left off and the focus
+// wraps from base to the name.
+func TestGroupFormLeavesTheEnvRowOffWithNothingToPick(t *testing.T) {
+	d := NewGroupForm("", 1)
+	paths := &fakePaths{}
+	card := d.View(GroupFormView{
+		Field: func(label, value string, _ bool) string { return label + "=" + value + "\n" },
+		Input: func(textinput.Model) string { return "input" }, Badge: func(s string) string { return s },
+		Picker: func() string { return "picker" }, Subtle: lipgloss.NewStyle(), Value: lipgloss.NewStyle(),
+		Worktrees: []string{"inherit"}, Base: "auto",
+	})
+	if strings.Contains(card.Body, "env=") {
+		t.Fatalf("body = %q, want no env row", card.Body)
+	}
+	for range 4 {
+		d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 1)
+	}
+	if d.Focus() != GroupFormBaseField {
+		t.Fatalf("four tabs focused %d, want base", d.Focus())
+	}
+	if d.Key(tea.KeyMsg{Type: tea.KeyTab}, paths, "", 1); d.Focus() != GroupFormNameField {
+		t.Fatalf("tab past base focused %d, want the name", d.Focus())
 	}
 }

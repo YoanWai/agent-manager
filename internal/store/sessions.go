@@ -12,7 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 )
 
-// ErrSessionGone reports a write against a session row that is no longer
+// ErrSessionGone reports an operation against a session row that is no longer
 // there. Deleting a session is normal, so a caller holding a session
 // listed a moment earlier can tell that race apart from a real failure.
 var ErrSessionGone = errors.New("session no longer exists")
@@ -68,6 +68,9 @@ type Session struct {
 	TmuxSocket string
 	// Choice rides every launch: restart, revive and fork.
 	Choice config.Choice
+	// Environment names the environment profile every launch exports, or
+	// "" for the manager's own environment alone.
+	Environment string
 	// AfterTurn is what the session asked the manager to do to it once the
 	// turn that asked ends: AfterTurnArchive, AfterTurnKill, or empty.
 	AfterTurn   string
@@ -93,18 +96,19 @@ func (sess Session) LaunchTime() time.Time {
 	return sess.AgentLaunchedAt
 }
 
+// CreateSession preserves imported or legacy state; live launches use CreateActiveSession.
 func (s *Store) CreateSession(sess Session) error {
-	return s.createSession(sess, "")
+	return s.createSession(sess, "", false)
 }
 
 // CreateSessionBeside reads the anchor inside the write transaction, so a
 // placement that lands first decides where the new row goes rather than
-// leaving it behind.
+// leaving it behind. It preserves legacy state; live launches use CreateActiveSessionBeside.
 func (s *Store) CreateSessionBeside(sess Session, anchorID string) error {
-	return s.createSession(sess, anchorID)
+	return s.createSession(sess, anchorID, false)
 }
 
-func (s *Store) createSession(sess Session, anchorID string) error {
+func (s *Store) createSession(sess Session, anchorID string, requireActive bool) error {
 	if sess.CreatedAt.IsZero() {
 		sess.CreatedAt = time.Now()
 	}
@@ -141,14 +145,22 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 		}
 		sess.Group = parentGroup
 	}
+	if requireActive {
+		if err := validateActivePlacement(tx, sess, anchorID); err != nil {
+			return err
+		}
+		if err := conversationFree(tx, sess.Tool, sess.AgentSessionID); err != nil {
+			return err
+		}
+	}
 	_, err = tx.Exec(
-		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, sort_order)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+		`INSERT INTO sessions (id, name, tool, cwd, group_name, status, archived, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, pending_inputs, parent_id, launch_prompt, tmux_socket, model_provider, model, effort, profile, opened_without_session, environment, sort_order)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 		         (SELECT COALESCE(MAX(sort_order)+1, 0) FROM sessions WHERE group_name = ? AND parent_id = ?))`,
 		sess.ID, sess.Name, sess.Tool, sess.Cwd, sess.Group, sess.Status,
 		boolToInt(sess.Archived), encodeTime(sess.CreatedAt), encodeTime(sess.LastStatusAt), sess.AgentSessionID,
 		sess.WorktreeRepo, sess.WorktreeBranch, pendingInputs, sess.ParentID, sess.LaunchPrompt, sess.TmuxSocket,
-		sess.Choice.Provider, sess.Choice.Model, sess.Choice.Effort, sess.Choice.Profile, boolToInt(sess.OpenedWithoutSession),
+		sess.Choice.Provider, sess.Choice.Model, sess.Choice.Effort, sess.Choice.Profile, boolToInt(sess.OpenedWithoutSession), sess.Environment,
 		sess.Group, sess.ParentID,
 	)
 	if err != nil {
@@ -166,7 +178,7 @@ func (s *Store) createSession(sess Session, anchorID string) error {
 }
 
 func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
-	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session
+	query := `SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment
 	          FROM sessions`
 	if !includeArchived {
 		query += ` WHERE archived = 0`
@@ -189,7 +201,7 @@ func (s *Store) ListSessions(includeArchived bool) ([]Session, error) {
 			&sess.AgentSessionID, &sess.WorktreeRepo, &sess.WorktreeBranch,
 			&agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
 			&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession); err != nil {
+			&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment); err != nil {
 			return nil, err
 		}
 		if err := decodeRelaunchSnapshot(relaunchSnapshot, &sess); err != nil {
@@ -217,13 +229,13 @@ func (s *Store) Get(id string) (Session, error) {
 	var created, lastStatus, agentLaunched, afterTurnAt int64
 	var pendingInputs, relaunchSnapshot string
 	err := s.db.QueryRow(
-		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session
+		`SELECT id, name, tool, cwd, group_name, status, archived, acked, created_at, last_status_at, agent_session_id, worktree_repo, worktree_branch, agent_launched_at, retired_agent_session_id, relaunch_snapshot, pending_inputs, pending_claimed, parent_id, launch_prompt, last_prompt, tmux_socket, model_provider, model, effort, profile, after_turn, after_turn_at, opened_without_session, environment
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&sess.ID, &sess.Name, &sess.Tool, &sess.Cwd, &sess.Group,
 		&sess.Status, &archived, &acked, &created, &lastStatus, &sess.AgentSessionID,
 		&sess.WorktreeRepo, &sess.WorktreeBranch, &agentLaunched, &sess.RetiredAgentSessionID, &relaunchSnapshot, &pendingInputs, &pendingClaimed,
 		&sess.ParentID, &sess.LaunchPrompt, &sess.LastPrompt, &sess.TmuxSocket,
-		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession)
+		&sess.Choice.Provider, &sess.Choice.Model, &sess.Choice.Effort, &sess.Choice.Profile, &sess.AfterTurn, &afterTurnAt, &openedWithoutSession, &sess.Environment)
 	if err != nil {
 		return Session{}, err
 	}
@@ -242,6 +254,15 @@ func (s *Store) Get(id string) (Session, error) {
 	sess.AfterTurnAt = decodeTime(afterTurnAt)
 	sess.OpenedWithoutSession = openedWithoutSession != 0
 	return sess, nil
+}
+
+// RequireSession gives an operation holding a stale row the same gone error as a write.
+func (s *Store) RequireSession(id string) (Session, error) {
+	sess, err := s.Get(id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sess, fmt.Errorf("session %s: %w", id, ErrSessionGone)
+	}
+	return sess, err
 }
 
 func (s *Store) Children(parentID string) ([]Session, error) {
@@ -395,8 +416,9 @@ func (s *Store) BindAgentSessionID(id, agentSessionID string, launchedAt time.Ti
 	// bind that answered the previous launch.
 	res, err := s.db.Exec(
 		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''
-		 WHERE id = ? AND agent_session_id = '' AND agent_launched_at = ?`,
-		agentSessionID, id, encodeTime(launchedAt))
+		 WHERE id = ? AND agent_session_id = '' AND agent_launched_at = ?
+		 AND NOT EXISTS (SELECT 1 FROM sessions held WHERE held.tool = sessions.tool AND held.agent_session_id = ?)`,
+		agentSessionID, id, encodeTime(launchedAt), agentSessionID)
 	if err != nil {
 		return false, err
 	}
@@ -424,17 +446,20 @@ const (
 // ReportAgentSessionID moves a session onto the conversation its agent says
 // it switched to, but only for the launch now in the pane. launch is the
 // LaunchStamp the agent was started with. A report overrides a captured id,
-// and ends a picker recapture by clearing its snapshot.
+// takes the conversation from any other row holding it, and ends a picker
+// recapture by clearing its snapshot. A launch that lost a conversation this
+// way cannot take it back while another row holds it, since its CLI keeps
+// naming it from old state.
 func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int64) (ConversationReport, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
 	}
 	defer tx.Rollback()
-	var storedTool, storedID string
-	var storedLaunch int64
-	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id FROM sessions WHERE id = ?`, id).
-		Scan(&storedTool, &storedLaunch, &storedID)
+	var storedTool, storedID, releasedID string
+	var storedLaunch, releasedLaunch int64
+	err = tx.QueryRow(`SELECT tool, agent_launched_at, agent_session_id, released_agent_session_id, released_launch FROM sessions WHERE id = ?`, id).
+		Scan(&storedTool, &storedLaunch, &storedID, &releasedID, &releasedLaunch)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return ReportEarly, nil
@@ -444,8 +469,41 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 		return ReportEarly, nil
 	case storedLaunch > launch || storedTool != tool:
 		return ReportStale, nil
-	case storedID == agentSessionID:
-		return ReportUnchanged, nil
+	}
+	if releasedID == agentSessionID && releasedLaunch == launch {
+		var holders int
+		if err := tx.QueryRow(`SELECT count(*) FROM sessions WHERE tool = ? AND agent_session_id = ? AND id != ?`, tool, agentSessionID, id).Scan(&holders); err != nil {
+			return 0, err
+		}
+		if holders > 0 {
+			return ReportStale, nil
+		}
+	}
+	// The agent this launch started is on the conversation, so the session
+	// owns it from now on, also once the agent moves on to another one. A
+	// polled CLI repeats its report, so look before taking the write lock.
+	var owned bool
+	if err := tx.QueryRow(
+		`SELECT EXISTS (SELECT 1 FROM conversation_owners WHERE conversation_id = ? AND session_id = ?)`,
+		agentSessionID, id).Scan(&owned); err != nil {
+		return 0, err
+	}
+	if !owned {
+		if _, err := tx.Exec(
+			`INSERT INTO conversation_owners (conversation_id, session_id) VALUES (?, ?)`,
+			agentSessionID, id); err != nil {
+			return 0, err
+		}
+	}
+	if storedID == agentSessionID {
+		return ReportUnchanged, tx.Commit()
+	}
+	// A row that held the conversation lets go of it for the rest of its launch.
+	if _, err := tx.Exec(
+		`UPDATE sessions SET released_agent_session_id = agent_session_id, released_launch = agent_launched_at, agent_session_id = ''
+		 WHERE tool = ? AND agent_session_id = ? AND id != ?`,
+		tool, agentSessionID, id); err != nil {
+		return 0, err
 	}
 	if _, err := tx.Exec(
 		`UPDATE sessions SET agent_session_id = ?, relaunch_snapshot = ''
@@ -454,6 +512,46 @@ func (s *Store) ReportAgentSessionID(id, tool, agentSessionID string, launch int
 		return 0, err
 	}
 	return ReportAdopted, tx.Commit()
+}
+
+// OwnConversation records a conversation the session's agent reported from
+// outside its pane, where Claude Code's daemon runs it under the session's
+// settings after /background, /fork or the agent view. The row stays where
+// it is, and no launch is checked, since the conversation outlives the
+// launch that started it.
+func (s *Store) OwnConversation(id, tool, conversationID string) error {
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO conversation_owners (conversation_id, session_id)
+		 SELECT ?, id FROM sessions WHERE id = ? AND tool = ?`, conversationID, id, tool)
+	return err
+}
+
+// ConversationOwner names the session whose agent reported the
+// conversation, or the one on it now, or nothing when no session is and
+// when more than one is: a conversation two sessions resumed speaks for
+// neither.
+func (s *Store) ConversationOwner(conversationID string) (string, error) {
+	rows, err := s.db.Query(
+		`SELECT o.session_id FROM conversation_owners o JOIN sessions s ON s.id = o.session_id
+		 WHERE o.conversation_id = ?
+		 UNION SELECT id FROM sessions WHERE agent_session_id = ?
+		 LIMIT 2`, conversationID, conversationID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var owners []string
+	for rows.Next() {
+		var owner string
+		if err := rows.Scan(&owner); err != nil {
+			return "", err
+		}
+		owners = append(owners, owner)
+	}
+	if err := rows.Err(); err != nil || len(owners) != 1 {
+		return "", err
+	}
+	return owners[0], nil
 }
 
 // LaunchStamp is how a launch is named to the agent it starts: the stored
@@ -561,11 +659,7 @@ func (s *Store) SetArchived(id string, archived bool) error {
 		if err := tx.QueryRow(`SELECT group_name FROM sessions WHERE id = ?`, id).Scan(&group); err != nil {
 			return err
 		}
-		eachAncestor(group, func(ancestor string) bool {
-			_, err = tx.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, ancestor)
-			return err == nil
-		})
-		if err != nil {
+		if err := unarchiveGroupAncestors(tx, group); err != nil {
 			return err
 		}
 	}
@@ -607,6 +701,9 @@ func (s *Store) Delete(id string) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM remote_terminals WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM conversation_owners WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	res, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id)
@@ -656,6 +753,9 @@ func (s *Store) DeleteChild(id, parentID string, kill func() error) error {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM remote_terminals WHERE session_id = ?`, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM conversation_owners WHERE session_id = ?`, id); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {

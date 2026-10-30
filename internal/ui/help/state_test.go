@@ -90,8 +90,7 @@ func TestStateQuitDoesNotMutateFeatureState(t *testing.T) {
 }
 
 func TestNewAlwaysStartsWithCleanStateAndRequestedScope(t *testing.T) {
-	state := State{query: "old", searching: true, scroll: 9, scope: Global}
-	state = New(Review)
+	state := New(Review)
 	if state != (State{scope: Review}) {
 		t.Fatalf("new review state = %+v", state)
 	}

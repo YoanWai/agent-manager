@@ -270,7 +270,7 @@ func TestRefreshChromeKeepsLabelAndAddsSessionHints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status-right-length: %v", err)
 	}
-	if strings.TrimSpace(string(length)) != "100" {
+	if strings.TrimSpace(string(length)) != "120" {
 		t.Fatalf("status-right-length should fit the footer, got %q", length)
 	}
 	left, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()

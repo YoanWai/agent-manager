@@ -127,17 +127,13 @@ func newThemeStyles(t Theme) *themeStyles {
 func current() Theme { return activeStyles.Load().theme }
 
 func colorBg() lipgloss.Color       { return lipgloss.Color(current().Bg) }
-func colorSurface() lipgloss.Color  { return lipgloss.Color(current().Surface) }
 func colorOverlay() lipgloss.Color  { return lipgloss.Color(current().Overlay) }
 func colorBorder() lipgloss.Color   { return lipgloss.Color(current().Border) }
 func colorBright() lipgloss.Color   { return lipgloss.Color(current().Bright) }
-func colorText() lipgloss.Color     { return lipgloss.Color(current().Text) }
-func colorDim() lipgloss.Color      { return lipgloss.Color(current().Dim) }
 func colorSubtle() lipgloss.Color   { return lipgloss.Color(current().Subtle) }
 func colorAccent() lipgloss.Color   { return lipgloss.Color(current().Accent) }
 func colorAccent2() lipgloss.Color  { return lipgloss.Color(current().Accent2) }
 func colorRemote() lipgloss.Color   { return lipgloss.Color(current().Remote) }
-func colorSelBg() lipgloss.Color    { return colorSurface() }
 func colorWorking() lipgloss.Color  { return lipgloss.Color(current().Working) }
 func colorWaiting() lipgloss.Color  { return lipgloss.Color(current().Waiting) }
 func colorFinished() lipgloss.Color { return lipgloss.Color(current().Finished) }
@@ -155,8 +151,6 @@ func doneStyle() lipgloss.Style             { return activeStyles.Load().done }
 func warnStyle() lipgloss.Style             { return activeStyles.Load().warn }
 func keyStyle() lipgloss.Style              { return activeStyles.Load().key }
 func annotationStyle() lipgloss.Style       { return activeStyles.Load().annotation }
-func scopeBadgeStyle() lipgloss.Style       { return activeStyles.Load().scopeBadge }
-func focusBadgeStyle() lipgloss.Style       { return activeStyles.Load().focusBadge }
 func inboxBadgeStyle() lipgloss.Style       { return activeStyles.Load().inboxBadge }
 func searchMatchStyle() lipgloss.Style      { return activeStyles.Load().searchMatch }
 func focusEdgeStyle() lipgloss.Style        { return activeStyles.Load().focusEdge }
@@ -169,17 +163,6 @@ func legendAlertStyle() lipgloss.Style      { return activeStyles.Load().legendA
 func legendLabelStyle() lipgloss.Style      { return activeStyles.Load().legendLabel }
 func legendLeadKey() lipgloss.Style         { return activeStyles.Load().leadKey }
 func legendLeadLabel() lipgloss.Style       { return activeStyles.Load().leadLabel }
-
-// renderSelectedRow wraps a pre-styled line with the selected row's
-// background and foreground. Internal SGR resets emitted by per-segment
-// lipgloss.Render calls (and padRight) would otherwise clear the outer
-// background after the first segment, leaving only the bar glyph tinted.
-// Re-applying the selected bg+fg after every reset keeps the row tinted
-// end-to-end.
-func renderSelectedRow(s string) string {
-	reapply := "\x1b[0m" + bgSeq(current().Surface) + fgSeq(current().Bright)
-	return selectedRowStyle().Render(strings.ReplaceAll(s, "\x1b[0m", reapply))
-}
 
 // The accent lift separates reviewer notes from the diff itself. Resolve it
 // per call so live theme and color-profile changes take effect immediately.
@@ -220,19 +203,14 @@ func padRight(s string, width int) string {
 	return presentation.PadRight(s, width)
 }
 
-// gaugeGlyph is the meter's bar unit: a heavy rule reads as a slim
-// continuous line rather than a row of stacked blocks.
-const (
-	gaugeGlyph = "━"
-	gaugeHalf  = "╸"
-)
+const gaugeHalf = "╸"
 
 // gauge renders a meter for a 0-100 percentage: a colored run over a muted
 // track, the color ramping from calm to alarming as it fills, with a
-// half-width cap so small changes still move the bar. invert flips which
-// end of the scale reads as alarming — a full disk is bad, but a full
+// half-width cap in Advanced mode. Compatible rounds to whole cells.
+// invert flips which end reads as alarming — a full disk is bad, but a full
 // battery is exactly what you want, so battery colors off how empty it is.
-func gauge(percent float64, width int, invert bool) string {
+func gauge(percent float64, width int, invert bool, mode presentation.GlyphMode) string {
 	if width < 1 {
 		width = 1
 	}
@@ -242,25 +220,34 @@ func gauge(percent float64, width int, invert bool) string {
 	if percent > 100 {
 		percent = 100
 	}
-	units := percent / 100 * float64(width)
+	// The explicit conversion rounds here, so arm64 cannot fuse this into the half check below.
+	units := float64(percent / 100 * float64(width))
 	filled := int(units)
 	if filled > width {
 		filled = width
 	}
 	half := units-float64(filled) >= 0.5
 
+	glyph := presentation.ChromeFor(mode).RuleGlyph
+	if mode.Effective() == presentation.GlyphModeBasic {
+		if half {
+			filled = min(filled+1, width)
+		}
+		half = false
+	}
+
 	colorPercent := percent
 	if invert {
 		colorPercent = 100 - percent
 	}
 	color := lipgloss.Color(gaugeRamp(colorPercent))
-	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat(gaugeGlyph, filled))
+	bar := lipgloss.NewStyle().Foreground(color).Render(strings.Repeat(glyph, filled))
 	rest := width - filled
 	if half && rest > 0 {
 		bar += lipgloss.NewStyle().Foreground(color).Render(gaugeHalf)
 		rest--
 	}
-	track := lipgloss.NewStyle().Foreground(colorOverlay()).Render(strings.Repeat(gaugeGlyph, rest))
+	track := lipgloss.NewStyle().Foreground(colorOverlay()).Render(strings.Repeat(glyph, rest))
 	return bar + track
 }
 
@@ -273,12 +260,6 @@ func gaugeRamp(percent float64) string {
 		return current().Errored
 	}
 	return mix(current().Finished, current().Errored, percent/85)
-}
-
-// pill renders a small label chip: tinted text on the surface fill, so a
-// row of them reads as tokens rather than as more prose.
-func pill(text string, fg lipgloss.Color) string {
-	return chipStyle().Foreground(fg).Render(text)
 }
 
 // inboxBadge marks a session another agent has messages waiting for, in
@@ -307,14 +288,6 @@ var afterTurnNote = map[string]string{
 
 func (m *Model) afterTurnBadge(action string) string {
 	return inboxBadgeStyle().Render(m.afterTurnGlyph(action))
-}
-
-// keyPill renders a chip with the key that changes it dimmed in front, so
-// the header doubles as a key legend: each changeable value wears its
-// shortcut. The key is dim enough to lose to the value at a glance but
-// reads clearly when hunted.
-func keyPill(key, text string, fg lipgloss.Color) string {
-	return subtleStyle().Render(key+" ") + pill(text, fg)
 }
 
 // keyCap renders one binding: the key in accent, its action beside it. The

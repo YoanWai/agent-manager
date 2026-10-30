@@ -210,9 +210,14 @@ rules = [
   { state = "waiting", pattern = "(?m)^\\s*›\\s+\\d+\\." },
   { state = "waiting", pattern = "(?m)Press enter to (confirm|continue)\\b" },
   { state = "waiting", pattern = "(?m)enter to submit answer\\b" },
-  { state = "waiting", pattern = "(?m)^\\s*enter select · esc back\\b" },
+  # the shared picker's footer names its accept and cancel keys, each with a
+  # label of the view's own ("enter select · esc back" on the model picker,
+  # "enter confirm · esc skip" on the startup hook review); the picker replaces
+  # the composer, so its footer is the last row, which the same words in a
+  # running turn's output never are
+  { state = "waiting", pattern = "(?m)^[ \\t]*enter [a-z]+(?: [a-z]+)* · esc [a-z][^\\n]*\\s*\\z" },
   { state = "waiting", pattern = "(?m)^[ \\t]*Hooks need review\\b" },
-  { state = "waiting", pattern = "(?m)^[ \\t]*enter(?:/esc)? (?:confirm|continue)\\b" },
+  { state = "waiting", pattern = "(?m)^[ \\t]*enter(?:/esc)? (?:confirm|continue)\\b[^\\n]*\\s*\\z" },
   # active status row is the final row above the input box; anchoring its full
   # shape keeps an answer that quotes "esc to interrupt" from looking active
   { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied )[^\\n]*\\n)*[ \\t\\n]*\\z" },
@@ -357,6 +362,8 @@ rules = [
 # Antigravity CLI (agy), Google's successor to Gemini CLI
 [tools.antigravity]
 command = "agy"
+# 1.3.4 is the first agy that takes a model's base id without --effort.
+minimum_version = "1.3.4"
 session_report = "antigravity"
 # agy reads a startup prompt only from -p, which exits after one turn, or -i
 prompt_flag = "-i"
@@ -368,6 +375,10 @@ resume_by_id_command = "agy --conversation {id}"
 resume_picker_command = "agy"
 resume_picker_keys = "/resume"
 revive_command = "agy -c"
+catalog = "antigravity"
+catalog_command = "agy models"
+model_args = "--model {model}"
+effort_args = "--effort {effort}"
 default_status = "idle"
 # the composer row: ">" at rest, "!" in bash mode
 activity_cutoff = "(?m)^[>!]"

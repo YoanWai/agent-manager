@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -39,14 +40,15 @@ func Default(models []Model) (Model, bool) { return value.Default(models) }
 const fetchTimeout = 45 * time.Second
 
 var readers = map[string]func(ctx context.Context, command, dir string) (Catalog, error){
-	"claude":   readClaude,
-	"codex":    readCodex,
-	"acp":      readACP,
-	"pi":       readPiRPC,
-	"omp":      readPiRPC,
-	"muse":     readMuse,
-	"opencode": readOpencode,
-	"hermes":   readHermes,
+	"antigravity": readAntigravity,
+	"claude":      readClaude,
+	"codex":       readCodex,
+	"acp":         readACP,
+	"pi":          readPiRPC,
+	"omp":         readPiRPC,
+	"muse":        readMuse,
+	"opencode":    readOpencode,
+	"hermes":      readHermes,
 }
 
 // Fetch starts command in dir and asks it over the interface named kind.
@@ -62,6 +64,36 @@ func Fetch(ctx context.Context, kind, command, dir string) (Catalog, error) {
 		return Catalog{}, fmt.Errorf("no answer within %s", fetchTimeout)
 	}
 	return cat, err
+}
+
+// printedRows runs command to its end and returns the lines row matches. The
+// other lines are what it said, which name the failure when it exits nonzero.
+func printedRows(ctx context.Context, command, dir string, row *regexp.Regexp) ([]string, error) {
+	proc, err := start(command, dir, true)
+	if err != nil {
+		return nil, err
+	}
+	defer proc.stop()
+	var rows, said []string
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case line, ok := <-proc.lines:
+			if !ok {
+				if proc.waitErr != nil {
+					return nil, fmt.Errorf("%w: %s", proc.waitErr, strings.Join(said, " "))
+				}
+				return rows, nil
+			}
+			text := strings.TrimSpace(string(line))
+			if row.MatchString(text) {
+				rows = append(rows, text)
+			} else if text != "" {
+				said = append(said, text)
+			}
+		}
+	}
 }
 
 // process runs in a group of its own, so the servers and MCP children it

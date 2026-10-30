@@ -3,6 +3,7 @@
 package tmux
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,7 +85,7 @@ func TestLeftAtThePromptHeadDetachesAnAttachedClient(t *testing.T) {
 	os.WriteFile(answer, []byte("1"), 0o644)
 	press("Left")
 	waitFor(t, "← to reach the agent", func() bool {
-		out, _ := driver.capturePlain(PaneTarget(id))
+		out, _ := driver.capturePlainContext(context.Background(), PaneTarget(id))
 		return strings.Contains(out, "^[[D") || strings.Contains(out, "^[OD")
 	})
 	if !attached() {

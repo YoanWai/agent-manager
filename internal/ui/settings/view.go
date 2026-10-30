@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -26,8 +27,11 @@ type Styles struct {
 // the root's text-field renderer, which marks the IME cursor. Chrome is the
 // rows the card spends around a body with this hint.
 type ViewContext struct {
-	GlyphMode       presentation.GlyphMode
-	Session, List   keybind.Table
+	GlyphMode     presentation.GlyphMode
+	Session, List keybind.Table
+	// Envs are the environment profiles the shell defined, which the
+	// dialog lists and never edits.
+	Envs            []Env
 	Version, Latest string
 	Applying        bool
 	Height          int
@@ -63,6 +67,7 @@ type Frame struct {
 
 // View paints the open dialog.
 func (s *State) View(ctx ViewContext) Frame {
+	chrome := presentation.ChromeFor(ctx.GlyphMode)
 	if s.Prompts.open {
 		return s.Prompts.view(ctx)
 	}
@@ -73,9 +78,6 @@ func (s *State) View(ctx ViewContext) Frame {
 		return s.viewKeyPicker(ctx)
 	}
 	st := ctx.Styles
-	// The beta tag borrows the messages modal's yellow, so the row reads as
-	// the one still under test.
-	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	toolValue := ""
 	if len(s.ToolNames) > 0 {
 		toolValue = s.ToolNames[s.ToolIndex]
@@ -90,11 +92,11 @@ func (s *State) View(ctx ViewContext) Frame {
 		return marker + presentation.PadRight(labelStyle.Render(name), 18)
 	}
 	row := func(field int, name, value string) string {
-		return lead(field, name) + st.Subtle.Render("◂ ") + st.Value.Render(value) + st.Subtle.Render(" ▸")
+		return lead(field, name) + st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + st.Value.Render(value) + st.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	}
 	// An action row: enter runs it, so it carries no picker arrows.
 	actionRow := func(field int, name, action string) string {
-		return lead(field, name) + st.Key.Render("↵") + st.Muted.Render(" "+action)
+		return lead(field, name) + st.Key.Render(presentation.KeyLabel(ctx.GlyphMode, "↵")) + st.Muted.Render(" "+action)
 	}
 	// Report and suggest stay accent-colored even when unfocused so the
 	// actions read as a call-to-action among the picker rows above them.
@@ -108,7 +110,7 @@ func (s *State) View(ctx ViewContext) Frame {
 		return marker + presentation.PadRight(labelStyle.Render(name), 18)
 	}
 	ctaRow := func(field int, name, action string) string {
-		return ctaLead(field, name) + st.Key.Render("↵") + " " + st.ActionText.Render(action)
+		return ctaLead(field, name) + st.Key.Render(presentation.KeyLabel(ctx.GlyphMode, "↵")) + " " + st.ActionText.Render(action)
 	}
 	label := func(field int) string { return byField[field].Row }
 	editorLine := row(FieldEditor, label(FieldEditor), s.Editor.Label())
@@ -129,8 +131,19 @@ func (s *State) View(ctx ViewContext) Frame {
 		symbolsRow = style.Render(label(FieldGlyphs) + " <" + glyphLabel + ">")
 	}
 	palette := uitheme.Palettes[s.ThemeIndex]
+	// The environments row appears once a profile exists: most people never
+	// define one, and every row they never use crowds the ones they do.
+	s.envsHidden = len(ctx.Envs) == 0
+	if s.envsHidden && s.Field == FieldEnvs {
+		s.Field = FieldDocs
+	}
+	fields := make([]int, 0, FieldCount)
 	lines := make([]string, 0, FieldCount)
 	for field := range FieldCount {
+		if field == FieldEnvs && s.envsHidden {
+			continue
+		}
+		fields = append(fields, field)
 		switch field {
 		case FieldTool:
 			lines = append(lines, row(FieldTool, label(FieldTool), toolValue))
@@ -146,6 +159,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, actionRow(FieldCLIs, label(FieldCLIs), "show or hide for new sessions"))
 		case FieldPrompts:
 			lines = append(lines, actionRow(FieldPrompts, "saved prompts", "manage named instructions"))
+		case FieldEnvs:
+			lines = append(lines, lead(FieldEnvs, "environments")+st.Muted.Render(envSummary(ctx.Envs)))
 		case FieldDocs:
 			lines = append(lines, ctaRow(FieldDocs, "docs", "open the docs"))
 		case FieldBugReport:
@@ -156,67 +171,62 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, versionRow(ctx, lead, actionRow))
 		default:
 			setting := byField[field]
-			line := row(field, setting.Row, setting.label(*setting.Flag(s)))
-			if setting.Beta {
-				line += betaTag
-			}
-			lines = append(lines, line)
+			lines = append(lines, row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s)))))
 		}
 	}
-	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save"}}
+	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save and close"}}
 	switch s.Field {
 	case FieldGlyphs:
-		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save and close"}}
 	case FieldDocs:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save and close"}}
 	case FieldBugReport, FieldFeatureRequest:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open form"}, {"esc", "save and close"}}
 	case FieldCLIs:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "manage CLIs"}, {"esc", "save and close"}}
 	case FieldPrompts:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "saved prompts"}, {"esc", "save and close"}}
+	case FieldEnvs:
+		hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
 	case FieldKeybindings:
-		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save"}}
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "change the keys"}, {"esc", "save and close"}}
 	case FieldEditor:
 		switch {
 		case s.Editor.typing:
 			hint = [][2]string{{"↵", "keep"}, {"esc", "cancel"}}
 		case s.Editor.custom:
-			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵", "type the command"}, {"esc", "save and close"}}
 		}
 	case FieldUpdate:
 		switch {
 		case ctx.Applying:
-			hint = [][2]string{{"↑↓", "field"}, {"esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"esc", "save and close"}}
 		case ctx.Latest != "":
-			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"↵", "update"}, {"esc", "save and close"}}
 		default:
-			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save"}}
+			hint = [][2]string{{"↑↓", "field"}, {"↵/esc", "save and close"}}
 		}
 	}
-	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Settings", Body: s.fitRows(ctx, lines, hint), Hints: hint}
+	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Settings", Body: s.fitRows(ctx, fields, lines, hint), Hints: hint}
 }
 
-// fitRows puts the save button over the rows that fit the terminal, held
-// still while the focused row stays on screen, and records what each
-// painted line shows.
-func (s *State) fitRows(ctx ViewContext, rows []string, hint [][2]string) string {
-	save := ctx.Styles.Key.Render("[ Save and close ]")
-	room := max(ctx.Height-ctx.Chrome(hint)-1, 1)
-	s.first = presentation.Follow(s.first, s.Field, len(rows), min(room, len(rows)))
+// fitRows windows the rows that fit, held still while the focused row stays
+// on screen, and records what each painted line shows. fields names the
+// field each row paints.
+func (s *State) fitRows(ctx ViewContext, fields []int, rows []string, hint [][2]string) string {
+	room := max(ctx.Height-ctx.Chrome(hint), 1)
+	s.first = presentation.Follow(s.first, slices.Index(fields, s.Field), len(rows), min(room, len(rows)))
 	rows = rows[s.first:min(s.first+room, len(rows))]
-	s.saveWidth = ansi.StringWidth(save)
 	s.glyphWidth = 0
 	s.lines.Reset()
-	s.lines.Skip(1)
 	for i, row := range rows {
-		field := s.first + i
+		field := fields[s.first+i]
 		s.lines.Show(field, 1)
 		if field == FieldGlyphs {
 			s.glyphWidth = ansi.StringWidth(row)
 		}
 	}
-	return save + "\n" + strings.Join(rows, "\n")
+	return strings.Join(rows, "\n")
 }
 
 // versionRow is the focusable version line: when a newer release is known
@@ -266,7 +276,7 @@ func (s *State) viewCLIPicker(ctx ViewContext) Frame {
 	}
 	b.WriteByte('\n')
 	b.WriteString(reqMarker)
-	b.WriteString(st.Key.Render("↵"))
+	b.WriteString(st.Key.Render(presentation.KeyLabel(ctx.GlyphMode, "↵")))
 	b.WriteString(" ")
 	b.WriteString(reqLabel)
 	b.WriteString(st.Muted.Render("  open a GitHub issue"))

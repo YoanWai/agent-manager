@@ -2,18 +2,22 @@ package ui
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/uuid"
-	"time"
 )
 
 // restartSelected asks to relaunch the selected session with an empty
 // context: the same row, directory and tool, running a brand new
 // conversation instead of resuming the one it held.
 func (m *Model) restartSelected() (tea.Model, tea.Cmd) {
+	if m.rail.ShowArchived() {
+		return m, nil
+	}
 	entry, ok := m.selectedRow()
 	if !ok {
 		return m, nil

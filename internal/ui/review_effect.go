@@ -169,7 +169,7 @@ func runReviewWithWriter(request reviewEffectRequest, st *store.Store, writer re
 			return reviewEffectResult{op: reviewOpSend, send: result}, nil
 		}
 		if !exists {
-			result.Err = fmt.Errorf("%s", deadSessionHint)
+			result.Err = deadSessionError(st, current.ID)
 			return reviewEffectResult{op: reviewOpSend, send: result}, nil
 		}
 		if err := st.MergeReviewState(request.targetID, request.repoRoot, reviewStateToStore(request.state)); err != nil {

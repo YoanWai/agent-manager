@@ -15,6 +15,7 @@ type railRequest struct {
 	dir       string
 	worktree  string
 	base      string
+	env       string
 	placement placementPrecondition
 }
 
@@ -70,7 +71,7 @@ func (m *Model) queueRail(mutations []uirail.Mutation, chain uint64, first bool)
 		mutation.Collapsed = append([]string(nil), mutation.Collapsed...)
 		mutation.HostCollapsed = append([]uirail.HostFold(nil), mutation.HostCollapsed...)
 		mutation.GroupSiblings = append([]string(nil), mutation.GroupSiblings...)
-		m.enqueueEffect(railRequest{mutation: mutation, dir: m.workspace.groupPaths[mutation.Path], worktree: m.workspace.groupWorktrees[mutation.Path], base: m.workspace.groupBases[mutation.Path]}, chain, first)
+		m.enqueueEffect(railRequest{mutation: mutation, dir: m.workspace.groupPaths[mutation.Path], worktree: m.workspace.groupWorktrees[mutation.Path], base: m.workspace.groupBases[mutation.Path], env: m.workspace.groupEnvs[mutation.Path]}, chain, first)
 	}
 }
 func (s effectServices) runRail(request railRequest) (effectResult, error) {
@@ -166,7 +167,7 @@ func (m *Model) applyRailEffect(job *effectJob, result railEffectResult, err err
 			m.materializeGroupsLocal(mutation.GroupSiblings)
 			m.swapGroupInventory(mutation.Path, mutation.TargetPath)
 		case uirail.MoveGroup:
-			m.renameGroupLocally(mutation.Path, result.newPath, request.dir, request.worktree, request.base)
+			m.renameGroupLocally(mutation.Path, result.newPath, request.dir, request.worktree, request.base, request.env)
 		}
 		for _, sess := range result.sessions {
 			for i := range m.workspace.sessions {

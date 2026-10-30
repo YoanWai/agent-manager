@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -20,7 +19,6 @@ type focusRequest struct {
 func (focusRequest) effectRequest() {}
 
 type focusEffectResult struct {
-	fatal error
 }
 
 func (focusEffectResult) effectResult() {}
@@ -28,7 +26,7 @@ func (focusEffectResult) effectResult() {}
 func (s effectServices) runFocus(request focusRequest) (effectResult, error) {
 	result := focusEffectResult{}
 	if !s.driver.Exists(request.sessionID) {
-		return result, errors.New(deadSessionHint)
+		return result, deadSessionError(s.store, request.sessionID)
 	}
 	sess, err := s.store.Get(request.sessionID)
 	if err != nil {

@@ -1029,6 +1029,155 @@ func TestCaptureAgentSessionIDsAssignsInLaunchOrder(t *testing.T) {
 	}
 }
 
+// A pass can run on a snapshot read before the previous pass's bind landed.
+// A's refused rebind must still keep A's conversation from B.
+func TestCaptureAgentSessionIDsKeepsABoundConversationFromAStaleSnapshot(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	base := time.Now().Add(-time.Minute)
+	aLaunch := base.Add(100 * time.Millisecond)
+	bLaunch := base.Add(600 * time.Millisecond)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, aLaunch)
+
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: aLaunch},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: bLaunch},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessA, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stale := []store.Session{sessA, sessB}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
+	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+		t.Fatal(err)
+	}
+
+	gotA, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotA.AgentSessionID != "A-id" {
+		t.Fatalf("session A captured %q, want A-id", gotA.AgentSessionID)
+	}
+	gotB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotB.AgentSessionID != "" {
+		t.Fatalf("session B captured %q, want nothing until its own conversation appears", gotB.AgentSessionID)
+	}
+}
+
+func TestCaptureAgentSessionIDsSkipsASessionDeletedDuringThePass(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	launch := time.Now().Add(-time.Minute)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, launch)
+	if err := st.CreateSession(store.Session{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: launch}); err != nil {
+		t.Fatal(err)
+	}
+	sess, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Delete("sess-A"); err != nil {
+		t.Fatal(err)
+	}
+
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	captured, err := p.captureAgentSessionIDs([]store.Session{sess}, map[string]tmux.Pane{"sess-A": {PID: 123}})
+	if err != nil || captured != 0 {
+		t.Fatalf("captured %d, err %v; want 0 and no error", captured, err)
+	}
+}
+
+// A bound then restarted after the snapshot keeps its retired conversation
+// from B, the way the snapshot's own retired ids do.
+func TestCaptureAgentSessionIDsKeepsAConversationRetiredDuringThePass(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+
+	codexHome := t.TempDir()
+	t.Setenv("CODEX_HOME", codexHome)
+	cwd := t.TempDir()
+
+	base := time.Now().Add(-time.Minute)
+	aLaunch := base.Add(100 * time.Millisecond)
+	bLaunch := base.Add(600 * time.Millisecond)
+	writeCodexRollout(t, filepath.Join(codexHome, "sessions", "rollout-A.jsonl"), "A-id", cwd, base.Add(time.Second))
+
+	for _, sess := range []store.Session{
+		{ID: "sess-A", Name: "a", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: aLaunch},
+		{ID: "sess-B", Name: "b", Tool: "codex", Cwd: cwd, Group: "g", Status: "idle", CreatedAt: bLaunch},
+	} {
+		if err := st.CreateSession(sess); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sessA, err := st.Get("sess-A")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.BindAgentSessionID("sess-A", "A-id", time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.RestartAgent("sess-A", "", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	stale := []store.Session{sessA, sessB}
+	p := &Runner{store: st, sessionStores: map[string]string{"codex": "codex"}}
+	panes := map[string]tmux.Pane{"sess-A": {PID: 123}, "sess-B": {PID: 456}}
+	if _, err := p.captureAgentSessionIDs(stale, panes); err != nil {
+		t.Fatal(err)
+	}
+
+	gotB, err := st.Get("sess-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotB.AgentSessionID != "" {
+		t.Fatalf("session B captured %q, want nothing: that conversation is A's retired one", gotB.AgentSessionID)
+	}
+}
+
 // A restarted codex session still has its old rollout sitting in the same
 // directory, written moments before the restart and so inside the capture
 // window. Capture must bind the fresh conversation, not walk the session
@@ -2102,6 +2251,73 @@ func TestStoppedReflowReportsUnexecutedWork(t *testing.T) {
 	}
 	if ran {
 		t.Fatal("stopped runner executed work")
+	}
+}
+
+func TestPollerKeepsStatsSamplingOnWallClock(t *testing.T) {
+	m := buildModel(t)
+	// A fresh runner has never sampled, so the first pass does.
+	first := m.poller.Step()
+	if first.Err != nil {
+		t.Fatal(first.Err)
+	}
+	if !first.Snapshot.SnapOK {
+		t.Fatal("a pass with no sample yet should sample the machine gauges")
+	}
+	// Passes inside the spacing - the poked refreshes an effect completion
+	// issues, landing seconds after the last sample - must not resample;
+	// pass parity would sample every second one of them.
+	m.poller.statsSampledAt = time.Now().Add(-statsSampleEvery + time.Second)
+	freshPoke := m.poller.Step()
+	if freshPoke.Err != nil {
+		t.Fatal(freshPoke.Err)
+	}
+	if freshPoke.Snapshot.SnapOK {
+		t.Fatal("a pass inside the spacing must not advance the stats cadence")
+	}
+	// A pass after the spacing - with the wake-jitter slack - samples and
+	// stamps, so the next pass inside the spacing does not.
+	m.poller.statsSampledAt = time.Now().Add(-statsSampleEvery)
+	due := m.poller.Step()
+	if due.Err != nil {
+		t.Fatal(due.Err)
+	}
+	if !due.Snapshot.SnapOK {
+		t.Fatal("a due pass should sample the machine gauges")
+	}
+	withinSpacing := m.poller.Step()
+	if withinSpacing.Err != nil {
+		t.Fatal(withinSpacing.Err)
+	}
+	if withinSpacing.Snapshot.SnapOK {
+		t.Fatal("the pass after a sample must not resample")
+	}
+	// A pass that fails after deciding to sample - ClaimPoller is the first
+	// store call - must leave the sample due, so the retrying pass takes it
+	// instead of skipping a fresh one.
+	m.poller.statsSampledAt = time.Now().Add(-statsSampleEvery)
+	m.poller.heartbeatAt = time.Now().Add(-store.PollerHeartbeatPeriod - time.Second)
+	if err := m.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if failed := m.poller.Step(); failed.Err == nil {
+		t.Fatal("a closed store should fail the pass")
+	}
+	if !m.poller.statsSampledAt.Before(time.Now().Add(-statsSampleEvery + statsSampleSlack + time.Second)) {
+		t.Fatal("a failed pass consumed the due sample")
+	}
+	fresh, err := store.Open(m.dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fresh.Close()
+	m.poller.store = fresh
+	retry := m.poller.Step()
+	if retry.Err != nil {
+		t.Fatal(retry.Err)
+	}
+	if !retry.Snapshot.SnapOK {
+		t.Fatal("the pass after a failed one should take the still-due sample")
 	}
 }
 

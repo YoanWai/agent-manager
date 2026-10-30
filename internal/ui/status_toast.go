@@ -36,12 +36,13 @@ func (m *Model) statusToast() []string {
 	}
 	inner := width - toastChromeX
 	border := cardBorderStyle()
+	g := m.chrome()
 	edge := border.Render("│")
-	rows := []string{paint(border.Render("╭"+strings.Repeat("─", width-2)+"╮"), width, blockHex())}
+	rows := []string{paint(border.Render(g.TopLeftGlyph+strings.Repeat("─", width-2)+g.TopRightGlyph), width, blockHex())}
 	for _, line := range strings.Split(ansi.Wordwrap(text, inner, ""), "\n") {
 		rows = append(rows, paint(edge+" "+padRight(line, inner)+" "+edge, width, blockHex()))
 	}
-	return append(rows, paint(border.Render("╰"+strings.Repeat("─", width-2)+"╯"), width, blockHex()))
+	return append(rows, paint(border.Render(g.BottomLeftGlyph+strings.Repeat("─", width-2)+g.BottomRightGlyph), width, blockHex()))
 }
 
 // overlayTopRight splices a pre-painted box over the frame's rows, anchored

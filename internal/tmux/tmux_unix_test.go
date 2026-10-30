@@ -69,7 +69,8 @@ func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() { driver.Kill(id) })
-	if err := driver.RunInPane(id, nil, "sleep 30"); err != nil {
+	// The profile's PATH holds neither rm nor sh, which the relaunch needs.
+	if err := driver.RunInPane(id, map[string]string{"AM_SECRET": "s3cret-value", "PATH": "/nonexistent-am"}, "/bin/sleep 30"); err != nil {
 		t.Fatalf("RunInPane: %v", err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -83,12 +84,23 @@ func TestRunInPaneLeavesTheAgentInFrontAndNoScript(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	left, err := filepath.Glob(filepath.Join(os.TempDir(), "am-relaunch-"+id+"*"))
+	var left []string
+	for _, pattern := range []string{"am-relaunch-" + id + "*", "am-env-" + id + "*", "am-launch-" + id + "*"} {
+		matches, err := filepath.Glob(filepath.Join(os.TempDir(), pattern))
+		if err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, matches...)
+	}
+	if len(left) != 0 {
+		t.Fatalf("launch scripts left behind: %v", left)
+	}
+	screen, err := tmuxCmd("capture-pane", "-p", "-t", "am_"+id+":.0").Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(left) != 0 {
-		t.Fatalf("relaunch scripts left behind: %v", left)
+	if strings.Contains(string(screen), "s3cret-value") {
+		t.Fatalf("a relaunch typed an environment value into the pane:\n%s", screen)
 	}
 }
 
@@ -219,11 +231,28 @@ func TestSessionOfProcessWalksUpToAManagedPane(t *testing.T) {
 		t.Fatalf("no sleep process under pane pid %s", panePID)
 	}
 
-	if got, err := driver.SessionOfProcess(child); err != nil || got != id {
-		t.Fatalf("SessionOfProcess(pane child) = %q, %v; want %q", got, err, id)
+	parent, _ := strconv.Atoi(panePID)
+	if got, seen, err := driver.SessionOfProcess(child, parent); err != nil || !seen || got != id {
+		t.Fatalf("SessionOfProcess(pane child) = %q, %v, %v; want %q, seen", got, seen, err, id)
 	}
-	if got, err := driver.SessionOfProcess(os.Getpid()); err != nil || got != "" {
-		t.Fatalf("SessionOfProcess(test process) = %q, %v; want no session", got, err)
+	if got, seen, err := driver.SessionOfProcess(os.Getpid(), os.Getppid()); err != nil || !seen || got != "" {
+		t.Fatalf("SessionOfProcess(test process) = %q, %v, %v; want no session, seen", got, seen, err)
+	}
+}
+
+// Inside a PID namespace the process reads its own pid, which the table it
+// lists names with another parent, if at all. Such a walk would start from a
+// stranger, so it reports that it saw nothing.
+func TestSessionOfProcessDistrustsATableThatDisagreesWithTheCaller(t *testing.T) {
+	driver := requireTmux(t)
+	id := "proc" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "sleep 60", nil, 80, 24); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if got, seen, err := driver.SessionOfProcess(os.Getpid(), os.Getppid()+1); err != nil || seen || got != "" {
+		t.Fatalf("SessionOfProcess with a wrong parent = %q, %v, %v; want not seen", got, seen, err)
 	}
 }
 
@@ -465,4 +494,61 @@ func TestPaneSendLockHoldsAcrossOpens(t *testing.T) {
 		t.Fatalf("released lock not taken again: %v", err)
 	}
 	again()
+}
+
+// Each launch unsets what the previous one in the pane exported, so a key
+// dropped from the profile since is gone, while the user's own variables
+// and the values still in it stay quoted whole.
+func TestExportLinesDropsTheKeysThePreviousLaunchExported(t *testing.T) {
+	script := exportLines(map[string]string{"B": "it's second", "A": "fir st"})
+	cmd := exec.Command("sh", "-c", script+`printf '%s|%s|%s|%s|%s' "$A" "$B" "${AM_SECRET-unset}" "$MINE" "$`+envKeysVar+`"`)
+	cmd.Env = append(os.Environ(), envKeysVar+"=AM_SECRET B", "AM_SECRET=old", "B=old", "MINE=kept")
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("sh: %v", err)
+	}
+	if got, want := string(out), "fir st|it's second|unset|kept|A B"; got != want {
+		t.Fatalf("exported env = %q, want %q", got, want)
+	}
+}
+
+// The review's case: a key removed from the profile between launches must
+// not reach the relaunched agent through the shell the first launch left.
+func TestRunInPaneDropsAKeyTheProfileNoLongerHas(t *testing.T) {
+	driver := requireTmux(t)
+	id := "drop" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "true", map[string]string{"AM_SECRET": "old-value", "AM_KEEP": "one"}, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	waitForPane(t, driver, id, relaunchHint)
+	marker := filepath.Join(t.TempDir(), "ran")
+	command := `printf '%s|%s' "${AM_SECRET-unset}" "$AM_KEEP" > ` + ShellQuote(marker+".part") + " && mv " + ShellQuote(marker+".part") + " " + ShellQuote(marker)
+	if err := driver.RunInPane(id, map[string]string{"AM_KEEP": "two"}, command); err != nil {
+		t.Fatalf("RunInPane: %v", err)
+	}
+	if got := waitForFile(t, driver, id, marker); got != "unset|two" {
+		t.Fatalf("relaunched agent saw %q, want the dropped key unset and the kept one updated", got)
+	}
+}
+
+// A terminal has no command, but a profile still reaches its shell, and the
+// script that carried it is gone.
+func TestCreateExportsAProfileIntoATerminal(t *testing.T) {
+	driver := requireTmux(t)
+	id := "term" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "", map[string]string{"AM_SECRET": "s3cret-value"}, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+	marker := filepath.Join(t.TempDir(), "ran")
+	if err := driver.SendKeys(id, `printf %s "$AM_SECRET" > `+ShellQuote(marker+".part")+" && mv "+ShellQuote(marker+".part")+" "+ShellQuote(marker), "Enter"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	if got := waitForFile(t, driver, id, marker); got != "s3cret-value" {
+		t.Fatalf("terminal shell saw AM_SECRET = %q", got)
+	}
+	if _, err := os.Stat(launchScriptPath(id)); !os.IsNotExist(err) {
+		t.Fatalf("launch script left behind: %v", err)
+	}
 }

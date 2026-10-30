@@ -271,3 +271,94 @@ func TestMoveCompletionDoesNotCloseReopenedSameTargetDialog(t *testing.T) {
 		t.Fatalf("accepted move did not reconcile: %+v, %v", got, err)
 	}
 }
+
+func TestMoveArchivedSessionEnterPreservesCurrentGroup(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "hidden/deep", "target")
+	createSession(t, m, "kept", t.TempDir(), "hidden/deep")
+	sess := sessionRow(t, m, "kept").sess
+	if err := m.services.store.SetArchived(sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.services.store.SetGroupArchived("hidden", true); err != nil {
+		t.Fatal(err)
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, "kept")
+	m.openMove()
+	if got := m.selectedGroupPath(); got != "hidden/deep" {
+		t.Errorf("initial group=%q", got)
+	}
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got, err := m.services.store.Get(sess.ID)
+	if err != nil || got.Group != "hidden/deep" {
+		t.Fatalf("move=%+v err=%v", got, err)
+	}
+	m.selectSessionRow(t, "kept")
+	m.openMove()
+	pickGroup(t, m, "target")
+	_, cmd = m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got, err = m.services.store.Get(sess.ID)
+	if err != nil || got.Group != "target" || !got.Archived {
+		t.Fatalf("explicit move=%+v err=%v", got, err)
+	}
+}
+
+func TestMoveArchivedNestedTerminalEnterPreservesParent(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "hidden/deep")
+	createSession(t, m, "parent", t.TempDir(), "hidden/deep")
+	m.selectSessionRow(t, "parent")
+	child := spawnTerminal(t, m)
+	for _, sess := range m.workspace.sessions {
+		if err := m.services.store.SetArchived(sess.ID, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := m.services.store.SetGroupArchived("hidden", true); err != nil {
+		t.Fatal(err)
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectSessionRow(t, child.Name)
+	m.openMove()
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	got, err := m.services.store.Get(child.ID)
+	if err != nil || got.Group != child.Group || got.ParentID != child.ParentID || !got.Archived {
+		t.Fatalf("move=%+v err=%v", got, err)
+	}
+}
+
+func TestMoveArchivedGroupEnterPreservesCurrentParent(t *testing.T) {
+	m := buildModel(t)
+	seedGroups(t, m, "hidden/deep")
+	if err := m.services.store.SetGroupArchived("hidden", true); err != nil {
+		t.Fatal(err)
+	}
+	m.rail.SetArchived(true)
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "hidden/deep")
+	m.openMove()
+	if got := m.selectedGroupPath(); got != "hidden" {
+		t.Fatalf("initial parent=%q", got)
+	}
+	_, cmd := m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m.applyCmd(t, cmd)
+	groups, err := m.services.store.Groups()
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, group := range groups {
+		if group.Name == "hidden/deep" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("group moved: %v", groups)
+	}
+}

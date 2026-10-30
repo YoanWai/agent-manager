@@ -57,6 +57,7 @@ type feedMsg struct {
 	messages []feed.Message
 	failed   bool
 	manual   bool
+	startup  bool
 	err      error
 }
 
@@ -106,11 +107,17 @@ func (m *Model) checkFeed() tea.Msg {
 	return m.fetchFeed(false)
 }
 
+func (m *Model) checkStartupFeed() tea.Msg {
+	msg := m.fetchFeed(false)
+	msg.startup = true
+	return msg
+}
+
 func (m *Model) refreshFeed() tea.Msg {
 	return m.fetchFeed(true)
 }
 
-func (m *Model) fetchFeed(force bool) tea.Msg {
+func (m *Model) fetchFeed(force bool) feedMsg {
 	dir, err := config.Dir()
 	if err != nil {
 		return feedMsg{failed: true, manual: force, err: err}
@@ -190,6 +197,9 @@ func (m *Model) routeNoticesMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, tea.Batch(m.checkForUpdate, m.checkFeed, m.updateTick()))
 
 	case feedMsg:
+		if msg.startup {
+			m.notices.feedPending = false
+		}
 		if msg.manual {
 			m.finishNoticeRefresh()
 		}

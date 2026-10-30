@@ -56,6 +56,7 @@ type spawnRequest struct {
 	images       []imageAttachment
 	choice       config.Choice
 	base         string
+	environment  string
 }
 
 func (spawnRequest) effectRequest() {}
@@ -86,6 +87,7 @@ type groupRequest struct {
 	dir       string
 	worktree  string
 	base      string
+	env       string
 	gen       int
 	rawDir    string
 	fallbacks []string
@@ -192,13 +194,14 @@ func (s effectServices) runSpawn(request spawnRequest) (effectResult, error) {
 	}
 	launched, err := s.lifecycle.Spawn(sessioncmd.SpawnRequest{
 		Session: store.Session{
-			ID:       id,
-			Name:     request.name,
-			Tool:     request.toolName,
-			Cwd:      dir,
-			Group:    request.group,
-			ParentID: request.parentID,
-			Choice:   request.choice,
+			ID:          id,
+			Name:        request.name,
+			Tool:        request.toolName,
+			Cwd:         dir,
+			Group:       request.group,
+			ParentID:    request.parentID,
+			Choice:      request.choice,
+			Environment: request.environment,
 		},
 		Tool:     tool,
 		Plan:     plan,
@@ -226,7 +229,7 @@ func (s effectServices) runGroup(request groupRequest) (effectResult, error) {
 			return groupEffectResult{}, errors.New("default path does not exist: " + dir)
 		}
 	}
-	if err := s.store.AddGroup(request.path, dir, request.worktree, request.base); err != nil {
+	if err := s.store.AddGroup(request.path, dir, request.worktree, request.base, request.env); err != nil {
 		return groupEffectResult{}, err
 	}
 	return groupEffectResult{path: request.path, dir: dir, worktree: request.worktree}, nil
@@ -262,12 +265,14 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 		// New sessions start as starting, which attention excludes; clear so
 		// the row the spawn just created is on screen.
 		m.rail.ClearStatusFilter()
+		reveal := false
 		switch request.kind {
 		case spawnForm:
 			// A form opened later is a newer dialog the completion must not
 			// close; only the one that dispatched this spawn is closed.
 			if m.mode == modeForm && m.form.prompt.gen == request.composerGen && m.form.prompt.input.Value() == request.draft && m.form.Name() == request.draftName && m.form.Dir() == request.draftDir && len(m.form.prompt.attachments) == 0 {
 				m.mode = modeList
+				reveal = true
 			}
 		case spawnQuick:
 			if m.quick.active && m.quick.gen == request.composerGen && m.quick.input.Value() == request.draft && len(m.quick.attachments) == 0 {
@@ -275,9 +280,14 @@ func (m *Model) applySpawnEffect(request spawnRequest, result spawnEffectResult,
 			}
 		}
 		m.rebuildRows()
+		if reveal {
+			m.applyRailStateDecision(m.rail.RevealGroup(sess.Group))
+		}
+		if reveal || request.kind == spawnShell {
+			m.focusSession(sess.ID)
+		}
 		if request.kind == spawnShell {
 			m.ledger.terminalKeyAt = time.Now()
-			m.focusSession(sess.ID)
 		}
 		if result.label != nil {
 			m.reportErr(result.label.Error())
@@ -359,6 +369,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	m.workspace.groupPaths[result.path] = result.dir
 	m.workspace.groupWorktrees = setGroupChoice(m.workspace.groupWorktrees, result.path, result.worktree)
 	m.workspace.groupBases = setGroupChoice(m.workspace.groupBases, result.path, request.base)
+	m.workspace.groupEnvs = setGroupChoice(m.workspace.groupEnvs, result.path, request.env)
 	m.rebuildRows()
 	// Presentation (closing the form, revealing and selecting the new group)
 	// lands only when the dispatching group form is still the dialog on
@@ -368,6 +379,7 @@ func (m *Model) applyGroupEffect(request groupRequest, result groupEffectResult,
 	if m.mode == modeGroupForm && m.groupForm.Gen() == request.gen && m.groupForm.Name() == request.draftName && m.groupForm.Dir() == request.draftDir {
 		m.clearErr()
 		m.mode = modeList
+		m.rail.SetHideEmptyGroups(false)
 		m.applyRailStateDecision(m.rail.RevealGroup(result.path))
 	}
 	return m.refreshCmd()

@@ -9,10 +9,11 @@ func TestClickOnAMessageTitleSelectsIt(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 34
+	m.update.latest = "v9.9.9"
 	m.openNotices("")
 	notices := m.activeNotices()
 	if len(notices) < 2 {
-		t.Fatalf("test setup: a fresh model shows two notices, has %d", len(notices))
+		t.Fatalf("test setup: an update and the welcome make two notices, has %d", len(notices))
 	}
 	x, y := paintedCell(t, m, notices[1].Title)
 	if m = leftClick(m, x, y); m.notices.Cursor() != 1 || m.mode != modeNotices {

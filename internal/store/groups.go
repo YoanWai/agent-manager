@@ -35,14 +35,14 @@ func (s *Store) CreateGroup(name, path string) error {
 	return err
 }
 
-func (s *Store) AddGroup(name, path, worktree, base string) error {
+func (s *Store) AddGroup(name, path, worktree, base, environment string) error {
 	if name == "" {
 		return errors.New("group name cannot be empty")
 	}
 	res, err := s.db.Exec(
-		`INSERT INTO groups (name, path, worktree, base, sort_order)
-		 VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
-		 ON CONFLICT(name) DO NOTHING`, name, path, worktree, base)
+		`INSERT INTO groups (name, path, worktree, base, environment, sort_order)
+		 VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort_order)+1, 0) FROM groups))
+		 ON CONFLICT(name) DO NOTHING`, name, path, worktree, base, environment)
 	if err != nil {
 		return err
 	}
@@ -256,6 +256,14 @@ func (s *Store) deleteGroups(groups []Group, selected func(Group) bool) ([]strin
 	return removed, nil
 }
 
+func ArchivedGroups(groups []Group) map[string]bool {
+	archived := make(map[string]bool, len(groups))
+	for _, group := range groups {
+		archived[group.Name] = group.Archived
+	}
+	return archived
+}
+
 // EffectivelyArchived reports whether a group path counts as archived,
 // either directly or because an ancestor group was archived as a whole.
 func EffectivelyArchived(archived map[string]bool, path string) bool {
@@ -300,10 +308,13 @@ type Group struct {
 	// diffs against, or "" to inherit from the nearest ancestor with one,
 	// else to detect the repo's default branch.
 	Base string
+	// Environment is the environment profile the group's spawns preselect,
+	// or "" to inherit from the nearest ancestor with one.
+	Environment string
 }
 
 func (s *Store) Groups() ([]Group, error) {
-	rows, err := s.db.Query(`SELECT name, path, archived, worktree, base FROM groups ORDER BY sort_order, name`)
+	rows, err := s.db.Query(`SELECT name, path, archived, worktree, base, environment FROM groups ORDER BY sort_order, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +323,7 @@ func (s *Store) Groups() ([]Group, error) {
 	for rows.Next() {
 		var g Group
 		var archived int
-		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree, &g.Base); err != nil {
+		if err := rows.Scan(&g.Name, &g.Path, &archived, &g.Worktree, &g.Base, &g.Environment); err != nil {
 			return nil, err
 		}
 		g.Archived = archived != 0
@@ -335,8 +346,16 @@ func (s *Store) SetGroupBase(name, base string) error {
 	return err
 }
 
+// SetGroupEnvironment stores the environment profile a group's spawns
+// preselect, or "" to inherit.
+func (s *Store) SetGroupEnvironment(name, environment string) error {
+	_, err := s.db.Exec(`UPDATE groups SET environment = ? WHERE name = ?`, environment, name)
+	return err
+}
+
 // SetGroupArchived flips the archived flag on a group, every descendant
-// group, and every session in the subtree, in one transaction.
+// group, and every session in the subtree. Restoring also clears ancestor
+// group flags so restored rows have a visible home.
 func (s *Store) SetGroupArchived(path string, archived bool) error {
 	if path == "" {
 		return fmt.Errorf("cannot archive the root group")
@@ -358,5 +377,19 @@ func (s *Store) SetGroupArchived(path string, archived bool) error {
 		flag, path, likePath); err != nil {
 		return err
 	}
+	if !archived {
+		if err := unarchiveGroupAncestors(tx, path); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+func unarchiveGroupAncestors(tx *sql.Tx, path string) error {
+	var err error
+	eachAncestor(path, func(ancestor string) bool {
+		_, err = tx.Exec(`UPDATE groups SET archived = 0 WHERE name = ?`, ancestor)
+		return err == nil
+	})
+	return err
 }

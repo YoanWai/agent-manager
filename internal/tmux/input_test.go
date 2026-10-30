@@ -60,6 +60,40 @@ func TestSubmitTextReturnsAComposerItCouldNotRead(t *testing.T) {
 	}
 }
 
+// A pane that cannot be captured after the Enter could be redrawing, so the
+// wait stops on the error rather than timing it out as a still pane and
+// pressing Enter again.
+func TestSubmitTextReturnsAPaneItCouldNotCapture(t *testing.T) {
+	driver := requireTmux(t)
+	id := "uncaptured" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, "/tmp", "cat", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	calls, afterKill := 0, 0
+	_, err := driver.SubmitTextContext(context.Background(), id, "hello world", func() (bool, error) {
+		calls++
+		switch {
+		case calls == 2:
+			// The first read after the Enter: the pane goes away under it.
+			if err := driver.Kill(id); err != nil {
+				t.Errorf("Kill: %v", err)
+			}
+			afterKill++
+		case calls > 2:
+			afterKill++
+		}
+		return true, nil
+	})
+	if err == nil || errors.Is(err, ErrUnsubmitted) {
+		t.Fatalf("SubmitTextContext = %v, want the failed capture", err)
+	}
+	if afterKill != 1 {
+		t.Fatalf("the composer was read %d times after the pane went away, want the wait to stop at the first failed capture", afterKill)
+	}
+}
+
 // pasteReady follows the paste-mode request, so a pane showing it has bracketed paste on.
 const pasteReady = "paste-ready"
 
@@ -170,6 +204,31 @@ func TestSendTextWaitsOutTheWindowWhenTheBaselineCaptureFails(t *testing.T) {
 	}
 }
 
+// gemini and hermes read an Enter right after a paste as a line break in it.
+func TestSubmitTextLeavesAGapBetweenThePasteAndTheEnter(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	stub := t.TempDir() + "/tmux"
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	var reads []time.Time
+	_, err := driver.SubmitTextContext(context.Background(), "x1", "hello world", func() (bool, error) {
+		reads = append(reads, time.Now())
+		return len(reads) == 1, nil
+	})
+	if err != nil {
+		t.Fatalf("SubmitTextContext: %v", err)
+	}
+	if len(reads) < 2 {
+		t.Fatalf("the composer was read %d times, want once for the paste and once after the Enter", len(reads))
+	}
+	if gap := reads[1].Sub(reads[0]); gap < pasteSettle {
+		t.Fatalf("the Enter followed the drawn paste within %v, want at least %v", gap, pasteSettle)
+	}
+}
+
 // A clipboard paste forwarded into a focused pane must arrive inside the
 // pane's bracketed-paste markers with no Enter after it, so agent composers
 // keep multi-line text instead of submitting on the first newline.
@@ -181,9 +240,10 @@ func TestPasteDeliversWithoutSubmitting(t *testing.T) {
 	t.Cleanup(func() { os.Remove(marker) })
 
 	text := "first line\nsecond line\n"
-	// paste-buffer converts newlines to carriage returns, the same bytes a
-	// terminal emits when pasting; composers read them as line breaks.
-	want := "\x1b[200~first line\rsecond line\r\x1b[201~"
+	// -r keeps the buffer's own linefeeds, so the pane reads the paste exactly
+	// as it was written. A carriage return here would arrive as a typed Enter
+	// inside the markers, which an agent's paste detection can take as a submit.
+	want := "\x1b[200~first line\nsecond line\n\x1b[201~"
 	command := "stty raw -echo; printf '\\033[?2004h" + pasteReady + "'; dd bs=1 count=" +
 		strconv.Itoa(len(want)+1) + " of=" + ShellQuote(marker) + " 2>/dev/null"
 	if err := driver.Create(id, paneDir(), command, nil, 0, 0); err != nil {

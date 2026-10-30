@@ -1280,7 +1280,7 @@ func TestFocusLeftUnfocusesTerminalAtPromptHead(t *testing.T) {
 	}
 }
 
-// The beta setting turns the whole pair off: right no longer focuses,
+// The setting turns the whole pair off: right no longer focuses,
 // and left at the prompt head forwards to the agent instead of leaving.
 func TestArrowStepSettingDisablesThePair(t *testing.T) {
 	m := buildModel(t)

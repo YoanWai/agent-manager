@@ -20,7 +20,7 @@ func (m *Model) railFrame() string {
 func railRow(rail, needle string) int {
 	at := -1
 	for i, line := range strings.Split(rail, "\n") {
-		if !strings.Contains(line, needle) {
+		if !strings.Contains(line, needle+" ") {
 			continue
 		}
 		if at >= 0 {

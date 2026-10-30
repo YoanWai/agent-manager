@@ -2,8 +2,6 @@ package notices
 
 import (
 	"fmt"
-	"net/url"
-	"runtime"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -83,7 +81,7 @@ func (p Panel) Active(src Sources) []Notice {
 			Releases:      releaseRange.Releases,
 			RangeComplete: releaseRange.Complete,
 			After: []string{
-				"u updates once to " + src.Update.Latest + " and restarts; every release above is included.",
+				"`Press u to update to " + src.Update.Latest + " and restart.` Every release above is included.",
 				"Enter opens the full release notes.",
 			},
 			URL: src.Update.URL,
@@ -160,24 +158,6 @@ func (p Panel) Active(src Sources) []Notice {
 			Body:  src.welcomeBody(),
 			URL:   RepoURL + "#readme",
 		},
-		Notice{
-			ID:    ArrowStep,
-			Glyph: g.BetaGlyph,
-			Tint:  TintWarm,
-			Title: "New in beta: step in and out with ← →",
-			Body: []string{
-				"→ on a list row steps in: it focuses the session, or opens the group.",
-				"← steps out: it closes the group, and inside a focused session it",
-				"returns here - only while the caret sits at the start of the agent's",
-				"prompt, where ← would do nothing. Anywhere else in the prompt it",
-				"moves the caret as always.",
-				"",
-				"We are testing this. If a ← ever lands somewhere you did not expect,",
-				"Enter here opens a prefilled report, and Settings (s) has a",
-				"\"←→ step in/out\" row that turns the pair off.",
-			},
-			URL: arrowStepFeedbackURL(src.Update.Version),
-		},
 	)
 
 	kept := notices[:0]
@@ -187,13 +167,6 @@ func (p Panel) Active(src Sources) []Notice {
 		}
 	}
 	return kept
-}
-
-// arrowStepFeedbackURL prefills a report scoped to the beta ←→ pair, so
-// feedback on it arrives labeled without the reporter typing the context.
-func arrowStepFeedbackURL(version string) string {
-	body := fmt.Sprintf("**Version:** %s\n**OS:** %s/%s\n\n**Area**\n←→ step in/out (beta)\n\n**What happened:**\n", version, runtime.GOOS, runtime.GOARCH)
-	return RepoURL + "/issues/new?body=" + url.QueryEscape(body)
 }
 
 // The welcome names the keys as the tables bind them on this run: the first
@@ -232,7 +205,7 @@ func (src Sources) firstListKey(action string) string {
 	if len(keys) == 0 {
 		return ""
 	}
-	return keys[0].Glyph()
+	return presentation.KeyLabel(src.GlyphMode, keys[0].Glyph())
 }
 
 func (src Sources) firstListKeys(actions ...string) string {
