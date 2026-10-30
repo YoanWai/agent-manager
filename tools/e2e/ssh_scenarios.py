@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -23,7 +24,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from scenarios import (FAKE_BIN, FAKE_CLI, READY_MARKER, capture, config_fixture_text,
+from scenarios import (FAKE_BIN, FAKE_CLI, RAIL_WIDTH, READY_MARKER, capture, config_fixture_text,
                        ensure_binary, fake_cli_script, frame, key, last_frame, preview_of, profile_dir,
                        seed_store)
 from smoke import Sandbox
@@ -246,6 +247,12 @@ def lifecycle(sandbox, remote, agent_id):
 
 def attach(sandbox, remote, agent_id):
     """Attach runs ssh -t in this terminal; the remote pane fills it until detach."""
+    # The remote write can finish before the manager polls its updated roster.
+    # Navigating the stale list lets that poll move the selection under attach.
+    sandbox.wait('remote-restored-row', lambda: capture(sandbox),
+                 lambda value: any(re.search(re.escape(REMOTE_AGENT) + r'\s+idle\b',
+                                             line[:RAIL_WIDTH])
+                                   for line in value.splitlines()))
     select_remote_agent(sandbox)
     sandbox.wait('remote-pane-ready', lambda: remote_pane_code(sandbox, remote, agent_id), lambda code: code == '0')
     key(sandbox, 'A')
