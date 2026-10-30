@@ -57,7 +57,6 @@ func Divider(label string, width int, section, rule lipgloss.Style, marker strin
 	return head + rule.Render(strings.Repeat("─", dashes))
 }
 
-// Window returns a bounded slice and marks content hidden above or below it.
 func Window(lines []string, rows, offset int, overflow lipgloss.Style) []string {
 	if rows < 1 {
 		rows = 1

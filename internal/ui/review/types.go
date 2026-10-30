@@ -318,7 +318,6 @@ const (
 	NavigationBranchPicker
 	NavigationBasePicker
 	NavigationOpenEditor
-	NavigationQuit
 )
 
 type KeyContext struct {

@@ -1,6 +1,9 @@
 package ui
 
 import (
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"strings"
 
 	diffmodel "github.com/YoanWai/agent-manager/internal/diff/model"
@@ -87,25 +90,25 @@ func (m *Model) previewReview(width, height int, comment string, sent bool) []st
 	bodyHeight := max(height-3-statusRows, 4)
 	fileWidth := max(previewFileWidth, width/4)
 	codeWidth := width - fileWidth - 2
-	review.PrepareLayout(ctx, max(codeWidth-2*contentGutter, 1), bodyHeight-2)
-	files := append([]string{"", strings.Repeat(" ", railInset) + subtleStyle().Render("files")},
-		indentLines(splitLines(review.FileList(ctx, fileWidth-2*railGutter, bodyHeight-2).Text), railInset)...)
-	code := append([]string{"", "  " + subtleStyle().Render(escapeControlsInline(review.CodeTitle()))},
-		indentLines(splitLines(review.Code(ctx, codeWidth-2*contentGutter, bodyHeight-2).Text), contentGutter)...)
+	review.PrepareLayout(ctx, max(codeWidth-2*setupContentGutter, 1), bodyHeight-2)
+	files := append([]string{"", strings.Repeat(" ", setupRailInset) + uitheme.SubtleStyle().Render("files")},
+		uitheme.IndentLines(uitheme.SplitLines(review.FileList(ctx, fileWidth-2*uiframe.RailGutter, bodyHeight-2).Text), setupRailInset)...)
+	code := append([]string{"", "  " + uitheme.SubtleStyle().Render(presentation.EscapeControlsInline(review.CodeTitle()))},
+		uitheme.IndentLines(uitheme.SplitLines(review.Code(ctx, codeWidth-2*setupContentGutter, bodyHeight-2).Text), setupContentGutter)...)
 	edge := make([]string, bodyHeight)
 	for i := range edge {
-		edge[i] = railEdgeCell(panelHex())
+		edge[i] = railEdgeCell(uitheme.PanelHex())
 	}
 	out := []string{
-		paint(review.Header(ctx, target.Name, width), width, backdropHex()),
+		uitheme.Paint(review.Header(ctx, target.Name, width), width, uitheme.BackdropHex()),
 		m.boundedRuleRow(fileWidth+1, width, "▀"),
 	}
-	out = append(out, joinColumns(edge, paintRows(files, fileWidth-1, bodyHeight, panelHex()), m.vruleColumn(bodyHeight),
-		m.bleedColumn(bodyHeight), paintRows(code, codeWidth, bodyHeight, backdropHex()))...)
+	out = append(out, uitheme.JoinColumns(edge, uitheme.PaintRows(files, fileWidth-1, bodyHeight, uitheme.PanelHex()), m.vruleColumn(bodyHeight),
+		m.bleedColumn(bodyHeight), uitheme.PaintRows(code, codeWidth, bodyHeight, uitheme.BackdropHex()))...)
 	out = append(out, m.boundedRuleRow(fileWidth+1, width, "▄"))
 	if sent {
-		done := doneStyle().Render(" " + m.glyphs().DiffDoneGlyph + " sent 1 comment to login redirect")
-		out = append(out, paint(done+mutedStyle().Render(" · it works on it while you read on"), width, backdropHex()))
+		done := uitheme.DoneStyle().Render(" " + m.glyphs().DiffDoneGlyph + " sent 1 comment to login redirect")
+		out = append(out, uitheme.Paint(done+uitheme.MutedStyle().Render(" · it works on it while you read on"), width, uitheme.BackdropHex()))
 	}
 	return out
 }

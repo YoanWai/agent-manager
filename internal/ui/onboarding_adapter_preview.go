@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"strings"
 	"time"
 
@@ -42,17 +44,17 @@ func (m *Model) setupPreview(p uionboarding.Preview) []string {
 		bodyRows := max(rows-3-len(scene.foot), 4)
 		out = append(out, m.previewBody(p.Choices, scene, inner, bodyRows)...)
 		for _, row := range scene.foot {
-			out = append(out, paint(row, inner, backdropHex()))
+			out = append(out, uitheme.Paint(row, inner, uitheme.BackdropHex()))
 		}
 	}
 	for len(out) < rows {
-		out = append(out, paint("", inner, backdropHex()))
+		out = append(out, uitheme.Paint("", inner, uitheme.BackdropHex()))
 	}
 	return m.previewWindow(out[:rows], p.Width)
 }
 
 func (m *Model) previewWindow(rows []string, width int) []string {
-	border := cardBorderStyle()
+	border := uiframe.LiveChrome(m.prefs.glyphMode).Border
 	chrome := m.chrome()
 	edge := border.Render("│")
 	out := []string{border.Render(chrome.TopLeftGlyph + strings.Repeat("─", width-2) + chrome.TopRightGlyph)}
@@ -63,8 +65,10 @@ func (m *Model) previewWindow(rows []string, width int) []string {
 }
 
 const (
-	previewLogin = "preview-login"
-	previewDark  = "preview-dark"
+	setupContentGutter = 2
+	setupRailInset     = 1
+	previewLogin       = "preview-login"
+	previewDark        = "preview-dark"
 )
 
 // previewSessions are the sample agents, spread over the agents left checked.
@@ -87,7 +91,7 @@ func previewSessions(agents []string) []uirail.Session {
 
 // previewHeader is the window's own wordmark and its agents by state.
 func (m *Model) previewHeader(sessions []uirail.Session, width int) string {
-	left := " " + lipgloss.NewStyle().Foreground(colorAccent()).Bold(true).Render("agent-manager")
+	left := " " + lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true).Render("agent-manager")
 	tally := map[string]int{}
 	for _, session := range sessions {
 		tally[session.Status]++
@@ -95,14 +99,14 @@ func (m *Model) previewHeader(sessions []uirail.Session, width int) string {
 	var counts []string
 	for _, state := range []string{status.Working, status.Waiting, status.Finished, status.Idle} {
 		mark := lipgloss.NewStyle().Foreground(statusColor(state)).Render(m.glyphs().StatusGlyph(state))
-		counts = append(counts, mark+" "+valueStyle().Render(fmt.Sprint(tally[state])))
+		counts = append(counts, mark+" "+uitheme.ValueStyle().Render(fmt.Sprint(tally[state])))
 	}
 	right := strings.Join(counts, "  ") + " "
 	gap := width - ansi.StringWidth(left) - ansi.StringWidth(right)
 	if gap < 2 {
-		return paint(left, width, backdropHex())
+		return uitheme.Paint(left, width, uitheme.BackdropHex())
 	}
-	return paint(left+strings.Repeat(" ", gap)+right, width, backdropHex())
+	return uitheme.Paint(left+strings.Repeat(" ", gap)+right, width, uitheme.BackdropHex())
 }
 
 // previewBody is the list as the layout and density choices draw it, the
@@ -121,27 +125,27 @@ func (m *Model) previewBody(choices uionboarding.Choices, scene previewScene, wi
 		Height:          height,
 		TerminalWidth:   width,
 		TerminalHeight:  height,
-		Theme:           current(),
+		Theme:           uitheme.Current(),
 		ListKeys:        m.services.listKeys,
 		ComfortableRows: choices.Comfortable,
 		MouseDisabled:   true,
 		Focused:         scene.focused,
 		EnterFocuses:    m.enterFocuses(),
 	}, uirail.Frame{})
-	railRows := railContentLines(frame.Lines)
+	railRows := frame.Lines
 	edge := make([]string, height)
 	seam := make([]string, height)
 	for i := range edge {
-		tone := panelHex()
-		if i < len(railRows) && railRows[i].tone != "" {
-			tone = railRows[i].tone
+		tone := uitheme.PanelHex()
+		if i < len(railRows) && railRows[i].Tone != "" {
+			tone = railRows[i].Tone
 		}
 		edge[i] = railEdgeCell(tone)
-		seam[i] = m.seamCell(i < len(railRows) && railRows[i].rule)
+		seam[i] = m.seamCell(i < len(railRows) && railRows[i].Rule)
 	}
 	if choices.FullLayout {
 		out := []string{m.railTopRow(railWidth, width)}
-		out = append(out, joinColumns(edge, paintContent(railRows, railWidth, height, panelHex()))...)
+		out = append(out, uitheme.JoinColumns(edge, paintContent(railRows, railWidth, height, uitheme.PanelHex()))...)
 		return append(out, m.boundedRuleRow(railWidth, width, "▄"))
 	}
 	contentWidth := width - railWidth - 3
@@ -150,8 +154,8 @@ func (m *Model) previewBody(choices uionboarding.Choices, scene previewScene, wi
 		bleed, bottom = m.tracedBleedColumn(height, 1, height-1), m.focusBottomRule(railWidth+2, width)
 	}
 	out := []string{m.railTopRow(railWidth+2, width)}
-	out = append(out, joinColumns(edge, paintContent(railRows, railWidth, height, panelHex()), seam,
-		bleed, paintContent(m.fitTranscript(scene.content, contentWidth, height), contentWidth, height, backdropHex()))...)
+	out = append(out, uitheme.JoinColumns(edge, paintContent(railRows, railWidth, height, uitheme.PanelHex()), seam,
+		bleed, paintContent(m.fitTranscript(scene.content, contentWidth, height), contentWidth, height, uitheme.BackdropHex()))...)
 	return append(out, bottom)
 }
 
@@ -163,7 +167,7 @@ func (m *Model) fitTranscript(lines []contentLine, width, height int) []contentL
 	}
 	out := make([]contentLine, len(lines))
 	for i, line := range lines {
-		out[i] = contentLine{text: ansi.Truncate(line.text, max(width, 1), "…")}
+		out[i] = contentLine{Text: ansi.Truncate(line.Text, max(width, 1), "…")}
 	}
 	return out
 }
@@ -171,12 +175,12 @@ func (m *Model) fitTranscript(lines []contentLine, width, height int) []contentL
 // previewBar is the quick prompt: the target on one row, what it launches
 // with against the right edge, and the prompt typed so far under it.
 func (m *Model) previewBar(width int, label, target, launch, typed string) []string {
-	head := subtleStyle().Render(fmt.Sprintf(" %-7s", label)) + subtleStyle().Render("│ ") + target
+	head := uitheme.SubtleStyle().Render(fmt.Sprintf(" %-7s", label)) + uitheme.SubtleStyle().Render("│ ") + target
 	gap := max(width-ansi.StringWidth(head)-ansi.StringWidth(launch), 1)
-	prompt := " " + lipgloss.NewStyle().Foreground(colorAccent()).Render(m.glyphs().PromptGlyph) + " " +
-		lipgloss.NewStyle().Foreground(colorBright()).Render(typed) +
-		lipgloss.NewStyle().Foreground(colorAccent()).Render(m.chrome().CursorGlyph)
-	return []string{paint(head+strings.Repeat(" ", gap)+launch, width, quickModeHex()), paint(prompt, width, quickModeHex())}
+	prompt := " " + lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Render(m.glyphs().PromptGlyph) + " " +
+		lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Render(typed) +
+		lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Render(m.chrome().CursorGlyph)
+	return []string{uitheme.Paint(head+strings.Repeat(" ", gap)+launch, width, uitheme.QuickModeHex()), uitheme.Paint(prompt, width, uitheme.QuickModeHex())}
 }
 
 // previewLegend names where Settings, Messages and the key map open.
@@ -185,7 +189,7 @@ func (m *Model) previewLegend() string {
 	var parts []string
 	for _, pair := range [][2]string{{keys.Settings, "settings"}, {keys.Messages, "messages"}, {keys.Help, "keys"}} {
 		if pair[0] != "" {
-			parts = append(parts, hintCap(pair[0], pair[1]))
+			parts = append(parts, uitheme.HintCap(pair[0], pair[1]))
 		}
 	}
 	return " " + strings.Join(parts, "   ")

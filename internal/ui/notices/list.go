@@ -34,7 +34,6 @@ type Sources struct {
 	ConfigImportError string
 }
 
-// newestHeadline is the headline of the last release in an oldest-first range.
 func newestHeadline(releases []Release) string {
 	if len(releases) == 0 {
 		return ""

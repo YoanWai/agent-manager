@@ -36,7 +36,10 @@ func (m Model) Searching() bool    { return m.searching }
 func (m Model) Search() string     { return m.search }
 func (m Model) MenuOpen() bool     { return m.menu.active }
 func (m Model) Reordering() bool   { return m.reorder.active }
-func (m Model) Cursor() int        { return m.cursor }
+
+// Busy is whether search, the row menu or reorder holds the keyboard.
+func (m Model) Busy() bool  { return m.InputMode() != BrowseMode }
+func (m Model) Cursor() int { return m.cursor }
 
 type ReorderInfo struct {
 	Active    bool
@@ -105,7 +108,6 @@ func (m Model) Collapsed() []string {
 	return paths
 }
 
-// saveFolds stores every fold, local and on connections.
 func (m Model) saveFolds() Mutation {
 	return Mutation{Kind: SaveCollapsed, Collapsed: m.Collapsed(), HostCollapsed: m.HostCollapsed()}
 }
@@ -157,9 +159,6 @@ func (m *Model) Key(msg tea.KeyMsg, _ Frame, ctx KeyContext) Decision {
 		return m.searchKey(msg)
 	}
 	key := keybind.Normalize(msg.String())
-	if key == "ctrl+c" {
-		return m.intent(Quit)
-	}
 	if key == "esc" {
 		return m.clearSearch()
 	}

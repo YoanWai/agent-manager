@@ -33,7 +33,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if len(m.sessionRows()) != 0 {
@@ -51,7 +51,7 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.restoreSelected()
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	got, err := m.services.store.Get(sess.ID)
 	if err != nil {
@@ -75,10 +75,10 @@ func TestCreateArchiveRestoreDelete(t *testing.T) {
 
 	m.selectSessionRow(t, "alpha")
 	m.prepareDelete()
-	if m.mode != modeConfirmDelete {
+	if !confirmOpen(m) {
 		t.Fatal("prepareDelete should enter confirm mode")
 	}
-	_, cmd = m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	if m.services.tmux.Exists(sess.ID) {
 		t.Fatal("tmux session should be killed after delete")
@@ -101,7 +101,7 @@ func seedRestoreScenario(t *testing.T, m *Model, group string) (live, sleeper, s
 	confirmKill(t, m)
 	m.selectSessionRow(t, "stash")
 	m.archiveSelected()
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	return live, sleeper, stash
@@ -138,8 +138,8 @@ func TestNewSessionShowsStartingImmediately(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
-	m.form.SetName("boot")
-	m.form.SetDir(t.TempDir())
+	m.form().SetName("boot")
+	m.form().SetDir(t.TempDir())
 	setFormTool(m, 0)
 	pickGroup(t, m, "")
 	// submitForm dispatches the spawn; run the effect to completion and drop
@@ -183,10 +183,10 @@ func waitForPane(t *testing.T, m *Model, id, marker string) {
 // confirmKill answers the pending confirm modal with yes.
 func confirmKill(t *testing.T, m *Model) {
 	t.Helper()
-	if m.mode != modeConfirmDelete {
-		t.Fatalf("kill should ask before acting, mode = %v, err = %q", m.mode, m.errBar.text)
+	if !confirmOpen(m) {
+		t.Fatalf("kill should ask before acting, screen = %v, err = %q", m.screenID(), m.errBar.text)
 	}
-	_, cmd := m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
 	m.drainEffects(t)
 	m.applyCmd(t, cmd)
 	if m.errBar.text != "" {
@@ -209,6 +209,6 @@ func deleteSession(t *testing.T, m *Model, name string) {
 	t.Helper()
 	m.selectSessionRow(t, name)
 	m.prepareDelete()
-	m.handleConfirmKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	m.drainEffects(t)
 }

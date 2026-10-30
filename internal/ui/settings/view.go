@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Styles are the root's live styles the dialog paints with.
 type Styles struct {
 	Value, Subtle, Muted, Key, Annotation lipgloss.Style
 	// Marker is the focused row's caret; Focused its label.
@@ -42,7 +41,6 @@ type ViewContext struct {
 	TextArea        func(textarea.Model) string
 }
 
-// Card is how the root frames the dialog.
 type Card uint8
 
 const (
@@ -53,7 +51,6 @@ const (
 	Confirm
 )
 
-// Frame is a painted dialog for the root's card chrome.
 type Frame struct {
 	Card        Card
 	Title       string
@@ -65,7 +62,6 @@ type Frame struct {
 	Destructive bool
 }
 
-// View paints the open dialog.
 func (s *State) View(ctx ViewContext) Frame {
 	chrome := presentation.ChromeFor(ctx.GlyphMode)
 	if s.Prompts.open {
@@ -304,4 +300,18 @@ func themeSwatch(t uitheme.Theme) string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("█"))
 	}
 	return b.String()
+}
+
+func CurrentStyles() Styles {
+	return Styles{
+		Value:      uitheme.ValueStyle(),
+		Subtle:     uitheme.SubtleStyle(),
+		Muted:      uitheme.MutedStyle(),
+		Key:        uitheme.KeyStyle(),
+		Annotation: uitheme.AnnotationStyle(),
+		Marker:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+		Focused:    lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
+		Action:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true),
+		ActionText: lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()),
+	}
 }

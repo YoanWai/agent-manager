@@ -1,104 +1,66 @@
 package ui
 
 import (
-	"strings"
-
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/store"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uihelp "github.com/YoanWai/agent-manager/internal/ui/help"
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
-type helpLayout struct {
-	content uihelp.Content
-	width   int
-	rows    int
+// helpHost is the root as the key map reads it.
+type helpHost struct{ *Model }
+
+func (h helpHost) KeyTables() uihelp.Tables {
+	return uihelp.Tables{Session: h.services.keys, List: h.services.listKeys, ArrowStep: h.prefs.arrowStep}
 }
 
+func (h helpHost) Glyphs() uihelp.Glyphs {
+	return uihelp.Glyphs{
+		Mode:             h.prefs.glyphMode,
+		RowMenu:          uirail.MenuGlyph,
+		Reorder:          h.glyphs().ReorderGrip,
+		AfterTurnArchive: h.afterTurnGlyph(store.AfterTurnArchive),
+		AfterTurnKill:    h.afterTurnGlyph(store.AfterTurnKill),
+	}
+}
+
+func (h helpHost) QuickKeys() uihelp.QuickKeys {
+	return uihelp.QuickKeys{Model: uiquick.ModelKey, Effort: uiquick.EffortKey, Profile: uiquick.ProfileKey, Env: uiquick.EnvKey}
+}
+
+func (h helpHost) ReviewRows() [][2]string {
+	return uireview.HelpRows(h.services.listKeys.Binding(keybind.Help))
+}
+
+func (h helpHost) CursorMarker() string { return uiframe.CursorMarker }
+
+func (h helpHost) Context(width int) uihelp.Context { return uihelp.ContextFor(h, width) }
+
+func (h helpHost) Styles() uihelp.Styles { return uihelp.CurrentStyles() }
+
+func (h helpHost) HintRows(hints [][2]string, width int) int {
+	// One untitled run, for the foot of a modal card where the tier's
+	// subject is the card's own title.
+	return lipgloss.Height(uiframe.LegendInline(hints, width, uiframe.LiveCap(h.prefs.glyphMode)))
+}
+
+func (h helpHost) StatusShown() bool { return h.errBar.text != "" }
+
+func (h helpHost) TakeForeground() { h.takeForeground() }
+
+func (h helpHost) OpenDocs() tea.Cmd { return openLink(docsURL) }
+
+// openHelp scopes the key map to Review when Review is underneath. The base
+// is read here, to open, and never again.
 func (m *Model) openHelp() {
-	m.help.returnMode = m.mode
 	scope := uihelp.Global
-	if m.mode == modeDiff {
+	if m.base == baseReview {
 		scope = uihelp.Review
 	}
-	m.help.state = uihelp.New(scope)
-	m.mode = modeHelp
-}
-
-func (m *Model) handleHelpKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	layout := m.helpLayout()
-	viewport := uihelp.Viewport{Rows: layout.rows, Lines: len(layout.content.Lines), CloseKey: m.services.listKeys.Binding(keybind.Help)}
-	switch m.help.state.Update(msg, viewport) {
-	case uihelp.Quit:
-		return m.requestQuit()
-	case uihelp.OpenDocs:
-		return m, openLink(docsURL)
-	case uihelp.Close:
-		m.mode = m.help.returnMode
-		m.help.returnMode = modeList
-		return m, m.startStartupTick()
-	default:
-		return m, nil
-	}
-}
-
-func (m *Model) helpContext(width int) uihelp.Context {
-	return uihelp.Context{
-		SessionKeys:   m.services.keys,
-		ListKeys:      m.services.listKeys,
-		ReviewHelpKey: uireview.EffectiveHelpBinding(m.services.listKeys.Binding(keybind.Help)),
-		ArrowStep:     m.prefs.arrowStep,
-		Width:         width,
-		Glyphs: uihelp.Glyphs{
-			Mode:             m.prefs.glyphMode,
-			RowMenu:          uirail.MenuGlyph,
-			Reorder:          m.glyphs().ReorderGrip,
-			AfterTurnArchive: m.afterTurnGlyph(store.AfterTurnArchive),
-			AfterTurnKill:    m.afterTurnGlyph(store.AfterTurnKill),
-		},
-		QuickKeys:    uihelp.QuickKeys{Model: quickModelKey, Effort: quickEffortKey, Profile: quickProfileKey, Env: quickEnvKey},
-		CursorMarker: cursorAnchorMarker,
-		Styles: uihelp.Styles{
-			Section: sectionStyle(),
-			Rule:    lipgloss.NewStyle().Foreground(colorBorder()),
-			Key:     keyStyle(),
-			Muted:   mutedStyle(),
-			Subtle:  subtleStyle(),
-			Value:   valueStyle(),
-			Match:   lipgloss.NewStyle().Foreground(colorBright()).Bold(true),
-			Cursor:  lipgloss.NewStyle().Foreground(colorAccent()),
-		},
-	}
-}
-
-func (m *Model) helpLayout() helpLayout {
-	dialog := m.dialogRenderContext()
-	width := uihelp.CardWidth(dialog.width)
-	inner := cardInnerWidth(width)
-	content := m.help.state.Content(m.helpContext(inner))
-	rows := dialog.height - 5 - lipgloss.Height(legendInline(content.Hints, inner, m.prefs.glyphMode)) - len(content.Head)
-	if dialog.status != "" {
-		rows -= 2
-	}
-	return helpLayout{
-		content: content,
-		width:   width,
-		rows:    max(rows, 1),
-	}
-}
-
-func (m *Model) viewHelp() string {
-	layout := m.helpLayout()
-	lines := append([]string(nil), layout.content.Head...)
-	lines = append(lines, presentation.Window(
-		layout.content.Lines,
-		layout.rows,
-		layout.content.Offset,
-		subtleStyle(),
-	)...)
-	return m.cardSized(layout.width, layout.content.Title, strings.Join(lines, "\n"), layout.content.Hints)
+	m.push(uihelp.NewSurface(helpHost{m}, scope))
 }

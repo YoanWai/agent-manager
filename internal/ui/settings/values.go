@@ -59,7 +59,6 @@ var saveOrder = func() []Setting {
 	return ordered
 }()
 
-// ParseHidden reads the stored hidden-CLI list.
 func ParseHidden(raw string) map[string]bool {
 	if raw == "" {
 		return nil
@@ -77,8 +76,6 @@ func ParseHidden(raw string) map[string]bool {
 	return hidden
 }
 
-// MarkBaseline records the freshly built dialog as the state a save
-// compares against.
 func (s *State) MarkBaseline() {
 	s.Baseline = make(map[string]string)
 	for _, value := range s.Values() {
@@ -88,8 +85,6 @@ func (s *State) MarkBaseline() {
 	s.BaselineHidden = &hidden
 }
 
-// ChangedValues is the write list narrowed to the keys the user changed in
-// this dialog.
 func (s *State) ChangedValues() []Value {
 	all := s.Values()
 	changed := all[:0:0]

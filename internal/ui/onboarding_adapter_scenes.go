@@ -2,41 +2,15 @@ package ui
 
 import (
 	"fmt"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"strings"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
 	uionboarding "github.com/YoanWai/agent-manager/internal/ui/onboarding"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
-
-// setupBeat is one tick of a guide step acting itself out.
-const setupBeat = 90 * time.Millisecond
-
-type setupTickMsg struct{}
-
-// keepSetupAnimating starts the ticks a guide step's animation runs on,
-// once, for as long as such a step is on screen.
-func (m *Model) keepSetupAnimating() tea.Cmd {
-	setup := &m.startup.setup
-	if m.mode != modeOnboarding || !setup.Animating() || setup.ticking {
-		return nil
-	}
-	setup.ticking = true
-	return tea.Tick(setupBeat, func(time.Time) tea.Msg { return setupTickMsg{} })
-}
-
-func (m *Model) applySetupTick() tea.Cmd {
-	setup := &m.startup.setup
-	setup.ticking = false
-	if m.mode != modeOnboarding || !setup.Animating() {
-		return nil
-	}
-	setup.Tick()
-	return m.keepSetupAnimating()
-}
 
 const (
 	sampleAnswer  = "yes, go ahead"
@@ -100,8 +74,8 @@ const quickTyping = 3
 // typed and enter starts its agent in the group, three times over.
 func (m *Model) quickPromptScene(scene *previewScene, p uionboarding.Preview, width int) {
 	scene.selected = uirail.Selection{Kind: uirail.GroupRow, Group: "web"}
-	target := lipgloss.NewStyle().Foreground(colorAccent2()).Render("web")
-	launch := valueStyle().Render(p.Agents[0]) + subtleStyle().Render(" · "+m.glyphs().WorktreeGlyph+" off ")
+	target := lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Render("web")
+	launch := uitheme.ValueStyle().Render(p.Agents[0]) + uitheme.SubtleStyle().Render(" · "+m.glyphs().WorktreeGlyph+" off ")
 	// Scene 1, 3 and 5 type a task, and 2, 4 and 6 start it.
 	typing, started := (p.Scene-1)/2, p.Scene/2
 	typed := ""
@@ -132,7 +106,7 @@ func (m *Model) sessionsScene(scene *previewScene, p uionboarding.Preview, width
 		scene.selected = sessionSelection(previewDark, "web")
 		answered := p.Frame >= 22
 		scene.content = m.darkModeTranscript(answered)
-		target := lipgloss.NewStyle().Foreground(colorBright()).Render("dark mode")
+		target := lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Render("dark mode")
 		typed := typedOut(sampleAnswer, p.Frame-4)
 		if answered {
 			typed = ""
@@ -176,42 +150,42 @@ func setStatus(sessions []uirail.Session, id, state, line string) {
 func (m *Model) paneBody(lines []contentLine, width, height int) []string {
 	out := make([]string, 0, height)
 	for _, line := range m.fitTranscript(lines, width, height) {
-		out = append(out, paint(line.text, width, backdropHex()))
+		out = append(out, uitheme.Paint(line.Text, width, uitheme.BackdropHex()))
 	}
 	for len(out) < height {
-		out = append(out, paint("", width, backdropHex()))
+		out = append(out, uitheme.Paint("", width, uitheme.BackdropHex()))
 	}
 	return out
 }
 
 func (m *Model) groupSummary(agents int) []contentLine {
-	pad := strings.Repeat(" ", contentGutter)
+	pad := strings.Repeat(" ", setupContentGutter)
 	return []contentLine{
 		{},
-		{text: pad + lipgloss.NewStyle().Foreground(colorAccent2()).Bold(true).Render("web")},
-		{text: pad + mutedStyle().Render(fmt.Sprintf("%d agents · %d working · 1 waiting", agents, agents-1))},
+		{Text: pad + lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true).Render("web")},
+		{Text: pad + uitheme.MutedStyle().Render(fmt.Sprintf("%d agents · %d working · 1 waiting", agents, agents-1))},
 	}
 }
 
 // The transcript lines, in the shapes an agent's pane shows them.
 func (m *Model) promptLine(text string, typing bool) contentLine {
-	line := lipgloss.NewStyle().Foreground(colorAccent()).Render(m.glyphs().PromptGlyph) + " " + lipgloss.NewStyle().Foreground(colorBright()).Render(text)
+	line := lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Render(m.glyphs().PromptGlyph) + " " + lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Render(text)
 	if typing {
-		line += lipgloss.NewStyle().Foreground(colorAccent()).Render(m.chrome().CursorGlyph)
+		line += lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Render(m.chrome().CursorGlyph)
 	}
-	return contentLine{text: strings.Repeat(" ", contentGutter) + line}
+	return contentLine{Text: strings.Repeat(" ", setupContentGutter) + line}
 }
 
 func (m *Model) stepLine(text string) contentLine {
-	return contentLine{text: strings.Repeat(" ", contentGutter) + lipgloss.NewStyle().Foreground(colorFinished()).Render(m.glyphs().FinishedGlyph) + " " + valueStyle().Render(text)}
+	return contentLine{Text: strings.Repeat(" ", setupContentGutter) + lipgloss.NewStyle().Foreground(uitheme.ColorFinished()).Render(m.glyphs().FinishedGlyph) + " " + uitheme.ValueStyle().Render(text)}
 }
 
 func (m *Model) noteLine(text string) contentLine {
-	return contentLine{text: strings.Repeat(" ", contentGutter+2) + valueStyle().Render(text)}
+	return contentLine{Text: strings.Repeat(" ", setupContentGutter+2) + uitheme.ValueStyle().Render(text)}
 }
 
 func (m *Model) stateLine(state, text string) contentLine {
-	return contentLine{text: strings.Repeat(" ", contentGutter) + lipgloss.NewStyle().Foreground(statusColor(state)).Render(m.glyphs().StatusGlyph(state)+" "+text)}
+	return contentLine{Text: strings.Repeat(" ", setupContentGutter) + lipgloss.NewStyle().Foreground(statusColor(state)).Render(m.glyphs().StatusGlyph(state)+" "+text)}
 }
 
 func (m *Model) loginTranscript() []contentLine {

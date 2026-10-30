@@ -7,7 +7,6 @@
               │   d                remove a draft, or mark sent feedback handled / open                  │
               │   C                send drafts to the agent as the next review round                     │
               │   space            mark the file reviewed                                                │
-              │   f                code files only (hides images, assets, lock files)                    │
               │   s                cycle the scope (uncommitted / vs target / last commit / staged)      │
               │   r                pick the repo when the session dir holds several                      │
               │   b                switch to another worktree, listed by branch                          │
@@ -19,6 +18,7 @@
               │   tab / shift+tab  next / previous file (J / K too)                                      │
               │   n / N            next / previous change                                                │
               │   u                unified / split layout                                                │
+              │   f                code files only (hides images, assets, lock files)                    │
               │   o / f3           open the current file in your editor                                  │
               │   ?                this key map                                                          │
               │   esc / q          close the review                                                      │

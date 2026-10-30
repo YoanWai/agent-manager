@@ -1,20 +1,15 @@
 package ui
 
 import (
-	"github.com/YoanWai/agent-manager/internal/keybind"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
-		name := keybind.Normalize(key.String())
-		abandonsDrain := m.effects.quitting && (name == "ctrl+c" || m.services.listKeys.Binding(keybind.Quit).Has(name))
-		if abandonsDrain || (name == "ctrl+c" && m.mode != modeFocus) {
-			return m.requestQuit()
-		}
+	if key, ok := msg.(tea.KeyMsg); ok && m.routeQuit(key) == quitNow {
+		return m.requestQuit()
 	}
-	if m.effects.quitting {
+	if m.effects.Quitting {
 		switch msg.(type) {
 		case tea.KeyMsg, tea.MouseMsg:
 			return m, nil
@@ -30,51 +25,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model, tea.Batch(cmd, m.syncMouseCapture(), m.nextEffectCmd())
 }
 
+var messageRoutes = []func(*Model, tea.Msg) (tea.Model, tea.Cmd, bool){
+	(*Model).routeEffectMsg,
+	(*Model).routeSpawnMsg,
+	(*Model).routeSetupMsg,
+	(*Model).routeSettingsMsg,
+	(*Model).routeResizeMsg,
+	(*Model).routeStartupMsg,
+	(*Model).routePreviewMsg,
+	(*Model).routeRefreshMsg,
+	(*Model).routeNoticesMsg,
+	(*Model).routePasteMsg,
+	(*Model).routeFocusMsg,
+	(*Model).routeSessionMsg,
+	(*Model).routeReviewMsg,
+	(*Model).routeEditorMsg,
+	(*Model).routeStatusMsg,
+	(*Model).routeConnectionMsg,
+}
+
 func (m *Model) handleMsg(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if model, cmd, ok := m.routeEffectMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeSpawnMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeSettingsMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeResizeMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeStartupMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routePreviewMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeRefreshMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeNoticesMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routePasteMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeFocusMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeSessionMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeReviewMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeEditorMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeStatusMsg(msg); ok {
-		return model, cmd
-	}
-	if model, cmd, ok := m.routeConnectionMsg(msg); ok {
-		return model, cmd
+	for _, route := range messageRoutes {
+		if model, cmd, ok := route(m, msg); ok {
+			return model, cmd
+		}
 	}
 	switch msg := msg.(type) {
 	case tea.MouseMsg:

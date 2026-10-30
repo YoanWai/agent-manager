@@ -8,8 +8,7 @@ type Spec struct {
 	Key     string
 	Values  []string
 	Default string
-	// List marks a key holding a comma-separated subset of Values.
-	List bool
+	List    bool
 	// Row is the label of the Settings row that steps this key, empty for
 	// a key the shell alone sets.
 	Row string

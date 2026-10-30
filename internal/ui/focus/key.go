@@ -14,7 +14,6 @@ const (
 	ScrollPane
 )
 
-// KeyContext contains root-owned routing facts already resolved for one key.
 type KeyContext struct {
 	SessionID   string
 	Rows        int

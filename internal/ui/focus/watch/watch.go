@@ -36,9 +36,7 @@ type Frame struct {
 	SGR     bool
 	Alt     bool
 	History int
-	// Writes is how many queued writes had landed when the capture was
-	// taken.
-	Writes uint64
+	Writes  uint64
 }
 
 // Sink receives what the watcher pushes: frames, and the loss of a client
@@ -164,7 +162,6 @@ func (w *Watcher) InputSent(id string) {
 	}
 }
 
-// landedLocked wakes the watcher on id to look for a write's echo.
 func (w *Watcher) landedLocked(id string) {
 	if w.id != id {
 		return
@@ -188,8 +185,6 @@ func (w *Watcher) CountWrite(id string) bool {
 	return true
 }
 
-// WriteLanded marks a counted write as done and wakes the watcher on id to
-// look for its echo.
 func (w *Watcher) WriteLanded(id string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()

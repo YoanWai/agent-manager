@@ -129,7 +129,7 @@ def write_fixtures(sandbox, remote, binary):
     for path in (bin_dir / FAKE_BIN, bin_dir / 'ssh', shell):
         path.chmod(0o755)
     for profile in (profile_dir(sandbox), remote.profile()):
-        profile.mkdir(parents=True)
+        profile.mkdir(parents=True, exist_ok=True)
         (profile / 'config.toml').write_text(config_fixture_text())
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
     return manager

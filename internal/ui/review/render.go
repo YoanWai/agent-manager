@@ -93,7 +93,6 @@ func (r renderer) divider(label string, width int) string {
 	return presentation.Divider(label, width, r.s.Section, r.s.Rule, r.c.SectionGlyph)
 }
 
-// PaneWidths splits the terminal width between the file rail and the code.
 func PaneWidths(width int) (fileWidth, codeWidth int) {
 	fileWidth = max(width*24/100, diffFileRailWidth)
 	if width-fileWidth-diffPaneSeam < diffCodeMinWidth {
@@ -117,7 +116,6 @@ func (m *Model) AnnotationInputHeight(width int) int {
 	return n
 }
 
-// annotationBar is the comment box docked under the code while typing.
 func (r renderer) annotationBar(fd *diff.FileDiff, width int, cursorMarker string) string {
 	num, _ := AnnotationLine(fd.Lines[r.m.CursorDiffLine()])
 	return r.divider(fmt.Sprintf("Comment · %s:%d", presentation.EscapeControlsInline(fd.File.Path), num), width) + "\n" + r.m.AnnotationView(cursorMarker)
@@ -259,10 +257,8 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// HeaderKeys are the header's key pills as last painted.
 func (m *Model) HeaderKeys() []presentation.PaintedKey { return m.headerKeys }
 
-// StatusKeys are the keys the status line last painted.
 func (m *Model) StatusKeys() []presentation.PaintedKey { return m.statusKeys }
 
 func keptWithin(keys []presentation.PaintedKey, width int) []presentation.PaintedKey {
@@ -398,34 +394,27 @@ func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
 			{"↵", "save"}, {"esc", "cancel"},
 		}}}
 	}
-	repo := "repo"
-	if len(m.repoRoots) > 0 {
-		repo = "repo: " + presentation.EscapeControlsInline(filepath.Base(m.repoSel))
+	review := LegendSection{Title: "Review"}
+	move := LegendSection{Title: "Move", Quiet: true}
+	for _, b := range keymap {
+		if b.Footer == nil {
+			continue
+		}
+		key := b.legendKey()
+		if b.Action == actHelp {
+			if key = EffectiveHelpBinding(helpKey).Glyph("/"); key == "" {
+				continue
+			}
+		}
+		pair := [2]string{key, b.Footer(m)}
+		if b.Move {
+			move.Pairs = append(move.Pairs, pair)
+		} else {
+			review.Pairs = append(review.Pairs, pair)
+		}
 	}
-	send := "send"
-	if count := m.DraftCount(); count > 0 {
-		send = fmt.Sprintf("send %d", count)
-	}
-	filter := "code only"
-	if m.codeOnly {
-		filter = "all files"
-	}
-	movePairs := [][2]string{
-		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
-		{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
-		{"u", "layout"}, {"f", filter}, {"o/f3", "open file"},
-	}
-	if glyph := EffectiveHelpBinding(helpKey).Glyph("/"); glyph != "" {
-		movePairs = append(movePairs, [2]string{glyph, "keys"})
-	}
-	movePairs = append(movePairs, [2]string{"esc/q", "close"}, [2]string{"ctrl+c", "quit"})
-	return []LegendSection{
-		{Title: "Review", Pairs: [][2]string{
-			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
-			{"s", "scope: " + m.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
-		}},
-		{Title: "Move", Quiet: true, Pairs: movePairs},
-	}
+	move.Pairs = append(move.Pairs, quitPair)
+	return []LegendSection{review, move}
 }
 
 // scrollWindow keeps the cursor visible inside a height-limited window of

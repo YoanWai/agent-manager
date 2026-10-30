@@ -243,21 +243,25 @@ with `gh release edit <tag> --notes-file notes.md`.
 - `main.go` dispatches subcommands (`rename`, `review-repo`, `sessions`,
   `spawn`, `mcp`, and the rest of the workspace CLI) and boots the TUI.
 - `internal/ui` is the Bubble Tea program: one `Model` that routes messages
-  and composes the frame. Help, Review, Focus, the Rail, Settings, the New
-  Session form, the quick bar, the small dialogs, the notices panel and the
-  first-run setup live in child packages
-  (`internal/ui/{help,review,focus,rail,settings,spawn,quick,dialogs,notices,onboarding}`);
-  `presentation` holds shared text helpers and `theme` the palettes. Features
-  that stay in `ui` each own their state, keys and view through a type with a
-  narrow host interface: `pathComplete`, `composer` and
-  `launchHintDialog`. Store, tmux and Git
-  work runs on the ordered effect lane (`effects.go`) through each feature's
-  `<feature>_effect.go`. Root files are named `<feature>_<concern>.go`, so
-  `ls internal/ui/settings_*` is the whole Settings adapter; only `keys.go`,
-  `mouse.go`, `updates.go` and `ids.go` route instead of owning a feature. A
-  new feature adds its name to `tools/architecture/check-file-names`. The
-  package map, the CI checks and the reasons are in
-  [docs/architecture.md](docs/architecture.md).
+  and composes the frame. Each feature is a child package
+  (`internal/ui/<feature>`: help, review, focus, rail, settings, spawn, quick,
+  dialogs, notices, onboarding, connections, geometry, composer, pathcomplete, preview,
+  frame, statusbar, startup, session, launchhint, terminal, workspace;
+  `presentation`, `theme` and `surface` are shared). Cards, resize and
+  focus are surfaces on a stack over the base screen (list or Review), read
+  from the top for input; there is no mode enum
+  ([docs/architecture.md](docs/architecture.md#decisions)). A package never imports the
+  root and changes root state only by returning values (`rail.Decision`,
+  `rail.Intent`); its `Root` and host interfaces are for reads. Store, tmux
+  and Git work runs on the ordered effect lane: `ui/effects` holds the
+  contract, each package declares its own requests, and the root only binds
+  and applies them in `effects_adapter_executor.go`. Root files are the
+  per-feature adapters, `<feature>_adapter*.go`, `<feature>_*_effect.go` and
+  `<feature>_*_surface.go`, so `ls internal/ui/settings_*` is the whole
+  Settings adapter; only `keys.go`, `mouse.go`, `updates.go` and `ids.go`
+  route. A new feature is a package and adds its name to
+  `tools/architecture/check-file-names`. The package map, the CI checks and
+  the reasons are in [docs/architecture.md](docs/architecture.md).
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state, Settings included; `internal/status`
   classifies pane output into agent states; `internal/config` holds the

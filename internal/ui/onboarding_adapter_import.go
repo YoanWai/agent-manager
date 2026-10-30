@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -17,13 +18,13 @@ const importSessionName = "import-past-chats"
 func (m *Model) startSetupImport(request uionboarding.ImportRequest) tea.Cmd {
 	defaults := m.spawnDefaults("")
 	m.clearErr()
-	m.dispatchSpawn(spawnRequest{
-		kind:         spawnImport,
-		toolName:     request.Runner,
-		name:         importSessionName,
-		prompt:       uionboarding.ImportPrompt(request),
-		pane:         defaults.pane,
-		dirFallbacks: defaults.fallbacks,
+	m.dispatchSpawn(uilaunch.Request{
+		Kind:         uilaunch.Import,
+		ToolName:     request.Runner,
+		Name:         importSessionName,
+		Prompt:       uionboarding.ImportPrompt(request),
+		Pane:         defaults.Pane,
+		DirFallbacks: defaults.Fallbacks,
 	})
 	return m.nextEffectCmd()
 }

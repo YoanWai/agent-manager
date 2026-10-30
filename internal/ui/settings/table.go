@@ -15,12 +15,9 @@ type Setting struct {
 	// own stepping (the tool, theme, symbols and editor rows).
 	Flag func(*State) *bool
 	// True and False are the stored spellings of the flag's two sides.
-	True, False string
-	// TrueLabel and FalseLabel are the painted words when they differ from
-	// the stored spellings.
+	True, False           string
 	TrueLabel, FalseLabel string
-	// Proactive writes the row through the store's typed coordination call.
-	Proactive bool
+	Proactive             bool
 }
 
 var onOff = []string{"on", "off"}
@@ -138,7 +135,6 @@ func Keys() []string {
 	return keys
 }
 
-// FlagKeys lists the two-way rows' keys.
 func FlagKeys() []string {
 	keys := make([]string, 0, len(table))
 	for _, setting := range table {

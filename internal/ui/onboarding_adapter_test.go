@@ -5,20 +5,24 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uionboarding "github.com/YoanWai/agent-manager/internal/ui/onboarding"
+	onboardingruntime "github.com/YoanWai/agent-manager/internal/ui/onboarding/runtime"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
 func setupModel(t *testing.T) *Model {
 	t.Helper()
-	previous := current()
+	previous := uitheme.Current()
 	t.Cleanup(func() { applyTheme(previous) })
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 36
 	m.openSetup(true)
-	m.Update(setupProbedMsg{installed: map[string]bool{"claude": true, "codex": true}})
+	probeSetup(t, m, map[string]bool{"claude": true, "codex": true})
 	pressKeys(m, enterKey)
 	return m
 }
@@ -34,7 +38,38 @@ func storedSetting(t *testing.T, m *Model, key string) string {
 
 func pressKeys(m *Model, keys ...tea.KeyMsg) {
 	for _, key := range keys {
-		m.Update(key)
+		_, cmd := m.handleKey(key)
+		applySetupCommand(m, cmd)
+	}
+}
+
+func applySetupCommand(m *Model, cmd tea.Cmd) {
+	if cmd != nil {
+		m.routeSetupMsg(cmd())
+	}
+}
+
+func setupState(t *testing.T, m *Model) *uionboarding.Surface {
+	t.Helper()
+	s, ok := m.setupSurface()
+	if !ok {
+		t.Fatal("setup surface is not mounted")
+	}
+	return s
+}
+
+func probeSetup(t *testing.T, m *Model, installed map[string]bool) {
+	t.Helper()
+	s := setupState(t, m)
+	m.applySetupProbe(onboardingruntime.ProbeRequest{Target: s.ID()}, onboardingruntime.ProbeResult{Installed: installed}, nil)
+}
+
+func clickSetup(t *testing.T, m *Model, text string) {
+	t.Helper()
+	x, y := paintedCell(t, m, text)
+	for _, action := range []tea.MouseAction{tea.MouseActionPress, tea.MouseActionRelease} {
+		_, cmd := m.handleMouse(tea.MouseMsg{X: x, Y: y, Button: tea.MouseButtonLeft, Action: action})
+		applySetupCommand(m, cmd)
 	}
 }
 
@@ -53,7 +88,7 @@ func TestSetupWritesWhatSettingsWrites(t *testing.T) {
 	for key, want := range map[string]string{
 		uisettings.SessionLayoutSetting: "full",
 		uisettings.ListDensitySetting:   "comfortable",
-		uisettings.ThemeSetting:         themes[2].Name,
+		uisettings.ThemeSetting:         uitheme.Palettes[2].Name,
 	} {
 		if got := storedSetting(t, m, key); got != want {
 			t.Errorf("%s = %q, want %q", key, got, want)
@@ -65,30 +100,30 @@ func TestSetupWritesWhatSettingsWrites(t *testing.T) {
 			t.Errorf("%s hidden = %v, want %v", name, hidden[name], want)
 		}
 	}
-	if !m.prefs.fullLayout || !m.prefs.comfortableRows || current().Name != themes[2].Name {
+	if !m.prefs.fullLayout || !m.prefs.comfortableRows || uitheme.Current().Name != uitheme.Palettes[2].Name {
 		t.Fatalf("the running manager did not take the choices: full=%v comfortable=%v theme=%s",
-			m.prefs.fullLayout, m.prefs.comfortableRows, current().Name)
+			m.prefs.fullLayout, m.prefs.comfortableRows, uitheme.Current().Name)
 	}
-	if m.mode != modeOnboarding || m.startup.setup.Step() != uionboarding.QuickPrompt {
-		t.Fatalf("the setup moved on to %v in mode %v", m.startup.setup.Step(), m.mode)
+	if !m.setupOpen() || setupState(t, m).Step() != uionboarding.QuickPrompt {
+		t.Fatalf("the setup moved on to %v in mode %v", setupState(t, m).Step(), m.screenID())
 	}
 }
 
 // esc on the welcome asks, and leaving writes nothing.
 func TestSkippingFromTheWelcomeWritesNothing(t *testing.T) {
-	previous := current()
+	previous := uitheme.Current()
 	t.Cleanup(func() { applyTheme(previous) })
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 36
 	m.openSetup(true)
 	pressKeys(m, escKey)
-	if m.mode != modeOnboarding || !strings.Contains(ansi.Strip(preparedView(m)), "Leave the setup?") {
+	if !m.setupOpen() || !strings.Contains(ansi.Strip(preparedView(m)), "Leave the setup?") {
 		t.Fatal("esc did not ask")
 	}
-	m = clickLabel(t, m, "leave")
+	clickSetup(t, m, "leave")
 	m.drainEffects(t)
-	if m.mode != modeList {
-		t.Fatalf("a click on leave left mode %v", m.mode)
+	if !m.listClear() {
+		t.Fatalf("a click on leave left mode %v", m.screenID())
 	}
 	for _, key := range []string{uisettings.ThemeSetting, uisettings.SessionLayoutSetting, uisettings.ListDensitySetting, uisettings.HiddenToolsSetting} {
 		if got := storedSetting(t, m, key); got != "" {
@@ -101,14 +136,14 @@ func TestSkippingFromTheWelcomeWritesNothing(t *testing.T) {
 // the palette under the cursor, and going back shows the saved one again.
 func TestCancellingTheQuestionKeepsTheStep(t *testing.T) {
 	m := setupModel(t)
-	before := current().Name
+	before := uitheme.Current().Name
 	pressKeys(m, enterKey, enterKey, enterKey, downKey, downKey, escKey, escKey)
-	if m.mode != modeOnboarding || m.startup.setup.Step() != uionboarding.Theme || current().Name == before {
-		t.Fatalf("esc twice on the theme step left %v in mode %v painting %s", m.startup.setup.Step(), m.mode, current().Name)
+	if !m.setupOpen() || setupState(t, m).Step() != uionboarding.Theme || uitheme.Current().Name == before {
+		t.Fatalf("esc twice on the theme step left %v in mode %v painting %s", setupState(t, m).Step(), m.screenID(), uitheme.Current().Name)
 	}
 	pressKeys(m, tea.KeyMsg{Type: tea.KeyBackspace})
-	if current().Name != before {
-		t.Fatalf("going back kept the previewed palette %s", current().Name)
+	if uitheme.Current().Name != before {
+		t.Fatalf("going back kept the previewed palette %s", uitheme.Current().Name)
 	}
 	m.drainEffects(t)
 	if got := storedSetting(t, m, uisettings.ThemeSetting); got != "" {
@@ -134,13 +169,13 @@ func TestSettingsReopensTheSetup(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 36
 	m.openSettings()
-	m.settings.dialog.Field = uisettings.FieldSetup
+	m.settingsCard().State().Field = uisettings.FieldSetup
 	pressKeys(m, enterKey)
-	if m.mode != modeOnboarding {
-		t.Fatalf("the setup row opened mode %v", m.mode)
+	if !m.setupOpen() {
+		t.Fatalf("the setup row opened mode %v", m.screenID())
 	}
-	if m.startup.setup.Step() != uionboarding.Welcome {
-		t.Fatalf("a reopened setup starts on %v", m.startup.setup.Step())
+	if setupState(t, m).Step() != uionboarding.Welcome {
+		t.Fatalf("a reopened setup starts on %v", setupState(t, m).Step())
 	}
 }
 
@@ -150,16 +185,17 @@ func TestSetupTakesTheMouse(t *testing.T) {
 		t.Fatal("test setup: quietchat is not installed, so the first run leaves it unchecked")
 	}
 	m.prepareFrame()
-	m, _ = clickBody(t, m, "quietchat")
+	clickSetup(t, m, "quietchat")
 	if !strings.Contains(ansi.Strip(preparedView(m)), "[✓] quietchat") {
 		t.Fatalf("a click on quietchat left it unchecked:\n%s", ansi.Strip(m.View()))
 	}
-	m = clickLabel(t, m, "↵ next")
-	if m.startup.setup.Step() != uionboarding.Layout {
-		t.Fatalf("a click on ↵ next went to %v", m.startup.setup.Step())
+	clickSetup(t, m, "↵ next")
+	if setupState(t, m).Step() != uionboarding.Layout {
+		t.Fatalf("a click on ↵ next went to %v", setupState(t, m).Step())
 	}
 	wheelDown := tea.MouseMsg{X: 10, Y: 10, Button: tea.MouseButtonWheelDown, Action: tea.MouseActionPress}
-	m.Update(wheelDown)
+	_, wheelCmd := m.handleMouse(wheelDown)
+	applySetupCommand(m, wheelCmd)
 	m.drainEffects(t)
 	if !strings.Contains(ansi.Strip(preparedView(m)), "❯ ● Full screen") {
 		t.Fatalf("the wheel did not move the layout choice:\n%s", ansi.Strip(m.View()))
@@ -186,35 +222,37 @@ func TestWelcomeAnimatesOnceTheLookupLands(t *testing.T) {
 	m := buildModel(t)
 	m.layout.width, m.layout.height = 120, 36
 	m.openSetup(true)
-	m.Update(setupProbedMsg{installed: map[string]bool{"claude": true}})
-	if m.startup.setup.Step() != uionboarding.Welcome || !m.startup.setup.ticking {
+	probeSetup(t, m, map[string]bool{"claude": true})
+	if setupState(t, m).Step() != uionboarding.Welcome || !setupState(t, m).Ticking() {
 		t.Fatal("the welcome scene started no ticks")
 	}
 }
 
 func TestSetupAnimatesOnlyTheGuide(t *testing.T) {
 	m := setupModel(t)
-	if m.applySetupTick() != nil || m.startup.setup.ticking {
+	if setupState(t, m).Advance() != nil || setupState(t, m).Ticking() {
 		t.Fatal("the welcome's ticks went on past the agents step")
 	}
-	if m.keepSetupAnimating() != nil {
+	if setupState(t, m).KeepAnimating() != nil {
 		t.Fatal("the agents step asked for ticks")
 	}
-	_, cmd := m.applySetupOutcome(m.startup.setup.Key(enterKey))
-	for m.startup.setup.Step() != uionboarding.QuickPrompt {
-		_, cmd = m.applySetupOutcome(m.startup.setup.Key(enterKey))
+	_, cmd := m.applySetupOutcome(setupState(t, m).Model.Key(enterKey))
+	for setupState(t, m).Step() != uionboarding.QuickPrompt {
+		_, cmd = m.applySetupOutcome(setupState(t, m).Model.Key(enterKey))
 	}
-	if cmd == nil || !m.startup.setup.ticking {
+	if cmd == nil || !setupState(t, m).Ticking() {
 		t.Fatal("reaching the quick prompt step started no ticks")
 	}
-	if m.keepSetupAnimating() != nil {
+	if setupState(t, m).KeepAnimating() != nil {
 		t.Fatal("a second tick chain started while one runs")
 	}
-	if m.applySetupTick() == nil {
+	if setupState(t, m).Advance() == nil {
 		t.Fatal("a tick on an animated step did not ask for the next")
 	}
-	m.mode = modeList
-	if m.applySetupTick() != nil || m.startup.setup.ticking {
+	s, _ := m.setupSurface()
+	m.Pop()
+	_, stale, _ := m.routeSetupMsg(uionboarding.TickMsg{Surface: s})
+	if stale != nil || s.Ticking() {
 		t.Fatal("ticks kept coming after the setup closed")
 	}
 }
@@ -231,18 +269,18 @@ func TestSetupScenesFitTheTerminal(t *testing.T) {
 			pressKeys(m, enterKey)
 		}
 		pressKeys(m, enterKey, enterKey, enterKey)
-		for m.startup.setup.Step() != uionboarding.Import {
+		for setupState(t, m).Step() != uionboarding.Import {
 			for range 200 {
 				lines := strings.Split(preparedView(m), "\n")
 				if len(lines) != 36 {
-					t.Fatalf("%v painted %d rows", m.startup.setup.Step(), len(lines))
+					t.Fatalf("%v painted %d rows", setupState(t, m).Step(), len(lines))
 				}
 				for i, line := range lines {
 					if width := ansi.StringWidth(line); width != 120 {
-						t.Fatalf("%v row %d is %d wide:\n%s", m.startup.setup.Step(), i, width, ansi.Strip(line))
+						t.Fatalf("%v row %d is %d wide:\n%s", setupState(t, m).Step(), i, width, ansi.Strip(line))
 					}
 				}
-				m.startup.setup.Tick()
+				setupState(t, m).Tick()
 			}
 			pressKeys(m, enterKey)
 		}
@@ -251,19 +289,19 @@ func TestSetupScenesFitTheTerminal(t *testing.T) {
 
 func TestSetupImportStartsTheImportAgent(t *testing.T) {
 	m := setupModel(t)
-	for m.startup.setup.Step() != uionboarding.Import {
+	for setupState(t, m).Step() != uionboarding.Import {
 		pressKeys(m, enterKey)
 	}
 	pressKeys(m, tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, enterKey)
-	if m.mode != modeList {
-		t.Fatalf("starting the import left mode %v", m.mode)
+	if !m.listClear() {
+		t.Fatalf("starting the import left mode %v", m.screenID())
 	}
-	var queued []spawnRequest
-	for _, job := range append([]*effectJob{m.effects.main.active}, m.effects.main.pending...) {
+	var queued []uilaunch.Request
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
 		if job == nil {
 			continue
 		}
-		if request, ok := job.request.(spawnRequest); ok {
+		if request, ok := job.Request.(uilaunch.Request); ok {
 			queued = append(queued, request)
 		}
 	}
@@ -271,18 +309,44 @@ func TestSetupImportStartsTheImportAgent(t *testing.T) {
 		t.Fatalf("queued %d spawns, want the import agent", len(queued))
 	}
 	request := queued[0]
-	if request.kind != spawnImport || request.toolName != "claude" || request.name != importSessionName ||
-		!strings.Contains(request.prompt, "Bring my past claude conversations from the last 7 days") {
+	if request.Kind != uilaunch.Import || request.ToolName != "claude" || request.Name != importSessionName ||
+		!strings.Contains(request.Prompt, "Bring my past claude conversations from the last 7 days") {
 		t.Fatalf("queued %+v", request)
 	}
 }
 
 func TestSetupImportKeepsTheRememberedSpawnPick(t *testing.T) {
 	m := setupModel(t)
-	m.rememberSpawnPick("codex", true)
-	request := spawnRequest{kind: spawnImport, toolName: "claude", name: importSessionName}
-	m.applySpawnEffect(request, spawnEffectResult{session: store.Session{ID: "import", Name: importSessionName, Tool: "claude"}}, nil)
-	if m.ledger.lastSpawnTool != "codex" || !m.ledger.lastSpawnWorktree {
-		t.Fatalf("the import replaced the remembered pick: %q worktree %v", m.ledger.lastSpawnTool, m.ledger.lastSpawnWorktree)
+	m.ledger.spawner.RememberSpawn("codex", true)
+	request := uilaunch.Request{Kind: uilaunch.Import, ToolName: "claude", Name: importSessionName}
+	m.applySpawn(request, uilaunch.Result{Session: store.Session{ID: "import", Name: importSessionName, Tool: "claude"}}, nil)
+	if m.ledger.spawner.LastSpawnTool != "codex" || !m.ledger.spawner.LastSpawnWorktree {
+		t.Fatalf("the import replaced the remembered pick: %q worktree %v", m.ledger.spawner.LastSpawnTool, m.ledger.spawner.LastSpawnWorktree)
+	}
+}
+
+func TestSetupFirstRunDefersProbeUntilInit(t *testing.T) {
+	m := buildModel(t)
+	if cmd := m.openSetup(true); cmd != nil {
+		t.Fatal("first-run setup started work before the program's Init")
+	}
+	s := setupState(t, m)
+	probeQueued := func() bool {
+		for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
+			if job == nil {
+				continue
+			}
+			if request, ok := job.Request.(onboardingruntime.ProbeRequest); ok && request.Target == s.ID() {
+				return true
+			}
+		}
+		return false
+	}
+	if probeQueued() {
+		t.Fatal("first-run setup queued a probe before Init")
+	}
+	m.Init()
+	if !probeQueued() {
+		t.Fatal("Init did not queue the first-run setup probe")
 	}
 }

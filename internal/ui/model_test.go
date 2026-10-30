@@ -9,7 +9,7 @@ import (
 
 // Model's fields are grouped by the feature that owns them. Later steps move
 // groups into feature types and lower this cap.
-const maxModelFields = 30
+const maxModelFields = 21
 
 func TestModelFieldCap(t *testing.T) {
 	if n := reflect.TypeFor[Model]().NumField(); n > maxModelFields {

@@ -71,8 +71,6 @@ type Selection struct {
 	Host      string
 }
 
-// Remote reports whether the row lives on an SSH connection, the
-// connection's own row included.
 func (s Selection) Remote() bool { return s.Host != "" }
 
 func (s Selection) key() string {

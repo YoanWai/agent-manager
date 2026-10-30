@@ -1,6 +1,7 @@
 package ui
 
 import (
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -62,7 +63,7 @@ func (m *Model) orchestrateScene(scene *previewScene, p uionboarding.Preview, wi
 		Prompt: "keep checkout healthy", PaneLine: "Ready.", CreatedAt: now.Add(-time.Hour), LastStatusAt: now.Add(-time.Hour)}
 	scene.sessions, scene.groups = []uirail.Session{lead}, nil
 	scene.selected = sessionSelection(previewLead, "")
-	target := lipgloss.NewStyle().Foreground(colorBright()).Render("checkout lead")
+	target := lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Render("checkout lead")
 	ask := uionboarding.OrchestrateAsk
 	log := []contentLine{{}, m.promptLine(lead.Prompt, false), m.stepLine("Ready.")}
 	sent := p.Scene > 0 || p.Frame >= len([]rune(ask))+10

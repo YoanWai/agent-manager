@@ -12,7 +12,6 @@ import (
 // modalMax is the widest row the modal makes room for, the longest line remote text may carry.
 const modalMax = 160
 
-// scrollbarWidth is the scrollbar's column and the gap before it.
 const scrollbarWidth = 2
 
 // proseWidth keeps a paragraph to a readable measure on a wide modal.
@@ -285,7 +284,6 @@ func appendWrapped(rows []string, runs []textRun, width int, base lipgloss.Style
 	return rows
 }
 
-// plainMarks drops the accent marks release text carries.
 func plainMarks(text string) string {
 	return strings.ReplaceAll(text, "`", "")
 }
