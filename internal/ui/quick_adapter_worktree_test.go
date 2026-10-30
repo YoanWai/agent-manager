@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -39,4 +42,44 @@ func TestQuickWorktreePresentationSurvivesExpiry(t *testing.T) {
 	if view := ansi.Strip(m.viewQuickBar(160, 6)); m.quickWorktreeOn() || !strings.Contains(view, "no repo") {
 		t.Fatalf("expired negative should retain the quick bar's no-repo state: %q", view)
 	}
+}
+
+func TestQuickToggleSeesARepoInitialisedWhileOpen(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	dir, seed := filepath.Join(root, "plain"), filepath.Join(root, "seed")
+	for _, path := range []string{dir, seed} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// git init can outlast WorktreeLookupTTL on Windows, so the repo is built
+	// before the answer is cached and only moved into place after.
+	initGitRepo(t, seed)
+	m := quickGroupModel(t, dir)
+	m.openQuickMode()
+	m.applyTestMsg(t, m.quickWorktreeProbeCmd(false)())
+	ageWorktreeAnswer(m, m.quickTargetDir())
+	if view := ansi.Strip(m.viewQuickBar(160, 6)); !strings.Contains(view, "no repo") {
+		t.Fatalf("a plain directory should read no repo after its answer ages: %q", view)
+	}
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
+	if m.quickWorktreeOn() || !strings.Contains(m.errBar.text, "need a git repository") {
+		t.Fatalf("a plain directory took the toggle: on %t error %q", m.quickWorktreeOn(), m.errBar.text)
+	}
+
+	if err := os.Rename(filepath.Join(seed, ".git"), filepath.Join(dir, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	ageWorktreeAnswer(m, m.quickTargetDir())
+	applyQuickKeyCmd(t, m, tea.KeyMsg{Type: tea.KeyCtrlT})
+	if view := ansi.Strip(m.viewQuickBar(160, 6)); !m.quickWorktreeOn() || !strings.Contains(view, m.glyphs().WorktreeGlyph+" on") {
+		t.Fatalf("a repo initialised while the bar was open should take the toggle: %q", view)
+	}
+}
+
+func ageWorktreeAnswer(m *Model, dir string) {
+	answer := m.ledger.spawner.WorktreeRepos[dir]
+	answer.At = answer.At.Add(-uilaunch.WorktreeLookupTTL)
+	m.ledger.spawner.WorktreeRepos[dir] = answer
 }
