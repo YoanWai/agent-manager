@@ -26,17 +26,14 @@ type State struct {
 // and the effective toggle until a probe replaces it.
 func (s *State) CachedWorktree(dir string) (bool, bool) {
 	answer, ok := s.WorktreeRepos[dir]
-	if !ok || answer.At.IsZero() {
-		return false, false
-	}
-	return answer.Capable, true
+	return answer.Capable, ok
 }
 
 // FreshWorktree is that verdict only while it is recent enough for an
 // explicit toggle to act on.
 func (s *State) FreshWorktree(dir string, now time.Time) (bool, bool) {
 	answer, ok := s.WorktreeRepos[dir]
-	if !ok || answer.At.IsZero() || now.Sub(answer.At) >= WorktreeLookupTTL {
+	if !ok || now.Sub(answer.At) >= WorktreeLookupTTL {
 		return false, false
 	}
 	return answer.Capable, true

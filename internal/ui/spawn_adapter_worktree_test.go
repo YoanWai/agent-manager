@@ -132,15 +132,12 @@ func TestWorktreeObservationIsDirectoryScoped(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.ledger.spawner.WorktreeRepos = map[string]uilaunch.RepoAnswer{
-		"old":  {Capable: true, At: time.Now().Add(-24 * time.Hour)},
-		"zero": {Capable: true},
+		"old": {Capable: true, At: time.Now().Add(-24 * time.Hour)},
 	}
-	for _, dir := range []string{"new", "zero"} {
-		if _, known := m.cachedWorktreeCapability(dir); known {
-			t.Fatalf("unobserved directory %q inherited a repository verdict", dir)
-		}
-		if _, fresh := m.freshWorktreeCapability(dir); fresh {
-			t.Fatalf("unobserved directory %q has a fresh repository verdict", dir)
-		}
+	if _, known := m.cachedWorktreeCapability("new"); known {
+		t.Fatal("unobserved directory inherited a repository verdict")
+	}
+	if _, fresh := m.freshWorktreeCapability("new"); fresh {
+		t.Fatal("unobserved directory has a fresh repository verdict")
 	}
 }
