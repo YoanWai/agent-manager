@@ -75,7 +75,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 	if m.rail.ShowArchived() {
 		return nil
 	}
-	names, index := m.cachedSpawnToolSelection()
+	names, index := m.cachedDefaultToolSelection()
 	if len(names) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
 		return nil
@@ -117,7 +117,7 @@ func (m *Model) openQuickModeWithReader(reader settingsValueReader) tea.Cmd {
 // to starts its choices over and asks its CLI.
 func (m *Model) applyCachedQuickDefaults() tea.Cmd {
 	before := m.quick.Tool()
-	m.quick.SetTools(m.cachedSpawnToolSelection())
+	m.quick.SetTools(m.cachedDefaultToolSelection())
 	m.quick.closeAfterSend = m.settings.cache.value(uisettings.QuickCloseSetting) == "close"
 	m.quick.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.quickTargetGroup()))
 	toolName := m.quick.Tool()

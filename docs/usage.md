@@ -107,6 +107,8 @@ Opening a session (`enter`, or `→`) takes the whole body too, through the same
 
 Every configured tool is offered when you create a session, which is more than most people run. Settings (`s`) has a `CLIs` row: `enter` opens a checklist, `space` or `enter` unchecks the tool under the cursor, `esc` saves, and the ones left checked are what the `n` form's `tool` picker and quick prompt mode's `tab` cycle through. The last checked tool cannot be unchecked, since a picker with nothing in it could not create a session. It only narrows the pickers, so a session already on an unchecked tool keeps running and revives on that same tool. The last row, `request CLI support`, opens an issue for a CLI we do not ship rules for yet.
 
+Both pickers start on the **default tool** row of Settings, and every session you create from them sets that row to its tool. The next session, after a restart too, starts on the CLI you last picked, and so does an `agent-manager spawn` with no `--tool` from a terminal tab or a script. Changing the row in Settings moves the starting point, the same as a pick does.
+
 ## Saved prompts
 
 Settings (`s`), row **saved prompts**. `n` creates one, `enter` edits it, `d` deletes it. `tab` moves between the name and the text, `ctrl+s` saves, `esc` backs out. From a shell, `agent-manager prompts add`.

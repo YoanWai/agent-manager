@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -228,7 +229,7 @@ func (m *Model) openForm() tea.Cmd {
 }
 
 func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
-	tools, toolIndex := m.cachedSpawnToolSelection()
+	tools, toolIndex := m.cachedDefaultToolSelection()
 	if len(tools) == 0 {
 		m.reportErr("no CLIs enabled: open settings (s), then CLIs, to turn some on")
 		return nil
@@ -266,7 +267,7 @@ func (m *Model) openFormWithReader(reader settingsValueReader) tea.Cmd {
 // tool the load moved to starts its choice rows over and asks its CLI.
 func (m *Model) applyCachedFormDefaults() tea.Cmd {
 	before := m.form.Tool()
-	m.form.SetTools(m.cachedSpawnToolSelection())
+	m.form.SetTools(m.cachedDefaultToolSelection())
 	m.form.DefaultWorktree(m.cachedSpawnWorktreeDefault(m.selectedGroupPath()))
 	toolName := m.form.Tool()
 	if toolName == before || toolName == "" {
@@ -392,6 +393,9 @@ func (m *Model) viewForm() string {
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 	m.ledger.lastSpawnTool = tool
 	m.ledger.lastSpawnWorktree = worktree
+	if m.settings.cache.value(uisettings.DefaultToolSetting) != tool {
+		m.saveChoiceSetting(uisettings.DefaultToolSetting, tool)
+	}
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {

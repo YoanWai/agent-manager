@@ -352,7 +352,7 @@ func TestFormLastWorktreeYieldsToGroupDefault(t *testing.T) {
 	}
 }
 
-func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
+func TestFormHiddenLastToolFallsBackToFirstEnabled(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.openForm()
@@ -365,21 +365,33 @@ func TestFormHiddenLastToolFallsBackToSettings(t *testing.T) {
 
 	m.applyTestMsg(t, m.openForm()())
 	if got := m.form.Tool(); got != "claude" {
-		t.Fatalf("hidden last tool should fall back to settings, got %q", got)
+		t.Fatalf("hidden last tool should fall back to the first enabled CLI, got %q", got)
 	}
 	if m.form.Worktree() {
 		t.Fatal("hidden last tool should fall back to the settings worktree default")
 	}
 }
 
-func TestSettingsDefaultIgnoresLastSpawn(t *testing.T) {
+func TestLastSpawnToolBecomesSettingsDefault(t *testing.T) {
 	m := buildModel(t)
 	m.openForm()
 	pickFormTool(t, m, "ready-tool")
 	submitFormSession(t, m, "first")
 
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool = %q, %v; want the last spawn, ready-tool", tool, err)
+	}
 	m.openSettings()
-	if got := m.settings.dialog.ToolNames[m.settings.dialog.ToolIndex]; got != "claude" {
-		t.Fatalf("settings default tool = %q, want stored default", got)
+	if got := m.settings.dialog.ToolNames[m.settings.dialog.ToolIndex]; got != "ready-tool" {
+		t.Fatalf("settings default tool = %q, want the last spawn", got)
+	}
+
+	m.mode = modeList
+	if err := m.services.store.SetDefaultTool("claude"); err != nil {
+		t.Fatal(err)
+	}
+	m.applyTestMsg(t, m.openForm()())
+	if got := m.form.Tool(); got != "claude" {
+		t.Fatalf("form tool = %q, want the default changed in settings after the spawn", got)
 	}
 }
