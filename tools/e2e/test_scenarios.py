@@ -26,6 +26,12 @@ class SelectionTests(unittest.TestCase):
                 return value
         raise TimeoutError(name)
 
+    def test_profile_uses_the_explicit_xdg_directory_on_macos(self):
+        sandbox = SimpleNamespace(home=Path('/fixture/home'))
+        with patch('sys.platform', 'darwin'):
+            self.assertEqual(scenarios.profile_dir(sandbox),
+                             Path('/fixture/home/.config/agent-manager'))
+
     def test_selected_local_row_does_not_receive_a_navigation_key(self):
         selected = preview('wanted\n') + '\n' + preview(scenarios.READY_MARKER)
         with patch.object(scenarios, 'capture', return_value=selected), \

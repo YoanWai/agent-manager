@@ -40,7 +40,8 @@ Before the first command, the harness waits for the unique shell prompt in the
 managed pane. A command acknowledgement file then proves execution. The Help
 wheel assertion compares the exact final frame with a keyboard-only PageDown
 baseline, asserting Help remains open at the exact keyboard-only scroll
-position. Poll waits require an observable condition; the 50ms cadence is never a transition delay.
+position. Poll waits require an observable condition. The cadence starts at 50ms and
+widens with elapsed time to at most 500ms; it is never a transition delay.
 
 Two rules keep these scenarios honest on a slower runner.
 

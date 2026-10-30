@@ -173,6 +173,9 @@ def select(sandbox, name, needle):
         (sandbox.artifacts / (name + '-selected.txt')).write_text(second)
         return True
 
+    if settled(''):
+        return
+
     for index, step in enumerate(['j'] * 12 + ['k'] * 24):
         key(sandbox, step)
         try:

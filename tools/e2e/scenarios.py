@@ -12,7 +12,6 @@ import re
 import shlex
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import time
 import uuid
@@ -54,9 +53,7 @@ def config_fixture_text():
 
 
 def profile_dir(sandbox):
-    # os.UserConfigDir: Library/Application Support on macOS, XDG_CONFIG_HOME elsewhere.
-    if sys.platform == 'darwin':
-        return sandbox.home / 'Library' / 'Application Support' / 'agent-manager'
+    # Sandbox and RemoteHost explicitly set XDG_CONFIG_HOME, including on macOS.
     return sandbox.home / '.config' / 'agent-manager'
 
 
@@ -181,9 +178,12 @@ def select_row(sandbox, name, step):
     # list, so a step that overshoots has to be walked back. Every step is
     # confirmed before the next, and the row has to hold once more after the
     # last one, since a key still in flight lands after the check.
+    if settled(''):
+        return
+
     steps = ['j'] * 6 + ['k'] * 12 + ['j'] * 6
-    for attempt, step in enumerate(steps):
-        key(sandbox, step)
+    for attempt, move in enumerate(steps):
+        key(sandbox, move)
         try:
             sandbox.wait(f'{step}-selected-{attempt}', lambda: '', settled, timeout=0.6)
         except TimeoutError:
