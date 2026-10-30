@@ -477,8 +477,11 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	answer := m.ledger.spawner.WorktreeRepos[dir]
 	answer.At = answer.At.Add(-uilaunch.WorktreeLookupTTL)
 	m.ledger.spawner.WorktreeRepos[dir] = answer
-	if _, known := m.cachedWorktreeCapability(dir); known {
-		t.Fatal("expired capability still appeared current")
+	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
+		t.Fatal("expiration discarded the last observed non-repository verdict")
+	}
+	if _, fresh := m.freshWorktreeCapability(dir); fresh {
+		t.Fatal("expired capability still appeared fresh for a toggle")
 	}
 	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
 	if capable, known := m.cachedWorktreeCapability(dir); !known || !capable {

@@ -605,7 +605,7 @@ func (m *Model) formWorktreeOn() bool {
 // rules a worktree out.
 func (m *Model) toggleFormWorktree() tea.Cmd {
 	dir := m.formSpawnDir()
-	capable, known := m.cachedWorktreeCapability(dir)
+	capable, known := m.freshWorktreeCapability(dir)
 	if !known {
 		return m.formWorktreeProbeCmd(true)
 	}
@@ -620,7 +620,11 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 }
 
 func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
-	return m.ledger.spawner.CachedWorktree(dir, time.Now())
+	return m.ledger.spawner.CachedWorktree(dir)
+}
+
+func (m *Model) freshWorktreeCapability(dir string) (bool, bool) {
+	return m.ledger.spawner.FreshWorktree(dir, time.Now())
 }
 
 func (m *Model) requestDirectoryProbe(target uilaunch.ProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {

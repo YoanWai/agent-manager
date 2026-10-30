@@ -5,22 +5,26 @@ import (
 	"time"
 )
 
-// A directory's git-repo answer is trusted inside the window and dropped
-// after it, so a repo initialised while the quick bar is open is seen.
+// A directory's git-repo answer stays on hand for paint, and a toggle
+// trusts it only inside the window, so a repo initialised while the quick
+// bar is open is seen.
 func TestWorktreeAnswerExpires(t *testing.T) {
 	t.Parallel()
 	state := State{}
 	now := time.Now()
 	state.RememberWorktree("/tmp/repo", true, now)
 
-	if capable, known := state.CachedWorktree("/tmp/repo", now.Add(time.Second)); !known || !capable {
+	if capable, known := state.FreshWorktree("/tmp/repo", now.Add(time.Second)); !known || !capable {
 		t.Fatalf("fresh answer = %v, %v", capable, known)
 	}
-	if _, known := state.CachedWorktree("/tmp/repo", now.Add(WorktreeLookupTTL)); known {
+	if _, known := state.FreshWorktree("/tmp/repo", now.Add(WorktreeLookupTTL)); known {
 		t.Fatal("an answer at the TTL boundary is stale")
 	}
+	if capable, known := state.CachedWorktree("/tmp/repo"); !known || !capable {
+		t.Fatalf("a stale answer left paint = %v, %v", capable, known)
+	}
 	state.ForgetWorktree()
-	if _, known := state.CachedWorktree("/tmp/repo", now); known {
+	if _, known := state.CachedWorktree("/tmp/repo"); known {
 		t.Fatal("forgotten answer came back")
 	}
 }
