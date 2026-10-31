@@ -114,7 +114,7 @@ func (m *Model) Enter(ctx EnterContext) {
 	m.clearSelection()
 	m.pending = pendingClick{}
 	m.forward = forwardedGesture{}
-	m.pointer = pointerAt{}
+	m.ForgetPointer()
 	m.cursorOn = true
 	m.scroll = 0
 	m.fetchInFlight = false

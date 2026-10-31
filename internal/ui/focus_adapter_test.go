@@ -8,6 +8,7 @@ import (
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
 	uilifecycle "github.com/YoanWai/agent-manager/internal/ui/session/lifecycle"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -157,6 +158,39 @@ func TestFocusHoverShowsTheHandOverALink(t *testing.T) {
 	m.syncPointerShape()
 	if got := sink.String(); got != reset {
 		t.Fatalf("leaving focus wrote %q, want %q", got, reset)
+	}
+}
+
+// A program taking the screen gets the terminal's own pointer while the
+// manager's screen is still up, and the hand waits for the mouse to move
+// again once the manager is back.
+func TestFocusHandoffPutsThePointerBack(t *testing.T) {
+	const reset = "\x1b]22;text\x1b\\\x1b]22;\x1b\\"
+	var sink strings.Builder
+	previous := termseq.Out
+	termseq.Out = &sink
+	t.Cleanup(func() { termseq.Out = previous })
+
+	handoffs := map[string]func(m *Model){
+		"link page": func(m *Model) { m.routeFocusMsg(linkPageMsg{url: "https://example.com/docs"}) },
+		"editor": func(m *Model) {
+			m.launchEditor(uisession.Launch{Command: exec.Command("vi"), Name: "vi"}, editorReturnTarget{})
+		},
+	}
+	for name, handOff := range handoffs {
+		m, _ := focusedShotPane(t, 80, 0, 0, "read https://example.com/docs now")
+		m.handleMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonNone, X: 8, Y: 0})
+		m.syncPointerShape()
+		sink.Reset()
+		handOff(m)
+		if got := sink.String(); got != reset {
+			t.Fatalf("%s: handing over wrote %q, want %q", name, got, reset)
+		}
+		sink.Reset()
+		m.syncPointerShape()
+		if got := sink.String(); got != "" {
+			t.Fatalf("%s: the hand came back before the mouse moved: %q", name, got)
+		}
 	}
 }
 

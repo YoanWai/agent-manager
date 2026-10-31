@@ -1,42 +1,32 @@
 package terminal
 
 import (
-	"os/exec"
 	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/termseq"
 )
 
-// Handing the terminal to another program puts the terminal's own pointer
-// back first, so a hand shown over a link never sits over that program.
-func TestHandoffsPutThePointerBack(t *testing.T) {
+// The pointer is written only when it changes.
+func TestShowHandWritesOnlyChanges(t *testing.T) {
 	var sink strings.Builder
 	previous := termseq.Out
 	termseq.Out = &sink
 	t.Cleanup(func() { termseq.Out = previous })
-	stubLinkCopy(t, nil)
 
-	handoffs := map[string]func() error{
-		"child process": func() error { return childCommand{exec.Command("true")}.Run() },
-		"link page": func() error {
-			runLinkPage(t, "https://example.com/docs", "\n")
-			return nil
-		},
-	}
-	for name, run := range handoffs {
-		ShowHand(true)
+	for _, step := range []struct {
+		hand bool
+		want string
+	}{
+		{true, handPointer},
+		{true, ""},
+		{false, resetPointer},
+		{false, ""},
+	} {
 		sink.Reset()
-		if err := run(); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if !strings.HasPrefix(sink.String(), resetPointer) {
-			t.Fatalf("%s wrote %q before the pointer reset", name, sink.String())
-		}
-		sink.Reset()
-		ShowHand(false)
-		if sink.Len() != 0 {
-			t.Fatalf("%s: the pointer was reset twice", name)
+		ShowHand(step.hand)
+		if got := sink.String(); got != step.want {
+			t.Fatalf("ShowHand(%v) wrote %q, want %q", step.hand, got, step.want)
 		}
 	}
 }

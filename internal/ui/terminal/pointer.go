@@ -10,8 +10,7 @@ const (
 	resetPointer = "\x1b]22;text\x1b\\\x1b]22;\x1b\\"
 )
 
-// handShown is the pointer the one terminal was last told to show. Updates
-// and handoffs both run on Bubble Tea's event loop.
+// handShown is the pointer the one terminal was last told to show.
 var handShown bool
 
 // ShowHand turns the terminal's pointer into a hand, or gives it back its

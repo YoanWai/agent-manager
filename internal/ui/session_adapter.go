@@ -615,6 +615,7 @@ func (m *Model) launchEditor(editor uisession.Launch, returnTo editorReturnTarge
 	}
 	m.clearErr()
 	if editor.TakesScreen() {
+		m.handOffTerminal()
 		return m, uiterminal.ExecProcess(editor.Command, func(err error) tea.Msg {
 			return editorDoneMsg{err: err, tookScreen: true, returnTo: returnTo}
 		})
@@ -745,6 +746,7 @@ func (m *Model) applyAttachEffect(request uilifecycle.AttachRequest, result uili
 	if result.Warning != nil {
 		m.reportErr(result.Warning.Error())
 	}
+	m.handOffTerminal()
 	return uiterminal.ExecProcess(m.services.tmux.AttachCommand(request.ID), func(err error) tea.Msg { return attachDoneMsg{sessID: request.ID, err: err} })
 }
 
