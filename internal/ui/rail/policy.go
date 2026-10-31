@@ -254,8 +254,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 	case keybind.Resize:
 		return m.intent(Resize)
 	case keybind.Archived:
-		m.showArchived = !m.showArchived
-		return Decision{Consumed: true, Refresh: true, Selection: selectedOf(m)}
+		return m.toggleArchived()
 	case keybind.Terminal:
 		return m.intent(NewTerminal)
 	case keybind.Editor:
@@ -339,6 +338,15 @@ func (m *Model) cycleFilter() Decision {
 	m.rebuildRows()
 	current, currentOK := m.Selected()
 	return filterSelectionDecision(previous, previousOK, current, currentOK)
+}
+
+func (m *Model) toggleArchived() Decision {
+	previous, previousOK := m.Selected()
+	m.SetArchived(!m.showArchived)
+	current, currentOK := m.Selected()
+	decision := filterSelectionDecision(previous, previousOK, current, currentOK)
+	decision.Refresh = true
+	return decision
 }
 
 func (m *Model) toggleEmptyGroups() Decision {
