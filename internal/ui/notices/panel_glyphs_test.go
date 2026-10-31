@@ -11,7 +11,7 @@ import (
 func TestCompatibleNoticeFooterMeasuresDisplayedKeys(t *testing.T) {
 	const literal = "↵⌫🬹🬂🬨 notice content"
 	notices := []Notice{{ID: "custom", Title: literal, Body: []string{literal}, URL: "https://example.com"}}
-	p := NewPanel(nil)
+	p := NewPanel(nil, nil)
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
 		for _, width := range []int{66, 80, 120} {
 			f := testFrame()

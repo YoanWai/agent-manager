@@ -24,7 +24,7 @@ func TestActiveSortsKindsAndFillsSubtitles(t *testing.T) {
 		},
 		ConfigImportError: "bad key",
 	}
-	notices := NewPanel(map[string]bool{}).Active(src)
+	notices := NewPanel(map[string]bool{}, map[string]bool{}).Active(src)
 
 	wantKinds := []Kind{KindRelease, KindNews, KindHeadsUp, KindHeadsUp}
 	gotKinds := make([]Kind, len(notices))
@@ -63,7 +63,7 @@ func TestActiveKeepsFeedOrderWithinAKind(t *testing.T) {
 			{ID: "news-a", Kind: KindNews},
 		},
 	}
-	got := ids(NewPanel(map[string]bool{}).Active(src))
+	got := ids(NewPanel(map[string]bool{}, map[string]bool{}).Active(src))
 	want := []string{"news-b", "news-a", "tip-b", "tip-a"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("ids = %v, want %v", got, want)
@@ -82,7 +82,7 @@ func TestActiveWhatsNewSubtitleIsTheNewestHeadline(t *testing.T) {
 			}},
 		},
 	}
-	notices := NewPanel(map[string]bool{}).Active(src)
+	notices := NewPanel(map[string]bool{}, map[string]bool{}).Active(src)
 	if len(notices) != 1 || notices[0].Kind != KindRelease || notices[0].Subtitle != "A first-run setup" {
 		t.Fatalf("notices = %+v", notices)
 	}
@@ -90,7 +90,7 @@ func TestActiveWhatsNewSubtitleIsTheNewestHeadline(t *testing.T) {
 
 func TestActiveReleaseWithoutHeadlineHasNoSubtitle(t *testing.T) {
 	src := Sources{Store: true, Update: Update{Version: "v0.45.0", Latest: "v0.46.0"}}
-	notices := NewPanel(map[string]bool{}).Active(src)
+	notices := NewPanel(map[string]bool{}, map[string]bool{}).Active(src)
 	if len(notices) != 1 || notices[0].Subtitle != "" {
 		t.Fatalf("notices = %+v", notices)
 	}

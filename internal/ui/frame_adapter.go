@@ -5,6 +5,7 @@ import (
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -387,11 +388,19 @@ func (m *Model) messagesAlert() (glyph, label string) {
 	if m.release.FeedPending {
 		return glyph, uinotices.FeedPendingText
 	}
-	if len(m.activeNotices()) == 0 {
+	notices := m.activeNotices()
+	if len(notices) == 0 {
 		return "", ""
 	}
-	return glyph, "unread"
+	if slices.ContainsFunc(notices, func(n uinotices.Notice) bool { return n.Unread }) {
+		return glyph, "unread"
+	}
+	return glyph, messagesReadLabel
 }
+
+// messagesReadLabel is the chip once every active notice is read: dim, and
+// still a click into the panel.
+const messagesReadLabel = "messages"
 
 const (
 	contentGutter = 2

@@ -11,8 +11,8 @@ import (
 )
 
 // Panel is the messages modal's own state: the selected notice, the body
-// scroll and the notices dismissed for good. The root persists a dismissal
-// and restores it when the write fails.
+// scroll, the notices dismissed for good and the ones already read. The root
+// persists a dismissal and restores it when the write fails.
 type Panel struct {
 	cursor int
 	scroll int
@@ -22,10 +22,13 @@ type Panel struct {
 	// dismissed holds the notice ids the user closed for good; the set
 	// persists in settings so a dismissed message never comes back.
 	dismissed map[string]bool
+	// seen holds the notice ids that have been the selected message while
+	// the panel was open; it persists beside the dismissed set.
+	seen map[string]bool
 }
 
-func NewPanel(dismissed map[string]bool) Panel {
-	return Panel{dismissed: dismissed}
+func NewPanel(dismissed, seen map[string]bool) Panel {
+	return Panel{dismissed: dismissed, seen: seen}
 }
 
 func (p Panel) Cursor() int { return p.cursor }
@@ -39,6 +42,11 @@ func (p Panel) Dismissed(id string) bool { return p.dismissed[id] }
 func (p *Panel) Dismiss(id string) { p.dismissed[id] = true }
 
 func (p *Panel) Restore(id string) { delete(p.dismissed, id) }
+
+func (p Panel) Seen(id string) bool { return p.seen[id] }
+
+// See marks a notice read ahead of the write that persists it.
+func (p *Panel) See(id string) { p.seen[id] = true }
 
 // Open shows the panel on the notice with id, or on the first one. It opens
 // even with nothing in it: a fresh install and the first run after an

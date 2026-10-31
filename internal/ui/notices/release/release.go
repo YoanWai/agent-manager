@@ -24,6 +24,7 @@ import (
 
 const (
 	DismissedSetting    = "dismissed_notices"
+	SeenSetting         = "seen_notices"
 	LastSeenSetting     = "last_seen_version"
 	WhatsNewSetting     = "whats_new_version"
 	WhatsNewFromSetting = "whats_new_from_version"
@@ -95,20 +96,24 @@ func (s *State) UseCached(configDir string) {
 	s.Checked = len(cached.Releases) > 0
 }
 
-func Dismissed(st Store) map[string]bool {
-	dismissed := map[string]bool{}
-	raw, err := st.Setting(DismissedSetting)
+func Dismissed(st Store) map[string]bool { return noticeIDs(st, DismissedSetting) }
+
+func Seen(st Store) map[string]bool { return noticeIDs(st, SeenSetting) }
+
+func noticeIDs(st Store, key string) map[string]bool {
+	set := map[string]bool{}
+	raw, err := st.Setting(key)
 	if err != nil || raw == "" {
-		return dismissed
+		return set
 	}
 	var ids []string
 	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
-		return dismissed
+		return set
 	}
 	for _, id := range ids {
-		dismissed[id] = true
+		set[id] = true
 	}
-	return dismissed
+	return set
 }
 
 const SetupGreeting = "setup"

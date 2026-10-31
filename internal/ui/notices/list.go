@@ -160,6 +160,7 @@ func (p Panel) Active(src Sources) []Notice {
 	kept := notices[:0]
 	for _, n := range notices {
 		if !p.dismissed[n.ID] {
+			n.Unread = !p.seen[n.ID]
 			kept = append(kept, n)
 		}
 	}

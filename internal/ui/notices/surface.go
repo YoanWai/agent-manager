@@ -8,8 +8,8 @@ import (
 
 // Surface is the messages modal over the list. It owns the cursor, the body
 // scroll and the rows it painted for clicks; the notices themselves, and the
-// dismissed set they are filtered by, stay on the root, since the footer's
-// unread mark reads them with the modal closed.
+// dismissed and seen sets they are built with, stay on the root, since the
+// footer's unread mark reads them with the modal closed.
 type Surface struct {
 	panel Panel
 	root  Root
@@ -23,7 +23,8 @@ type Root interface {
 	NoticesFrame() Frame
 	RefreshNotices() tea.Cmd
 	StartUpdate() tea.Cmd
-	DismissNotice(id string)
+	// MarkNotice dismisses a notice, or marks the one the panel shows read.
+	MarkNotice(mark Mark)
 	// PaintNoticesCard floats the card and records its body and the keys on
 	// its bottom edge for clicks.
 	PaintNoticesCard(card []string, foot []presentation.PaintedKey) string
@@ -33,11 +34,19 @@ type Root interface {
 	OpenLink(url string) tea.Cmd
 }
 
-// NewSurface copies the root's panel for its dismissed set, which the copy
-// shares, and opens it on the notice with id, or the first.
+// Mark is what the user did to a notice: read it by selecting it, or
+// dismiss it for good.
+type Mark struct {
+	ID      string
+	Dismiss bool
+}
+
+// NewSurface copies the root's panel for its dismissed and seen sets, which
+// the copy shares, and opens it on the notice with id, or the first.
 func NewSurface(root Root, base Panel, id string) *Surface {
 	s := &Surface{panel: base, root: root}
 	s.panel.Open(root.ActiveNotices(), id)
+	s.seeSelected()
 	return s
 }
 
@@ -47,11 +56,20 @@ func (s *Surface) Panel() *Panel { return &s.panel }
 
 func (s *Surface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
 	s.root.TakeForeground()
-	return true, s.apply(h, s.panel.Key(msg, s.root.ActiveNotices(), s.root.NoticesFrame()))
+	cmd := s.apply(h, s.panel.Key(msg, s.root.ActiveNotices(), s.root.NoticesFrame()))
+	s.seeSelected()
+	return true, cmd
 }
 
 func (s *Surface) Click(h surface.Host, line int) tea.Cmd {
-	return s.apply(h, s.panel.Click(line, s.root.ActiveNotices(), s.root.NoticesFrame()))
+	cmd := s.apply(h, s.panel.Click(line, s.root.ActiveNotices(), s.root.NoticesFrame()))
+	s.seeSelected()
+	return cmd
+}
+
+// seeSelected reads the list again, since a dismissal changes it.
+func (s *Surface) seeSelected() {
+	s.root.MarkNotice(Mark{ID: s.panel.Selected(s.root.ActiveNotices())})
 }
 
 func (s *Surface) Wheel(_ surface.Host, arrow tea.KeyMsg) tea.Cmd {
@@ -88,7 +106,7 @@ func (s *Surface) apply(h surface.Host, out Outcome) tea.Cmd {
 	case OpenLink:
 		return s.root.OpenLink(out.URL)
 	case Dismiss:
-		s.root.DismissNotice(out.ID)
+		s.root.MarkNotice(Mark{ID: out.ID, Dismiss: true})
 		if out.Close {
 			h.Pop()
 		}

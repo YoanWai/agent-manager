@@ -33,7 +33,7 @@ func ids(notices []Notice) []string {
 func TestPendingFeedNamesThePanelTail(t *testing.T) {
 	frame := testFrame()
 	frame.FeedPending = true
-	panel := NewPanel(nil)
+	panel := NewPanel(nil, nil)
 	got := ansi.Strip(strings.Join(panel.View(nil, frame), "\n"))
 	if !strings.Contains(got, FeedPendingText) {
 		t.Fatalf("a pending feed should say so in the panel:\n%s", got)
@@ -42,7 +42,7 @@ func TestPendingFeedNamesThePanelTail(t *testing.T) {
 
 func TestPanelRunsOnCopiedSources(t *testing.T) {
 	src := testSources("v0.3.0")
-	p := NewPanel(map[string]bool{})
+	p := NewPanel(map[string]bool{}, map[string]bool{})
 	notices := p.Active(src)
 	if got := ids(notices); !slices.Equal(got, []string{"update-v0.3.0", testTip}) {
 		t.Fatalf("notices = %v", got)
@@ -82,7 +82,7 @@ func TestPanelRunsOnCopiedSources(t *testing.T) {
 
 func TestUpdateNoticeHighlightsPressU(t *testing.T) {
 	useTrueColor(t)
-	p := NewPanel(map[string]bool{})
+	p := NewPanel(map[string]bool{}, map[string]bool{})
 	notices := p.Active(testSources("v0.3.0"))
 	view := strings.Join(p.View(notices, testFrame()), "\n")
 	theme := testTheme()
@@ -107,7 +107,7 @@ func TestUpdateNoticeHighlightsPressU(t *testing.T) {
 
 func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 	src := testSources("")
-	p := NewPanel(map[string]bool{})
+	p := NewPanel(map[string]bool{}, map[string]bool{})
 	notices := p.Active(src)
 	p.Open(notices, testTip)
 	if out := p.Key(key("d"), notices, testFrame()); out.Action != Dismiss || out.ID != testTip || !out.Close {
@@ -124,7 +124,7 @@ func TestPanelDismissingTheLastNoticeCloses(t *testing.T) {
 }
 
 func TestPanelReselectsByID(t *testing.T) {
-	p := NewPanel(map[string]bool{})
+	p := NewPanel(map[string]bool{}, map[string]bool{})
 	before := p.Active(testSources(""))
 	p.Open(before, testTip)
 	selected := p.Selected(before)
@@ -142,7 +142,7 @@ func TestPanelReselectsByID(t *testing.T) {
 func TestPanelWithoutAStoreListsNothing(t *testing.T) {
 	src := testSources("v0.3.0")
 	src.Store = false
-	if notices := NewPanel(map[string]bool{}).Active(src); notices != nil {
+	if notices := NewPanel(map[string]bool{}, map[string]bool{}).Active(src); notices != nil {
 		t.Fatalf("notices = %v", ids(notices))
 	}
 }
@@ -152,7 +152,7 @@ func TestPanelWithoutAStoreListsNothing(t *testing.T) {
 func TestPanelFootKeysSitOnTheirLabels(t *testing.T) {
 	for _, width := range []int{120, 60, 44} {
 		for _, update := range []string{"", "v0.3.0"} {
-			p := NewPanel(map[string]bool{})
+			p := NewPanel(map[string]bool{}, map[string]bool{})
 			notices := p.Active(testSources(update))
 			p.Open(notices, "")
 			frame := testFrame()
@@ -182,7 +182,7 @@ func TestPanelFootKeysSitOnTheirLabels(t *testing.T) {
 // The first click on a title selects it; a second on the selected title
 // opens its link, the way ↵ does.
 func TestPanelClickSelectsThenOpensATitle(t *testing.T) {
-	p := NewPanel(map[string]bool{})
+	p := NewPanel(map[string]bool{}, map[string]bool{})
 	notices := p.Active(testSources("v0.3.0"))
 	p.Open(notices, "")
 	if len(notices) < 2 {
@@ -208,5 +208,22 @@ func TestPanelClickSelectsThenOpensATitle(t *testing.T) {
 	}
 	if out := p.Click(second+len(notices), notices, testFrame()); out.Action != Stay || p.Cursor() != 1 {
 		t.Fatalf("a click under the titles = %+v, cursor %d", out, p.Cursor())
+	}
+}
+
+func TestActiveMarksUnseenNoticesUnread(t *testing.T) {
+	p := NewPanel(map[string]bool{}, map[string]bool{})
+	p.See("update-v0.3.0")
+	if !p.Seen("update-v0.3.0") || p.Seen(testTip) {
+		t.Fatal("See should mark that notice alone")
+	}
+	var unread []string
+	for _, n := range p.Active(testSources("v0.3.0")) {
+		if n.Unread {
+			unread = append(unread, n.ID)
+		}
+	}
+	if !slices.Equal(unread, []string{testTip}) {
+		t.Fatalf("unread = %v, want the tip alone", unread)
 	}
 }

@@ -174,7 +174,7 @@ func helpSections(ctx Context) []helpSection {
 		})},
 		reviewHelpSection(list, ctx.ReviewRows),
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
-			{"click unread", "in the key legend, shown while any remain"},
+			{"click the chip", "unread or messages in the key legend: opens the messages"},
 			{"click", "select a title, click it again to open its link"},
 			{"↑↓", "pick a message"},
 			{"pgup / pgdn", "scroll its body"},

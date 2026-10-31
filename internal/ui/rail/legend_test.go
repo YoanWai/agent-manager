@@ -42,6 +42,12 @@ func TestViewLegendCarriesTheUnreadAlert(t *testing.T) {
 	if legend := model.ViewLegend(ctx); !slices.Equal(legend.Alerts, [][2]string{{"m", "unread"}}) {
 		t.Fatalf("unread messages should lead the tier, got %+v", legend.Alerts)
 	}
+	ctx.Unread = [2]string{}
+	ctx.Messages = [2]string{"m", "messages"}
+	legend := model.ViewLegend(ctx)
+	if legend.Alerts != nil || len(legend.Pairs) == 0 || legend.Pairs[0] != [2]string{"m", "messages"} {
+		t.Fatalf("read messages should lead the quiet pairs without an alert, got %+v", legend)
+	}
 }
 
 func TestRootLegendOnlyOffersApplicableActions(t *testing.T) {

@@ -56,6 +56,7 @@ type Notice struct {
 	URL           string
 	Action        string
 	Expires       time.Time
+	Unread        bool
 }
 
 func (n Notice) IsUpdate() bool {

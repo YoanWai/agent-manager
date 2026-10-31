@@ -209,7 +209,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			Booting: true,
 		},
 		notices: noticesPanel{
-			Panel: uinotices.NewPanel(uirelease.Dismissed(st)),
+			Panel: uinotices.NewPanel(uirelease.Dismissed(st), uirelease.Seen(st)),
 			Log:   uinotices.Log{ImportError: configImportError},
 		},
 	}

@@ -23,7 +23,7 @@ type Legend struct {
 // LegendContext carries the root facts a legend reads. Row and Session are
 // root's current record of the row under the cursor, set only when RowOK;
 // Session is filled for session rows. Unread is the messages alert, empty
-// when nothing is unread.
+// when nothing is unread; Messages is the dim messages key once all are read.
 type LegendContext struct {
 	ListKeys      keybind.Table
 	EnterFocuses  bool
@@ -34,6 +34,7 @@ type LegendContext struct {
 	RowOK         bool
 	Session       Session
 	Unread        [2]string
+	Messages      [2]string
 }
 
 // RowLegend is the tier for the entry under the cursor: what this session or
@@ -157,6 +158,7 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 		alerts = append(alerts, ctx.Unread)
 	}
 	pairs := [][2]string{
+		ctx.Messages,
 		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
 		{k(keybind.NewSession), "new"}, {terminalKey, "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},

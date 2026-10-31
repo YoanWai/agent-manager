@@ -47,7 +47,7 @@ func noticeModel(st *store.Store, version string) *Model {
 			listKeys: keybind.DefaultList(),
 		},
 		notices: noticesPanel{
-			Panel: uinotices.NewPanel(uirelease.Dismissed(st)),
+			Panel: uinotices.NewPanel(uirelease.Dismissed(st), uirelease.Seen(st)),
 		},
 	}
 }
@@ -1081,7 +1081,10 @@ func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
 func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.3.0")
 	m.release.Latest = "v0.4.0"
+	// Read already, so the cursor landing on it queues no write that reads as a quit.
+	m.notices.See(noticeTip)
 	m.openNotices("update-v0.4.0")
+	m.drainEffects(t)
 
 	origRefresh := uirelease.RefreshForApply
 	defer func() { uirelease.RefreshForApply = origRefresh }()
@@ -1740,5 +1743,135 @@ func TestNoticesToggleDoesNotOverrideRefresh(t *testing.T) {
 	_, cmd := m.handleKey(key("r"))
 	if !m.noticesOpen() || cmd == nil || !m.release.Refreshing {
 		t.Fatal("toggle stole local refresh action")
+	}
+}
+
+const noticeNews = "feed-news"
+
+// seenModel lists two feed messages, the tip first, with the startup feed
+// check landed so the footer chip reads the notices themselves.
+func seenModel(st *store.Store) *Model {
+	m := noticeModel(st, "v0.2.0")
+	m.release.Feed = append(m.release.Feed, feed.Message{ID: noticeNews, Title: "Some news", Body: []string{"more"}})
+	m.release.FeedPending = false
+	m.layout.width, m.layout.height = 100, 34
+	return m
+}
+
+func unreadIDs(notices []uinotices.Notice) []string {
+	var ids []string
+	for _, n := range notices {
+		if n.Unread {
+			ids = append(ids, n.ID)
+		}
+	}
+	return ids
+}
+
+func TestOpeningThePanelMarksTheSelectedNoticeSeen(t *testing.T) {
+	st := noticeStore(t)
+	m := seenModel(st)
+	if got := unreadIDs(m.activeNotices()); !slices.Equal(got, []string{noticeTip, noticeNews}) {
+		t.Fatalf("a fresh store should leave both unread, got %v", got)
+	}
+	m.openNotices(noticeTip)
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); !slices.Equal(got, []string{noticeNews}) {
+		t.Fatalf("unread after opening on the tip = %v, want the news alone", got)
+	}
+	if raw, err := st.Setting(uirelease.SeenSetting); err != nil || raw != `["`+noticeTip+`"]` {
+		t.Fatalf("seen setting = %q, %v", raw, err)
+	}
+}
+
+func TestMovingTheCursorMarksTheNextNoticeSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.handleKey(key("down"))
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); got != nil {
+		t.Fatalf("unread after moving to the news = %v, want none", got)
+	}
+}
+
+func TestClickingAMessageMarksItSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	x, y := paintedCell(t, m, "Some news")
+	m = leftClick(m, x, y)
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); got != nil {
+		t.Fatalf("unread after clicking the news = %v, want none", got)
+	}
+}
+
+func TestFooterChipSaysMessagesOnceEverythingIsSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.Pop()
+	m.drainEffects(t)
+	if _, label := m.messagesAlert(); label != "unread" {
+		t.Fatalf("one unseen notice: chip = %q, want unread", label)
+	}
+	persistNoticeDismissal(t, m, noticeNews)
+	if _, label := m.messagesAlert(); label != "messages" {
+		t.Fatalf("every active notice seen: chip = %q, want messages", label)
+	}
+	persistNoticeDismissal(t, m, noticeTip)
+	if glyph, label := m.messagesAlert(); glyph != "" || label != "" {
+		t.Fatalf("nothing active: chip = %q %q, want none", glyph, label)
+	}
+}
+
+func TestReadMessagesChipIsADimPair(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.handleKey(key("down"))
+	m.Pop()
+	m.drainEffects(t)
+	legend := m.viewLegend()
+	if legend.Alerts != nil {
+		t.Fatalf("a read inbox raised the loud alert: %v", legend.Alerts)
+	}
+	if len(legend.Pairs) == 0 || legend.Pairs[0][1] != "messages" {
+		t.Fatalf("the read chip should lead the quiet pairs, got %v", legend.Pairs)
+	}
+}
+
+func TestSeenSurvivesARestart(t *testing.T) {
+	st := noticeStore(t)
+	m := seenModel(st)
+	m.openNotices(noticeTip)
+	m.drainEffects(t)
+
+	reopened := seenModel(st)
+	if got := unreadIDs(reopened.activeNotices()); !slices.Equal(got, []string{noticeNews}) {
+		t.Fatalf("unread after a restart = %v, want the news alone", got)
+	}
+}
+
+func TestSeenWriteFailureKeepsTheMark(t *testing.T) {
+	st := noticeStore(t)
+	if err := st.SetSetting(uirelease.SeenSetting, `{broken`); err != nil {
+		t.Fatalf("seed malformed setting: %v", err)
+	}
+	m := seenModel(st)
+	m.openNotices(noticeTip)
+	m.drainEffects(t)
+	if !strings.HasPrefix(m.errBar.text, "mark message read: ") || !strings.Contains(m.errBar.text, "decode setting") {
+		t.Fatalf("status bar = %q", m.errBar.text)
+	}
+	if got := unreadIDs(m.activeNotices()); !slices.Equal(got, []string{noticeNews}) {
+		t.Fatalf("a failed write dropped the in-memory mark: unread = %v", got)
+	}
+}
+
+func TestMovingAnOpenPanelMarksItsNoticeSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.openNotices(noticeNews)
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); got != nil {
+		t.Fatalf("unread after the open panel moved to the news = %v, want none", got)
 	}
 }
