@@ -38,7 +38,7 @@ coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
   release. None publishes a long-term-support line. When an upstream release
   changes a flag, a subcommand, a file layout, or a screen, the adapter moves
   to the new behavior and drops the old one, with no branch for older
-  releases. The same change sets the tool's `minimum_version` in
+  releases. The same change sets the CLI's `minimum_version` in
   `internal/config/builtin.go` to the first release it needs, so a spawn on
   an older CLI opens the update dialog instead of failing.
 - **Configurable in the UI, or not configurable.** A setting a user can
@@ -270,7 +270,7 @@ with `gh release edit <tag> --notes-file notes.md`.
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state, Settings included; `internal/status`
   classifies pane output into agent states; `internal/config` holds the
-  built-in tool rules.
+  built-in CLI and tool definitions.
 - The badges workflow publishes the clone count and contributor image to the
   `badges` branch; neither generated asset is edited by hand.
 

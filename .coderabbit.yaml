@@ -199,10 +199,10 @@ reviews:
       instructions: |
         builtinCLIs and builtinTools are the only sources of CLI and tool
         definitions and load on every start, so an edited pattern or command
-        reaches every install on that release and needs no migration. A config.toml from an earlier
-        release is read once, by the import in internal/store, for its
-        editor and key tables. Flag any other read or write of that file. A
-        default belongs in code.
+        reaches every install on that release and needs no migration. A
+        config.toml from an earlier release is read once, by the import in
+        internal/store, for its editor and key tables. Flag any other read or
+        write of that file. A default belongs in code.
     - path: "internal/store/**"
       instructions: |
         The migrations slice is append-only. Editing or reordering an existing
