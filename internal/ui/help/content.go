@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -41,17 +42,30 @@ type Styles struct {
 	Cursor  lipgloss.Style
 }
 
+func CurrentStyles() Styles {
+	return Styles{
+		Section: uitheme.SectionStyle(),
+		Rule:    lipgloss.NewStyle().Foreground(uitheme.ColorBorder()),
+		Key:     uitheme.KeyStyle(),
+		Muted:   uitheme.MutedStyle(),
+		Subtle:  uitheme.SubtleStyle(),
+		Value:   uitheme.ValueStyle(),
+		Match:   lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
+		Cursor:  lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+	}
+}
+
 // Context is the copied presentation state Help needs to build its content.
 type Context struct {
-	SessionKeys   keybind.Table
-	ListKeys      keybind.Table
-	ReviewHelpKey keybind.Binding
-	ArrowStep     bool
-	Width         int
-	Glyphs        Glyphs
-	QuickKeys     QuickKeys
-	Styles        Styles
-	CursorMarker  string
+	SessionKeys  keybind.Table
+	ListKeys     keybind.Table
+	ArrowStep    bool
+	Width        int
+	Glyphs       Glyphs
+	QuickKeys    QuickKeys
+	Styles       Styles
+	CursorMarker string
+	ReviewRows   [][2]string
 }
 
 // Content is the feature-owned dialog body. The root owns viewport geometry

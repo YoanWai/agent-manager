@@ -46,7 +46,7 @@ def write_install_fixture(sandbox):
     node.write_text('#!/bin/sh\nexit 0\n')
     node.chmod(0o755)
     config_dir = profile_dir(sandbox)
-    config_dir.mkdir(parents=True)
+    config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / 'config.toml').write_text(config_fixture_text())
     # Only runtime helpers are discoverable before the fixture installs cmd.
     for name in ('tmux', 'git', 'sh', 'bash', 'env', 'mkdir', 'cat', 'chmod',
@@ -109,7 +109,9 @@ def settings_partial_save(sandbox, binary):
     frame(sandbox, 'settings-density-cycled', 'comfortable')
     key(sandbox, 'Down')
     key(sandbox, 'Right')
-    for _ in range(5):
+    # header, computer stats, review layout, review scope and after quick
+    # prompt sit between sessions layout and session keys.
+    for _ in range(6):
         key(sandbox, 'Down')
     key(sandbox, 'Right')
     key(sandbox, 'Enter')

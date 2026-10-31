@@ -9,8 +9,6 @@ import (
 // PromptRules are the focused tool's prompt rules, which the root resolves
 // from its status engine.
 type PromptRules interface {
-	// InputPrefix is the prompt marker a row opens with, when it is an input
-	// row.
 	InputPrefix(row string) (prefix string, ok bool)
 	// TextBeforeCaret reports whether anything but blanks sits between a
 	// tool's prompt marker and the caret on this row, which is how a line

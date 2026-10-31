@@ -13,7 +13,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Styles are the root's live styles the dialog paints with.
 type Styles struct {
 	Value, Subtle, Muted, Key, Annotation lipgloss.Style
 	// Marker is the focused row's caret; Focused its label.
@@ -42,7 +41,6 @@ type ViewContext struct {
 	TextArea        func(textarea.Model) string
 }
 
-// Card is how the root frames the dialog.
 type Card uint8
 
 const (
@@ -53,7 +51,6 @@ const (
 	Confirm
 )
 
-// Frame is a painted dialog for the root's card chrome.
 type Frame struct {
 	Card        Card
 	Title       string
@@ -65,7 +62,6 @@ type Frame struct {
 	Destructive bool
 }
 
-// View paints the open dialog.
 func (s *State) View(ctx ViewContext) Frame {
 	chrome := presentation.ChromeFor(ctx.GlyphMode)
 	if s.Prompts.open {
@@ -78,9 +74,6 @@ func (s *State) View(ctx ViewContext) Frame {
 		return s.viewKeyPicker(ctx)
 	}
 	st := ctx.Styles
-	// The beta tag borrows the messages modal's yellow, so the row reads as
-	// the one still under test.
-	betaTag := lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Render(" beta")
 	toolValue := ""
 	if len(s.ToolNames) > 0 {
 		toolValue = s.ToolNames[s.ToolIndex]
@@ -138,7 +131,7 @@ func (s *State) View(ctx ViewContext) Frame {
 	// define one, and every row they never use crowds the ones they do.
 	s.envsHidden = len(ctx.Envs) == 0
 	if s.envsHidden && s.Field == FieldEnvs {
-		s.Field = FieldDocs
+		s.Field = FieldSetup
 	}
 	fields := make([]int, 0, FieldCount)
 	lines := make([]string, 0, FieldCount)
@@ -154,6 +147,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, row(FieldTheme, label(FieldTheme), palette.Name)+"  "+themeSwatch(palette))
 		case FieldGlyphs:
 			lines = append(lines, symbolsRow)
+		case FieldReviewScope:
+			lines = append(lines, row(FieldReviewScope, label(FieldReviewScope), reviewScopeLabel(s.ReviewScope)))
 		case FieldEditor:
 			lines = append(lines, editorLine)
 		case FieldKeybindings:
@@ -164,6 +159,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, actionRow(FieldPrompts, "saved prompts", "manage named instructions"))
 		case FieldEnvs:
 			lines = append(lines, lead(FieldEnvs, "environments")+st.Muted.Render(envSummary(ctx.Envs)))
+		case FieldSetup:
+			lines = append(lines, actionRow(FieldSetup, "first-run setup", "walk through it again"))
 		case FieldDocs:
 			lines = append(lines, ctaRow(FieldDocs, "docs", "open the docs"))
 		case FieldBugReport:
@@ -174,17 +171,15 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, versionRow(ctx, lead, actionRow))
 		default:
 			setting := byField[field]
-			line := row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s))))
-			if setting.Beta {
-				line += betaTag
-			}
-			lines = append(lines, line)
+			lines = append(lines, row(field, setting.Row, presentation.KeyLabel(ctx.GlyphMode, setting.label(*setting.Flag(s)))))
 		}
 	}
 	hint := [][2]string{{"↑↓", "field"}, {"←→", "change"}, {"↵/esc", "save and close"}}
 	switch s.Field {
 	case FieldGlyphs:
 		hint = [][2]string{{"↑↓", "field"}, {"←→/click", "symbols"}, {"↵/esc", "save and close"}}
+	case FieldSetup:
+		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the setup"}, {"esc", "save and close"}}
 	case FieldDocs:
 		hint = [][2]string{{"↑↓", "field"}, {"↵", "open the docs"}, {"esc", "save and close"}}
 	case FieldBugReport, FieldFeatureRequest:
@@ -307,4 +302,18 @@ func themeSwatch(t uitheme.Theme) string {
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color(hex)).Render("█"))
 	}
 	return b.String()
+}
+
+func CurrentStyles() Styles {
+	return Styles{
+		Value:      uitheme.ValueStyle(),
+		Subtle:     uitheme.SubtleStyle(),
+		Muted:      uitheme.MutedStyle(),
+		Key:        uitheme.KeyStyle(),
+		Annotation: uitheme.AnnotationStyle(),
+		Marker:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+		Focused:    lipgloss.NewStyle().Foreground(uitheme.ColorAccent()).Bold(true),
+		Action:     lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()).Bold(true),
+		ActionText: lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()),
+	}
 }

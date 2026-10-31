@@ -205,7 +205,8 @@ func fixtureMode(mode string, args []string) int {
 		}
 		return 0
 	case "slow-take":
-		// printf "❯ "; sleep 2; printf "\n❯ %s\n❯ " "$0"; cat. The take has to
+		// printf "❯ "; sleep 2; printf "\n❯ %s\n❯ " "$0";
+		// while IFS= read -r line; do printf "\n❯ "; done. The take has to
 		// outlast a whole poll pass, which costs a psmux fork per call on
 		// Windows, not the milliseconds tmux runs in.
 		in := newTTY()
@@ -216,7 +217,12 @@ func fixtureMode(mode string, args []string) int {
 		fmt.Print("❯ ")
 		time.Sleep(2 * time.Second)
 		fmt.Printf("\n❯ %s\n❯ ", take)
-		return fixtureCat(in, nil)
+		for input := range in.lines {
+			if input.newline {
+				fmt.Print("\n❯ ")
+			}
+		}
+		return 0
 	case "cat-stdin":
 		// sh -c 'exec cat' --: the terminal copied out, whatever the
 		// launch appended.

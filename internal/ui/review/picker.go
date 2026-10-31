@@ -1,6 +1,7 @@
 package review
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -17,11 +18,13 @@ type PickerKind int
 const (
 	PickRepo PickerKind = iota
 	PickBase
+	PickCommit
 )
 
 // PickerRow is one selectable target: Label is what the user reads (a repo base
-// name, a worktree's branch, or a base ref), Root carries the path a repo pick
-// retargets to, or the ref a base pick persists ("" for auto).
+// name, a worktree's branch, a base ref, or a commit), Root carries the path a
+// repo pick retargets to, the ref a base pick persists ("" for auto), or the
+// commit's SHA.
 type PickerRow struct {
 	Label string
 	Root  string
@@ -56,7 +59,6 @@ type Picker struct {
 	lines presentation.Lines[int]
 }
 
-// PickerChoice is the row Enter picked, for root to retarget or persist.
 type PickerChoice struct {
 	Kind  PickerKind
 	Value string
@@ -66,13 +68,17 @@ type PickerChoice struct {
 // Choice is set only on a close that picked a row.
 type PickerResult struct {
 	Close  bool
-	Quit   bool
-	Error  string
 	Choice *PickerChoice
 }
 
 // Card lines around the rows: border, padding, title, spacers, error, hint, "+N more".
 const pickerChrome = 12
+
+// TargetSource is the identity the open Review projects into a picker, which is
+// what a pick or a late read is checked against.
+func (m Model) TargetSource() PickerSource {
+	return PickerSource{Generation: m.gen, TargetID: m.target.ID, RepoRoot: m.repoSel}
+}
 
 // PickerSourceCurrent reports whether source still names this review's
 // target, repo and generation.
@@ -116,13 +122,11 @@ func (p Picker) filteredRows() []PickerRow {
 	return out
 }
 
-// Key applies one key. sourceCurrent is whether the picker's source still
-// names the open review; Enter on a stale picker closes it without a choice.
-func (p *Picker) Key(msg tea.KeyMsg, sourceCurrent bool) PickerResult {
+// Key applies one key. Whether the choice still names the open review is
+// root's to check, with Source, when it acts on it.
+func (p *Picker) Key(msg tea.KeyMsg) PickerResult {
 	rows := p.filteredRows()
 	switch msg.Type {
-	case tea.KeyCtrlC:
-		return PickerResult{Quit: true}
 	case tea.KeyEsc:
 		return PickerResult{Close: true}
 	case tea.KeyUp:
@@ -137,9 +141,6 @@ func (p *Picker) Key(msg tea.KeyMsg, sourceCurrent bool) PickerResult {
 	case tea.KeyEnter:
 		if len(rows) == 0 {
 			return PickerResult{}
-		}
-		if !sourceCurrent {
-			return PickerResult{Close: true, Error: "review changed; reopen the picker"}
 		}
 		return PickerResult{Close: true, Choice: &PickerChoice{Kind: p.kind, Value: rows[p.cursor].Root}}
 	case tea.KeyRunes:
@@ -166,15 +167,14 @@ func (p *Picker) window(height, count int) (start, end int) {
 // Click is a press on line of the card's body. The first click on a row
 // moves the cursor there; one on the row under the cursor picks it, the way
 // ↵ does.
-func (p *Picker) Click(line int, sourceCurrent bool) PickerResult {
+func (p *Picker) Click(line int) PickerResult {
 	row, ok := p.lines.At(line)
 	if !ok || !presentation.ClickRow(&p.cursor, row) {
 		return PickerResult{}
 	}
-	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, sourceCurrent)
+	return p.Key(tea.KeyMsg{Type: tea.KeyEnter})
 }
 
-// row renders one picker row inside a card of inner width.
 func (p Picker) row(ctx RenderContext, inner int, row PickerRow, selected bool) string {
 	s := ctx.Styles
 	marker := "  "
@@ -186,7 +186,7 @@ func (p Picker) row(ctx RenderContext, inner int, row PickerRow, selected bool) 
 	name := presentation.TruncateTail(presentation.EscapeControlsInline(row.Label), inner-lipgloss.Width(marker))
 	budget := inner - lipgloss.Width(marker) - lipgloss.Width(name) - 2
 	dir := ""
-	if budget > 1 {
+	if budget > 1 && p.kind != PickCommit {
 		dir = s.Subtle.Render("  " + presentation.TruncateTail(presentation.EscapeControlsInline(filepath.Dir(row.Root)), budget))
 	}
 	return marker + nameStyle.Render(name) + dir
@@ -213,4 +213,16 @@ func (p *Picker) Body(ctx RenderContext, inner, height int) string {
 		body.WriteString(s.Subtle.Render(fmt.Sprintf("+%d more", hidden)) + "\n")
 	}
 	return strings.TrimRight(body.String(), "\n")
+}
+
+// PickerRead is the identity a picker read is taken for. A review with no
+// resolved repo has nothing to list, and says so in the words the status bar
+// repeats; the read keys off the raw selection, not the resolved toplevel, since
+// the toplevel is empty after a bad base errors the load and the control that
+// clears that base must stay reachable.
+func (m Model) PickerRead() (PickerSource, error) {
+	if m.repoSel == "" {
+		return PickerSource{}, errors.New("no repo under review")
+	}
+	return m.TargetSource(), nil
 }

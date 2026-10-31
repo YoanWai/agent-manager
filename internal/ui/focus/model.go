@@ -16,6 +16,7 @@ type Model struct {
 	selection selection
 	pending   pendingClick
 	forward   forwardedGesture
+	pointer   pointerAt
 
 	copied  int
 	copyGen uint64
@@ -46,7 +47,6 @@ type displayedFrame struct {
 	rowOffset int
 }
 
-// Box is the pane rectangle from the frame currently on screen.
 type Box struct {
 	X      int
 	Y      int
@@ -90,7 +90,6 @@ type EnterContext struct {
 	KeepPaneFacts bool
 }
 
-// PaneUpdate is the value snapshot delivered by the root watcher.
 type PaneUpdate struct {
 	SessionID string
 	Mouse     bool
@@ -115,6 +114,7 @@ func (m *Model) Enter(ctx EnterContext) {
 	m.clearSelection()
 	m.pending = pendingClick{}
 	m.forward = forwardedGesture{}
+	m.ForgetPointer()
 	m.cursorOn = true
 	m.scroll = 0
 	m.fetchInFlight = false

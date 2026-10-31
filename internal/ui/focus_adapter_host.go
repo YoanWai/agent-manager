@@ -1,0 +1,206 @@
+package ui
+
+import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
+	uicapture "github.com/YoanWai/agent-manager/internal/ui/preview/capture"
+	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+// focusHost is the root as a focused session reads it: the selected row, the
+// pane's height, and the manager's own keys.
+type focusHost struct{ m *Model }
+
+func (h focusHost) Session() (string, bool) {
+	sess, ok := h.m.selected()
+	if !ok {
+		return "", false
+	}
+	return sess.ID, true
+}
+
+func (h focusHost) PaneRows() int { return h.m.focusPaneRows() }
+
+func (h focusHost) Bindings(pressed string) uifocus.Bindings {
+	keys := h.m.services.keys
+	bindings := uifocus.Bindings{
+		Detach:    keys.Binding(keybind.Detach).Has(pressed),
+		Editor:    keys.Binding(keybind.Editor).Has(pressed),
+		Review:    keys.Binding(keybind.Review).Has(pressed),
+		Saved:     keys.Binding(keybind.SavedPrompt).Has(pressed),
+		ArrowStep: h.m.prefs.arrowStep,
+	}
+	if sess, ok := h.m.selected(); ok {
+		bindings.AtInputHead = h.m.caretAtInputStart(sess.ID, sess.Tool)
+	}
+	return bindings
+}
+
+func (h focusHost) RuntimeReady() bool { return h.m.focus.runtime.Ready() }
+
+func (h focusHost) Queued(id string, write uifocus.Write) tea.Cmd {
+	sess, ok := h.m.sessionByID(id)
+	if !ok {
+		return nil
+	}
+	command := write.Command
+	if write.Kind == uifocus.WriteKeys {
+		command = keyCommand(tmux.PaneTarget(id), write.Raw, write.Name)
+	}
+	h.m.dispatchInput(focusruntime.Request{
+		Kind:    focusruntime.Kind(write.Kind),
+		Session: sess,
+		Command: command,
+		Args:    write.Args,
+		Text:    write.Text,
+		Submit:  write.Submit,
+		Echo:    write.Echo,
+	})
+	return h.m.nextEffectCmd()
+}
+
+func (h focusHost) Reported(report string, echo bool) { h.m.sendFocusReport(report, echo) }
+
+func (h focusHost) Copied(request uifocus.CopyRequest) tea.Cmd {
+	return copyTextCmd(request.Text, func(chars int) tea.Msg {
+		return uifocus.CopiedMessage{Generation: request.Generation, Chars: chars}
+	})
+}
+
+func (h focusHost) Opened(url string) (tea.Model, tea.Cmd) { return h.m, openLinkCmd(url) }
+
+func (h focusHost) Region(request *uifocus.RegionRequest) tea.Cmd {
+	if request == nil {
+		return nil
+	}
+	return h.m.focusRegionRequestCmd(*request)
+}
+
+func (h focusHost) Editor() (tea.Model, tea.Cmd) { return h.m.openEditor() }
+
+// Review opens Review over the focused pane, which it returns to.
+func (h focusHost) Review(id string) (tea.Model, tea.Cmd) {
+	cmd := h.m.openDiff()
+	if h.m.base == baseReview {
+		h.m.reviewNav.Set(uireviewsource.Return{Kind: uireviewsource.ReturnFocus, SessionID: id})
+	}
+	return h.m, cmd
+}
+
+func (h focusHost) Saved() tea.Cmd { return h.m.openFocusSaved() }
+
+func (h focusHost) Leave() tea.Cmd { return h.m.leaveFocus() }
+
+func (h focusHost) LeaveMode() tea.Cmd { return h.m.leaveFocusMode() }
+
+// focusFrameHost is the root as a watcher frame and a scrollback viewport read
+// it.
+type focusFrameHost struct{ m *Model }
+
+func (h focusFrameHost) Session() (string, bool) {
+	sess, ok := h.m.selected()
+	if !ok {
+		return "", false
+	}
+	return sess.ID, true
+}
+
+func (h focusFrameHost) PaneRows() int { return h.m.focusPaneRows() }
+
+func (h focusFrameHost) Region(request *uifocus.RegionRequest) tea.Cmd {
+	if request == nil {
+		return nil
+	}
+	return h.m.focusRegionRequestCmd(*request)
+}
+
+func (h focusFrameHost) UsePreview(preview string) { h.m.workspace.preview = preview }
+
+// focusProbeHost is the root as the entry probe's completion reaches it.
+type focusProbeHost struct{ m *Model }
+
+func (h focusProbeHost) ReportErr(text string) { h.m.reportErr(text) }
+
+func (h focusProbeHost) Grounded(generation uint64) bool {
+	return !h.m.effects.Quitting && generation == h.m.gens.foreground
+}
+
+func (h focusProbeHost) ListClear() bool { return h.m.listClear() }
+
+func (h focusProbeHost) Enter(sessionID string) tea.Cmd {
+	sess, ok := h.m.selected()
+	if !ok || sess.ID != sessionID {
+		return nil
+	}
+	return h.m.enterFocus(sess)
+}
+
+// focusDetachHost is the root as a detached session's request reaches it.
+type focusDetachHost struct{ m *Model }
+
+func (h focusDetachHost) ReportErr(text string) { h.m.reportErr(text) }
+
+func (h focusDetachHost) Warn(text string) { h.m.reportWarn(text) }
+
+func (h focusDetachHost) Refresh() { h.m.requestRefresh() }
+
+func (h focusDetachHost) Quitting() bool { return h.m.effects.Quitting }
+
+func (h focusDetachHost) TakenSinceDetach() bool { return h.m.foregroundTakenSinceDetach() }
+
+func (h focusDetachHost) Name(sessionID string) string {
+	if sess, ok := h.m.sessionByID(sessionID); ok {
+		return sess.Name
+	}
+	return sessionID
+}
+
+func (h focusDetachHost) Focused(sessionID string) bool { return h.m.focusSession(sessionID) }
+
+func (h focusDetachHost) Review(sessionID string) tea.Cmd { return h.m.openReviewForReturn(sessionID) }
+
+func (h focusDetachHost) Editor(sessionID string) tea.Cmd { return h.m.openEditorForReturn(sessionID) }
+
+// focusInputHost is the root as a finished write to a pane reaches it.
+type focusInputHost struct{ m *Model }
+
+func (h focusInputHost) ReportErr(text string) { h.m.reportErr(text) }
+
+func (h focusInputHost) Landed(sessionID string) { h.m.watchLandedWrite(sessionID) }
+
+func (h focusInputHost) Hold(candidate focusruntime.Candidate) {
+	h.m.holdTypedPrompt(uicapture.TypedPrompt{Session: candidate.Session, ID: candidate.ID, Text: candidate.Text, At: candidate.At})
+}
+
+func (h focusInputHost) Recorded(sessionID, prompt string) { h.m.recordPrompt(sessionID, prompt) }
+
+var (
+	_ uifocus.KeyHost         = focusHost{}
+	_ uifocus.MouseHost       = focusHost{}
+	_ uifocus.ScrollHost      = focusFrameHost{}
+	_ uifocus.FrameHost       = focusFrameHost{}
+	_ focusruntime.ProbeHost  = focusProbeHost{}
+	_ focusruntime.DetachHost = focusDetachHost{}
+	_ focusruntime.InputHost  = focusInputHost{}
+)
+
+// keyCommand is one encoded key press as a send-keys command on target.
+func keyCommand(target string, raw []byte, name string) string {
+	if name != "" {
+		return tmux.SendKeyName(target, name)
+	}
+	return tmux.SendKeysHex(target, raw)
+}
+
+// focusKeyCommand encodes one key press for target; ok is false for keys tmux
+// cannot represent, which are dropped.
+func focusKeyCommand(target string, msg tea.KeyMsg) (string, bool) {
+	raw, name, ok := uifocus.EncodeKey(msg)
+	if !ok {
+		return "", false
+	}
+	return keyCommand(target, raw, name), true
+}

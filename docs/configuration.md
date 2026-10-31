@@ -4,6 +4,64 @@ Everything you can change lives in Settings (`s` by default): the keys, the edit
 
 The **editor** row picks the command `o` opens a directory in (see [Opening the editor](usage.md#opening-the-editor)), and the **keybindings** row opens the [key picker](#key-bindings). Panes are polled every two seconds for status, preview, and stats.
 
+## Export and import
+
+Move the manager's configuration between machines with JSON files.
+
+```bash
+agent-manager export manager-config.json
+agent-manager import manager-config.json
+```
+
+Both commands include all four sections by default. Combine `--settings`,
+`--presets`, `--groups` and `--connections` to select only those sections.
+The same flags restrict what an import reads from a complete export.
+
+```bash
+agent-manager export --settings --presets preferences.json
+agent-manager import --settings preferences.json
+agent-manager export --groups > groups.json
+agent-manager import --groups < groups.json
+```
+
+Omit the filename or use `-` for stdout on export and stdin on import.
+Export writes its scope and secret warning to stderr so stdout stays valid JSON.
+A named output file must not already exist. It is created with owner-only
+permissions on systems supporting Unix file modes. Shell redirection uses the
+shell's permissions instead.
+
+Settings include stored preferences, shell-configured values, the editor and
+both keybinding tables. Presets include their names and instructions. Groups
+include their names, default paths, worktree choices, base refs and environment
+profile names. Group and SSH connection order follows the arrays in the file.
+Paths and commands are copied literally, including when moving between operating
+systems. Review them on the destination machine before use.
+
+Exported values are not redacted. They may contain tokens, private URLs or other
+secrets. Keep exports private and import only files you trust. Editor and
+notification commands remain executable configuration when later used by the
+manager.
+
+Import merges by setting key, preset name, group name and connection name.
+Matching entries take the imported values. Other entries remain. A keybinding
+table is one setting, so importing it replaces that scope's saved overrides.
+Missing settings retain their destination values. Empty sections delete nothing.
+Imported groups and connections receive positions starting at zero in array
+order. Existing entries with the same position are ordered by name. Existing
+groups keep their archived state, and newly imported groups start unarchived.
+
+The file has a `version` field, currently `1`. Unknown fields, settings,
+unsupported versions and invalid values are refused. Selected sections are
+validated before any configuration is written, and the import commits in one
+database transaction. Restart running managers after importing to load the
+configuration.
+
+This transfers configuration only. It does not restore sessions, tasks, inbox
+messages, review state, worktrees on disk or agents' chat history. Runtime
+bookkeeping, environment profiles, SSH keys and SSH client configuration are
+also excluded. Recreate any environment profiles referenced by imported groups
+on the destination machine.
+
 ## Upgrading from config.toml
 
 Earlier releases read a `config.toml` in that directory. The first start after upgrading carries its `editor` line and its `[keybindings.session]` and `[keybindings.list]` tables into Settings, so every key you moved stays where you put it. That happens once: from then on Settings is the only place the manager reads, and the file is yours to delete. A file the manager cannot read is named in Messages (`M`) with the reason, and the keys start from the defaults.
@@ -68,7 +126,7 @@ A session key is `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or 
 
 Every key the list answers to is an action in the picker: `up`, `down`, `open`, `attach`, `step_in`, `step_out`, `reorder_up`, `reorder_down`, `new_session`, `terminal`, `new_group`, `fork`, `prompt`, `copy_reply`, `review`, `mark_idle`, `rename`, `move`, `editor`, `restart`, `kill`, `kill_all`, `revive`, `revive_all`, `archive`, `cancel_end`, `restore`, `delete`, `search`, `filter`, `archived`, `empty_groups`, `fold_all`, `resize`, `settings`, `messages`, `help` and `quit`.
 
-A list key is a plain character (`n`, `N`, `?`, `|`), a key name (`space`, `enter`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pgup`, `pgdn`), `shift+` an arrow or tab, or the `ctrl+`, `alt+` and `f1` to `f12` forms above. `esc` and `ctrl+c` stay as they are. `esc` cancels everywhere. `ctrl+c` quits the manager even with `quit` turned off, and a focused session sends it to the agent. `settings` keeps at least one key, so the picker stays reachable. The footer, the `?` key map and the empty-list hints all read the table, so a moved key is named where it moved to.
+A list key is a plain character (`n`, `N`, `?`, `|`), a key name (`space`, `enter`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pgup`, `pgdn`), `shift+` an arrow or tab, or the `ctrl+`, `alt+` and `f1` to `f12` forms above. `esc` and `ctrl+c` stay as they are. `esc` cancels everywhere. `ctrl+c` quits the manager even with `quit` turned off, and a focused session sends it to the agent. With saved prompts open over that session, `ctrl+c` closes the list. `settings` keeps at least one key, so the picker stays reachable. The footer, the `?` key map and the empty-list hints all read the table, so a moved key is named where it moved to.
 
 ### Where the keys apply
 

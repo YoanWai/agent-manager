@@ -49,7 +49,6 @@ func (r *EditorRow) ApplyProbe(msg EditorsProbe) {
 	}
 }
 
-// Line is the command the row stores.
 func (r EditorRow) Line() string {
 	if r.custom {
 		return strings.TrimSpace(r.typed)

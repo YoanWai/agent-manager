@@ -93,7 +93,6 @@ func (r renderer) divider(label string, width int) string {
 	return presentation.Divider(label, width, r.s.Section, r.s.Rule, r.c.SectionGlyph)
 }
 
-// PaneWidths splits the terminal width between the file rail and the code.
 func PaneWidths(width int) (fileWidth, codeWidth int) {
 	fileWidth = max(width*24/100, diffFileRailWidth)
 	if width-fileWidth-diffPaneSeam < diffCodeMinWidth {
@@ -117,7 +116,6 @@ func (m *Model) AnnotationInputHeight(width int) int {
 	return n
 }
 
-// annotationBar is the comment box docked under the code while typing.
 func (r renderer) annotationBar(fd *diff.FileDiff, width int, cursorMarker string) string {
 	num, _ := AnnotationLine(fd.Lines[r.m.CursorDiffLine()])
 	return r.divider(fmt.Sprintf("Comment · %s:%d", presentation.EscapeControlsInline(fd.File.Path), num), width) + "\n" + r.m.AnnotationView(cursorMarker)
@@ -194,15 +192,29 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 		}
 		pill("r", name, s.Accent)
 		branch := presentation.EscapeControlsInline(state.Set.Repo.Branch)
-		if state.Scope == git.ScopeBranch && state.Set.BaseDesc != "" && branch != "" {
-			target := presentation.EscapeControlsInline(StripBaseHash(state.Set.BaseDesc))
-			summary := target + " → " + branch
+		target := ""
+		switch state.Scope {
+		case git.ScopeBranch:
+			target = state.Set.BaseDesc
+		case git.ScopeCommit:
+			target = m.commitTarget
+		}
+		if target != "" && branch != "" {
+			summary := presentation.EscapeControlsInline(StripBaseHash(target)) + " → " + branch
 			if state.Set.BaseOverride == "" {
 				summary += " " + s.Subtle.Render("(auto)")
 			}
 			pill("B", summary, s.Accent)
 		} else if branch != "" {
 			left += "  " + s.Subtle.Render(branch)
+		}
+		if c, ok := m.shownCommit(); ok && state.Scope == git.ScopeCommit {
+			at, total := m.CommitPosition()
+			label := fmt.Sprintf("%d/%d %s %s", at, total, c.Short, presentation.TruncateTail(presentation.EscapeControlsInline(c.Subject), commitPillSubject))
+			if m.commitPin.SHA == "" {
+				label += " " + s.Subtle.Render("(HEAD)")
+			}
+			pill("L", label, s.Accent)
 		}
 	}
 
@@ -234,7 +246,7 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 	if round := m.Round(); round.Number > 0 {
 		label := fmt.Sprintf("Review round %d", round.Number)
 		if !state.Loading && round.Fingerprint != 0 &&
-			(round.Scope != state.Scope.String() || round.Fingerprint != state.Fingerprint) {
+			(round.Scope != m.scopeKey() || round.Fingerprint != state.Fingerprint) {
 			label += " · changed"
 		}
 		right += s.Subtle.Render(" · ") + s.Annotation.Render(label)
@@ -259,10 +271,8 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// HeaderKeys are the header's key pills as last painted.
 func (m *Model) HeaderKeys() []presentation.PaintedKey { return m.headerKeys }
 
-// StatusKeys are the keys the status line last painted.
 func (m *Model) StatusKeys() []presentation.PaintedKey { return m.statusKeys }
 
 func keptWithin(keys []presentation.PaintedKey, width int) []presentation.PaintedKey {
@@ -288,6 +298,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	s := r.s
 	state := m.Snapshot()
 	m.fileRows.Reset()
+	m.fileMarks.Reset()
 	if state.Loading && len(state.Set.Files) == 0 {
 		return Pane{Loading: "loading diff"}
 	}
@@ -316,11 +327,12 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	if start > 0 {
 		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
 		m.fileRows.Show(shown[start-1], 1)
+		m.fileMarks.Skip(1)
 	}
 	notes := map[string]int{}
-	for _, note := range m.Annotations() {
-		if !note.Resolved {
-			notes[note.File]++
+	for _, note := range m.annotations[m.reviewKey()] {
+		if !note.handled && m.noteShown(&note) {
+			notes[note.file]++
 		}
 	}
 	for pos := start; pos < end; pos++ {
@@ -361,6 +373,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 		}
 		b.WriteString(row + "\n")
 		m.fileRows.Show(i, 1)
+		m.fileMarks.Show(i, 1)
 	}
 	if end < len(shown) {
 		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(shown)-end)))
@@ -398,34 +411,31 @@ func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
 			{"↵", "save"}, {"esc", "cancel"},
 		}}}
 	}
-	repo := "repo"
-	if len(m.repoRoots) > 0 {
-		repo = "repo: " + presentation.EscapeControlsInline(filepath.Base(m.repoSel))
+	review := LegendSection{Title: "Review"}
+	move := LegendSection{Title: "Move", Quiet: true}
+	for _, b := range keymap {
+		if b.Footer == nil {
+			continue
+		}
+		key := b.legendKey()
+		if b.Action == actHelp {
+			if key = EffectiveHelpBinding(helpKey).Glyph("/"); key == "" {
+				continue
+			}
+		}
+		text := b.Footer(m)
+		if text == "" {
+			continue
+		}
+		pair := [2]string{key, text}
+		if b.Move {
+			move.Pairs = append(move.Pairs, pair)
+		} else {
+			review.Pairs = append(review.Pairs, pair)
+		}
 	}
-	send := "send"
-	if count := m.DraftCount(); count > 0 {
-		send = fmt.Sprintf("send %d", count)
-	}
-	filter := "code only"
-	if m.codeOnly {
-		filter = "all files"
-	}
-	movePairs := [][2]string{
-		{"↑↓/jk", "scroll line"}, {"ctrl+d/ctrl+u", "half page"}, {"pgup/pgdn", "page"},
-		{"g/G", "top/bottom"}, {"tab/J K/shift+tab", "file"}, {"n/N", "change"},
-		{"u", "layout"}, {"f", filter}, {"o/f3", "open file"},
-	}
-	if glyph := EffectiveHelpBinding(helpKey).Glyph("/"); glyph != "" {
-		movePairs = append(movePairs, [2]string{glyph, "keys"})
-	}
-	movePairs = append(movePairs, [2]string{"esc/q", "close"}, [2]string{"ctrl+c", "quit"})
-	return []LegendSection{
-		{Title: "Review", Pairs: [][2]string{
-			{"c", "comment"}, {"d", "remove/handle"}, {"C", send}, {"space", "reviewed"},
-			{"s", "scope: " + m.scope.String()}, {"r", repo}, {"b", "branch"}, {"B", "target"},
-		}},
-		{Title: "Move", Quiet: true, Pairs: movePairs},
-	}
+	move.Pairs = append(move.Pairs, quitPair)
+	return []LegendSection{review, move}
 }
 
 // scrollWindow keeps the cursor visible inside a height-limited window of

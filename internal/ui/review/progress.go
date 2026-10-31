@@ -11,6 +11,42 @@ func (m *Model) ToggleReviewed() Requests {
 	if fd == nil || !fd.Loaded() || m.fileHidden(fd) {
 		return Requests{}
 	}
+	requests := m.toggleFileMark(fd)
+	if !m.FileReviewed(fd.File.Path) {
+		return requests
+	}
+	marks := m.reviewed[m.reviewKey()]
+	for step := 1; step < len(m.set.Files); step++ {
+		next := (m.fileIdx + step) % len(m.set.Files)
+		if marks[m.markKey(m.set.Files[next].File.Path)] == 0 && !m.fileHidden(&m.set.Files[next]) {
+			return mergeRequests(requests, m.SwitchFile(next-m.fileIdx))
+		}
+	}
+	return requests
+}
+
+// ClickFileMark toggles the reviewed mark of the file whose glyph row line
+// of the file list painted, leaving the file in view where it is. A file not
+// loaded yet loads first, since its mark hashes the rendering.
+func (m *Model) ClickFileMark(line int) Requests {
+	index, ok := m.fileMarks.At(line)
+	if !ok || m.paused() {
+		return Requests{}
+	}
+	fd := &m.set.Files[index]
+	if fd.Loaded() {
+		return m.toggleFileMark(fd)
+	}
+	request, ok := m.requestFile(index)
+	if !ok {
+		return Requests{}
+	}
+	m.markFile = pendingMark{generation: m.gen, path: fd.File.Path}
+	return Requests{Files: []FileRequest{request}}
+}
+
+// toggleFileMark marks a loaded file reviewed, or clears its mark.
+func (m *Model) toggleFileMark(fd *diff.FileDiff) Requests {
 	key := m.reviewKey()
 	marks := m.reviewed[key]
 	if marks == nil {
@@ -20,17 +56,10 @@ func (m *Model) ToggleReviewed() Requests {
 	markKey := m.markKey(fd.File.Path)
 	if marks[markKey] != 0 {
 		delete(marks, markKey)
-		return Requests{Save: m.saveRequest()}
+	} else {
+		marks[markKey] = ContentHash(fd)
 	}
-	marks[markKey] = ContentHash(fd)
-	requests := Requests{Save: m.saveRequest()}
-	for step := 1; step < len(m.set.Files); step++ {
-		next := (m.fileIdx + step) % len(m.set.Files)
-		if marks[m.markKey(m.set.Files[next].File.Path)] == 0 && !m.fileHidden(&m.set.Files[next]) {
-			return mergeRequests(requests, m.SwitchFile(next-m.fileIdx))
-		}
-	}
-	return requests
+	return Requests{Save: m.saveRequest()}
 }
 
 func (m Model) FileReviewed(path string) bool {
@@ -45,7 +74,7 @@ func (m *Model) clearStaleMarks() bool {
 			continue
 		}
 		scope, path, _ := strings.Cut(markKey, "\x00")
-		if scope != m.scope.String() {
+		if scope != m.scopeKey() {
 			continue
 		}
 		fd := m.fileByPath(path)
@@ -73,7 +102,6 @@ func (m *Model) clearStaleMark(path string) bool {
 }
 
 func (m *Model) markMissingCommentsOutdated() bool {
-	current := m.scope.String()
 	fallback := m.rounds[m.reviewKey()].Scope
 	paths := make(map[string]bool, len(m.set.Files))
 	for i := range m.set.Files {
@@ -89,7 +117,7 @@ func (m *Model) markMissingCommentsOutdated() bool {
 		if scope == "" {
 			scope = fallback
 		}
-		if scope != "" && scope != current {
+		if !m.inScope(scope) {
 			continue
 		}
 		notes[i].outdated = true
@@ -110,7 +138,7 @@ func (m *Model) reanchorAnnotations(path string) bool {
 		if scope == "" && note.round > 0 {
 			scope = m.rounds[m.reviewKey()].Scope
 		}
-		if scope != "" && scope != m.scope.String() {
+		if !m.inScope(scope) {
 			continue
 		}
 		fd := m.fileByPath(note.file)

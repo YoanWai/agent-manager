@@ -13,11 +13,12 @@ import (
 // the question sits in the middle of the frame, its target is spelled out,
 // and the safe answer is the one already under the cursor.
 
-// ConfirmAction is the act a confirm asks about; the zero value is delete.
+// ConfirmAction is the act a confirm asks about, spelled as the lifecycle
+// action it runs.
 type ConfirmAction string
 
 const (
-	ConfirmDelete  ConfirmAction = ""
+	ConfirmDelete  ConfirmAction = "delete"
 	ConfirmArchive ConfirmAction = "archive"
 	ConfirmRestore ConfirmAction = "restore"
 	ConfirmKill    ConfirmAction = "kill"
@@ -37,21 +38,17 @@ type Confirm struct {
 	Label  string
 }
 
-// ConfirmOutcome is what a key asks the root to do with the pending request.
 type ConfirmOutcome uint8
 
 const (
 	ConfirmStay ConfirmOutcome = iota
 	ConfirmCancel
 	ConfirmAccept
-	ConfirmQuit
 )
 
 // Key answers the question: y or enter runs the request, n or esc drops it.
 func (c Confirm) Key(msg tea.KeyMsg) ConfirmOutcome {
 	switch msg.String() {
-	case "ctrl+c":
-		return ConfirmQuit
 	case "n", "esc":
 		return ConfirmCancel
 	case "y", "enter":
@@ -60,7 +57,6 @@ func (c Confirm) Key(msg tea.KeyMsg) ConfirmOutcome {
 	return ConfirmStay
 }
 
-// Title names the dialog after the act it is about to commit.
 func (c Confirm) Title(mode presentation.GlyphMode) string {
 	g := presentation.GlyphsFor(mode)
 	subject := "session"
@@ -92,7 +88,6 @@ func (c Confirm) Destructive() bool {
 		c.Action == ConfirmRestart || c.Action == ConfirmArchive || c.Action == ConfirmRemoveConnection
 }
 
-// Answer is the word the accept key carries in the hint.
 func (c Confirm) Answer() string {
 	switch c.Action {
 	case ConfirmKill:
@@ -137,7 +132,6 @@ func ConfirmBody(question, consequence string, inner int, tone, muted lipgloss.S
 	return strings.TrimRight(body.String(), "\n")
 }
 
-// ConfirmHints are the card's keys, the accept key named for the act.
 func ConfirmHints(answer string) [][2]string {
 	return [][2]string{{"y/↵", answer}, {"n/esc", "cancel"}}
 }

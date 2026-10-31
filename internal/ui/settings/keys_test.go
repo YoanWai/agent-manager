@@ -1,6 +1,7 @@
 package settings
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -179,5 +180,25 @@ func TestViewReadsReleaseFacts(t *testing.T) {
 	}
 	if !strings.Contains(frame.Body, "keybindings") || !strings.Contains(frame.Body, "defaults") {
 		t.Fatalf("keybindings row did not summarise the tables:\n%s", frame.Body)
+	}
+}
+
+// The review scope row steps through every scope both ways, and a save
+// writes the one it lands on.
+func TestReviewScopeRowStepsBothWays(t *testing.T) {
+	s := openState(testContext())
+	s.Field = FieldReviewScope
+	var steps []string
+	for range ReviewScopes {
+		s.Cycle(1)
+		steps = append(steps, s.ReviewScope)
+	}
+	s.Cycle(-1)
+	steps = append(steps, s.ReviewScope)
+	if want := []string{"branch", "commit", "staged", "uncommitted", "staged"}; !slices.Equal(steps, want) {
+		t.Fatalf("steps = %v, want %v", steps, want)
+	}
+	if !slices.Contains(s.Values(), Value{Key: ReviewScopeSetting, Value: "staged"}) {
+		t.Fatalf("a save writes %v, want review_scope staged", s.Values())
 	}
 }

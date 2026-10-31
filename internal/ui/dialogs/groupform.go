@@ -70,7 +70,6 @@ func (d *GroupForm) AimRemote(host string) {
 
 func (d GroupForm) Remote() string { return d.remote }
 
-// fieldCount is how many rows the focus cycles through.
 func (d GroupForm) fieldCount() int {
 	switch {
 	case d.remote != "":
@@ -88,13 +87,10 @@ func (d GroupForm) Worktree() int { return d.worktreeIndex }
 // Name is the typed name; a submit cleans it into the group path.
 func (d GroupForm) Name() string { return d.name.Value() }
 
-// SetName replaces the typed name.
 func (d *GroupForm) SetName(name string) { d.name.SetValue(name) }
 
-// Dir is the typed default directory.
 func (d GroupForm) Dir() string { return d.path.Value() }
 
-// DirAuto says the directory is still the parent's default.
 func (d GroupForm) DirAuto() bool { return d.pathAuto }
 
 // SetDir fills the directory without making it the user's own.
@@ -107,7 +103,6 @@ func (d *GroupForm) TakePath(path string) {
 	d.pathAuto = false
 }
 
-// Width is the columns the text fields are sized to.
 func (d GroupForm) Width() int { return d.name.Width }
 
 // SyncWidths sizes both text fields to the card, keeping their cursors.
@@ -118,21 +113,15 @@ func (d *GroupForm) SyncWidths(width int) {
 	d.path.SetCursor(d.path.Position())
 }
 
-// GroupFormAction is what a key asks the root to do.
 type GroupFormAction uint8
 
 const (
 	GroupFormStay GroupFormAction = iota
 	GroupFormCancel
-	// GroupFormComplete applies the highlighted path suggestion.
 	GroupFormComplete
-	// GroupFormStepParent steps the root's parent picker by Delta.
 	GroupFormStepParent
-	// GroupFormPickParent moves the root's parent picker to Entry.
 	GroupFormPickParent
-	// GroupFormPickPath completes the path suggestion at Entry.
 	GroupFormPickPath
-	// GroupFormStepBase steps the root's group base choice by Delta.
 	GroupFormStepBase
 	// GroupFormStepEnv steps the root's group environment choice by Delta.
 	GroupFormStepEnv
@@ -258,7 +247,6 @@ func (d *GroupForm) Click(line int, paths PathSuggestions, worktrees int) GroupF
 	return GroupFormKey{}
 }
 
-// Wheel steps the parent picker while it is open under its field.
 func (d GroupForm) Wheel(step int) GroupFormKey {
 	if d.focus != GroupFormParentField {
 		return GroupFormKey{}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -13,6 +14,26 @@ func (s *Store) CreateActiveSession(sess Session) error {
 // CreateActiveSessionBeside validates the anchor's resolved placement in the write transaction.
 func (s *Store) CreateActiveSessionBeside(sess Session, anchorID string) error {
 	return s.createSession(sess, anchorID, true)
+}
+
+// ConversationFree refuses a conversation a row of the same CLI already holds.
+func (s *Store) ConversationFree(tool, agentSessionID string) error {
+	return conversationFree(s.db, tool, agentSessionID)
+}
+
+func conversationFree(db queryRower, tool, agentSessionID string) error {
+	if agentSessionID == "" {
+		return nil
+	}
+	var id, name string
+	err := db.QueryRow(`SELECT id, name FROM sessions WHERE tool = ? AND agent_session_id = ?`, tool, agentSessionID).Scan(&id, &name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return fmt.Errorf("conversation %s is already session %s (%s)", agentSessionID, id, name)
 }
 
 func validateActivePlacement(tx *sql.Tx, sess Session, anchorID string) error {

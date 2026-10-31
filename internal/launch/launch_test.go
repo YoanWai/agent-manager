@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -604,4 +605,39 @@ func executableBehindLink(t *testing.T) (exe, link string) {
 		t.Skipf("no symlinks here: %v", err)
 	}
 	return exe, link
+}
+
+func TestAssembleResumesEveryAgentCLIByID(t *testing.T) {
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range cfg.AgentToolNames() {
+		tool := cfg.Tools[name]
+		want := strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", "'conv-1'")
+		if !strings.Contains(tool.ResumeByIDCommand, "{id}") {
+			t.Fatalf("%s has no resume_by_id_command to resume with: %q", name, tool.ResumeByIDCommand)
+		}
+		quiet := AssembleResume(name, tool, "", "conv-1", true, true)
+		if quiet.Command != want || quiet.AgentSessionID != "conv-1" || quiet.LaunchPrompt != "" || len(quiet.PendingInputs) != 0 {
+			t.Fatalf("%s promptless resume = %+v, want %q and nothing sent", name, quiet, want)
+		}
+		prompted := AssembleResume(name, tool, "pick up where we left off", "conv-1", false, true)
+		if prompted.Command != want || prompted.LaunchPrompt != "" || len(prompted.PendingInputs) != 1 || !strings.HasSuffix(prompted.PendingInputs[0], "pick up where we left off") {
+			t.Fatalf("%s prompted resume = %+v, want the prompt typed in", name, prompted)
+		}
+	}
+}
+
+func TestAssembleResumeQueuesTheNotesASlashCommandCannotCarry(t *testing.T) {
+	noClient := config.Tool{Command: "pi", ResumeByIDCommand: "pi --session {id}"}
+	named := AssembleResume("pi", noClient, "summarize where we are", "conv-1", true, true)
+	if len(named.PendingInputs) != 1 || !strings.Contains(named.PendingInputs[0], RenameDirective) || !strings.Contains(named.PendingInputs[0], ProactiveCoordinationNote) {
+		t.Fatalf("an auto-named prompted resume should carry its notes, got %q", named.PendingInputs)
+	}
+	slash := AssembleResume("pi", noClient, "/compact the notes", "conv-1", true, true)
+	want := []string{"/compact the notes", DeferredRenameDirective, ProactiveCoordinationNote}
+	if !slices.Equal(slash.PendingInputs, want) {
+		t.Fatalf("a slash-command resume = %q, want %q", slash.PendingInputs, want)
+	}
 }

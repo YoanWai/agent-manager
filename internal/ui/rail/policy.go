@@ -36,7 +36,10 @@ func (m Model) Searching() bool    { return m.searching }
 func (m Model) Search() string     { return m.search }
 func (m Model) MenuOpen() bool     { return m.menu.active }
 func (m Model) Reordering() bool   { return m.reorder.active }
-func (m Model) Cursor() int        { return m.cursor }
+
+// Busy is whether search, the row menu or reorder holds the keyboard.
+func (m Model) Busy() bool  { return m.InputMode() != BrowseMode }
+func (m Model) Cursor() int { return m.cursor }
 
 type ReorderInfo struct {
 	Active    bool
@@ -105,7 +108,6 @@ func (m Model) Collapsed() []string {
 	return paths
 }
 
-// saveFolds stores every fold, local and on connections.
 func (m Model) saveFolds() Mutation {
 	return Mutation{Kind: SaveCollapsed, Collapsed: m.Collapsed(), HostCollapsed: m.HostCollapsed()}
 }
@@ -157,9 +159,6 @@ func (m *Model) Key(msg tea.KeyMsg, _ Frame, ctx KeyContext) Decision {
 		return m.searchKey(msg)
 	}
 	key := keybind.Normalize(msg.String())
-	if key == "ctrl+c" {
-		return m.intent(Quit)
-	}
 	if key == "esc" {
 		return m.clearSearch()
 	}
@@ -255,8 +254,7 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 	case keybind.Resize:
 		return m.intent(Resize)
 	case keybind.Archived:
-		m.showArchived = !m.showArchived
-		return Decision{Consumed: true, Refresh: true, Selection: selectedOf(m)}
+		return m.toggleArchived()
 	case keybind.Terminal:
 		return m.intent(NewTerminal)
 	case keybind.Editor:
@@ -340,6 +338,15 @@ func (m *Model) cycleFilter() Decision {
 	m.rebuildRows()
 	current, currentOK := m.Selected()
 	return filterSelectionDecision(previous, previousOK, current, currentOK)
+}
+
+func (m *Model) toggleArchived() Decision {
+	previous, previousOK := m.Selected()
+	m.SetArchived(!m.showArchived)
+	current, currentOK := m.Selected()
+	decision := filterSelectionDecision(previous, previousOK, current, currentOK)
+	decision.Refresh = true
+	return decision
 }
 
 func (m *Model) toggleEmptyGroups() Decision {

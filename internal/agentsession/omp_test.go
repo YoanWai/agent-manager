@@ -39,7 +39,7 @@ func writeOmpSession(t *testing.T, dir, id, cwd string, created, modified time.T
 // session file, then "fresh" until that file is written.
 func writeOmpBreadcrumb(t *testing.T, tty, cwd, sessionFile string, fresh bool, modified time.Time) {
 	t.Helper()
-	dir := filepath.Join(filepath.Dir(ompRoot()), "terminal-sessions")
+	dir := filepath.Join(filepath.Dir(ompRoot(managerEnv)), "terminal-sessions")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +69,7 @@ func ompSessionPath(dir, id string, created time.Time) string {
 
 func TestOmpCaptureReadsThePaneBreadcrumb(t *testing.T) {
 	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
-	root := ompRoot()
+	root := ompRoot(managerEnv)
 	cwd := t.TempDir()
 	here := filepath.Join(root, "-project")
 	now := time.Now().Truncate(time.Millisecond)
@@ -101,7 +101,7 @@ func TestOmpCaptureReadsThePaneBreadcrumb(t *testing.T) {
 
 func TestOmpCaptureRefusesAStaleOrForeignBreadcrumb(t *testing.T) {
 	t.Setenv("PI_CODING_AGENT_DIR", t.TempDir())
-	root := ompRoot()
+	root := ompRoot(managerEnv)
 	cwd := t.TempDir()
 	now := time.Now().Truncate(time.Millisecond)
 	const id = "01a0e200-0000-7000-8000-000000000006"
@@ -135,7 +135,7 @@ func TestOmpCaptureAcceptsAnOlderSessionOpenedInThisLaunch(t *testing.T) {
 	cwd := t.TempDir()
 	now := time.Now().Truncate(time.Millisecond)
 	const id = "01a0e200-0000-7000-8000-000000000007"
-	file := writeOmpSession(t, filepath.Join(ompRoot(), "-project"), id, cwd, now.Add(-24*time.Hour), now.Add(time.Second))
+	file := writeOmpSession(t, filepath.Join(ompRoot(managerEnv), "-project"), id, cwd, now.Add(-24*time.Hour), now.Add(time.Second))
 	writeOmpBreadcrumb(t, "/dev/pts/10", cwd, file, false, now.Add(time.Second))
 	if got, ok := Capture("omp", cwd, now, nil, "/dev/pts/10"); !ok || got != id {
 		t.Fatalf("Capture = %q, %v", got, ok)
@@ -151,7 +151,7 @@ func TestOmpCaptureResolvesSymlinkedCwd(t *testing.T) {
 	}
 	now := time.Now().Truncate(time.Millisecond)
 	const id = "01a0e200-0000-7000-8000-00000000000a"
-	file := writeOmpSession(t, filepath.Join(ompRoot(), "-real"), id, resolvePath(real), now, now)
+	file := writeOmpSession(t, filepath.Join(ompRoot(managerEnv), "-real"), id, resolvePath(real), now, now)
 	writeOmpBreadcrumb(t, "/dev/pts/9", resolvePath(real), file, false, now)
 	if got, ok := Capture("omp", link, now, nil, "/dev/pts/9"); !ok || got != id {
 		t.Fatalf("Capture via symlink = %q, %v", got, ok)
@@ -161,7 +161,7 @@ func TestOmpCaptureResolvesSymlinkedCwd(t *testing.T) {
 func TestOmpSnapshotAndRecapture(t *testing.T) {
 	agentDir := t.TempDir()
 	t.Setenv("PI_CODING_AGENT_DIR", agentDir)
-	root := ompRoot()
+	root := ompRoot(managerEnv)
 	if root != filepath.Join(agentDir, "sessions") {
 		t.Fatalf("ompRoot = %q", root)
 	}

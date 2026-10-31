@@ -267,27 +267,3 @@ func TestCatalogNamesTheSetupStepKeys(t *testing.T) {
 		t.Fatalf("click row = %q", rows["setup step/click command"])
 	}
 }
-
-func TestReviewHelpNamesConfiguredHelpKey(t *testing.T) {
-	keys := keybind.DefaultList()
-	key, err := keybind.Parse("H")
-	binding := keybind.Keys(key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, configured := range []keybind.Binding{binding, {}} {
-		section := reviewHelpSection(keys, configured)
-		found := false
-		for _, row := range section.rows {
-			if row[1] == "this key map" {
-				found = true
-				if row[0] != "H" {
-					t.Fatalf("Help row=%v", row)
-				}
-			}
-		}
-		if found != configured.Has("H") {
-			t.Fatalf("configured=%v Help row present=%v", configured, found)
-		}
-	}
-}

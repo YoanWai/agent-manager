@@ -17,9 +17,20 @@ import (
 	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// TestMain drops an inherited GIT_DIR and its siblings, which would point
+// the temp repos these tests build at the repo running them.
+func TestMain(m *testing.M) {
+	if err := testenv.IsolateGit(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 type fakeTerminalCommands struct {
 	listed      []sessioncmd.Terminal
@@ -669,7 +680,7 @@ func TestReviewModeWritesMailbox(t *testing.T) {
 	configDir := t.TempDir()
 	session := connect(t, configDir, "abc123")
 
-	for _, scope := range []string{"uncommitted", "branch", "last_commit", "staged"} {
+	for _, scope := range []string{"uncommitted", "branch", "commit", "last_commit", "staged"} {
 		text, isError := callText(t, session, "review", map[string]any{"mode": scope})
 		if isError {
 			t.Fatalf("review mode %q error: %q", scope, text)
@@ -883,7 +894,7 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	created := callTool(t, session, "create_session", map[string]any{
 		"name": "payments-retry-fix", "prompt": "fix the retry backoff",
 		"tool": "codex", "group": group, "directory": "/work", "worktree": worktree,
-		"model": "gpt-6-sol", "effort": "xhigh", "profile": "work", "environment": "office",
+		"model": "gpt-6-sol", "effort": "xhigh", "profile": "work", "environment": "office", "resume": "conv-1",
 	})
 	if created.IsError || created.StructuredContent == nil {
 		t.Fatalf("create_session = %+v", created)
@@ -903,6 +914,9 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	}
 	if opts.Environment == nil || *opts.Environment != "office" {
 		t.Fatalf("environment = %v", opts.Environment)
+	}
+	if opts.Resume != "conv-1" {
+		t.Fatalf("resume = %q", opts.Resume)
 	}
 
 	if text, isError := callText(t, session, "send_session", map[string]any{

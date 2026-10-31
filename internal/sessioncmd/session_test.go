@@ -93,6 +93,13 @@ resume_by_id_command = "echo resumed {id} launch=$AGENT_MANAGER_LAUNCH"
 default_status = "idle"
 activity_cutoff = "(?m)^\u276f"
 
+# Resumes only conversations its codex-format store holds.
+[tools.saver]
+command = "echo launched"
+resume_by_id_command = "echo resumed {id}"
+session_store = "codex"
+default_status = "idle"
+
 # Prints the variable the environment profile tests set.
 [tools.envshow]
 command = "echo launched env=[$AM_TEST_ENV]"

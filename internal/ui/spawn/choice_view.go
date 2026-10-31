@@ -39,7 +39,6 @@ func ModelNote(h ChoiceHost, toolName string, st Styles) (string, bool) {
 	return "", true
 }
 
-// EffortRow is the row's value, whether it shows, and whether it takes keys.
 func (ch *Choice) EffortRow(h ChoiceHost, toolName string, st Styles) (value string, shown, active bool) {
 	chrome := presentation.ChromeFor(st.GlyphMode)
 	state, supported := choiceAnswer(h, toolName)
@@ -70,7 +69,6 @@ func (ch *Choice) EffortRow(h ChoiceHost, toolName string, st Styles) (value str
 	return value, true, true
 }
 
-// ProfileRow is the profile row's value, and whether it shows.
 func (ch *Choice) ProfileRow(h ChoiceHost, toolName string, st Styles) (string, bool) {
 	chrome := presentation.ChromeFor(st.GlyphMode)
 	profiles := choiceProfiles(h, toolName)
@@ -88,10 +86,8 @@ func (ch *Choice) ProfileRow(h ChoiceHost, toolName string, st Styles) (string, 
 	return st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + value + st.Subtle.Render(" "+chrome.ChoiceRightGlyph), true
 }
 
-// FilterView paints the model filter.
 func (ch *Choice) FilterView(st Styles) string { return st.Input(ch.filter) }
 
-// TypedEffortView paints the typed level.
 func (ch *Choice) TypedEffortView(st Styles) string { return st.Input(ch.typedEffort) }
 
 // ViewSuggestions returns each line's list index in entries, -1 for a

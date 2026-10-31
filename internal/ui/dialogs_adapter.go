@@ -1,135 +1,63 @@
 package ui
 
 import (
-	"fmt"
 	"sort"
 	"strings"
+	"time"
 
-	"github.com/YoanWai/agent-manager/internal/config"
-	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	uilink "github.com/YoanWai/agent-manager/internal/ui/connections/link"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
+	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
+	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
+	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
+	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
+	uiquick "github.com/YoanWai/agent-manager/internal/ui/quick"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	uirailpersist "github.com/YoanWai/agent-manager/internal/ui/rail/persist"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // The small dialogs keep their state, keys and view in internal/ui/dialogs.
-// These adapters seed them from the workspace, translate their outcomes
-// into mode changes and effect requests, and draw the card chrome.
+// This adapter seeds them from the workspace, translates their outcomes into
+// effect requests and mirrors the results back; the hosts in
+// dialogs_host.go answer the reads and run the request a card holds.
 
-// confirmDialog holds the lifecycle request a confirm asks about. The
-// lifecycle adapters fill it and open the dialog; the question, its keys
-// and its wording are uidialogs.Confirm.
-type confirmDialog struct{ confirmTarget }
-
-// confirmTarget.action values; the zero value means delete.
-const (
-	actionDelete  = uidialogs.ConfirmDelete
-	actionArchive = uidialogs.ConfirmArchive
-	actionRestore = uidialogs.ConfirmRestore
-	actionKill    = uidialogs.ConfirmKill
-	actionRestart = uidialogs.ConfirmRestart
-	actionRevive  = uidialogs.ConfirmRevive
-	// actionRemoveConnection takes an SSH connection off the list; the
-	// target names it and holds no sessions.
-	actionRemoveConnection = uidialogs.ConfirmRemoveConnection
-)
-
-type confirmTarget struct {
-	isGroup bool
-	// archivedOnly marks a group delete issued from the archived view,
-	// which clears the group's archive instead of the group itself.
-	archivedOnly bool
-	path         string
-	label        string
-	sessions     []store.Session
-	action       uidialogs.ConfirmAction
-	batch        bool
-	selection    lifecycleSelection
-	connection   string
-	// remote is a call on an SSH row, run on the host once confirmed.
-	remote *remoteRequest
+func (m *Model) openConfirm(target confirmTarget) {
+	m.push(uidialogs.NewConfirmSurface(confirmRoot{m, target}, target.prompt, m.prefs.glyphMode))
 }
 
-type lifecycleSelectionKind uint8
-
-const (
-	lifecycleSelectionNone lifecycleSelectionKind = iota
-	lifecycleSelectionSession
-	lifecycleSelectionGroup
-)
-
-type lifecycleSelection struct {
-	kind         lifecycleSelectionKind
-	rootID       string
-	members      []store.Session
-	archivedOnly bool
-}
-
-func (d *confirmDialog) prompt() uidialogs.Confirm {
-	return uidialogs.Confirm{Action: d.action, Group: d.isGroup, Label: d.label}
-}
-
-func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.confirm.prompt().Key(msg) {
-	case uidialogs.ConfirmQuit:
-		return m.requestQuit()
-	case uidialogs.ConfirmCancel:
-		m.confirm.confirmTarget = confirmTarget{}
-		m.mode = modeList
-	case uidialogs.ConfirmAccept:
-		target := m.confirm.confirmTarget
-		target.sessions = append(target.sessions[:0:0], target.sessions...)
-		m.confirm.confirmTarget = confirmTarget{}
-		m.mode = modeList
-		switch {
-		case target.remote != nil:
-			return m, m.runRemote(*target.remote)
-		case target.connection != "":
-			m.removeConnection(target.connection)
+// listClear is the list with no card over it: what "mode is the list" meant
+// while the cards were modes. The quick bar and a resize sit on the list
+// without covering it.
+func (m *Model) listClear() bool {
+	if m.base != baseList {
+		return false
+	}
+	for _, s := range m.surfaces {
+		switch s.(type) {
+		case *uiquick.Surface, *uigeometry.Surface:
 		default:
-			m.queueLifecycle(target, false, "")
+			return false
 		}
-		return m, m.nextEffectCmd()
 	}
-	return m, nil
+	return true
 }
 
-func (m *Model) viewConfirm() string {
-	prompt := m.confirm.prompt()
-	question, consequence := uidialogs.SplitLabel(prompt.Label)
-	return m.confirmCard(prompt.Title(m.prefs.glyphMode), question, consequence, prompt.Destructive(), prompt.Answer())
-}
-
-// confirmCard is the shared yes/no card, also drawn by Settings' reset.
-func (m *Model) confirmCard(title, question, consequence string, destructive bool, answer string) string {
-	width := m.cardWidth()
-	tone := lipgloss.NewStyle().Foreground(colorAccent()).Bold(true)
-	if destructive {
-		tone = errStyle()
+// previewFeeds is whether the preview has a pane to feed: the bare list, a
+// rename typed in a row, or focus. Any other card hides it.
+func (m *Model) previewFeeds() bool {
+	if m.focused() {
+		return true
 	}
-	body := uidialogs.ConfirmBody(question, consequence, cardInnerWidth(width), tone, mutedStyle())
-	return m.cardSized(width, title, body, uidialogs.ConfirmHints(answer))
+	_, renaming := surfaceOf[*uidialogs.RenameSurface](m)
+	return m.listClear() || renaming
 }
 
-func (m *Model) drawCard(card uidialogs.Card) string {
-	return m.card(card.Title, card.Body, card.Hints)
-}
-
-// moveDialog borrows the spawn form's group picker for its targets, which
-// the root rebuilds and shapes when the dialog opens; the root runs the
-// placement on the effect lane and closes the dialog from its fenced
-// follow-up.
-type moveDialog struct{ uidialogs.Move }
-
-// pickedGroupOption is the group picker's highlighted row.
-func (m *Model) pickedGroupOption() groupOption {
-	return m.form.groups[m.form.groupIndex]
-}
-
-// openMove captures the selected row and shapes the spawn form's group
-// picker into the targets it may land in.
 func (m *Model) openMove() {
 	row, ok := m.selectedRow()
 	if !ok {
@@ -139,127 +67,122 @@ func (m *Model) openMove() {
 		m.reportErr("root is the top level, not a group to move")
 		return
 	}
+	var move uidialogs.Move
+	var picker spawn.Picker
 	if row.isGroup {
-		m.move.Move = uidialogs.MoveGroup(row.group)
-		m.rebuildGroupOptionsFor(parentGroup(row.group), m.rail.ShowArchived())
-		m.pruneMoveTargets(row.group)
+		move = uidialogs.MoveGroup(row.group)
+		picker = m.groupPickerIncluding(uirail.ParentGroup(row.group), m.rail.ShowArchived())
+		uidialogs.PruneTargets(&picker, row.group)
 	} else {
-		m.move.Move = uidialogs.MoveSession(row.sess.ID)
-		m.rebuildGroupOptionsFor(row.sess.Group, m.rail.ShowArchived())
+		move = uidialogs.MoveSession(row.sess.ID)
+		picker = m.groupPickerIncluding(row.sess.Group, m.rail.ShowArchived())
 		if m.isShell(row.sess.Tool) {
+			// An archived shell keeps the archived agent it ran under as a
+			// target, so enter leaves it where it is.
 			parentID := ""
 			if row.sess.Archived {
 				parentID = row.sess.ParentID
 			}
-			m.appendAgentMoveTargets(parentID)
+			uidialogs.NestAgents(&picker, m.agentMoveTargets(parentID), parentID)
 		}
 	}
 	m.gens.dialog++
-	m.mode = modeMove
+	m.push(uidialogs.NewMoveSurface(moveRoot{m}, move, picker))
 	m.clearErr()
 }
 
-func (m *Model) appendAgentMoveTargets(parentID string) {
-	selected := m.form.groups[m.form.groupIndex].path
-	var options []groupOption
-	for _, opt := range m.form.groups {
-		options = append(options, opt)
-		for _, sess := range m.workspace.sessions {
-			if sess.Archived && sess.ID != parentID || m.isShell(sess.Tool) || sess.Group != opt.path {
-				continue
-			}
-			options = append(options, groupOption{
-				path:   sess.Group,
-				depth:  opt.depth + 1,
-				sessID: sess.ID,
-				name:   sess.Name,
-			})
-		}
-	}
-	m.form.groups = options
-	m.form.groupIndex = 0
-	for i, opt := range options {
-		if parentID != "" && opt.sessID == parentID || parentID == "" && opt.path == selected && opt.sessID == "" {
-			m.form.groupIndex = i
-			return
-		}
-	}
-}
-
-// pruneMoveTargets drops the moved group and its descendants from the
-// picker: a group cannot land inside its own subtree.
-func (m *Model) pruneMoveTargets(subtree string) {
-	selected := m.form.groups[m.form.groupIndex].path
-	options := make([]groupOption, 0, len(m.form.groups))
-	for _, opt := range m.form.groups {
-		if opt.path == subtree || strings.HasPrefix(opt.path, subtree+"/") {
+// agentMoveTargets are the running agents a shell may be nested under, plus
+// the archived parent an archived shell keeps.
+func (m *Model) agentMoveTargets(parentID string) []uidialogs.Agent {
+	var agents []uidialogs.Agent
+	for _, sess := range m.workspace.sessions {
+		if sess.Archived && sess.ID != parentID || m.isShell(sess.Tool) {
 			continue
 		}
-		options = append(options, opt)
+		agents = append(agents, uidialogs.Agent{ID: sess.ID, Group: sess.Group, Name: sess.Name})
 	}
-	m.form.groups = options
-	m.form.groupIndex = 0
-	for i, opt := range options {
-		if opt.path == selected {
-			m.form.groupIndex = i
-			return
+	return agents
+}
+
+// placeMove runs the placement the picked row asks for on the effect lane;
+// the card closes from the fenced follow-up. A move the dialog refuses
+// closes it now.
+func (m *Model) placeMove(move uidialogs.Move, p *spawn.Picker) tea.Cmd {
+	placement, ok := uidialogs.PlacementOf(move, p)
+	if !ok {
+		m.Pop()
+		return nil
+	}
+	if placement.IsGroup() {
+		return m.enqueueMove(
+			uirail.Mutation{Kind: uirail.MoveGroup, Path: placement.GroupPath, Group: placement.Group},
+			uiapply.MoveClose{IsGroup: true, Group: placement.GroupPath, Parent: placement.Group})
+	}
+	return m.enqueueMove(
+		uirail.Mutation{Kind: uirail.PlaceSession, SessionID: placement.SessionID, Group: placement.Group, ParentID: placement.ParentID},
+		uiapply.MoveClose{SessID: placement.SessionID, OptPath: placement.Group, OptSessID: placement.ParentID})
+}
+
+// enqueueMove sends a move dialog's decision through the existing effect
+// lane as a typed Rail mutation, with a chained follow-up that closes the
+// dialog only if the generation it was submitted with is still open.
+func (m *Model) enqueueMove(mut uirail.Mutation, close uiapply.MoveClose) tea.Cmd {
+	m.gens.dialog++
+	close.Gen = m.gens.dialog
+	m.effects.NextChain++
+	chain := m.effects.NextChain
+	request := uirailpersist.Request{
+		Mutation: mut,
+		Dir:      m.workspace.groupPaths[mut.Path],
+		Worktree: m.workspace.groupWorktrees[mut.Path],
+		Base:     m.workspace.groupBases[mut.Path],
+		Env:      m.workspace.groupEnvs[mut.Path],
+	}
+	if mut.Kind == uirail.PlaceSession {
+		request.Placement = m.capturePlacementPrecondition(mut)
+	}
+	m.enqueueEffect(request, chain, false)
+	m.enqueueEffect(close, chain, false)
+	return m.nextEffectCmd()
+}
+
+func (m *Model) capturePlacementPrecondition(mutation uirail.Mutation) uirailpersist.Precondition {
+	precondition := uirailpersist.Precondition{Verify: true, TargetID: mutation.ParentID, TargetGroup: mutation.Group}
+	for _, session := range m.workspace.sessions {
+		switch session.ID {
+		case mutation.SessionID:
+			precondition.SourceGroup = session.Group
+			precondition.SourceParentID = session.ParentID
+		case mutation.ParentID:
+			precondition.TargetGroup = session.Group
 		}
 	}
-}
-
-func (m *Model) handleMoveKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.move.Key(msg)
-	switch key.Action {
-	case uidialogs.MoveCancel:
-		m.mode = modeList
-	case uidialogs.MoveCursor:
-		return m, m.moveGroupCursor(key.Delta)
-	case uidialogs.MoveSubmit:
-		pick := uidialogs.MovePick{Group: m.selectedGroupPath()}
-		if !m.move.IsGroup() {
-			opt := m.pickedGroupOption()
-			pick = uidialogs.MovePick{Group: opt.path, ParentID: opt.sessID}
+	// A newer move can be accepted while an earlier placement for the same
+	// row is still serialized ahead of it. Validate against that lane's
+	// promised destination, which is the state the worker will actually see.
+	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)
+	for _, job := range jobs {
+		if job == nil {
+			continue
 		}
-		request, ok := m.move.Place(pick)
-		if !ok {
-			m.mode = modeList
-			return m, nil
+		request, ok := job.Request.(uirailpersist.Request)
+		if !ok || request.Mutation.Kind != uirail.PlaceSession || request.Mutation.SessionID != mutation.SessionID {
+			continue
 		}
-		if request.IsGroup() {
-			return m, m.enqueueMove(uirail.Mutation{Kind: uirail.MoveGroup, Path: request.GroupPath, Group: request.Group}, moveDialogClose{isGroup: true, group: request.GroupPath, parent: request.Group})
-		}
-		return m, m.enqueueMove(uirail.Mutation{Kind: uirail.PlaceSession, SessionID: request.SessionID, Group: request.Group, ParentID: request.ParentID}, moveDialogClose{sessID: request.SessionID, optPath: request.Group, optSessID: request.ParentID})
+		precondition.SourceGroup = request.Mutation.Group
+		precondition.SourceParentID = request.Mutation.ParentID
 	}
-	return m, nil
+	return precondition
 }
 
-// handleMoveClick moves the picker's cursor to the target a click landed on,
-// and moves the row there on a click on the target already under it.
-func (m *Model) handleMoveClick(line int) (tea.Model, tea.Cmd) {
-	switch {
-	case line < 0 || line >= len(m.form.groups):
-		return m, nil
-	case line != m.form.groupIndex:
-		return m, m.moveGroupCursor(line - m.form.groupIndex)
+// applyMoveClose pops the move card the follow-up was chained to, when it is
+// still the one on screen.
+func (m *Model) applyMoveClose(request uiapply.MoveClose) {
+	if _, open := surfaceOf[*uidialogs.MoveSurface](m); !open || m.gens.dialog != request.Gen {
+		return
 	}
-	return m.handleMoveKey(tea.KeyMsg{Type: tea.KeyEnter})
-}
-
-func (m *Model) viewMove() string {
-	return m.card(uidialogs.MoveTitle(m.prefs.glyphMode), m.viewGroupPicker(), uidialogs.MoveHints())
-}
-
-// forkDialog keeps the captured source row the fork request carries; the
-// name field and the dialog generation are uidialogs.Fork.
-type forkDialog struct {
-	uidialogs.Fork
-	source store.Session
-}
-
-// configuredTool looks a tool up in the loaded configuration.
-func (m *Model) configuredTool(name string) (config.Tool, bool) {
-	tool, ok := m.services.cfg.Tools[name]
-	return tool, ok
+	m.Pop()
+	m.rebuildRows()
 }
 
 func (m *Model) openFork() {
@@ -274,69 +197,90 @@ func (m *Model) openFork() {
 		m.reportErr("select a session to fork")
 		return
 	}
-	tool, ok := m.configuredTool(entry.sess.Tool)
+	tool, ok := m.services.cfg.Tools[entry.sess.Tool]
 	if !ok {
-		m.reportErr(fmt.Sprintf("tool %s is no longer configured", entry.sess.Tool))
+		m.reportErr("tool " + entry.sess.Tool + " is no longer configured")
 		return
 	}
-	if err := validateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
+	if err := uiapply.ValidateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
 		m.reportErr(err.Error())
 		return
 	}
-	m.fork.Open(entry.sess.Name, entry.sess.Group)
-	m.fork.source = entry.sess
+	m.gens.dialog++
+	m.push(uidialogs.NewForkSurface(forkRoot{m, entry.sess}, entry.sess.Name, entry.sess.Group, int(m.gens.dialog)))
 	m.clearErr()
-	m.mode = modeFork
 }
 
-func (m *Model) handleForkKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := m.fork.Key(msg)
-	switch key.Action {
-	case uidialogs.ForkCancel:
-		m.mode = modeList
-		m.clearErr()
-	case uidialogs.ForkInvalid:
-		m.reportErr(key.Err)
-	case uidialogs.ForkSubmit:
-		m.queueFork(forkRequest{source: m.fork.source, name: key.Name, gen: key.Gen})
-		return m, m.nextEffectCmd()
-	}
-	return m, key.Cmd
-}
-
-func (m *Model) viewFork() string {
-	return m.drawCard(m.fork.View(uidialogs.ForkStyles{
+// viewFork draws the fork card whose form the package holds.
+func (m *Model) viewFork(form *uidialogs.Fork) string {
+	card := form.View(uidialogs.ForkStyles{
 		BranchGlyph: m.glyphs().BranchGlyph,
-		Value:       valueStyle(),
-		Group:       lipgloss.NewStyle().Foreground(colorAccent2()),
+		Value:       uitheme.ValueStyle(),
+		Group:       lipgloss.NewStyle().Foreground(uitheme.ColorAccent2()),
 		Field:       m.formField,
-		Input:       textInputView,
-	}))
+		Input:       uiframe.TextInputView,
+	})
+	return m.CardSized(m.cardWidth(), card.Title, card.Body, card.Hints)
 }
 
-// renameDialog keeps what the root shares with the rename: the path
-// completion under its path field, the group base choice, which the
-// root probes, and the environment choice. The fields, focus and keys are
-// uidialogs.Rename.
-type renameDialog struct {
-	uidialogs.Rename
-	paths pathComplete
-	base  string
-	env   string
+// queueFork admits the fork dialog's request onto the effect lane once per
+// dialog generation, minting the child id and the pane geometry it launches
+// at.
+func (m *Model) queueFork(request uiapply.ForkEffect) {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
+		if job == nil {
+			continue
+		}
+		if pending, ok := job.Request.(uiapply.ForkEffect); ok && pending.Gen == request.Gen {
+			m.reportErr("this fork is already in progress")
+			return
+		}
+	}
+	w, h := m.paneTargetSize()
+	request.MintChildID()
+	request.Pane = sessioncmd.PaneSize{Width: w, Height: h}
+	m.enqueueEffect(request, 0, false)
 }
 
-// dialogPaths hands the rename and the group form the root's path completion.
-type dialogPaths struct{ *pathComplete }
-
-func (p dialogPaths) Active() bool        { return p.active() }
-func (p dialogPaths) Chosen() bool        { return p.chosen }
-func (p dialogPaths) Move(delta int) bool { return p.move(delta) }
-func (p dialogPaths) Reset()              { p.reset() }
-
-// stepRenameBase steps the group base choice, probing the default path the
-// open group edit would save.
-func (m *Model) stepRenameBase(current string, delta int) (string, tea.Cmd) {
-	return m.stepGroupBase(groupBaseRename, m.gens.dialog, m.renameGroupDir(), current, delta)
+// applyFork records the durable fork row the worker committed, then answers
+// the card that asked: an open dialog closes, a stale one keeps its edits.
+func (m *Model) applyFork(request uiapply.ForkEffect, result uiapply.ForkOutcome, err error) tea.Cmd {
+	launched := result.Launched
+	if launched.ID != "" {
+		m.markFreshPane(launched.ID)
+		m.ledger.lifecycle.RecordLaunch(launched.ID, time.Now())
+		m.workspace.sessions = append(m.workspace.sessions, launched)
+		// Forks start as starting, which attention excludes; clear so the
+		// row the fork just created is on screen.
+		m.rail.ClearStatusFilter()
+		m.rebuildRows()
+	}
+	// A completion must not replace a newer dialog or hand its keyboard
+	// outcome to a dialog the user has since opened, including one reopened
+	// on the same source.
+	card, stillOpen := surfaceOf[*uidialogs.ForkSurface](m)
+	stillOpen = stillOpen && card.Gen() == request.Gen && card.Name() == request.Name
+	if err == nil {
+		if stillOpen {
+			m.Pop()
+			m.clearErr()
+			m.focusSession(launched.ID)
+		}
+		return m.refreshCmd()
+	}
+	if !stillOpen {
+		m.reportErr(err.Error())
+		return nil
+	}
+	request.ChildID = result.ChildID
+	if result.RecordedForkID != "" {
+		request.KnownForkID = result.RecordedForkID
+	}
+	m.reportLaunchError(err)
+	if fix, ok := m.launchHintFix(); ok {
+		fix.Retry = request
+	}
+	return nil
 }
 
 // openRename reads the selected row, the workspace's group choices and the
@@ -351,17 +295,13 @@ func (m *Model) openRename() {
 		m.reportErr("root is the top level, not a group to rename")
 		return
 	}
+	var surface *uidialogs.RenameSurface
 	if entry.isGroup {
 		dir := m.workspace.groupPaths[entry.group]
 		if dir == "" {
 			dir = m.capturedGroupDefaultDir(entry.group)
 		}
-		m.rename = renameDialog{
-			Rename: uidialogs.RenameGroup(entry.group, dir, groupWorktreeIndex(m.workspace.groupWorktrees[entry.group])),
-			paths:  m.rename.paths.fresh(),
-			base:   m.workspace.groupBases[entry.group],
-			env:    m.workspace.groupEnvs[entry.group],
-		}
+		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup(entry.group, dir, uidialogs.WorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group], m.workspace.groupEnvs[entry.group])
 	} else {
 		tools := m.services.cfg.AgentToolNames()
 		shells := []string{}
@@ -372,98 +312,233 @@ func (m *Model) openRename() {
 		}
 		sort.Strings(shells)
 		tools = append(tools, shells...)
-		m.rename = renameDialog{
-			Rename: uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools),
-			paths:  m.rename.paths.fresh(),
-		}
+		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "", "")
 	}
-	m.mode = modeRename
+	// Each opening's reads outrank the last one's, so a scan a cancelled
+	// rename asked for cannot replace this one's pick.
+	surface.Paths().Generation = m.gens.dialog << 32
+	m.push(surface)
 	m.clearErr()
 }
 
-func (m *Model) handleRenameKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	return m.runRenameKey(m.rename.Key(msg, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions)))
-}
-
-// handleRenameClick acts on a click on line of the group edit's fields.
-func (m *Model) handleRenameClick(line int) (tea.Model, tea.Cmd) {
-	return m.runRenameKey(m.rename.Click(line, dialogPaths{&m.rename.paths}, len(groupWorktreeOptions)))
-}
-
-// runRenameKey executes what a rename key or click asked of the root.
-func (m *Model) runRenameKey(key uidialogs.RenameKey) (tea.Model, tea.Cmd) {
-	switch key.Action {
-	case uidialogs.RenameCancel:
-		m.mode = modeList
-		return m, nil
-	case uidialogs.RenameComplete:
-		return m, m.applyPathSuggestion()
-	case uidialogs.RenamePickPath:
-		if m.rename.paths.pick(key.Entry) {
-			return m, m.applyPathSuggestion()
-		}
-		return m, nil
-	case uidialogs.RenameStepBase:
-		var cmd tea.Cmd
-		m.rename.base, cmd = m.stepRenameBase(m.rename.base, key.Delta)
-		return m, cmd
-	case uidialogs.RenameStepEnv:
-		m.rename.env = spawn.StepEnv(m.workspace.envProfiles, m.rename.env, key.Delta)
-		return m, nil
-	case uidialogs.RenameInvalid:
-		m.reportErr(key.Err)
-		return m, nil
-	case uidialogs.RenameSubmit:
-		request := key.Request
-		if request.Group {
-			return m, m.queueRename(renameRequest{
-				kind:     renameGroup,
-				oldGroup: request.OldGroup,
-				newGroup: request.NewGroup,
-				rawDir:   request.Dir,
-				draftDir: request.Dir,
-				worktree: groupWorktreeValue(request.Worktree),
-				base:     m.rename.base,
-				env:      m.rename.env,
-				name:     request.Name,
-			})
-		}
-		return m, m.queueRename(renameRequest{
-			kind:   renameSession,
-			sessID: request.SessionID,
-			name:   request.Name,
-			tool:   request.Tool,
-		})
+// queueRename completes the rename dialog's request with the inventory it
+// was captured against (the group's default-path fallbacks, or the session
+// row and whether a tool change must first find it childless), fences it to
+// a new dialog generation and runs it on the effect lane.
+func (m *Model) queueRename(request uiapply.RenameEffect) tea.Cmd {
+	if request.Kind == uiapply.Group {
+		m.gens.dialog++
+		request.DirFallbacks = m.groupDirCandidates(uirail.ParentGroup(request.OldGroup))
+		request.Gen = m.gens.dialog
+		m.enqueueEffect(request, 0, false)
+		return m.nextEffectCmd()
 	}
-	if key.Suggest {
-		return m, tea.Batch(key.Cmd, m.rename.paths.request(pathSuggestionRename, m.rename.Dir(), systemPathSuggestionReader{}))
+	prevTool := ""
+	for i := range m.workspace.sessions {
+		if m.workspace.sessions[i].ID != request.SessID {
+			continue
+		}
+		prevTool = m.workspace.sessions[i].Tool
+		request.Sess = m.workspace.sessions[i]
+		break
 	}
-	return m, key.Cmd
+	toolChanged := request.Tool != "" && request.Tool != prevTool
+	m.gens.dialog++
+	request.CheckNoChildren = toolChanged && m.isShell(request.Tool)
+	request.Gen = m.gens.dialog
+	m.enqueueEffect(request, 0, false)
+	return m.nextEffectCmd()
 }
 
-// renameGroupDir is the default path the group edit would save, resolved
-// the way the rename worker resolves it.
-func (m *Model) renameGroupDir() string {
-	return m.capturedAbsolutePath(m.rename.Dir(), m.capturedGroupDefaultDir(parentGroup(m.rename.Path())))
+// applyRenameOutcome mirrors the stages the worker committed into the loaded
+// workspace, then closes the dialog that submitted this job, and only that
+// one: a reopened or resubmitted card keeps its edits.
+func (m *Model) applyRenameOutcome(job *uieffects.Job, result uiapply.Outcome, err error) {
+	request := job.Request.(uiapply.RenameEffect)
+	stages := result.Stages()
+	inventory := uiapply.Inventory{
+		Groups:         m.workspace.groups,
+		Sessions:       m.workspace.sessions,
+		GroupPaths:     m.workspace.groupPaths,
+		GroupWorktrees: m.workspace.groupWorktrees,
+		GroupBases:     m.workspace.groupBases,
+		GroupEnvs:      m.workspace.groupEnvs,
+	}
+	if request.Kind == uiapply.Group {
+		dir := request.Dir
+		if result.Dir != "" {
+			dir = result.Dir
+		}
+		if stages.GroupRenamed {
+			// Rewriting the in-memory tree right away means the frames
+			// between saving and the poller's refresh already show the new
+			// name and path instead of flashing the stale ones.
+			renamed := inventory.RenamedGroup(request.OldGroup, request.NewGroup, dir, request.Worktree, request.Base, request.Env, stages)
+			m.workspace.groups, m.workspace.sessions = renamed.Groups, renamed.Sessions
+			m.workspace.groupPaths, m.workspace.groupWorktrees = renamed.GroupPaths, renamed.GroupWorktrees
+			m.workspace.groupBases, m.workspace.groupEnvs = renamed.GroupBases, renamed.GroupEnvs
+			m.queueRail(m.rail.RenameGroup(request.OldGroup, request.NewGroup).Mutations, 0, true)
+		}
+	} else {
+		m.workspace.sessions = inventory.RenamedSession(request.SessID, stages, request.Name, result.Branch, request.Tool)
+	}
+	if result.Warning != nil && err == nil {
+		m.reportErr(result.Warning.Error())
+	}
+	if err != nil {
+		m.reportErr(err.Error())
+	} else if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok && m.gens.dialog == request.Gen && s.Name() == request.Name &&
+		(request.Kind != uiapply.Group || s.Dir() == request.DraftDir) {
+		m.Pop()
+	}
+	m.rebuildRows()
+}
+
+// renameGroupLocally rewrites the in-memory tree right away, so the frames
+// between saving and the poller's next refresh already show the new name and
+// path instead of flashing the stale ones.
+func (m *Model) renameGroupLocally(old, newPath, dir, worktree, base, env string) {
+	renamed := uiapply.Inventory{
+		Groups:         m.workspace.groups,
+		Sessions:       m.workspace.sessions,
+		GroupPaths:     m.workspace.groupPaths,
+		GroupWorktrees: m.workspace.groupWorktrees,
+		GroupBases:     m.workspace.groupBases,
+		GroupEnvs:      m.workspace.groupEnvs,
+	}.RenamedGroup(old, newPath, dir, worktree, base, env,
+		uiapply.Stages{GroupRenamed: true, PathSet: true, WorktreeSet: true, BaseSet: true, EnvSet: true})
+	m.workspace.groups, m.workspace.sessions = renamed.Groups, renamed.Sessions
+	m.workspace.groupPaths, m.workspace.groupWorktrees = renamed.GroupPaths, renamed.GroupWorktrees
+	m.workspace.groupBases, m.workspace.groupEnvs = renamed.GroupBases, renamed.GroupEnvs
+	m.queueRail(m.rail.RenameGroup(old, newPath).Mutations, 0, true)
 }
 
 // viewRenameGroupFields draws the group edit's path, worktree and base rows
 // under the group's head in the detail column.
-func (m *Model) viewRenameGroupFields(group string, width int) string {
+func (m *Model) viewRenameGroupFields(s *uidialogs.RenameSurface, group string, width int) string {
 	view := uidialogs.GroupFieldsView{
 		GlyphMode: m.prefs.glyphMode,
 		Width:     width,
-		Label:     labelStyle(),
-		Focused:   lipgloss.NewStyle().Foreground(colorAccent()),
-		Subtle:    subtleStyle(),
-		Value:     valueStyle(),
-		Input:     textInputView,
-		Worktrees: groupWorktreeOptions,
-		Base:      groupBaseChoice(m.rename.base, m.groupBase(parentGroup(group)), m.prefs.glyphMode),
-		Env:       groupEnvChoice(m.rename.env, m.groupEnv(parentGroup(group)), len(m.workspace.envProfiles) > 0, m.prefs.glyphMode),
+		Label:     uitheme.LabelStyle(),
+		Focused:   lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
+		Subtle:    uitheme.SubtleStyle(),
+		Value:     uitheme.ValueStyle(),
+		Input:     uiframe.TextInputView,
+		Worktrees: uidialogs.WorktreeOptions,
+		Base:      uidialogs.BaseChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Base, m.groupBase(uirail.ParentGroup(group)), m.prefs.glyphMode),
+		Env:       uidialogs.EnvChoice(uitheme.SubtleStyle(), uitheme.ValueStyle(), s.Env, m.groupEnv(uirail.ParentGroup(group)), len(m.workspace.envProfiles) > 0, m.prefs.glyphMode),
 	}
-	if m.rename.paths.active() {
-		view.Suggestions = m.viewPathSuggestions
+	if s.Paths().Active() {
+		view.Suggestions = func() string { return s.Paths().View(pathCompleteStyles(m.prefs.glyphMode)) }
 	}
-	return m.rename.GroupFields(view)
+	return s.GroupFields(view)
+}
+
+// openGroupForm opens the New Group card, seeded with the parent picker and
+// what each parent lends a child.
+func (m *Model) openGroupForm() {
+	opts := uidialogs.FormOptions{
+		Gen:       m.nextComposerGen(),
+		Cols:      m.layout.width,
+		Worktrees: uidialogs.WorktreeOptions,
+		Styles:    m.spawnStyles(),
+	}
+	if target, ok := m.remoteTarget(); ok {
+		opts.Remote = uidialogs.Remote{Host: target.host, Group: target.group}
+		m.push(uidialogs.NewGroupFormSurface(groupRoot{m}, opts))
+		m.clearErr()
+		return
+	}
+	parents, at := m.groupOptions(m.contextGroup())
+	lends := make(map[string]uidialogs.Lend, len(parents))
+	for _, opt := range parents {
+		lends[opt.Path] = uidialogs.Lend{Dir: m.capturedAncestorGroupDir(opt.Path), Base: m.groupBase(opt.Path), Env: m.groupEnv(opt.Path)}
+	}
+	opts.Dir = m.capturedGroupDefaultDir(parents[at].Path)
+	opts.Parents, opts.Parent, opts.Lends = parents, at, lends
+	m.push(uidialogs.NewGroupFormSurface(groupRoot{m}, opts))
+	m.clearErr()
+}
+
+// handleGroupFormSubmit runs what the form's submit asked: a remote call
+// for a connection's group, otherwise the store write on the effect lane.
+func (m *Model) handleGroupFormSubmit(msg uidialogs.GroupFormSubmitMsg, reader directoryPreflight) tea.Cmd {
+	request := msg.Request
+	m.clearErr()
+	if target := msg.Remote; target.Host != "" {
+		return m.queueRemote(uilink.Call{Op: uilink.CreateGroup, Host: target.Host, Name: request.Path,
+			GroupDir: strings.TrimSpace(request.Dir), ComposerGen: request.Gen})
+	}
+	m.enqueueEffect(uilaunch.GroupRequest{
+		Path: request.Path, Worktree: uidialogs.WorktreeValue(request.Worktree), Base: msg.Base, Env: msg.Env, Gen: request.Gen,
+		RawDir: request.Dir, Fallbacks: m.groupDirCandidates(request.Parent), DirReader: crossPreflight(reader),
+		DraftName: request.Name, DraftDir: request.Dir,
+	}, 0, false)
+	return m.nextEffectCmd()
+}
+
+// handleGroupBaseAsk steps the open form's base through the repo's
+// branches, probing the directory the group would save.
+func (m *Model) handleGroupBaseAsk(msg uidialogs.GroupBaseAskMsg) tea.Cmd {
+	s, ok := surfaceOf[*uidialogs.GroupFormSurface](m)
+	if !ok || s.Gen() != msg.Gen {
+		return nil
+	}
+	choice, cmd := m.stepGroupBase(uilaunch.BaseForm, uint64(msg.Gen), m.capturedAbsolutePath(s.Dir(), m.capturedGroupDefaultDir(s.Selected())), s.Base(), msg.Delta)
+	*s.BaseRef() = choice
+	return cmd
+}
+
+// dialogSources is what the fork and rename workers reach off the update
+// path, captured when their request was queued.
+func (s effectServices) dialogSources() uiapply.Sources {
+	return uiapply.Sources{
+		Store:     s.store,
+		Git:       s.gitDrv,
+		Config:    s.cfg,
+		Panes:     s.driver,
+		Lifecycle: s.lifecycle,
+		Runner:    s.runner,
+	}
+}
+
+// dialogPathProbe is the read-only path probe the dialog workers read with:
+// the spawn effect's, which resolves a default path the way a group form
+// does, plus the plain directory test a fork's source needs.
+type dialogPathProbe struct{ systemDirectoryPreflight }
+
+func (p dialogPathProbe) Resolve(raw string, fallbacks []string) (string, bool) {
+	return p.resolve(raw, fallbacks)
+}
+
+func (p dialogPathProbe) ResolveDir(path string) bool { return uilaunch.IsDir(path) }
+
+func (s effectServices) dialogPathProbe() uiapply.Preflight {
+	return dialogPathProbe{systemDirectoryPreflight{git: s.gitDrv}}
+}
+
+// link hands the connection runtime the table it writes and the client it
+// calls the hosts with.
+func (s effectServices) link() uilink.Services {
+	return uilink.Services{Store: s.store, Client: s.remote, Openers: s.store}
+}
+
+// dialogApply hands the dialog workers what they reach off the update path:
+// their sources, and the read-only probe a rename and a fork resolve paths
+// with.
+func (s effectServices) dialogApply() uiapply.Services {
+	return uiapply.Services{Sources: s.dialogSources(), Preflight: s.dialogPathProbe()}
+}
+
+// setGroupChoice records a group's own choice, "" dropping it to inherit.
+func setGroupChoice(choices map[string]string, group, value string) map[string]string {
+	if choices == nil {
+		choices = map[string]string{}
+	}
+	if value == "" {
+		delete(choices, group)
+	} else {
+		choices[group] = value
+	}
+	return choices
 }

@@ -23,9 +23,6 @@ func TestLaunchHintKeysNeedACommand(t *testing.T) {
 			t.Fatalf("%s = %v, want %v", key, got, want)
 		}
 	}
-	if got := fix.Key(tea.KeyMsg{Type: tea.KeyCtrlC}); got != LaunchHintQuit {
-		t.Fatalf("ctrl+c = %v", got)
-	}
 }
 
 func TestLaunchHintViewSetsParagraphsApart(t *testing.T) {

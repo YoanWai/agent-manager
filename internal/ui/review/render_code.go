@@ -238,7 +238,6 @@ func (r renderer) unifiedRows(fd *diff.FileDiff, hl *Highlight, width, height in
 	return rows.text
 }
 
-// paintedRows are a code pane's rows and the cursor line each one shows.
 type paintedRows struct {
 	text  []string
 	lines presentation.Lines[int]

@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"slices"
+
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 )
@@ -15,16 +17,32 @@ type Setting struct {
 	// own stepping (the tool, theme, symbols and editor rows).
 	Flag func(*State) *bool
 	// True and False are the stored spellings of the flag's two sides.
-	True, False string
-	// TrueLabel and FalseLabel are the painted words when they differ from
-	// the stored spellings.
+	True, False           string
 	TrueLabel, FalseLabel string
-	Beta                  bool
-	// Proactive writes the row through the store's typed coordination call.
-	Proactive bool
+	Proactive             bool
 }
 
 var onOff = []string{"on", "off"}
+
+// ReviewScopes are the names review stores its scopes by, in the order s
+// cycles them.
+var ReviewScopes = []string{"uncommitted", "branch", "commit", "staged"}
+
+// reviewScope reads a stored scope name, falling back to the first.
+func reviewScope(stored string) string {
+	if slices.Contains(ReviewScopes, stored) {
+		return stored
+	}
+	return ReviewScopes[0]
+}
+
+// reviewScopeLabel names a scope the way review's header pill does.
+func reviewScopeLabel(name string) string {
+	if name == "branch" {
+		return "vs target"
+	}
+	return name
+}
 
 // table is every key Settings keeps, in the order settings list prints them.
 var table = []Setting{
@@ -45,12 +63,13 @@ var table = []Setting{
 		Flag: func(s *State) *bool { return &s.HideStats }, True: "on", False: "off", TrueLabel: "hide", FalseLabel: "show"},
 	{Spec: Spec{Key: DiffLayoutSetting, Values: []string{"split", "unified"}, Default: "split", Row: "review layout"}, Field: FieldLayout,
 		Flag: func(s *State) *bool { return &s.LayoutSplit }, True: "split", False: "unified"},
+	{Spec: Spec{Key: ReviewScopeSetting, Values: ReviewScopes, Default: ReviewScopes[0], Row: "review scope"}, Field: FieldReviewScope},
 	{Spec: Spec{Key: QuickCloseSetting, Values: []string{"stay", "close"}, Default: "stay", Row: "after quick prompt"}, Field: FieldQuickClose,
 		Flag: func(s *State) *bool { return &s.QuickCloseSend }, True: "close", False: "stay", FalseLabel: "stay open"},
 	{Spec: Spec{Key: FocusKeySetting, Values: []string{"focus", "attach"}, Default: "focus", Row: "session keys"}, Field: FieldFocusKey,
 		Flag: func(s *State) *bool { return &s.EnterFocuses }, True: "focus", False: "attach", TrueLabel: "↵ focus · A attach", FalseLabel: "↵ attach · A focus"},
 	{Spec: Spec{Key: ArrowStepSetting, Values: onOff, Default: "on", Row: "←→ step in/out"}, Field: FieldArrowStep,
-		Flag: func(s *State) *bool { return &s.ArrowStep }, True: "on", False: "off", Beta: true},
+		Flag: func(s *State) *bool { return &s.ArrowStep }, True: "on", False: "off"},
 	{Spec: Spec{Key: MouseSetting, Values: onOff, Default: "on", Row: "mouse"}, Field: FieldMouse,
 		Flag: func(s *State) *bool { return &s.MouseDisabled }, True: "off", False: "on"},
 	{Spec: Spec{Key: WorktreeSetting, Values: onOff, Default: "off", Row: "spawn in worktree"}, Field: FieldWorktree,
@@ -139,7 +158,6 @@ func Keys() []string {
 	return keys
 }
 
-// FlagKeys lists the two-way rows' keys.
 func FlagKeys() []string {
 	keys := make([]string, 0, len(table))
 	for _, setting := range table {

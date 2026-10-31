@@ -67,22 +67,18 @@ func (d *Dialog) SaveFailed(gen uint64) {
 	}
 }
 
-// DialogAction is what a key on the dialog asks the root for.
 type DialogAction uint8
 
 const (
 	DialogNone DialogAction = iota
 	DialogCancel
-	// DialogSave carries a connection that passed validation.
 	DialogSave
-	// DialogRefused carries why enter saved nothing.
 	DialogRefused
 )
 
 type DialogKey struct {
-	Action DialogAction
-	Cmd    tea.Cmd
-	// Next is the connection to save, replacing Editing when that is set.
+	Action  DialogAction
+	Cmd     tea.Cmd
 	Next    remote.Connection
 	Editing string
 	Gen     uint64
@@ -162,7 +158,6 @@ func (d *Dialog) submit(list []remote.Connection) DialogKey {
 	return DialogKey{Action: DialogSave, Next: next, Editing: d.editing, Gen: d.gen}
 }
 
-// DialogView is the root's field layout and styles.
 type DialogView struct {
 	Field func(label, value string, focused bool) string
 	Input func(textinput.Model) string

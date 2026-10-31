@@ -78,7 +78,7 @@ class ContractTests(unittest.TestCase):
     def test_setting_value_answers_store_contents(self):
         from scenarios import profile_dir
         profile = profile_dir(self.sandbox)
-        profile.mkdir(parents=True)
+        profile.mkdir(parents=True, exist_ok=True)
         db = profile / 'state.db'
         conn = sqlite3.connect(str(db))
         try:
@@ -93,7 +93,7 @@ class ContractTests(unittest.TestCase):
     def test_session_rows_filters_by_name(self):
         from scenarios import profile_dir
         profile = profile_dir(self.sandbox)
-        profile.mkdir(parents=True)
+        profile.mkdir(parents=True, exist_ok=True)
         db = profile / 'state.db'
         conn = sqlite3.connect(str(db))
         try:

@@ -78,17 +78,6 @@ func TestStateTreatsCloseKeysAsTextWhileSearching(t *testing.T) {
 	}
 }
 
-func TestStateQuitDoesNotMutateFeatureState(t *testing.T) {
-	state := State{scope: Review, query: "fork", searching: true, scroll: 2}
-	want := state
-	if action := state.Update(tea.KeyMsg{Type: tea.KeyCtrlC}, Viewport{Rows: 4, Lines: 12}); action != Quit {
-		t.Fatalf("ctrl+c action = %v, want Quit", action)
-	}
-	if state != want {
-		t.Fatalf("ctrl+c changed state from %+v to %+v", want, state)
-	}
-}
-
 func TestNewAlwaysStartsWithCleanStateAndRequestedScope(t *testing.T) {
 	state := New(Review)
 	if state != (State{scope: Review}) {

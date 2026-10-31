@@ -43,11 +43,17 @@ func (s *State) cliPickerKey(msg tea.KeyMsg, ctx Context) Result {
 		if preferred == "" {
 			preferred = ctx.DefaultTool
 		}
-		s.ToolNames = ctx.Tools.Enabled(s.CLIHidden)
-		s.ToolIndex = ToolIndex(s.ToolNames, preferred)
+		s.ShowTools(ctx.Tools, preferred)
 		return Result{SaveHidden: true}
 	}
 	return Result{}
+}
+
+// ShowTools narrows the default tool row to the CLIs left shown, staying on
+// preferred while it is one of them.
+func (s *State) ShowTools(tools Tools, preferred string) {
+	s.ToolNames = tools.Enabled(s.CLIHidden)
+	s.ToolIndex = ToolIndex(s.ToolNames, preferred)
 }
 
 // toggleCLIHidden flips visibility for one tool. At least one CLI must stay

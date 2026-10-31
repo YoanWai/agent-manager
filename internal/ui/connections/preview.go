@@ -70,7 +70,6 @@ func (p *Preview) Apply(read Read, text string, err error) {
 	p.text, p.err = text, ""
 }
 
-// ScreenView is the root's styles and its tab expansion for pane rows.
 type ScreenView struct {
 	Err, Muted lipgloss.Style
 	ExpandTabs func(line string, width int) string

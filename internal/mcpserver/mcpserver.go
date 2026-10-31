@@ -26,7 +26,7 @@ type renameArgs struct {
 type reviewArgs struct {
 	Repo string `json:"repo,omitempty" jsonschema:"path inside the git repo or worktree being worked on, so review opens there"`
 	Base string `json:"base,omitempty" jsonschema:"git ref the branch scope diffs against (e.g. origin/develop); \"auto\" returns to auto-detection"`
-	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, last_commit or staged"`
+	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, commit or staged"`
 }
 
 type reviewCommentArgs struct {
@@ -67,6 +67,7 @@ type createSessionArgs struct {
 	Effort      string  `json:"effort,omitempty" jsonschema:"reasoning effort, one the chosen model takes; omit to keep the CLI's own"`
 	Profile     string  `json:"profile,omitempty" jsonschema:"profile to launch the CLI under, for a CLI that has them (hermes); omit for the CLI's active one"`
 	Environment *string `json:"environment,omitempty" jsonschema:"environment profile from Agent Manager to launch under, a named set of environment variables the user defined; omit to inherit the group's, else this agent's own; pass an empty string for none; not taken with host"`
+	Resume      string  `json:"resume,omitempty" jsonschema:"conversation id the chosen CLI saved earlier. The session opens that conversation instead of a new one, keeps it on every revive, and sends it nothing unless prompt is set. Pass the directory it was saved in, a name when there is no prompt, and no worktree"`
 	Host        string  `json:"host,omitempty" jsonschema:"SSH connection to start the session on, the host list_sessions reports; omit for this machine. There nothing is inherited from this agent: group defaults to the root, directory to the remote user's home and tool to the one picked in that host's settings"`
 }
 
@@ -306,7 +307,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		Description: "Declare what the user's review screen shows for this session; set any of repo, base and mode together. " +
 			"repo is the git repo or worktree you are working in, so review opens there: declare it when you start in a repo or switch to another. " +
 			"base is the git ref your work will merge into (e.g. origin/develop), which the branch scope diffs against; \"auto\" returns to auto-detection. " +
-			"mode is the diff scope review opens with: uncommitted (working dir), branch (vs base), last_commit or staged, e.g. staged before committing.",
+			"mode is the diff scope review opens with: uncommitted (working dir), branch (vs base), commit (HEAD, the user steps to others) or staged, e.g. staged before committing.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewArgs) (*mcp.CallToolResult, any, error) {
 		var done []string
 		if args.Repo != "" {
@@ -386,6 +387,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"The new session is a full CLI process of its own on the user's machine, which the user can watch and type into, and it can run a different CLI than this one. " +
 			spawnWhen +
 			"Pass a descriptive name and a prompt stating the whole task, since the new agent cannot see this conversation, and worktree true for repo work so it edits its own checkout and branch. " +
+			"Pass resume with a conversation id the CLI saved earlier to bring that conversation in as a session instead. " +
 			"Follow it with read_session and send_session; use create_terminal instead for a plain shell.",
 		Annotations: toolAnnotations(false, false, true),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
@@ -401,6 +403,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			Effort:      args.Effort,
 			Profile:     args.Profile,
 			Environment: args.Environment,
+			Resume:      args.Resume,
 		}
 		create := func() (sessioncmd.Session, error) { return sessions.Create(sessionID, opts) }
 		if args.Host != "" {

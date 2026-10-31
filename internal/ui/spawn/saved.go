@@ -52,16 +52,12 @@ func OpenSavedList(rows []Saved, loading, none bool) SavedList {
 	return SavedList{open: true, none: none, filter: filter, rows: rows, loading: loading}
 }
 
-// Open says the list is showing.
 func (l *SavedList) Open() bool { return l.open }
 
-// Loading says the list waits on its read.
 func (l *SavedList) Loading() bool { return l.loading }
 
-// Close hides the list and forgets its filter.
 func (l *SavedList) Close() { *l = SavedList{} }
 
-// Load fills a list that opened while its read was running.
 func (l *SavedList) Load(rows []Saved, err error) {
 	l.loading = false
 	if err != nil {
@@ -120,7 +116,6 @@ func (l *SavedList) pick() SavedPick {
 	return SavedPick{Closed: true, Picked: true, Index: match.index, Saved: match.saved}
 }
 
-// Click picks the entry on a painted line.
 func (l *SavedList) Click(line int) SavedPick {
 	match, ok := l.lines.At(line)
 	if !ok {
@@ -164,12 +159,10 @@ func (l *SavedList) Lines(width, visible int, st Styles) []string {
 	return lines
 }
 
-// Hint is the list's key hint, with what enter does to the pick.
 func (l *SavedList) Hint(enter, esc string) [][2]string {
 	return [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", enter}, {"esc", esc}}
 }
 
-// SavedPreview is the text on one line, cut to width.
 func SavedPreview(text string, width int) string {
 	if width <= 0 {
 		return ""

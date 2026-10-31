@@ -38,6 +38,7 @@ type LegendContext struct {
 	Session       Session
 	Widest        bool
 	Unread        [2]string
+	Messages      [2]string
 }
 
 // RowLegend is the tier for the entry under the cursor: what this session or
@@ -160,8 +161,6 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 		emptyGroupsKey = ""
 		terminalKey = ""
 		foldAllKey = ""
-		terminalKey = ""
-		foldAllKey = ""
 	}
 	var alerts [][2]string
 	if ctx.Unread[0] != "" {
@@ -178,6 +177,7 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 			pairs = append(pairs, pair)
 		}
 	}
+	add(true, ctx.Messages)
 	add(false, [2]string{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"})
 	add(true, [][2]string{
 		{k(keybind.NewSession), "new"}, {terminalKey, "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},

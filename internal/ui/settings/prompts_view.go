@@ -68,7 +68,9 @@ func (p *Prompts) view(ctx ViewContext) Frame {
 		if last < len(p.rows) {
 			show(fmt.Sprintf("↓ %d more", len(p.rows)-last), last)
 		}
-		note("agents add these with agent-manager prompts add")
+		rule := presentation.ChromeFor(ctx.GlyphMode).DashedRuleGlyph
+		note(st.Subtle.Render(strings.Repeat(rule, inner)))
+		note(st.Muted.Render("agents save these with agent-manager prompts add"))
 		if p.refreshFailed && !p.loading {
 			hint = [][2]string{{"n", "new"}, {"r", "refresh"}, {"esc", "back"}}
 		}

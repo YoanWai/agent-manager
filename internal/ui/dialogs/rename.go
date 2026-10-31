@@ -48,8 +48,6 @@ func nameField(name string) textinput.Model {
 	return input
 }
 
-// RenameGroup opens an edit of the group at path, its default directory and
-// its worktree choice index.
 func RenameGroup(path, dir string, worktree int) Rename {
 	field := newField("default working directory", 400)
 	field.Prompt = ""
@@ -92,25 +90,19 @@ func (d Rename) SessionID() string { return d.sessionID }
 func (d Rename) Focus() int        { return d.focus }
 func (d Rename) Worktree() int     { return d.worktree }
 
-// Name is the typed name as a submit would send it.
 func (d Rename) Name() string { return cleanName(d.input.Value()) }
 
-// SetName replaces the typed name.
 func (d *Rename) SetName(name string) { d.input.SetValue(name) }
 
-// Tools are the tools a session rename cycles through.
 func (d Rename) Tools() []string { return d.tools }
 
-// Dir is the typed default directory of a group edit.
 func (d Rename) Dir() string { return d.dir.Value() }
 
-// SetDir puts a completed path in the path field, the cursor at its end.
 func (d *Rename) SetDir(path string) {
 	d.dir.SetValue(path)
 	d.dir.CursorEnd()
 }
 
-// NameField is the name input, sized for the row it is drawn in.
 func (d *Rename) NameField(width int) textinput.Model {
 	if width >= 5 {
 		d.input.Width = width
@@ -134,7 +126,6 @@ func (d *Rename) cycleTool(delta int) {
 	d.toolIndex = (d.toolIndex + delta + n) % n
 }
 
-// PathSuggestions is the root's directory completion under the path field.
 type PathSuggestions interface {
 	Active() bool
 	Chosen() bool
@@ -166,15 +157,12 @@ func (d *Rename) focusOn(paths PathSuggestions, field int) {
 	}
 }
 
-// RenameAction is what a key asks the root to do.
 type RenameAction uint8
 
 const (
 	RenameStay RenameAction = iota
 	RenameCancel
-	// RenameComplete applies the highlighted path suggestion.
 	RenameComplete
-	// RenameStepBase steps the root's group base choice by Delta.
 	RenameStepBase
 	// RenameStepEnv steps the root's group environment choice by Delta.
 	RenameStepEnv
@@ -286,7 +274,6 @@ func (d *Rename) Key(msg tea.KeyMsg, paths PathSuggestions, worktrees int) Renam
 	return RenameKey{Cmd: cmd}
 }
 
-// submit validates the name and hands the root the rename it captured.
 func (d *Rename) submit() RenameKey {
 	name := d.Name()
 	if name == "" {
@@ -313,7 +300,6 @@ func (d *Rename) submit() RenameKey {
 	}}
 }
 
-// Hints are the footer keys while the rename is open.
 func (d Rename) Hints() [][2]string {
 	if d.group {
 		return [][2]string{{"tab", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}

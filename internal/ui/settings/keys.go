@@ -1,13 +1,14 @@
 package settings
 
 import (
+	"slices"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Exit is what a key asks of the root beyond the dialog's own state.
 type Exit uint8
 
 const (
@@ -18,6 +19,7 @@ const (
 	OpenDocs
 	OpenFeatureRequest
 	RequestCLISupport
+	OpenSetup
 )
 
 // Notice is what a key leaves on the status bar: nothing, a cleared bar,
@@ -38,11 +40,9 @@ type Context struct {
 	DefaultTool string
 	Session     keybind.Table
 	List        keybind.Table
-	// UpdateReady says the version row offers a release to update to.
 	UpdateReady bool
 }
 
-// Result is a key's outcome for the root to run.
 type Result struct {
 	Exit   Exit
 	Notice Notice
@@ -50,9 +50,8 @@ type Result struct {
 	// to resolve the auto-detected theme first and show it with ShowTheme.
 	Palette     bool
 	DetectTheme bool
-	// Background asks the root to preview TerminalBackground.
-	Background bool
-	Glyphs     bool
+	Background  bool
+	Glyphs      bool
 	// SaveHidden is the CLI picker closing; SaveKeys the key picker.
 	SaveHidden bool
 	SaveKeys   bool
@@ -61,8 +60,7 @@ type Result struct {
 	LoadPrompts  bool
 	SavePrompt   *PromptSave
 	DeletePrompt string
-	// Cmd is the typed editor line's own command.
-	Cmd tea.Cmd
+	Cmd          tea.Cmd
 }
 
 // step moves the cursor a row, past the environments row while it is off.
@@ -98,6 +96,8 @@ func (s *State) Key(msg tea.KeyMsg, ctx Context) Result {
 		return s.Cycle(1)
 	case "enter":
 		switch s.Field {
+		case FieldSetup:
+			return Result{Exit: OpenSetup}
 		case FieldDocs:
 			return Result{Exit: OpenDocs}
 		case FieldBugReport:
@@ -163,6 +163,10 @@ func (s *State) Cycle(step int) Result {
 		}
 		s.Dirty = true
 		return Result{Glyphs: true}
+	case FieldReviewScope:
+		count := len(ReviewScopes)
+		at := max(slices.Index(ReviewScopes, s.ReviewScope), 0)
+		s.ReviewScope = ReviewScopes[(at+step+count)%count]
 	case FieldEditor:
 		s.Editor.cycle(step)
 	default:
@@ -177,13 +181,11 @@ func (s *State) Cycle(step int) Result {
 	return Result{}
 }
 
-// OpenPrompts opens the saved prompts panel from its row.
 func (s *State) OpenPrompts() Result {
 	s.Field = FieldPrompts
 	return s.openPrompts()
 }
 
-// ShowTheme points the theme row at the palette auto-detect resolved.
 func (s *State) ShowTheme(name string) {
 	s.ThemeIndex = uitheme.Index(name)
 }
