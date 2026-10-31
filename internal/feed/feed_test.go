@@ -511,6 +511,7 @@ func TestLegacyFeedSeedIsFetchedAtOnceWithoutItsETag(t *testing.T) {
 func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	shapes := map[int][]string{
 		1: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at"},
+		2: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at", "kind", "action"},
 	}
 	want, ok := shapes[feedParser]
 	if !ok {
@@ -523,5 +524,63 @@ func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("rawMessage has fields %q, parser %d names %q: a changed field set needs a higher parser number", got, feedParser, want)
+	}
+}
+
+func TestSanitizeKeepsKindActionAndExpiry(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	raw := []rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: "heads-up", Action: "Join on Discord", ExpiresAt: "2026-11-22T12:00:00Z"}}
+	got := sanitize(raw, "0.46.0", now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 message, got %+v", got)
+	}
+	if got[0].Kind != KindHeadsUp {
+		t.Errorf("kind = %q, want %q", got[0].Kind, KindHeadsUp)
+	}
+	if got[0].Action != "Join on Discord" {
+		t.Errorf("action = %q", got[0].Action)
+	}
+	if want := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC); !got[0].ExpiresAt.Equal(want) {
+		t.Errorf("expires at = %v, want %v", got[0].ExpiresAt, want)
+	}
+}
+
+func TestSanitizeKeepsEveryKnownKind(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	for _, kind := range []string{KindNews, KindHeadsUp, KindTip} {
+		got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: kind}}, "0.46.0", now)
+		if len(got) != 1 || got[0].Kind != kind {
+			t.Errorf("kind %q came back as %+v", kind, got)
+		}
+	}
+}
+
+func TestUnknownOrMissingKindReadsAsNews(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	for _, kind := range []string{"", "survey"} {
+		got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: kind}}, "0.46.0", now)
+		if len(got) != 1 || got[0].Kind != KindNews {
+			t.Errorf("kind %q = %+v, want %q", kind, got, KindNews)
+		}
+	}
+}
+
+func TestMissingExpiryLeavesTheZeroTime(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t"}}, "0.46.0", now)
+	if len(got) != 1 || !got[0].ExpiresAt.IsZero() {
+		t.Fatalf("expires at = %+v", got)
+	}
+}
+
+func TestActionIsCleanedAndBounded(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	action := "\x1b[31m" + strings.Repeat("x", 60)
+	got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Action: action}}, "0.46.0", now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 message, got %+v", got)
+	}
+	if want := strings.Repeat("x", maxActionLen); got[0].Action != want {
+		t.Errorf("action = %q, want %d x runes with no escape", got[0].Action, maxActionLen)
 	}
 }
