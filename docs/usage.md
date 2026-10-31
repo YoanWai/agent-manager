@@ -165,7 +165,11 @@ The `n` form has an `env` row once a profile exists, quick prompt mode steps it 
 
 The profile is saved on the session by name, and its variables are read again at every launch, so restart (`R`), revive (`v`), a relaunch inside the pane and fork (`f`) run under the profile as it stands then. A session naming a profile that was since removed refuses to launch and says so, rather than starting under the wrong account. A variable the profile no longer sets is unset at the next launch in that pane, not restored to the value it had before the profile set it, so a profile that drops `PATH` can leave a bare command such as `claude` unresolvable; keep `PATH` in a profile whose agent needs it. The models a form offers are still read under the manager's own environment.
 
-## Terminal tabs
+## Tools
+
+Tools are the panes Agent Manager provides itself, beside the agent CLIs. They sit in the same list and take the same row keys, but no agent runs in them.
+
+### Terminal tabs
 
 `t` opens a shell tab: a session like any other (same list, same row keys, same `enter`, `x`, `v` and `R`) with your shell in the pane instead of an agent. On an agent, the new shell nests under that session, in that agent's group and directory. On a group, it lands in the group as an un-nested sibling, in the group's default path. On a nested shell it joins the same parent; on an un-nested shell it stays un-nested in that shell's group. Either way it opens in that shell's own directory, so a shell you have `cd`'d somewhere hands the next one the same place. A nested shell is named after the session it hangs under, `terminal-review-done` rather than `terminal-0ab5`, and the next one under that session counts up to `terminal-review-done-2`; a shell with no session over it keeps the generated name, and `r` renames any of them. Its status rests at idle throughout: turn tracking belongs to agents, and a shell has no turns.
 

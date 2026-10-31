@@ -20,7 +20,7 @@ answers both in a sentence.
 ### Tool coverage
 
 <!--
-For a shared feature, account for every tool in builtinTools with its new
+For a shared feature, account for every CLI in builtinCLIs with its new
 behavior and verification, or evidence that the feature does not apply.
 A table is useful. Keeping old behavior is partial coverage.
 For a tool-specific fix or new CLI, name the tools and why the scope is narrow.

@@ -78,7 +78,7 @@ Named sets of environment variables a session launches under, kept in `state.db`
 
 ## Agent CLIs
 
-Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI, plus the shell `t` opens. OpenCode means OpenCode 2 (`@opencode/cli`), which the manager runs with `--standalone` so each session has a server of its own. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity, Oh My Pi and Cursor CLI have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
+Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI. OpenCode means OpenCode 2 (`@opencode/cli`), which the manager runs with `--standalone` so each session has a server of its own. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity, Oh My Pi and Cursor CLI have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
 
 Agent Manager supports the current release of each CLI. A CLI can also carry the oldest release its launch, revive, fork and model list still work with. When yours is older, a spawn, a revive, or its model list opens a dialog that names your version, the one it needs, and the vendor installer that updates it. A CLI that lives under `/nix/store` gets no installer there, since the vendor script would not replace it; the dialog says to update it the way it was installed. Pi needs 0.84.3 or later, because earlier releases save every model they are asked about as your default.
 
@@ -101,6 +101,10 @@ tmux -L agentmgr capture-pane -p -t am_SESSION_ID
 ```
 
 A CLI that is not on the list above is a feature request; the `CLIs` row in Settings ends with `request CLI support`, which opens one prefilled.
+
+## Tools
+
+Tools are the panes Agent Manager provides itself, listed beside the agents. The terminal is the one tool today. `t` opens a shell tab under the selected agent or in the selected group (see [Terminal tabs](usage.md#terminal-tabs)). A tool is built into the binary the way a CLI is, but it runs no agent. It stays out of the session pickers and the Settings `CLIs` row, and the keys that write a prompt into a pane refuse it. A session stores the name of its CLI or its tool, and no name is both.
 
 ## Key bindings
 

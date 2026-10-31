@@ -118,7 +118,7 @@ In the pull request description, say what changed and why, and how you verified
 it. Fill the Scope section: what the change has to do and why this shape. A typo
 or a one-line fix answers both in a sentence, and a review reads them to tell
 the change you meant from the change you made. For a shared feature, account
-for every CLI in `builtinTools` with its behavior and verification, or evidence
+for every CLI in `builtinCLIs` with its behavior and verification, or evidence
 that the feature does not apply. For a tool-specific fix, name the affected
 tools and why the others are unaffected. For any partial feature exception,
 link the maintainer decision or state it explicitly when you are the maintainer.
