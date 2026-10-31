@@ -527,19 +527,19 @@ func cardFrame(rows []string, inner int, topLegend, topRight, bottomLegend strin
 	g := presentation.ChromeFor(mode)
 	border := t.Border
 	edge := border.Render("│")
-	legend := func(left, label, trailing, right string) string {
+	legend := func(left, label, rightLegend, right string) string {
 		label = ansi.Truncate(label, inner+1, "…")
 		if label != "" {
 			label = border.Render("─") + label
 		}
-		if trailing != "" {
-			trailing += border.Render("─")
+		if rightLegend != "" {
+			rightLegend += border.Render("─")
 		}
-		if lipgloss.Width(label)+lipgloss.Width(trailing) > inner+2 {
-			trailing = ""
+		if lipgloss.Width(label)+lipgloss.Width(rightLegend) > inner+2 {
+			rightLegend = ""
 		}
-		dashes := max(inner+2-lipgloss.Width(label)-lipgloss.Width(trailing), 0)
-		return border.Render(left) + label + border.Render(strings.Repeat("─", dashes)) + trailing + border.Render(right)
+		dashes := max(inner+2-lipgloss.Width(label)-lipgloss.Width(rightLegend), 0)
+		return border.Render(left) + label + border.Render(strings.Repeat("─", dashes)) + rightLegend + border.Render(right)
 	}
 	lines := []string{legend(g.TopLeftGlyph, topLegend, topRight, g.TopRightGlyph)}
 	for _, row := range rows {

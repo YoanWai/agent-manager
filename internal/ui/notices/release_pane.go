@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -118,9 +119,16 @@ func callToAction(n Notice, width int, t Theme, mode presentation.GlyphMode) str
 	return actionBar("u", "Update to "+bareVersion(n.Version)+" and restart", "", width, t, mode)
 }
 
-// chip is a label on a fill, in the backdrop's ink.
+// chip is a label on a fill, in whichever of the backdrop's ink and the bright text reads clearer on it.
 func chip(text string, fill lipgloss.Color, t Theme) string {
-	return lipgloss.NewStyle().Background(fill).Foreground(t.Ink).Bold(true).Render(" " + text + " ")
+	return lipgloss.NewStyle().Background(fill).Foreground(chipInk(fill, t)).Bold(true).Render(" " + text + " ")
+}
+
+func chipInk(fill lipgloss.Color, t Theme) lipgloss.Color {
+	if uitheme.ContrastRatio(string(t.Bright), string(fill)) > uitheme.ContrastRatio(string(t.Ink), string(fill)) {
+		return t.Bright
+	}
+	return t.Ink
 }
 
 // actionBar is a call to action on the faint accent fill: the key, what it
@@ -181,16 +189,16 @@ func filterChips(n Notice, active string, t Theme, mode presentation.GlyphMode) 
 		if filter == active {
 			style = headingStyle(t)
 		}
-		chip, text := style.Render("All"), "All"
+		label, text := style.Render("All"), "All"
 		if filter != "" {
 			count := strconv.Itoa(kindCount(n, filter))
-			chip, text = changeMark(filter, t, mode)+" "+style.Render(count), "x "+count
+			label, text = changeMark(filter, t, mode)+" "+style.Render(count), "x "+count
 		}
 		cells := ansi.StringWidth(text) + 2
 		if filter == active {
-			row += t.Surface(" "+chip+" ", cells)
+			row += t.Surface(" "+label+" ", cells)
 		} else {
-			row += " " + chip + " "
+			row += " " + label + " "
 		}
 		hits = append(hits, paneHit{x0: x, x1: x + cells, tab: TabChanges, filter: filter})
 		x += cells

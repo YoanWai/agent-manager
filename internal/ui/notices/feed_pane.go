@@ -1,7 +1,7 @@
 package notices
 
 import (
-	"strings"
+	"net/url"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/x/ansi"
@@ -28,7 +28,16 @@ func feedPane(n Notice, width int, t Theme, mode presentation.GlyphMode) []strin
 	if action == "" {
 		action = "Open link"
 	}
-	return spaced(rows, actionBar(presentation.KeyLabel(mode, "↵"), action, strings.TrimPrefix(n.URL, "https://"), width, t, mode))
+	return spaced(rows, actionBar(presentation.KeyLabel(mode, "↵"), action, linkHost(n.URL), width, t, mode))
+}
+
+// linkHost is the host a link leads to, or the whole URL when it does not parse.
+func linkHost(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return raw
+	}
+	return parsed.Host
 }
 
 // feedMeta is the banner, then the day the entry expires in the viewer's zone.

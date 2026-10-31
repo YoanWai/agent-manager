@@ -1,30 +1,6 @@
 package theme
 
-import (
-	"math"
-	"testing"
-)
-
-func relativeLuminance(hex string) float64 {
-	red, green, blue := HexRGB(hex)
-	channel := func(value int) float64 {
-		scaled := float64(value) / 255
-		if scaled <= 0.03928 {
-			return scaled / 12.92
-		}
-		return math.Pow((scaled+0.055)/1.055, 2.4)
-	}
-	return 0.2126*channel(red) + 0.7152*channel(green) + 0.0722*channel(blue)
-}
-
-func contrastRatio(a, b string) float64 {
-	lumA := relativeLuminance(a)
-	lumB := relativeLuminance(b)
-	if lumA < lumB {
-		lumA, lumB = lumB, lumA
-	}
-	return (lumA + 0.05) / (lumB + 0.05)
-}
+import "testing"
 
 // lightThemeNames mirrors TestLightThemesPresent: the themes whose backdrop
 // is light, which the luminance split must classify exactly.
@@ -100,7 +76,7 @@ func TestThemeTextContrast(t *testing.T) {
 			{"Subtle", theme.Subtle, 2.0},
 		}
 		for _, check := range checks {
-			if ratio := contrastRatio(check.hex, theme.Bg); ratio < check.minimum {
+			if ratio := ContrastRatio(check.hex, theme.Bg); ratio < check.minimum {
 				t.Errorf("%s: %s %s on Bg %s contrast %.2f, want >= %.1f",
 					theme.Name, check.token, check.hex, theme.Bg, ratio, check.minimum)
 			}
@@ -111,7 +87,7 @@ func TestThemeTextContrast(t *testing.T) {
 		// Badges paint Bg as bold ink on an accent fill, so both accents
 		// have to clear the large-text floor against the backdrop tone.
 		for token, accent := range map[string]string{"Accent": theme.Accent, "Accent2": theme.Accent2, "Remote": theme.Remote} {
-			if ratio := contrastRatio(theme.Bg, accent); ratio < 3.0 {
+			if ratio := ContrastRatio(theme.Bg, accent); ratio < 3.0 {
 				t.Errorf("%s: Bg %s on %s fill %s contrast %.2f, want >= 3.0",
 					theme.Name, theme.Bg, token, accent, ratio)
 			}

@@ -1088,7 +1088,7 @@ func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
 func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.3.0")
 	m.release.Latest = "v0.4.0"
-	// Read already, so the cursor landing on it queues no write that reads as a quit.
+	// Read already, so the reselect after the refresh sends no SeenRequest to make quit non-nil.
 	m.notices.See(noticeTip)
 	m.openNotices("update-v0.4.0")
 	m.drainEffects(t)

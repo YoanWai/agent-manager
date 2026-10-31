@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -553,5 +554,29 @@ func TestFilterMatchingNothingSaysSoOverOmittedChanges(t *testing.T) {
 	}
 	if all := paneText(updatedNotice(t, release), TabChanges, "", paneTestWidth); rowIndex(all, "+24 more in the full notes") < 0 {
 		t.Fatalf("the unfiltered list lost the omitted count:\n%s", strings.Join(all, "\n"))
+	}
+}
+
+func TestChipInkReadsOnEveryTheme(t *testing.T) {
+	useTrueColor(t)
+	previous := uitheme.Current()
+	t.Cleanup(func() { uitheme.Apply(previous) })
+	for _, palette := range uitheme.Palettes {
+		uitheme.Apply(palette)
+		theme := PanelTheme()
+		for _, kind := range []Kind{KindRelease, KindNews, KindHeadsUp, KindTip} {
+			fill := kindColor(kind, theme)
+			best, ratio := theme.Ink, uitheme.ContrastRatio(string(theme.Ink), string(fill))
+			if bright := uitheme.ContrastRatio(string(theme.Bright), string(fill)); bright > ratio {
+				best, ratio = theme.Bright, bright
+			}
+			want := lipgloss.NewStyle().Background(fill).Foreground(best).Bold(true).Render(" LABEL ")
+			if got := chip("LABEL", fill, theme); got != want {
+				t.Errorf("%s %s chip: want the %s ink at %.2f:1, got %q", palette.Name, groupLabels[kind], best, ratio, got)
+			}
+			if ratio < 4.5 {
+				t.Logf("%s %s chip: the better ink %s on %s reaches only %.2f:1", palette.Name, groupLabels[kind], best, fill, ratio)
+			}
+		}
 	}
 }

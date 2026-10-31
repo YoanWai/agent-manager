@@ -58,10 +58,10 @@ func TestFeedCallToActionUsesTheActionOrOpenLink(t *testing.T) {
 	rows := feedPane(n, 80, theme, presentation.DefaultGlyphMode)
 	plain := plainRows(rows)
 	last := strings.TrimRight(plain[len(plain)-1], " ")
-	if last != "▍ ↵  Join on Discord  discord.gg/ecS88An7pF" {
+	if last != "▍ ↵  Join on Discord  discord.gg" {
 		t.Fatalf("call to action = %q", last)
 	}
-	if !strings.Contains(rows[len(rows)-1], theme.Muted.Render("discord.gg/ecS88An7pF")) {
+	if !strings.Contains(rows[len(rows)-1], theme.Muted.Render("discord.gg")) {
 		t.Fatalf("the link host is not dim: %q", rows[len(rows)-1])
 	}
 	if plain[len(plain)-2] != "" {
@@ -69,7 +69,7 @@ func TestFeedCallToActionUsesTheActionOrOpenLink(t *testing.T) {
 	}
 
 	n.Action = ""
-	if got := feedText(n, 80); strings.TrimRight(got[len(got)-1], " ") != "▍ ↵  Open link  discord.gg/ecS88An7pF" {
+	if got := feedText(n, 80); strings.TrimRight(got[len(got)-1], " ") != "▍ ↵  Open link  discord.gg" {
 		t.Fatalf("without an action the bar reads %q, want Open link", got[len(got)-1])
 	}
 	if got := feedText(n, 30); lipgloss.Width(got[len(got)-1]) > 30 {
@@ -140,8 +140,8 @@ func TestConfigImportWarningDrawsAsAHeadsUp(t *testing.T) {
 	if rowIndex(rows, "bad key") < 0 {
 		t.Fatalf("the reason is missing:\n%s", strings.Join(rows, "\n"))
 	}
-	if got := rows[len(rows)-1]; !strings.HasPrefix(got, "▍ ↵  Read what Settings holds  github.com/YoanWai/") || !strings.HasSuffix(got, "…") || lipgloss.Width(got) != proseWidth {
-		t.Fatalf("call to action = %q, want the link cut to the prose measure", got)
+	if got := strings.TrimRight(rows[len(rows)-1], " "); got != "▍ ↵  Read what Settings holds  github.com" {
+		t.Fatalf("call to action = %q, want the link's host", got)
 	}
 	if rowIndex(rows, "Enter opens") >= 0 {
 		t.Fatalf("the bar already says where Enter goes:\n%s", strings.Join(rows, "\n"))
