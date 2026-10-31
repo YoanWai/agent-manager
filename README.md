@@ -230,14 +230,10 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 
 ## Sponsors
 
-<p align="center">Thank you for supporting my open source work.</p>
+<p align="center">Sponsorship supports the ongoing development and maintenance of agent-manager.</p>
 
 <p align="center">
-  <a href="https://github.com/dempc6469">
-    <img src="https://github.com/dempc6469.png?size=144" width="72" height="72" alt="dempc6469">
-    <br>
-    <sub><b>@dempc6469</b></sub>
-  </a>
+  <b><a href="https://github.com/dempc6469">@dempc6469</a></b>
 </p>
 
 <p align="center">
