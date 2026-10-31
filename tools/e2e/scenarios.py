@@ -272,7 +272,7 @@ def scenario(sandbox, binary, glyph_mode='advanced'):
     sandbox.wait('quick-prompt-reached-pane', lambda: pane_text(sandbox, pane),
                  lambda text: 'scen-quick-input' in text)
     key(sandbox, 'Escape')
-    key(sandbox, 'T')
+    key(sandbox, 't')
     frame(sandbox, 'terminal-tab', 'terminal-')
     key(sandbox, 'g')
     frame(sandbox, 'group-form', 'New Group')
