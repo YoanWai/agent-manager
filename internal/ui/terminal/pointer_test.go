@@ -18,7 +18,7 @@ func TestHandoffsPutThePointerBack(t *testing.T) {
 	stubLinkCopy(t, nil)
 
 	handoffs := map[string]func() error{
-		"child process": func() error { return childCommand{exec.Command("sh", "-c", "true")}.Run() },
+		"child process": func() error { return childCommand{exec.Command("true")}.Run() },
 		"link page": func() error {
 			runLinkPage(t, "https://example.com/docs", "\n")
 			return nil
