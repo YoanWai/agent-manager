@@ -50,7 +50,7 @@ func TestFocusWatchForwardDistinguishesUnavailableFromAdmitted(t *testing.T) {
 // The pane writes an invisible update before each echo, as Codex, Muse and
 // Oh My Pi do.
 func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
-	driver, id, arrivals, _ := startFocusArrivalWatch(t)
+	driver, id, arrivals, watch := startFocusArrivalWatch(t)
 	echo := `bash -c 'echo $((6*7))ready; while IFS= read -rsn1 key; do printf "\033[?25h"; sleep 0.01; printf "<%s>" "$key"; done'`
 	if err := driver.SendText(id, echo); err != nil {
 		t.Fatalf("SendText: %v", err)
@@ -58,9 +58,21 @@ func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
 
 	waitFocusArrival(t, arrivals, "42ready")
 
-	// A held echo comes at least a frame budget after the frame of the
-	// invisible update, however slow each capture is on the host, so the
-	// gap between those two frames is measured rather than the whole echo.
+	// The echo's frame comes a capture gap after the invisible update's frame
+	// when it is not held and a frame budget after when it is, plus one
+	// capture either way. That capture is timed beside each attempt and taken
+	// off, so the bound sits halfway between the two however slow the host.
+	target := tmux.PaneTarget(id)
+	captureTime := func() time.Duration {
+		start := time.Now()
+		for _, command := range []string{"capture-pane -p -e -t " + target,
+			`display-message -p -t ` + target + ` "` + paneStateFormat + `"`} {
+			if available, err := watch.Forward(command); !available || err != nil {
+				t.Fatalf("timing a capture: available %v, err %v", available, err)
+			}
+		}
+		return time.Since(start)
+	}
 	fastest := time.Hour
 	for attempt := range 5 {
 		time.Sleep(2 * frameBudget)
@@ -72,26 +84,24 @@ func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
 		if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(id) + " -l " + key); err != nil {
 			t.Fatalf("send-keys: %v", err)
 		}
-		fastest = min(fastest, echoAfterUpdate(t, arrivals, token))
+		gap := echoAfterUpdate(t, arrivals, token, time.Now())
+		fastest = min(fastest, gap-captureTime())
 	}
-	if fastest >= frameBudget {
-		t.Fatalf("echo came %v after the invisible update's frame, want under %v", fastest, frameBudget)
+	if bound := (captureGap + frameBudget) / 2; fastest >= bound {
+		t.Fatalf("echo waited %v after the invisible update's frame, want under %v", fastest, bound)
 	}
 }
 
-// echoAfterUpdate is how long after the previous frame the frame showing
-// token arrived, or zero when that was the first frame.
-func echoAfterUpdate(t *testing.T, arrivals <-chan focusArrival, token string) time.Duration {
+// echoAfterUpdate is how long after the previous frame, or after sent when
+// there was none, the frame showing token arrived.
+func echoAfterUpdate(t *testing.T, arrivals <-chan focusArrival, token string, sent time.Time) time.Duration {
 	t.Helper()
-	var previous time.Time
+	previous := sent
 	deadline := time.After(5 * time.Second)
 	for {
 		select {
 		case got := <-arrivals:
 			if strings.Contains(got.preview, token) {
-				if previous.IsZero() {
-					return 0
-				}
 				return got.at.Sub(previous)
 			}
 			previous = got.at

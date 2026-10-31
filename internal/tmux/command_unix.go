@@ -26,14 +26,21 @@ func configureBoundedCommand(cmd *exec.Cmd) {
 			return err
 		}
 		// On macOS a child forked while the signal goes out can miss it, so the
-		// group is signaled until Wait has reaped the leader and nothing is left.
-		deadline := time.Now().Add(commandTimeout)
-		for syscall.Kill(group, syscall.SIGKILL) == nil {
+		// group is signaled until no live member is left. macOS answers EPERM
+		// once only exited members remain, Linux ESRCH once Wait reaped them.
+		deadline := time.Now().Add(100 * time.Millisecond)
+		for {
+			err := syscall.Kill(group, syscall.SIGKILL)
+			if errors.Is(err, syscall.ESRCH) || errors.Is(err, syscall.EPERM) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
 			if time.Now().After(deadline) {
-				return fmt.Errorf("process group %d still running %v after SIGKILL", -group, commandTimeout)
+				return fmt.Errorf("process group %d still has members 100ms after SIGKILL", -group)
 			}
 			time.Sleep(time.Millisecond)
 		}
-		return nil
 	}
 }
