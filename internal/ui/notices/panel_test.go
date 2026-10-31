@@ -86,22 +86,40 @@ func TestUpdateNoticeHighlightsPressU(t *testing.T) {
 	notices := p.Active(testSources("v0.3.0"))
 	view := strings.Join(p.View(notices, testFrame()), "\n")
 	theme := testTheme()
-	for _, want := range []string{
-		theme.Key.Render("Press u to update to v0.3.0 and restart."),
-		theme.Key.Render("u update"),
-	} {
-		if !strings.Contains(view, want) {
-			t.Fatalf("update notice missing highlighted %q", ansi.Strip(want))
-		}
-	}
-	plain := ansi.Strip(view)
-	if strings.Contains(plain, "`") {
-		t.Fatalf("accent marks reached the screen:\n%s", plain)
+	if !strings.Contains(view, theme.Key.Render("u update")) || !strings.Contains(ansi.Strip(view), "u  Update to 0.3.0 and restart") {
+		t.Fatalf("update notice lacks its call to action:\n%s", ansi.Strip(view))
 	}
 	p.Key(key("down"), notices, testFrame())
 	next := strings.Join(p.View(notices, testFrame()), "\n")
-	if strings.Contains(next, theme.Key.Render("u update")) || strings.Contains(ansi.Strip(next), "Press u to update") {
+	if strings.Contains(next, theme.Key.Render("u update")) || strings.Contains(ansi.Strip(next), "Update to") {
 		t.Fatalf("press u stays on the update notice only:\n%s", ansi.Strip(next))
+	}
+}
+
+// A wide but short terminal cannot hold the two-line list, so the inbox
+// stacks rather than push its bottom edge off screen.
+func TestShortWideTerminalStacksTheInbox(t *testing.T) {
+	src := inboxSources()
+	src.WhatsNewVersion, src.WhatsNewFrom = src.Update.Version, "v0.44.0"
+	src.Feed = append(src.Feed, Message{ID: "feed-more", Kind: KindNews, Title: "More news", Banner: "a second entry"})
+	p := NewPanel(map[string]bool{}, map[string]bool{})
+	notices := p.Active(src)
+	if len(notices) != 5 {
+		t.Fatalf("test setup: %v", ids(notices))
+	}
+	f := inboxFrame(160)
+	f.Height = 16
+	view := p.View(notices, f)
+	if len(view) > f.Height {
+		t.Fatalf("the card is %d rows on a %d-row terminal:\n%s", len(view), f.Height, strings.Join(plainRows(view), "\n"))
+	}
+	plain := strings.Join(plainRows(view), "\n")
+	if strings.Contains(plain, "control mode can crash") || !strings.Contains(plainRows(view)[len(view)-1], "esc/q") {
+		t.Fatalf("a short terminal keeps the split list:\n%s", plain)
+	}
+	f.Height = 40
+	if tall := strings.Join(plainRows(p.View(notices, f)), "\n"); !strings.Contains(tall, "control mode can crash") {
+		t.Fatalf("a tall terminal splits:\n%s", tall)
 	}
 }
 

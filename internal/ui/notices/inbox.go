@@ -21,8 +21,8 @@ func split(width int) bool { return width >= splitMinWidth }
 
 // inboxWidths is the card's content column and the message pane inside it:
 // the same column stacked, the room right of the list and its seam split.
-func inboxWidths(notices []Notice, width int) (inner, pane int) {
-	if !split(width) {
+func inboxWidths(notices []Notice, width int, splitView bool) (inner, pane int) {
+	if !splitView {
 		inner = innerWidth(notices, width)
 		return inner, inner
 	}

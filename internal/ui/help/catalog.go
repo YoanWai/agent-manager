@@ -176,7 +176,10 @@ func helpSections(ctx Context) []helpSection {
 		{title: titledWith("messages", list, keybind.Messages), rows: [][2]string{
 			{"click the chip", "unread or messages in the key legend: opens the messages"},
 			{"click", "select a title, click it again to open its link"},
+			{"click a tab", "on a release: show that tab, or a Changes filter"},
 			{"↑↓", "pick a message"},
+			{"tab / shift+tab", "on a release: Overview, Changes, Thanks"},
+			{"f", "on Changes: all, features, fixes, under the hood"},
 			{"pgup / pgdn", "scroll its body"},
 			{"wheel", "scroll its body"},
 			{"home / end", "jump to its top or bottom"},

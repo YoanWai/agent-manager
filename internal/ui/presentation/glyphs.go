@@ -59,7 +59,7 @@ type GlyphSet struct {
 	ReorderGrip, InboxGlyph, BranchGlyph, GroupOpenGlyph, GroupClosedGlyph                        string
 	ShellGlyph, LoaderHead, LoaderTail, LoaderRest                                                string
 	HeadsUpGlyph, TipGlyph, FeatureGlyph, FixGlyph, OtherGlyph, StartedGlyph, PeopleGlyph         string
-	SectionBarGlyph, UnreadGlyph                                                                  string
+	SectionBarGlyph, UnreadGlyph, HighlightGlyph                                                  string
 	StartupFrames                                                                                 []string
 }
 
@@ -76,7 +76,7 @@ func GlyphsFor(mode GlyphMode) GlyphSet {
 			WarningGlyph: "▲", CardErrorGlyph: "⚠", DiffErrorGlyph: "✖", DiffCleanGlyph: "✓", DiffDoneGlyph: "✔", DiffPendingGlyph: "○",
 			WorktreeGlyph: "⎇", AfterTurnArchiveGlyph: "↓", AfterTurnKillGlyph: "■",
 			HeadsUpGlyph: "▲", TipGlyph: "✧", FeatureGlyph: "✚", FixGlyph: "●", OtherGlyph: "◌", StartedGlyph: "◇", PeopleGlyph: "♥",
-			SectionBarGlyph: "▍", UnreadGlyph: "●",
+			SectionBarGlyph: "▍", UnreadGlyph: "●", HighlightGlyph: "◆",
 			StartupFrames: advancedStartupFrames[:],
 		}
 	}
@@ -93,7 +93,7 @@ func GlyphsFor(mode GlyphMode) GlyphSet {
 		WorktreeGlyph: branchGlyph, AfterTurnArchiveGlyph: "A", AfterTurnKillGlyph: "K",
 		ShellGlyph: ">", LoaderHead: "*", LoaderTail: ":", LoaderRest: ".", StartupFrames: startupFrames[:],
 		HeadsUpGlyph: "!", TipGlyph: "?", FeatureGlyph: "+", FixGlyph: "*", OtherGlyph: "-", StartedGlyph: "o", PeopleGlyph: "&",
-		SectionBarGlyph: "|", UnreadGlyph: "*",
+		SectionBarGlyph: "|", UnreadGlyph: "*", HighlightGlyph: ">",
 	}
 }
 

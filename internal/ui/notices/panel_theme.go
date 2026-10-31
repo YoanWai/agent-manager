@@ -10,26 +10,30 @@ import (
 // the three read as one object.
 func PanelTheme() Theme {
 	return Theme{
-		Accent:      uitheme.ColorAccent(),
-		Accent2:     uitheme.ColorAccent2(),
-		Bright:      uitheme.ColorBright(),
-		Working:     uitheme.ColorWorking(),
-		Waiting:     uitheme.ColorWaiting(),
-		SubtleColor: uitheme.ColorSubtle(),
-		Subtle:      uitheme.SubtleStyle(),
-		Muted:       uitheme.MutedStyle(),
-		Value:       uitheme.ValueStyle(),
-		Key:         uitheme.KeyStyle(),
-		Border:      noticeBorderStyle(),
-		Title:       noticeTitleStyle(),
-		Fill:        func(row string, width int) string { return uitheme.Paint(row, width, noticeCardHex()) },
-		Surface:     func(row string, width int) string { return uitheme.Paint(row, width, uitheme.Current().Surface) },
+		Accent:   uitheme.ColorAccent(),
+		Accent2:  uitheme.ColorAccent2(),
+		Bright:   uitheme.ColorBright(),
+		Working:  uitheme.ColorWorking(),
+		Waiting:  uitheme.ColorWaiting(),
+		Finished: uitheme.ColorFinished(),
+		Ink:      uitheme.ColorBg(),
+		Subtle:   uitheme.SubtleStyle(),
+		Muted:    uitheme.MutedStyle(),
+		Value:    uitheme.ValueStyle(),
+		Key:      uitheme.KeyStyle(),
+		Border:   noticeBorderStyle(),
+		Title:    noticeTitleStyle(),
+		Fill:     func(row string, width int) string { return uitheme.Paint(row, width, noticeCardHex()) },
+		Surface:  func(row string, width int) string { return uitheme.Paint(row, width, uitheme.Current().Surface) },
+		Callout:  func(row string, width int) string { return uitheme.Paint(row, width, calloutHex()) },
 	}
 }
 
 // noticeCardHex is the messages modal's fill: the panel tone warmed toward
 // yellow.
 func noticeCardHex() string { return uitheme.Mix(uitheme.PanelHex(), "#e2c044", 0.16) }
+
+func calloutHex() string { return uitheme.Mix(noticeCardHex(), uitheme.Current().Accent, 0.14) }
 
 // noticeBorderStyle is the card's rounded frame, dimmed toward the same
 // yellow so the outline and the fill read as one object.

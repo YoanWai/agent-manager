@@ -57,9 +57,10 @@ func TestCompatibleModeUsesASCIIForEveryNewGlyph(t *testing.T) {
 	p := NewPanel(map[string]bool{}, map[string]bool{})
 	p.See(inboxHeadsUp)
 	notices := p.Active(src)
-	// The card's own chrome draws box lines and an ellipsis in either mode;
-	// the bottom edge's keys still name ↑↓, so it is left out.
-	chrome := "─│█…"
+	// The card's own chrome draws box lines, an ellipsis and the middle dot
+	// separator in either mode; the bottom edge's keys still name ↑↓, so it
+	// is left out.
+	chrome := "─│█…·"
 	for _, width := range []int{100, 160} {
 		for i := range notices {
 			p.Open(notices, notices[i].ID)

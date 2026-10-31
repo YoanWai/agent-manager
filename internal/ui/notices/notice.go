@@ -28,15 +28,19 @@ const (
 )
 
 type Notice struct {
-	ID            string
-	Kind          Kind
-	Subtitle      string
-	Title         string
-	Headline      string
-	Accent        []string
-	Body          []string
-	ReleaseNotes  bool
-	Releases      []Release
+	ID           string
+	Kind         Kind
+	Subtitle     string
+	Title        string
+	Headline     string
+	Accent       []string
+	Body         []string
+	ReleaseNotes bool
+	Releases     []Release
+	// Version is the release a release notice is about; From is the one
+	// this install is on, or was on before it updated.
+	Version       string
+	From          string
 	After         []string
 	RangeComplete bool
 	URL           string
@@ -63,13 +67,6 @@ type Change struct {
 	Author string
 }
 
-func (c Change) label() string {
-	if c.Scope == "" {
-		return c.Text
-	}
-	return c.Scope + ": " + c.Text
-}
-
 // Thanks groups, as the release catalog files them.
 const (
 	ThanksBuilt   = "built"
@@ -82,33 +79,11 @@ type Highlight struct {
 	Text  string
 }
 
-func (h Highlight) line() string {
-	return joinWords(h.Label, h.Text)
-}
-
 type Thanks struct {
 	Handle string
 	Group  string
 	Text   string
 	Refs   []string
-}
-
-func (t Thanks) line() string {
-	line := joinWords(t.Handle, t.Text)
-	if len(t.Refs) > 0 {
-		line += " (" + strings.Join(t.Refs, ", ") + ")"
-	}
-	return line
-}
-
-func joinWords(words ...string) string {
-	var present []string
-	for _, word := range words {
-		if word != "" {
-			present = append(present, word)
-		}
-	}
-	return strings.Join(present, " ")
 }
 
 type Release struct {

@@ -1,6 +1,7 @@
 package notices
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -11,16 +12,20 @@ import (
 )
 
 // Panel is the messages modal's own state: the selected notice, the body
-// scroll, the notices dismissed for good and the ones already read. The root
-// persists a dismissal and restores it when the write fails.
+// scroll, a release's tab and filter, the notices dismissed for good and the
+// ones already read. The root persists a dismissal and restores it when the
+// write fails.
 type Panel struct {
 	cursor int
 	scroll int
+	tab    Tab
+	filter string
 	// lines is the notice each painted row inside the frame shows, for
 	// clicks; listCols is how far across a row its notice reaches, zero
 	// for the whole row.
 	lines    presentation.Lines[int]
 	listCols int
+	hits     []paneHit
 	// dismissed holds the notice ids the user closed for good; the set
 	// persists in settings so a dismissed message never comes back.
 	dismissed map[string]bool
@@ -55,14 +60,22 @@ func (p *Panel) See(id string) { p.seen[id] = true }
 // update both retire every message, and that is exactly when someone
 // reaches for r to look again.
 func (p *Panel) Open(notices []Notice, id string) {
-	p.cursor = 0
-	p.scroll = 0
+	p.show(0)
 	for i, n := range notices {
 		if n.ID == id {
-			p.cursor = i
+			p.show(i)
 			break
 		}
 	}
+}
+
+// show selects notice i on its first page and its Overview, unfiltered.
+func (p *Panel) show(i int) {
+	p.cursor, p.scroll, p.tab, p.filter = i, 0, TabOverview, ""
+}
+
+func (p Panel) onRelease(notices []Notice) bool {
+	return p.cursor < len(notices) && notices[p.cursor].ReleaseNotes
 }
 
 // Selected is the id of the notice under the cursor, empty when none is.
@@ -78,32 +91,36 @@ func (p Panel) Selected(notices []Notice) string {
 // cannot do this: whether the list actually changed depends on dismissals
 // and on what the change replaced.
 func (p *Panel) Reselect(notices []Notice, id string) {
-	p.cursor = 0
 	for i, n := range notices {
 		if n.ID == id {
 			p.cursor = i
-			break
+			return
 		}
 	}
+	p.show(0)
 }
 
 type Theme struct {
-	Accent      lipgloss.Color
-	Accent2     lipgloss.Color
-	Bright      lipgloss.Color
-	Working     lipgloss.Color
-	Waiting     lipgloss.Color
-	SubtleColor lipgloss.Color
-	Subtle      lipgloss.Style
-	Muted       lipgloss.Style
-	Value       lipgloss.Style
-	Key         lipgloss.Style
+	Accent   lipgloss.Color
+	Accent2  lipgloss.Color
+	Bright   lipgloss.Color
+	Working  lipgloss.Color
+	Waiting  lipgloss.Color
+	Finished lipgloss.Color
+	// Ink is the backdrop's tone, for text set on an accent fill.
+	Ink    lipgloss.Color
+	Subtle lipgloss.Style
+	Muted  lipgloss.Style
+	Value  lipgloss.Style
+	Key    lipgloss.Style
 	// Border is the card's frame; Title its legend.
 	Border lipgloss.Style
 	Title  lipgloss.Style
 	Fill   func(row string, width int) string
 	// Surface fills the selected list row over the card.
 	Surface func(row string, width int) string
+	// Callout is the faint accent fill behind a call to action.
+	Callout func(row string, width int) string
 }
 
 const FeedPendingText = "checking messages…"
@@ -158,12 +175,19 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 		}
 	case "up", "k":
 		if p.cursor > 0 {
-			p.cursor--
-			p.scroll = 0
+			p.show(p.cursor - 1)
 		}
 	case "down", "j":
 		if p.cursor < len(notices)-1 {
-			p.cursor++
+			p.show(p.cursor + 1)
+		}
+	case "tab":
+		p.stepTab(notices, 1)
+	case "shift+tab":
+		p.stepTab(notices, len(tabLabels)-1)
+	case "f":
+		if p.onRelease(notices) && p.tab == TabChanges {
+			p.filter = changeFilters[(slices.Index(changeFilters, p.filter)+1)%len(changeFilters)]
 			p.scroll = 0
 		}
 	case "pgup", "ctrl+u":
@@ -184,8 +208,7 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 			out.Close = true
 			return out
 		}
-		p.cursor = min(p.cursor, len(notices)-2)
-		p.scroll = 0
+		p.show(min(p.cursor, len(notices)-2))
 		return out
 	case "esc", "q":
 		return Outcome{Action: Close}
@@ -193,16 +216,29 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 	return Outcome{}
 }
 
-// Click is a press at col of row line inside the frame. The first click on
-// a row selects it; one on the row already selected opens its link, the
-// way ↵ does.
+func (p *Panel) stepTab(notices []Notice, step int) {
+	if p.onRelease(notices) {
+		p.tab = Tab((int(p.tab) + step) % len(tabLabels))
+		p.scroll = 0
+	}
+}
+
+// Click is a press at col of row line inside the frame. A click on a tab or
+// a filter chip shows it. The first click on a row selects it; one on the
+// row already selected opens its link, the way ↵ does.
 func (p *Panel) Click(col, line int, notices []Notice, f Frame) Outcome {
+	for _, hit := range p.hits {
+		if line == hit.line && col >= hit.x0 && col < hit.x1 {
+			p.tab, p.filter, p.scroll = hit.tab, hit.filter, 0
+			return Outcome{}
+		}
+	}
 	i, ok := p.lines.At(line)
 	switch {
 	case !ok || p.listCols > 0 && col >= p.listCols:
 		return Outcome{}
 	case !presentation.ClickRow(&p.cursor, i):
-		p.scroll = 0
+		p.show(i)
 		return Outcome{}
 	}
 	return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, notices, f)
@@ -212,10 +248,55 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	if p.cursor >= len(notices) {
 		return 0
 	}
-	_, pane := inboxWidths(notices, f.Width)
-	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f), len(p.tail(notices, f, pane))+1)
-	body, _ := bodyLayout(notices[p.cursor], pane, room, f.Theme, f.GlyphMode)
-	return max(0, len(body)-room)
+	splitView := p.splitView(notices, f)
+	_, pane := inboxWidths(notices, f.Width, splitView)
+	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(p.tail(notices, f, pane))+1)
+	layout := p.message(notices[p.cursor], pane, room, f)
+	return max(0, len(layout.body)-layout.room)
+}
+
+// splitView sets the list beside the message when the terminal is wide
+// enough, and tall enough for the list's two-line rows.
+func (p Panel) splitView(notices []Notice, f Frame) bool {
+	if !split(f.Width) {
+		return false
+	}
+	list, _ := listRows(notices, p.cursor, listWidth, f.Theme, f.GlyphMode, true)
+	return 1+len(list)+2 <= f.Height
+}
+
+// minPageRows is the least of a tab a release keeps in view below its
+// fixed header; a shorter room scrolls the header with the tab.
+const minPageRows = 4
+
+type paneLayout struct {
+	head    []string
+	hits    []paneHit
+	body    []string
+	room    int
+	scrolls bool
+}
+
+// message lays the selected notice out in room rows: a release keeps its
+// header and tabs above the part that scrolls.
+func (p Panel) message(n Notice, width, room int, f Frame) paneLayout {
+	t, mode := f.Theme, f.GlyphMode
+	if !n.ReleaseNotes {
+		body, scrolls := bodyLayout(n, width, room, t, mode)
+		return paneLayout{body: body, room: room, scrolls: scrolls}
+	}
+	head, hits := releaseHead(n, p.tab, p.filter, width, t, mode)
+	layout := paneLayout{head: head, hits: hits, room: room - len(head)}
+	render := func(width int) []string { return releaseTab(n, p.tab, p.filter, width, t, mode) }
+	if layout.room < minPageRows {
+		layout = paneLayout{room: room}
+		render = func(width int) []string { return releasePane(n, p.tab, p.filter, width, t, mode) }
+	}
+	layout.body = render(width)
+	if len(layout.body) > layout.room {
+		layout.body, layout.scrolls = render(max(width-scrollbarWidth, 1)), true
+	}
+	return layout
 }
 
 func (p *Panel) Wheel(step int, notices []Notice, f Frame) {
@@ -234,11 +315,11 @@ func bodyRoom(height, above, tailRows int) int {
 }
 
 // rowsAbovePane is the blank top row, and when stacked the list and its rule.
-func (p Panel) rowsAbovePane(notices []Notice, f Frame) int {
-	if split(f.Width) {
+func (p Panel) rowsAbovePane(notices []Notice, f Frame, splitView bool) int {
+	if splitView {
 		return 1
 	}
-	inner, _ := inboxWidths(notices, f.Width)
+	inner, _ := inboxWidths(notices, f.Width, false)
 	list, _ := listRows(notices, p.cursor, inner, f.Theme, f.GlyphMode, false)
 	return len(list) + 2
 }
@@ -246,8 +327,8 @@ func (p Panel) rowsAbovePane(notices []Notice, f Frame) int {
 func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 	var tail []string
 	if p.cursor < len(notices) {
-		if url := notices[p.cursor].URL; url != "" {
-			tail = append(tail, f.Theme.Subtle.Render(presentation.GlyphsFor(f.GlyphMode).LinkGlyph+" "+presentation.TruncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
+		if url := notices[p.cursor].URL; url != "" && !notices[p.cursor].ReleaseNotes {
+			tail = append(tail, f.Theme.Muted.Render(presentation.GlyphsFor(f.GlyphMode).LinkGlyph+" "+presentation.TruncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
 		}
 	}
 	if f.Refreshing {
@@ -267,16 +348,17 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 
 func (p *Panel) View(notices []Notice, f Frame) []string {
 	t := f.Theme
-	inner, pane := inboxWidths(notices, f.Width)
+	splitView := p.splitView(notices, f)
+	inner, pane := inboxWidths(notices, f.Width, splitView)
 	p.lines.Reset()
 	p.listCols = 0
-	foot := renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode)
+	p.hits = nil
+	foot := renderFoot(p.footPairs(notices, inner, f), t, f.GlyphMode)
 	if len(notices) == 0 {
-		rows := []string{t.Subtle.Render("nothing new")}
+		rows := []string{t.Muted.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
 		return cardFrame(rows, inner, legend(t), "", foot, t, f.GlyphMode)
 	}
-	splitView := split(f.Width)
 	listColumn := inner
 	if splitView {
 		listColumn = listWidth
@@ -285,12 +367,13 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 
 	tail := p.tail(notices, f, pane)
 	tail = append(tail, "")
-	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f), len(tail))
-	body, scrolls := bodyLayout(notices[p.cursor], pane, room, t, f.GlyphMode)
-	if scrolls {
-		body = scrollWindow(body, room, p.scroll, pane, t, f.GlyphMode)
+	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(tail))
+	layout := p.message(notices[p.cursor], pane, room, f)
+	body := layout.body
+	if layout.scrolls {
+		body = scrollWindow(body, layout.room, p.scroll, pane, t, f.GlyphMode)
 	}
-	message := append(body, tail...)
+	message := append(append(layout.head, body...), tail...)
 
 	rows := []string{""}
 	p.lines.Skip(1)
@@ -301,13 +384,20 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 			p.lines.Show(owner, 1)
 		}
 	}
+	top, left := len(rows), 0
 	if splitView {
 		p.listCols = listWidth
+		left = listWidth + 1 + panePadding
 		rows = append(rows, besideList(list, message, t)...)
 	} else {
 		rows = append(rows, list...)
 		rows = append(rows, t.Border.Render(strings.Repeat(presentation.ChromeFor(f.GlyphMode).DashedRuleGlyph, inner)))
+		top = len(rows)
 		rows = append(rows, message...)
+	}
+	for _, hit := range layout.hits {
+		hit.line, hit.x0, hit.x1 = hit.line+top, hit.x0+left, hit.x1+left
+		p.hits = append(p.hits, hit)
 	}
 	return cardFrame(rows, inner, legend(t), unreadCount(notices, t), foot, t, f.GlyphMode)
 }
@@ -321,10 +411,10 @@ const footSep = " · "
 // Foot is where each key the bottom edge names was painted, the ones the
 // edge's truncation cut left out.
 func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
-	inner, _ := inboxWidths(notices, f.Width)
+	inner, _ := inboxWidths(notices, f.Width, p.splitView(notices, f))
 	var keys []presentation.PaintedKey
 	x := footStart
-	for i, pair := range footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey) {
+	for i, pair := range p.footPairs(notices, inner, f) {
 		if i > 0 {
 			x += lipgloss.Width(footSep)
 		}
@@ -338,9 +428,9 @@ func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	return keys
 }
 
-func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode, binding keybind.Binding) [][2]string {
+func (p Panel) footPairs(notices []Notice, inner int, f Frame) [][2]string {
 	closeKeys := "esc/q"
-	for _, key := range closeBinding(binding).Keys() {
+	for _, key := range closeBinding(f.CloseKey).Keys() {
 		if key.Tea() != "q" {
 			closeKeys += "/" + key.Glyph()
 		}
@@ -348,23 +438,35 @@ func footPairs(notices []Notice, cursor, inner int, mode presentation.GlyphMode,
 	if len(notices) == 0 {
 		return [][2]string{{"r", "refresh"}, {closeKeys, ""}}
 	}
-	var update [][2]string
-	if notices[cursor].IsUpdate() {
+	var sections, update [][2]string
+	if p.onRelease(notices) {
+		sections = [][2]string{{"tab", "section"}}
+		if p.tab == TabChanges {
+			sections = append(sections, [2]string{"f", "filter"})
+		}
+	}
+	if notices[p.cursor].IsUpdate() {
 		update = [][2]string{{"u", "update"}}
 	}
-	actions := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {closeKeys, ""}}...)
-	// Navigation shrinks, then drops, then the actions lose their words, so
-	// every key a click can run stays on the edge.
-	bare := [][2]string{{"↑↓", ""}}
-	for _, action := range actions {
-		bare = append(bare, [2]string{action[0], ""})
+	rest := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {closeKeys, ""}}...)
+	actions := append(slices.Clone(sections), rest...)
+	// Navigation shrinks, then drops, then the sections and the actions lose
+	// their words, so every key a click can run stays on the edge.
+	keysOnly := func(pairs [][2]string) [][2]string {
+		bare := make([][2]string, len(pairs))
+		for i, pair := range pairs {
+			bare[i] = [2]string{pair[0], ""}
+		}
+		return bare
 	}
+	bare := keysOnly(append([][2]string{{"↑↓", ""}}, actions...))
 	for _, pairs := range [][][2]string{
 		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
 		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
 		actions,
+		append(keysOnly(sections), rest...),
 	} {
-		if lipgloss.Width(footText(pairs, mode)) <= inner+1 {
+		if lipgloss.Width(footText(pairs, f.GlyphMode)) <= inner+1 {
 			return pairs
 		}
 	}
@@ -438,7 +540,7 @@ func closeBinding(binding keybind.Binding) keybind.Binding {
 	var keys []keybind.Key
 	for _, key := range binding.Keys() {
 		switch key.Tea() {
-		case "r", "u", "up", "k", "down", "j", "pgup", "ctrl+u", "pgdn", "ctrl+d", "home", "g", "end", "G", "enter", "x", "d":
+		case "r", "u", "up", "k", "down", "j", "pgup", "ctrl+u", "pgdn", "ctrl+d", "home", "g", "end", "G", "enter", "x", "d", "tab", "shift+tab", "f":
 			continue
 		}
 		keys = append(keys, key)

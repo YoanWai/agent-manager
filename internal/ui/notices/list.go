@@ -60,9 +60,9 @@ func (p Panel) Active(src Sources) []Notice {
 		if len(releaseRange.Releases) > 1 {
 			title = releaseCountLabel(releaseRange) + " releases available · " + src.Update.Latest
 		}
-		body := []string{"You are on " + src.Update.Version + ". Here is everything released since then:"}
+		var body []string
 		if len(releaseRange.Releases) == 0 {
-			body = append(body, "The generated change summary is not available yet; r refreshes it now.")
+			body = []string{"The generated change summary is not available yet; r refreshes it now."}
 		}
 		notices = append(notices, Notice{
 			ID:            "update-" + src.Update.Latest,
@@ -74,11 +74,9 @@ func (p Panel) Active(src Sources) []Notice {
 			Body:          body,
 			Releases:      releaseRange.Releases,
 			RangeComplete: releaseRange.Complete,
-			After: []string{
-				"`Press u to update to " + src.Update.Latest + " and restart.` Every release above is included.",
-				"Enter opens the full release notes.",
-			},
-			URL: src.Update.URL,
+			Version:       src.Update.Latest,
+			From:          src.Update.Version,
+			URL:           src.Update.URL,
 		})
 	}
 	if src.WhatsNewVersion == src.Update.Version {
@@ -87,25 +85,24 @@ func (p Panel) Active(src Sources) []Notice {
 		if len(releaseRange.Releases) > 1 {
 			title = "Updated across " + releaseCountLabel(releaseRange) + " releases · " + src.Update.Version
 		}
-		body := []string{"Updated from " + src.WhatsNewFrom + " to " + src.Update.Version + "."}
+		var body []string
 		if len(releaseRange.Releases) == 0 && !src.Update.Checked {
-			body = append(body, "Loading the change summary from GitHub…")
+			body = []string{"Loading the change summary from GitHub…"}
 		} else if len(releaseRange.Releases) == 0 {
-			body = append(body, "No generated change summary was found; r refreshes GitHub now.")
+			body = []string{"No generated change summary was found; r refreshes GitHub now."}
 		}
 		notices = append(notices, Notice{
-			ID:           "whatsnew-" + src.Update.Version,
-			Kind:         KindRelease,
-			Subtitle:     newestHeadline(releaseRange.Releases),
-			Title:        title,
-			Headline:     newestHeadline(releaseRange.Releases),
-			ReleaseNotes: true,
-			Body:         body,
-			Releases:     releaseRange.Releases,
-			After: []string{
-				"Enter opens the full release notes.",
-			},
+			ID:            "whatsnew-" + src.Update.Version,
+			Kind:          KindRelease,
+			Subtitle:      newestHeadline(releaseRange.Releases),
+			Title:         title,
+			Headline:      newestHeadline(releaseRange.Releases),
+			ReleaseNotes:  true,
+			Body:          body,
+			Releases:      releaseRange.Releases,
 			RangeComplete: releaseRange.Complete,
+			Version:       src.Update.Version,
+			From:          src.WhatsNewFrom,
 			URL:           RepoURL + "/releases/tag/v" + strings.TrimPrefix(src.Update.Version, "v"),
 		})
 	}

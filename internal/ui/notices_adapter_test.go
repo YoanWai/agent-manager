@@ -170,12 +170,19 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	for _, want := range []string{
 		"4 releases available · v0.6.0",
 		"v0.3.0",
-		"Worktree: Respect group defaults",
 		"v0.6.0",
-		"Press u to update to v0.6.0",
+		"4 releases · you're on 0.2.0",
+		"Update to 0.6.0 and restart",
 	} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("cumulative modal missing %q:\n%s", want, frame)
+		}
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	changes := ansi.Strip(preparedView(m))
+	for _, want := range []string{"v0.3.0", "Worktree: Respect group defaults", "Sessions: Keep focus after refresh"} {
+		if !strings.Contains(changes, want) {
+			t.Fatalf("the Changes tab misses %q:\n%s", want, changes)
 		}
 	}
 }
@@ -206,7 +213,7 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
 		"Updated across 4 releases · v0.5.0",
-		"Updated from v0.1.0 to v0.5.0.",
+		"4 releases · you were on 0.1.0",
 		"v0.2.0",
 		"v0.5.0",
 	} {
@@ -951,7 +958,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		Releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
 	})
 	updFrame := ansi.Strip(preparedView(upd))
-	for _, want := range []string{"messages", "v0.3.0 available", "You are on v0.2.0", "u update", "x dismiss"} {
+	for _, want := range []string{"messages", "v0.3.0 available", "you're on 0.2.0", "u update", "x dismiss"} {
 		if !strings.Contains(updFrame, want) {
 			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
 		}
