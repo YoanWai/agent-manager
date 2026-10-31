@@ -65,10 +65,9 @@ const (
 type Message struct {
 	ID string
 	// Banner is the dim line under Title, in the list and over the message.
-	Banner   string
-	Title    string
-	Headline string
-	Body     []string
+	Banner string
+	Title  string
+	Body   []string
 	// Accent holds phrases of Body to draw in the accent color, never an empty one.
 	Accent []string
 	URL    string
@@ -79,9 +78,10 @@ type Message struct {
 }
 
 type rawMessage struct {
-	ID         string   `json:"id"`
-	Banner     string   `json:"banner"`
-	Title      string   `json:"title"`
+	ID     string `json:"id"`
+	Banner string `json:"banner"`
+	Title  string `json:"title"`
+	// Headline is drawn only by v0.40.0 through v0.45.0, which still read this file.
 	Headline   string   `json:"headline"`
 	Accent     []string `json:"accent"`
 	Body       []string `json:"body"`
@@ -217,7 +217,6 @@ func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 			ID:        "feed-" + entry.ID,
 			Banner:    cleanText(entry.Banner, maxBannerLen),
 			Title:     cleanText(entry.Title, maxTitleLen),
-			Headline:  cleanText(entry.Headline, maxHeadlineLen),
 			URL:       entry.URL,
 			Kind:      knownKind(entry.Kind),
 			Action:    cleanText(entry.Action, maxActionLen),

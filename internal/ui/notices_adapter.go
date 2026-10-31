@@ -164,7 +164,6 @@ func (m *Model) dismissNotice(id string) {
 }
 
 // seeNotice marks the notice the open panel shows as read and persists it.
-// A failed write keeps the mark for this run.
 func (m *Model) seeNotice(id string) {
 	if id == "" || m.services.store == nil || m.notices.Seen(id) {
 		return

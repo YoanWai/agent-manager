@@ -78,13 +78,12 @@ func listRows(notices []Notice, cursor, width int, t Theme, mode presentation.Gl
 		rows = append(rows, row)
 		owners = append(owners, owner)
 	}
-	label := t.Muted.Bold(true)
 	for i, n := range notices {
 		if i == 0 || n.Kind != notices[i-1].Kind {
 			if i > 0 && twoLine {
 				add("", -1)
 			}
-			add("  "+label.Render(groupLabels[n.Kind]), -1)
+			add("  "+groupLabel(groupLabels[n.Kind], t), -1)
 		}
 		lines := []string{titleLine(n, width-2, t, mode)}
 		if twoLine {
@@ -102,7 +101,7 @@ func listRows(notices []Notice, cursor, width int, t Theme, mode presentation.Gl
 func titleLine(n Notice, width int, t Theme, mode presentation.GlyphMode) string {
 	style, room := t.Value, width-3
 	if n.Unread {
-		style, room = lipgloss.NewStyle().Foreground(t.Bright).Bold(true), room-2
+		style, room = headingStyle(t), room-2
 	}
 	line := kindGlyph(n, t, mode) + " " + style.Render(ansi.Truncate(n.Title, room, "…"))
 	if !n.Unread {

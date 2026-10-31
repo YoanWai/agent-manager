@@ -243,27 +243,21 @@ func TestFetchCapsCountAndSize(t *testing.T) {
 	}
 }
 
-func TestFetchCarriesHeadlineAndAccent(t *testing.T) {
-	serve(t, `[{"id":"pickers","banner":"Pickers are here","title":"v0.40.0: pickers are here","headline":"Model + reasoning pickers are here!","accent":["ctrl+l","ctrl+x"],"body":["ctrl+l opens the model list and ctrl+x steps the effort."]}]`)
+func TestFetchCarriesAccent(t *testing.T) {
+	serve(t, `[{"id":"pickers","banner":"Pickers are here","title":"v0.40.0: pickers are here","accent":["ctrl+l","ctrl+x"],"body":["ctrl+l opens the model list and ctrl+x steps the effort."]}]`)
 	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
-	if msg.Headline != "Model + reasoning pickers are here!" {
-		t.Fatalf("headline = %q", msg.Headline)
-	}
 	if !slices.Equal(msg.Accent, []string{"ctrl+l", "ctrl+x"}) {
 		t.Fatalf("accent = %q", msg.Accent)
 	}
 }
 
-func TestFetchBoundsHeadlineAndAccent(t *testing.T) {
+func TestFetchBoundsAccent(t *testing.T) {
 	phrases := []string{`""`, `"` + strings.Repeat("y", maxAccentLen+20) + `"`}
 	for index := 0; index < maxAccents+2; index++ {
 		phrases = append(phrases, `"phrase `+strconv.Itoa(index)+`"`)
 	}
-	serve(t, `[{"id":"bounded","banner":"x","title":"x","headline":"`+strings.Repeat("h", maxHeadlineLen+20)+`","accent":[`+strings.Join(phrases, ",")+`]}]`)
+	serve(t, `[{"id":"bounded","banner":"x","title":"x","accent":[`+strings.Join(phrases, ",")+`]}]`)
 	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
-	if len([]rune(msg.Headline)) != maxHeadlineLen {
-		t.Fatalf("headline is %d characters, want %d", len([]rune(msg.Headline)), maxHeadlineLen)
-	}
 	if len(msg.Accent) != maxAccents {
 		t.Fatalf("kept %d accent phrases, want %d", len(msg.Accent), maxAccents)
 	}

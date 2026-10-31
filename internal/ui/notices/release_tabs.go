@@ -92,31 +92,24 @@ func highlightRows(highlights []Highlight, width int, t Theme, mode presentation
 	}
 	column = min(column, labelColumnMax, width/3)
 	mark := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).HighlightGlyph) + " "
-	if highlightsFitBeside(highlights, column, width) {
-		var rows []string
-		for _, highlight := range highlights {
-			runs := markedRuns(highlight.Text)
-			if highlight.Label == "" {
-				rows = append(rows, hanging(mark, 2, runs, width, t.Value, t.Key)...)
-				continue
-			}
-			rows = append(rows, besideColumn(mark+headingStyle(t).Render(highlight.Label), column+2, runs, width, t.Value, t.Key)...)
-		}
-		return rows
-	}
+	table := highlightsFitBeside(highlights, column, width)
 	var rows []string
 	for index, highlight := range highlights {
-		if index > 0 {
+		if index > 0 && !table {
 			rows = append(rows, "")
 		}
 		runs := markedRuns(highlight.Text)
-		if highlight.Label == "" {
+		label := mark + headingStyle(t).Render(highlight.Label)
+		switch {
+		case highlight.Label == "":
 			rows = append(rows, hanging(mark, 2, runs, width, t.Value, t.Key)...)
-			continue
-		}
-		rows = append(rows, mark+headingStyle(t).Render(highlight.Label))
-		if len(runs) > 0 {
-			rows = append(rows, hanging("  ", 2, runs, width, t.Value, t.Key)...)
+		case table:
+			rows = append(rows, besideColumn(label, column+2, runs, width, t.Value, t.Key)...)
+		default:
+			rows = append(rows, label)
+			if len(runs) > 0 {
+				rows = append(rows, hanging("  ", 2, runs, width, t.Value, t.Key)...)
+			}
 		}
 	}
 	return rows
