@@ -16,7 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// terminalKeyWindow is how long after handling a T another one reads as
+// terminalKeyWindow is how long after handling a t another one reads as
 // autorepeat rather than a second request: longer than the pause before a
 // held key starts repeating and than the interval it repeats at. It runs
 // from the end of the spawn, so the quiet gap between two deliberate
@@ -34,7 +34,7 @@ func (m *Model) isShell(toolName string) bool {
 	return m.services.cfg.IsTool(toolName)
 }
 
-// terminalKey spawns a shell unless T arrived inside the burst a held key
+// terminalKey spawns a shell unless t arrived inside the burst a held key
 // sends. Each keystroke pushes the window out, and the async spawn completion
 // starts it again, so a burst queued while tmux creates the pane still makes
 // one shell.

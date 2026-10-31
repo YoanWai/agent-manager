@@ -207,10 +207,10 @@ func TestDefaultListAnswersToTodaysKeys(t *testing.T) {
 	for key, want := range map[string]string{
 		"k": Up, "up": Up, "j": Down, "down": Down, "K": ReorderUp, "shift+up": ReorderUp,
 		"J": ReorderDown, "shift+down": ReorderDown, "enter": Open, "A": Attach,
-		"right": StepIn, "left": StepOut, "n": NewSession, "T": Terminal, "g": NewGroup, "C": NewConnection, "f": Fork,
+		"right": StepIn, "left": StepOut, "n": NewSession, "t": Terminal, "g": NewGroup, "C": NewConnection, "f": Fork,
 		"space": Prompt, "ctrl+r": Review, ".": MarkIdle, "r": Rename, "m": Move, "o": Editor, "R": Restart,
 		"x": Kill, "X": KillAll, "v": Revive, "V": ReviveAll, "a": Archive, "u": Restore, "d": Delete,
-		"/": Search, "w": Filter, "t": Archived, "e": EmptyGroups, "F": FoldAll, "|": Resize,
+		"/": Search, "w": Filter, "T": Archived, "e": EmptyGroups, "F": FoldAll, "|": Resize,
 		"s": Settings, "M": Messages, "?": Help, "q": Quit,
 	} {
 		if got, bound := list.ActionFor(key); !bound || got != want {
@@ -230,6 +230,34 @@ func TestDefaultListAnswersToTodaysKeys(t *testing.T) {
 
 // A binding typed as "pgdn" (the table's spelling) must still fire when
 // Bubble Tea reports the key it pressed as "pgdown".
+// A table that rebound the terminal or the archived view keeps what it
+// wrote, whichever default the other action now has.
+func TestAStoredTableThatReboundTheTerminalOrArchivedKeepsItsKeys(t *testing.T) {
+	for _, tc := range []struct {
+		name, written      string
+		terminal, archived string
+	}{
+		{name: "archived moved", written: `archived = "z"`, terminal: "t", archived: "z"},
+		{name: "terminal moved", written: `terminal = "ctrl+t"`, terminal: "ctrl+t", archived: "T"},
+		{name: "the old keys written", written: "terminal = \"T\"\narchived = \"t\"", terminal: "T", archived: "t"},
+	} {
+		file, err := decode(t, "[list]\n"+tc.written)
+		if err != nil {
+			t.Fatalf("%s: decode: %v", tc.name, err)
+		}
+		list, err := ListTable(file.List)
+		if err != nil {
+			t.Fatalf("%s: ListTable: %v", tc.name, err)
+		}
+		if got, bound := list.ActionFor(tc.terminal); !bound || got != Terminal {
+			t.Errorf("%s: %s = %q %v, want the terminal", tc.name, tc.terminal, got, bound)
+		}
+		if got, bound := list.ActionFor(tc.archived); !bound || got != Archived {
+			t.Errorf("%s: %s = %q %v, want the archived view", tc.name, tc.archived, got, bound)
+		}
+	}
+}
+
 func TestPgDownNormalizesOntoTheStoredPgDn(t *testing.T) {
 	file, err := decode(t, `
 [list]

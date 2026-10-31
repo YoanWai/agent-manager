@@ -608,7 +608,7 @@ rules = [
 
 // builtinTools is the only source of the manager's own panes. A name here
 // is never also a CLI, since a session row stores one name for either.
-const builtinTools = `# The terminal tab "T" spawns: a shell in the group's directory, listed
+const builtinTools = `# The terminal tab "t" spawns: a shell in the group's directory, listed
 # beside the agents but with nothing running in it. An empty command leaves
 # the pane on $SHELL; set one to open a different shell instead.
 [tools.terminal]

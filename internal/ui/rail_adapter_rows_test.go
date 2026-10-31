@@ -456,13 +456,13 @@ func TestEmptyGroupsKeyIsRefusedInTheArchivedView(t *testing.T) {
 		t.Fatalf("e should hide the empty group, got %v want %v", got, want)
 	}
 
-	press("t")
+	press("T")
 	press("e")
 	if !m.rail.HideEmptyGroups() {
 		t.Fatal("e in the archived view should leave the hide-empty setting alone")
 	}
 
-	press("t")
+	press("T")
 	if got, want := m.groupRowPaths(), []string{"work"}; !slices.Equal(got, want) {
 		t.Fatalf("back on the active list, empty groups should still be hidden, got %v want %v", got, want)
 	}

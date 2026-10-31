@@ -291,7 +291,7 @@ func (r *runtime) shellName(toolName, parentID string) (string, error) {
 // ShellName names a terminal after the session it hangs under, so a row
 // says which session opened it rather than four random digits. A terminal
 // with no session over it falls back to those digits, and one joining
-// terminals already named for that session counts up. Both the list's T
+// terminals already named for that session counts up. Both the list's t
 // and the terminal tools name through here, so a shell reads the same
 // whichever opened it.
 func ShellName(toolName, parentID, fallbackSuffix string, sessions []store.Session) string {

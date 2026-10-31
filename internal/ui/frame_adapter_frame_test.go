@@ -759,7 +759,7 @@ func TestFooterTogglesNameTheNextAction(t *testing.T) {
 	}
 
 	m.rail.SetArchived(true)
-	if footer := m.viewFooter(); !strings.Contains(footer, uitheme.KeyCapQuiet("t", "back to active")) {
+	if footer := m.viewFooter(); !strings.Contains(footer, uitheme.KeyCapQuiet("T", "back to active")) {
 		t.Fatalf("the archived view should offer the way back:\n%s", ansi.Strip(footer))
 	}
 }

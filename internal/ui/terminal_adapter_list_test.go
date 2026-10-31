@@ -37,7 +37,7 @@ func shellCount(m *Model) int {
 
 func pressTerminalKey(t *testing.T, m *Model) {
 	t.Helper()
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'T'}})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
 	if cmd != nil {
 		m.applyCmd(t, cmd)
 	}
@@ -477,7 +477,7 @@ func slowSpawn(t *testing.T, delay time.Duration) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
-// Holding T autorepeats into a burst of keystrokes. T spawns on the
+// Holding t autorepeats into a burst of keystrokes. t spawns on the
 // keystroke itself, so without a guard a held key fills the list with
 // shells and tmux windows nobody asked for. The spawn here takes longer
 // than the window, the way it does on a loaded machine, and the burst
@@ -492,7 +492,7 @@ func TestTerminalKeyIgnoresAutorepeat(t *testing.T) {
 	}
 
 	if got := shellCount(m); got != 1 {
-		t.Fatalf("a held T made %d shells, want 1", got)
+		t.Fatalf("a held t made %d shells, want 1", got)
 	}
 }
 

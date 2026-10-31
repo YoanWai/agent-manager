@@ -49,7 +49,7 @@ func narrowConnectionTier() legendSection {
 	return legendSection{
 		Title: "SSH connection",
 		Leads: [][2]string{{"space", "quick prompt mode"}},
-		Pairs: [][2]string{{"↵", "unfold"}, {"T", "terminal"}, {"g", "group"}, {"r", "edit"}, {"d", "remove"}},
+		Pairs: [][2]string{{"↵", "unfold"}, {"t", "terminal"}, {"g", "group"}, {"r", "edit"}, {"d", "remove"}},
 	}
 }
 
@@ -61,7 +61,7 @@ func narrowRemoteShellTier() legendSection {
 
 func narrowViewTier(alert string) legendSection {
 	view := legendSection{Title: "View", Quiet: true, Pairs: [][2]string{
-		{"↑/k ↓/j", "navigate"}, {"n", "new"}, {"T", "terminal"}, {"g", "group"}, {"/", "search"}, {"t", "archived"},
+		{"↑/k ↓/j", "navigate"}, {"n", "new"}, {"t", "terminal"}, {"g", "group"}, {"/", "search"}, {"T", "archived"},
 		{"w", "attention"}, {"e", "hide empty"}, {"?", "keys"}, {"q", "quit"}, {"C", "connection"},
 		{"⇧↑/K/⇧↓/J", "reorder"}, {"F", "fold all"}, {"|", "resize"}, {"s", "settings"},
 	}}
