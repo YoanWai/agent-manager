@@ -228,8 +228,6 @@ func TestDefaultListAnswersToTodaysKeys(t *testing.T) {
 	}
 }
 
-// A binding typed as "pgdn" (the table's spelling) must still fire when
-// Bubble Tea reports the key it pressed as "pgdown".
 // A table that rebound the terminal or the archived view keeps what it
 // wrote, whichever default the other action now has.
 func TestAStoredTableThatReboundTheTerminalOrArchivedKeepsItsKeys(t *testing.T) {
@@ -258,6 +256,8 @@ func TestAStoredTableThatReboundTheTerminalOrArchivedKeepsItsKeys(t *testing.T) 
 	}
 }
 
+// A binding typed as "pgdn" (the table's spelling) must still fire when
+// Bubble Tea reports the key it pressed as "pgdown".
 func TestPgDownNormalizesOntoTheStoredPgDn(t *testing.T) {
 	file, err := decode(t, `
 [list]
