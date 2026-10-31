@@ -650,7 +650,7 @@ func (m *Model) routeEditorMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 			// without the mouse reporting focus mode armed on the way in.
 			SyncTerminalColors()
 			if m.focused() {
-				resume = tea.EnableMouseCellMotion
+				resume = tea.EnableMouseAllMotion
 			}
 		}
 		if msg.err != nil {

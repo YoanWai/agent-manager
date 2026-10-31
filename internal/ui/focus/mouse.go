@@ -57,6 +57,11 @@ type forwardedGesture struct {
 	row, col int
 }
 
+type pointerAt struct {
+	known bool
+	x, y  int
+}
+
 type MouseContext struct {
 	SessionID    string
 	Rows         int
@@ -81,6 +86,7 @@ type MouseResult struct {
 }
 
 func (m *Model) Mouse(msg tea.MouseMsg, ctx MouseContext) MouseResult {
+	m.pointer = pointerAt{known: true, x: msg.X, y: msg.Y}
 	if tea.MouseEvent(msg).IsWheel() {
 		if !ctx.RuntimeReady {
 			return MouseResult{}
@@ -175,6 +181,15 @@ func (m *Model) Mouse(msg tea.MouseMsg, ctx MouseContext) MouseResult {
 		return MouseResult{Copy: m.copyRequest()}
 	}
 	return MouseResult{}
+}
+
+// OverLink reports whether the mouse rests on a link a click would open.
+func (m Model) OverLink() bool {
+	if !m.pointer.known {
+		return false
+	}
+	row, col, inside := m.paneCell(m.pointer.x, m.pointer.y)
+	return inside && m.linkAt(row, col) != ""
 }
 
 func (m *Model) wheel(up bool, x, y int, ctx MouseContext) MouseResult {

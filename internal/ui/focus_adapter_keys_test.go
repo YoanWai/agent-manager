@@ -156,7 +156,7 @@ func TestCursorBlinks(t *testing.T) {
 		t.Fatal("typing left the caret hidden")
 	}
 
-	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlQ})
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlQ})
 	m.drainEffects(t)
 	*m = *updated.(*Model)
 	if _, cmd := m.Update(uicapture.CaretMsg{}); cmd != nil {
@@ -721,7 +721,7 @@ func TestFocusEditorThatTookTheScreenRearmsMouse(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("returning from a terminal editor issued no mouse command")
 	}
-	if !batchContains(cmd(), tea.EnableMouseCellMotion()) {
+	if !batchContains(cmd(), tea.EnableMouseAllMotion()) {
 		t.Fatalf("mouse reporting was not re-armed: %T", cmd())
 	}
 
@@ -751,7 +751,7 @@ func TestFocusExitKeepsMouse(t *testing.T) {
 	// against what the public command produces.
 	enterUpdated, nextCmd := m.Update(enterCmd())
 	*m = *enterUpdated.(*Model)
-	if !batchContains(nextCmd(), tea.EnableMouseCellMotion()) {
+	if !batchContains(nextCmd(), tea.EnableMouseAllMotion()) {
 		t.Fatalf("entering focus never enabled mouse reporting: %T", nextCmd())
 	}
 	m.drainEffects(t)

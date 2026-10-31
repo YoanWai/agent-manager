@@ -3,6 +3,7 @@ package ui
 import (
 	"errors"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/termseq"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
@@ -103,6 +104,52 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	}
 	if opened != "" {
 		t.Fatalf("a linkless click opened %q", opened)
+	}
+}
+
+// Hovering a link in a focused pane turns the pointer into a hand, named
+// for both kinds of terminal; leaving the link, or the pane, gives the
+// terminal its own pointer back.
+func TestFocusHoverShowsTheHandOverALink(t *testing.T) {
+	const hand = "\x1b]22;pointer\x1b\\\x1b]22;hand2\x1b\\"
+	const reset = "\x1b]22;\x1b\\"
+	var sink strings.Builder
+	previous := termseq.Out
+	termseq.Out = &sink
+	t.Cleanup(func() { termseq.Out = previous })
+
+	m, _ := focusedShotPane(t, 80, 0, 0, "read https://example.com/docs now")
+	hover := func(x int) string {
+		sink.Reset()
+		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonNone, X: x, Y: 0})
+		m.syncPointerShape()
+		return sink.String()
+	}
+	if got := hover(8); got != hand {
+		t.Fatalf("hovering the link wrote %q, want %q", got, hand)
+	}
+	if got := hover(12); got != "" {
+		t.Fatalf("moving along the link wrote %q again", got)
+	}
+	if got := hover(1); got != reset {
+		t.Fatalf("leaving the link wrote %q, want %q", got, reset)
+	}
+
+	hover(8)
+	sink.Reset()
+	m.openFocusSaved()
+	m.syncPointerShape()
+	if got := sink.String(); got != reset {
+		t.Fatalf("a list over the pane wrote %q, want %q", got, reset)
+	}
+
+	m, _ = focusedShotPane(t, 80, 0, 0, "read https://example.com/docs now")
+	hover(8)
+	sink.Reset()
+	m.leaveFocus()
+	m.syncPointerShape()
+	if got := sink.String(); got != reset {
+		t.Fatalf("leaving focus wrote %q, want %q", got, reset)
 	}
 }
 

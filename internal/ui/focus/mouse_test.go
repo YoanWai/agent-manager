@@ -215,6 +215,40 @@ func TestLinkClicksUseDisplayedText(t *testing.T) {
 	}
 }
 
+// The pointer rests on a link only while the cell under it still holds one,
+// so new pane output under a still mouse is read again.
+func TestOverLinkFollowsThePointer(t *testing.T) {
+	model := mouseModel(t, []string{"read https://example.com/docs now"}, 80, PaneUpdate{})
+	ctx := mouseContext(time.Unix(85, 0), 1)
+	if model.OverLink() {
+		t.Fatal("over a link before the mouse ever moved")
+	}
+	model.Mouse(hover(testOriginX+8, testOriginY), ctx)
+	if !model.OverLink() {
+		t.Fatal("hovering the URL is not over a link")
+	}
+	model.Mouse(hover(testOriginX+1, testOriginY), ctx)
+	if model.OverLink() {
+		t.Fatal("hovering plain text is over a link")
+	}
+
+	model.Mouse(hover(testOriginX+8, testOriginY), ctx)
+	model.PrepareFrame(FrameContext{
+		Preview: "no links left here\n", Width: 80, Height: 1,
+		OriginX: testOriginX, OriginY: testOriginY, CaretRow: -1,
+	})
+	if model.OverLink() {
+		t.Fatal("still over a link after the pane redrew without one")
+	}
+
+	model = mouseModel(t, []string{"read https://example.com/docs now"}, 80, PaneUpdate{})
+	model.Mouse(hover(testOriginX+8, testOriginY), ctx)
+	model.Enter(EnterContext{SessionID: "s1"})
+	if model.OverLink() {
+		t.Fatal("entering focus kept a pointer position from before")
+	}
+}
+
 func TestWrappedLinksAndSchemes(t *testing.T) {
 	wrapped := mouseModel(t, []string{
 		"https://example.com/",
@@ -377,6 +411,10 @@ func leftPress(x, y int) tea.MouseMsg {
 
 func leftRelease(x, y int) tea.MouseMsg {
 	return tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: x, Y: y}
+}
+
+func hover(x, y int) tea.MouseMsg {
+	return tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonNone, X: x, Y: y}
 }
 
 func clickURL(model *Model, x, y int) string {

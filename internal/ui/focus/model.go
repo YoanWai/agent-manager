@@ -16,6 +16,7 @@ type Model struct {
 	selection selection
 	pending   pendingClick
 	forward   forwardedGesture
+	pointer   pointerAt
 
 	copied  int
 	copyGen uint64
@@ -113,6 +114,7 @@ func (m *Model) Enter(ctx EnterContext) {
 	m.clearSelection()
 	m.pending = pendingClick{}
 	m.forward = forwardedGesture{}
+	m.pointer = pointerAt{}
 	m.cursorOn = true
 	m.scroll = 0
 	m.fetchInFlight = false
