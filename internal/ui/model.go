@@ -72,6 +72,7 @@ type generations struct {
 }
 
 type layoutState struct {
+	footer        uiframe.LayoutCache
 	frame         string
 	width         int
 	height        int

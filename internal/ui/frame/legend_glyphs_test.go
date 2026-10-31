@@ -12,9 +12,9 @@ func TestCompatibleLegendLabelsKeepTheirKeyAndPaintedHits(t *testing.T) {
 	pairs := [][2]string{{"↵/tab", "choose"}, {"⌫", "delete"}, {"y/↵", "confirm"}, {"esc", "cancel"}}
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
 		for _, width := range []int{24, 40, 100} {
-			for _, painted := range []Legend{
-				PaintInline(pairs, width, LiveCap(mode)),
-				PaintLive([]Section{{Title: "Keys", Pairs: pairs}}, width, mode),
+			for _, painted := range []legend{
+				paintInline(pairs, width, mode),
+				paintLegend([]legendSection{{Title: "Keys", Pairs: pairs}}, width, mode),
 			} {
 				rows := strings.Split(ansi.Strip(painted.Text), "\n")
 				if mode == presentation.GlyphModeBasic && strings.ContainsAny(painted.Text, "↵⌫") {
@@ -22,8 +22,10 @@ func TestCompatibleLegendLabelsKeepTheirKeyAndPaintedHits(t *testing.T) {
 				}
 				for _, hit := range painted.Hits {
 					want := map[string]string{"enter": presentation.KeyLabel(mode, "↵/tab") + " choose", "backspace": presentation.KeyLabel(mode, "⌫") + " delete", "y": presentation.KeyLabel(mode, "y/↵") + " confirm", "esc": "esc cancel"}[hit.Key.String()]
+					// A footer too narrow for the words paints the keys bare.
+					bare := map[string]string{"enter": presentation.KeyLabel(mode, "↵/tab"), "backspace": presentation.KeyLabel(mode, "⌫"), "y": presentation.KeyLabel(mode, "y/↵"), "esc": "esc"}[hit.Key.String()]
 					got := ansi.Cut(rows[hit.Y], hit.X0, hit.X1)
-					if got != ansi.Truncate(want, hit.X1-hit.X0, "…") {
+					if got != ansi.Truncate(want, hit.X1-hit.X0, "…") && got != bare {
 						t.Fatalf("%s/%d hit=%q want=%q", mode, width, got, want)
 					}
 					for _, x := range []int{hit.X0, hit.X1 - 1} {
@@ -55,7 +57,7 @@ func TestCompatibleLegendFitsFirstAndWrappedParts(t *testing.T) {
 			{{"↵", "go"}, {"⌫", "delete"}},
 			{{"⌫", "delete"}, {"esc", "cancel"}, {"y", "confirm"}},
 		} {
-			painted := PaintLive([]Section{{Title: "Keys", Pairs: pairs}}, width, presentation.GlyphModeBasic)
+			painted := paintLegend([]legendSection{{Title: "Keys", Pairs: pairs}}, width, presentation.GlyphModeBasic)
 			rows := strings.Split(ansi.Strip(painted.Text), "\n")
 			for _, row := range rows {
 				if ansi.StringWidth(row) > width {
@@ -80,12 +82,22 @@ func TestCompatibleLegendFitsFirstAndWrappedParts(t *testing.T) {
 	}
 }
 
+// A first key too wide for its title's column drops the title rather than
+// clip; a key wider than the whole row clips, and its hit covers only what
+// was painted.
 func TestCompatibleLegendClipsOnlyThePaintedPart(t *testing.T) {
-	painted := PaintLive([]Section{{Title: "Keys", Pairs: [][2]string{{"⌫", "delete"}}}}, 24, presentation.GlyphModeBasic)
-	if got := ansi.Strip(painted.Text); got != "   Keys      backspace …" {
+	painted := paintLegend([]legendSection{{Title: "Keys", Pairs: [][2]string{{"⌫", "delete"}}}}, 24, presentation.GlyphModeBasic)
+	if got := ansi.Strip(painted.Text); got != "  backspace delete" {
 		t.Fatalf("narrow first hint=%q", got)
 	}
-	if len(painted.Hits) != 1 || painted.Hits[0].X0 != 13 || painted.Hits[0].X1 != 24 || painted.Hits[0].Key.String() != "backspace" {
+	if len(painted.Hits) != 1 || painted.Hits[0].X0 != 2 || painted.Hits[0].X1 != 18 || painted.Hits[0].Key.String() != "backspace" {
+		t.Fatalf("untitled hit=%+v", painted.Hits)
+	}
+	painted = paintLegend([]legendSection{{Title: "Keys", Pairs: [][2]string{{"⌫", "delete"}}}}, 10, presentation.GlyphModeBasic)
+	if got := ansi.Strip(painted.Text); got != "  backspa…" {
+		t.Fatalf("clipped bare hint=%q", got)
+	}
+	if len(painted.Hits) != 1 || painted.Hits[0].X0 != 2 || painted.Hits[0].X1 != 10 || painted.Hits[0].Key.String() != "backspace" {
 		t.Fatalf("clipped hit=%+v", painted.Hits)
 	}
 }

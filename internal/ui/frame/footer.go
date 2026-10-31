@@ -29,14 +29,27 @@ type Focus struct {
 // transient tier pads to, and the full screen layout has no preview box to
 // hold still.
 type Footer struct {
-	Mode       presentation.GlyphMode
-	List       []Section
-	Width      int
-	FullLayout bool
-	ArrowStep  bool
+	Mode        presentation.GlyphMode
+	List        []Section
+	Measurement Measurement
+	Width       int
+	FullLayout  bool
+	ArrowStep   bool
 }
 
-func (f Footer) ListLegend() Legend { return PaintLive(f.List, f.Width, f.Mode) }
+func (f Footer) Layout() (LegendMode, int) { return f.Measurement.Mode, f.Measurement.Rows }
+
+func (f Footer) ListLegend() Legend {
+	mode, rows := f.Layout()
+	badge, quiet := TitleStyles()
+	if mode == Titled {
+		bar, _ := PaintTitledLegend(f.List, f.Width, LiveCap(f.Mode), badge, quiet, Separator())
+		return bar
+	}
+	bar := PaintUntitledLegend(f.List, f.Width, LiveCap(f.Mode), mode, rows)
+	bar.Text = presentation.PadToHeight(bar.Text, rows)
+	return bar
+}
 
 // Transient paints one tier at the list footer's height: the footer sets the
 // preview box, and a box that moves resizes every session's pane, which costs
@@ -44,7 +57,14 @@ func (f Footer) ListLegend() Legend { return PaintLive(f.List, f.Width, f.Mode) 
 // screen layout has no preview box to hold still, so a tier there takes the
 // one row it needs and hands the rest to the body.
 func (f Footer) Transient(tier Section) Legend {
-	painted := PaintLive([]Section{tier}, f.Width, f.Mode)
+	var painted Legend
+	mode, rows := f.Layout()
+	badge, quiet := TitleStyles()
+	if mode == Titled {
+		painted, _ = PaintTitledLegend([]Section{tier}, f.Width, LiveCap(f.Mode), badge, quiet, Separator())
+	} else {
+		painted = PaintNarrowLegend([]Section{tier}, f.Width, LiveCap(f.Mode), mode, rows)
+	}
 	if f.FullLayout {
 		return painted
 	}

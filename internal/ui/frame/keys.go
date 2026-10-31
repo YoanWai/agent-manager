@@ -53,7 +53,7 @@ func pressKey(name string) (tea.KeyMsg, bool) {
 	return tea.KeyMsg{}, false
 }
 
-var legendGlyphKeys = map[string]string{"↵": "enter", "⌫": "backspace"}
+var legendGlyphKeys = map[string]string{"↵": "enter", "⌫": "backspace", "↑": "up", "↓": "down", "←": "left", "→": "right"}
 
 var namedKeyTypes = func() map[string]tea.KeyType {
 	types := map[string]tea.KeyType{}

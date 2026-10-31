@@ -6,24 +6,27 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 )
 
+// ReviewModeHint is the row tier's reminder that an agent can be asked to
+// open Review itself.
 const ReviewModeHint = `tell your agent "set review mode"`
 
 // Legend is one footer tier Rail decides: its title, its bindings, and
 // whether it recedes behind the tier above it. Root paints it with the
 // app's legend bar.
 type Legend struct {
-	Title  string
-	Leads  [][2]string
-	Alerts [][2]string
-	Hint   string
-	Pairs  [][2]string
-	Quiet  bool
+	Title       string
+	Leads       [][2]string
+	Alerts      [][2]string
+	Hint        string
+	Pairs       [][2]string
+	Quiet       bool
+	ActionPairs []bool
 }
 
 // LegendContext carries the root facts a legend reads. Row and Session are
 // root's current record of the row under the cursor, set only when RowOK;
 // Session is filled for session rows. Unread is the messages alert, empty
-// when nothing is unread; Messages is the dim messages key once all are read.
+// when nothing is unread.
 type LegendContext struct {
 	ListKeys      keybind.Table
 	EnterFocuses  bool
@@ -33,6 +36,7 @@ type LegendContext struct {
 	Row           Selection
 	RowOK         bool
 	Session       Session
+	Widest        bool
 	Unread        [2]string
 	Messages      [2]string
 }
@@ -122,6 +126,11 @@ func (m Model) RowLegend(ctx LegendContext) Legend {
 	return Legend{Title: title, Leads: leads, Hint: hint, Pairs: boundPairs(pairs)}
 }
 
+func (m Model) RowLegendInView(ctx LegendContext, archived bool) Legend {
+	m.showArchived = archived
+	return m.RowLegend(ctx)
+}
+
 // ViewLegend is the tier that never changes with the cursor: moving around
 // the list, filtering it, and leaving.
 func (m Model) ViewLegend(ctx LegendContext) Legend {
@@ -130,15 +139,15 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 		emptyGroupsAction = "show empty"
 	}
 	statusFilterAction := "attention"
-	if m.FilteringAttention() {
+	if m.FilteringAttention() && !ctx.Widest {
 		statusFilterAction = "show all"
 	}
 	archivedAction := "archived"
-	if m.ShowArchived() {
+	if m.ShowArchived() || ctx.Widest {
 		archivedAction = "back to active"
 	}
 	foldAllAction := "fold all"
-	if m.AllGroupsCollapsed() {
+	if m.AllGroupsCollapsed() || ctx.Widest {
 		foldAllAction = "unfold all"
 	}
 	// Ordered by what a narrow terminal must keep: unread messages, which
@@ -148,7 +157,7 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 	emptyGroupsKey := k(keybind.EmptyGroups)
 	terminalKey := k(keybind.Terminal)
 	foldAllKey := k(keybind.FoldAll)
-	if m.ShowArchived() {
+	if m.ShowArchived() && !ctx.Widest {
 		emptyGroupsKey = ""
 		terminalKey = ""
 		foldAllKey = ""
@@ -157,15 +166,28 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 	if ctx.Unread[0] != "" {
 		alerts = append(alerts, ctx.Unread)
 	}
-	pairs := [][2]string{
-		ctx.Messages,
-		{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"},
+	var pairs [][2]string
+	var actions []bool
+	add := func(action bool, entries ...[2]string) {
+		for _, pair := range entries {
+			if pair[0] == "" {
+				continue
+			}
+			actions = append(actions, action)
+			pairs = append(pairs, pair)
+		}
+	}
+	add(true, ctx.Messages)
+	add(false, [2]string{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"})
+	add(true, [][2]string{
 		{k(keybind.NewSession), "new"}, {terminalKey, "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"}, {k(keybind.NewConnection), "connection"},
-		{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"}, {foldAllKey, foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"},
-	}
-	return Legend{Title: "View", Quiet: true, Alerts: alerts, Pairs: boundPairs(pairs)}
+	}...)
+	add(false, [2]string{k(keybind.ReorderUp, keybind.ReorderDown), "reorder"})
+	add(true, [][2]string{{foldAllKey, foldAllAction}, {k(keybind.Resize), "resize"}, {k(keybind.Settings), "settings"}}...)
+
+	return Legend{Title: "View", Quiet: true, Alerts: alerts, Pairs: pairs, ActionPairs: actions}
 }
 
 // ReorderLegend is the tier a lifted row shows while it moves.
@@ -228,6 +250,8 @@ func (ctx LegendContext) glyph(actions ...string) string {
 	return joined
 }
 
+// RemoteRow is what the footer needs to know about a row behind an SSH
+// connection.
 type RemoteRow struct {
 	Kind     RowKind
 	Host     string
@@ -264,4 +288,9 @@ func (m Model) RemoteLegend(ctx LegendContext, row RemoteRow, collapsed bool) Le
 	}
 	pairs = append(pairs, m.archiveRestoreLegend(ctx))
 	return Legend{Title: title + " on " + row.Host, Leads: leads, Pairs: boundPairs(pairs)}
+}
+
+func (m Model) RemoteLegendInView(ctx LegendContext, row RemoteRow, collapsed, archived bool) Legend {
+	m.showArchived = archived
+	return m.RemoteLegend(ctx, row, collapsed)
 }

@@ -1,6 +1,7 @@
 package notices
 
 import (
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"strings"
 	"testing"
 
@@ -73,4 +74,21 @@ func rowIndex(rows []string, want string) int {
 		}
 	}
 	return -1
+}
+
+func footerLegend(row string, mode presentation.GlyphMode) string {
+	left, right := "╰", "╯"
+	if mode == presentation.GlyphModeBasic {
+		left, right = "+", "+"
+	}
+	return strings.TrimRight(strings.TrimSuffix(strings.TrimPrefix(row, left+"─"), right), "─")
+}
+
+func bindingOf(t *testing.T, text string) keybind.Binding {
+	t.Helper()
+	key, err := keybind.Parse(text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return keybind.Keys(key)
 }

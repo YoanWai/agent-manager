@@ -84,7 +84,7 @@ func (m *Model) placeKeys(hits keyHits, x, y int) {
 func (m *Model) placePainted(keys []presentation.PaintedKey, x, y int) {
 	var hits keyHits
 	for _, key := range keys {
-		hits = hits.Add(key.X0, key.X1, 0, key.Label)
+		hits = hits.Add(key.X0, key.X1, key.Y, key.Label)
 	}
 	m.placeKeys(hits, x, y)
 }
@@ -313,11 +313,12 @@ func (m *Model) footer() legend {
 // footerOf is the footer's height rule, over the base screen's tiers.
 func (m *Model) footerOf() uiframe.Footer {
 	return uiframe.Footer{
-		Mode:       m.prefs.glyphMode,
-		List:       m.listTiers(),
-		Width:      m.layout.width,
-		FullLayout: m.prefs.fullLayout,
-		ArrowStep:  m.prefs.arrowStep,
+		Mode:        m.prefs.glyphMode,
+		List:        m.listTiers(),
+		Measurement: m.layout.footer.Measure(m.legendReference(), m.layout.width, max(uiframe.MaxRows, (m.layout.height-m.listChromeRows()-1)/2), m.prefs.glyphMode),
+		Width:       m.layout.width,
+		FullLayout:  m.prefs.fullLayout,
+		ArrowStep:   m.prefs.arrowStep,
 	}
 }
 

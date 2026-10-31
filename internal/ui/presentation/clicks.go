@@ -3,9 +3,11 @@ package presentation
 import tea "github.com/charmbracelet/bubbletea"
 
 // PaintedKey is a key a line painted across columns [X0, X1), which a click
-// there presses. Label is the key as the line draws it.
+// there presses. Y is its row offset from the line the caller places it on.
+// Label is the key as the line draws it.
 type PaintedKey struct {
 	X0, X1 int
+	Y      int
 	Label  string
 }
 

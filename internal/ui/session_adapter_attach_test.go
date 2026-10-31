@@ -1372,11 +1372,10 @@ func TestAFreshListingRetiresDeletionMarkers(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	createSession(t, m, "doomed", t.TempDir(), "")
-	listedAt := time.Now()
 
 	deleteSession(t, m, "doomed")
 
-	fresh := refreshMsg{listedAt: listedAt.Add(time.Second)}
+	fresh := refreshMsg{listedAt: time.Now()}
 	updated, _ := m.Update(fresh)
 	m.drainEffects(t)
 	*m = *updated.(*Model)

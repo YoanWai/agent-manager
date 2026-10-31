@@ -1516,7 +1516,12 @@ func messagesCell(t *testing.T, m *Model) (x, y int) {
 			return ansi.StringWidth(line[:col]), row
 		}
 	}
-	t.Fatal("test setup: the frame painted no messages card or badge")
+	for _, hit := range m.layout.keyHits {
+		if m.services.listKeys.Binding(keybind.Messages).Has(hit.Key.String()) {
+			return hit.X0, hit.Y
+		}
+	}
+	t.Fatal("test setup: the frame painted no messages card or key")
 	return 0, 0
 }
 
@@ -1651,6 +1656,28 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if binding == "alt+m" {
 					msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
 				}
+				// A footer too narrow for words paints the entry as its key
+				// alone, so the entry is found by the hit that presses it and
+				// read back from the cells under that hit.
+				rows := strings.Split(ansi.Strip(preparedView(m)), "\n")
+				found := false
+				var entry keyHit
+				for _, hit := range m.layout.keyHits {
+					if hit.Key.String() == msg.String() && (!found || hit.Y > entry.Y) {
+						entry, found = hit, true
+					}
+				}
+				if !found {
+					t.Fatalf("full=%v width=%d binding=%s: no hit opens messages %+v", full, width, binding, m.layout.keyHits)
+				}
+				if painted := strings.TrimSpace(ansi.Cut(rows[entry.Y], entry.X0, entry.X1)); !strings.HasPrefix(painted, m.listGlyph(keybind.Messages)) {
+					t.Fatalf("full=%v width=%d binding=%s: the messages hit covers %q, not its key %q", full, width, binding, painted, m.listGlyph(keybind.Messages))
+				}
+				x, y = entry.X0, entry.Y
+				if m = leftClick(m, x, y); !m.noticesOpen() {
+					t.Fatalf("click on messages should open notices, screen=%v", m.screenID())
+				}
+				m.handleKey(key("esc"))
 				m.handleKey(msg)
 				if !m.noticesOpen() {
 					t.Fatalf("%s should open notices, screen = %v", binding, m.screenID())
@@ -1663,9 +1690,10 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
-				if m = leftClick(m, x, y); !m.onList() {
-					t.Fatalf("a click where the entry was must not open Messages, screen = %v", m.screenID())
+				if m = leftClick(m, x, y); m.noticesOpen() {
+					t.Fatal("a click where the entry was must not open Messages")
 				}
+				m.handleKey(key("esc"))
 				m.handleKey(msg)
 				if !m.noticesOpen() {
 					t.Fatalf("%s should still open an empty Messages, screen = %v", binding, m.screenID())

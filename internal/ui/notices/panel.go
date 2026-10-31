@@ -261,7 +261,9 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	}
 	splitView := p.splitView(notices, f)
 	_, pane := inboxWidths(notices, f.Width, splitView)
-	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(frameTail(f))+1)
+	inner, _ := inboxWidths(notices, f.Width, splitView)
+	_, stack := p.footLayout(notices, inner, f)
+	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(frameTail(f))+1+len(stack))
 	layout := p.message(notices[p.cursor], pane, room, f)
 	return max(0, len(layout.body)-layout.room)
 }
@@ -394,11 +396,16 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	p.lines.Reset()
 	p.listCols = 0
 	p.hits = nil
-	foot := renderFoot(p.footPairs(notices, inner, f), t, f.GlyphMode)
+	edge, stack := p.footLayout(notices, inner, f)
+	foot := renderFoot(edge, t, f.GlyphMode)
+	var footRows []string
+	for _, pairs := range stack {
+		footRows = append(footRows, renderFoot(pairs, t, f.GlyphMode))
+	}
 	if len(notices) == 0 {
 		rows := []string{t.Muted.Render("nothing new")}
 		rows = append(rows, frameTail(f)...)
-		return cardFrame(rows, inner, legend(t), "", foot, t, f.GlyphMode)
+		return cardFrame(rows, footRows, inner, legend(t), "", foot, t, f.GlyphMode)
 	}
 	listColumn := inner
 	if splitView {
@@ -408,7 +415,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 
 	tail := frameTail(f)
 	tail = append(tail, "")
-	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(tail))
+	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(tail)+len(footRows))
 	layout := p.message(notices[p.cursor], pane, room, f)
 	body, offset := layout.body, 0
 	if layout.scrolls {
@@ -447,7 +454,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 			p.hits = append(p.hits, hit)
 		}
 	}
-	return cardFrame(rows, inner, legend(t), unreadCount(notices, t), foot, t, f.GlyphMode)
+	return cardFrame(rows, footRows, inner, legend(t), unreadCount(notices, t), foot, t, f.GlyphMode)
 }
 
 // footStart is the column the bottom edge's text starts at, after its
@@ -462,7 +469,8 @@ func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 	inner, _ := inboxWidths(notices, f.Width, p.splitView(notices, f))
 	var keys []presentation.PaintedKey
 	x := footStart
-	for i, pair := range p.footPairs(notices, inner, f) {
+	edge, stack := p.footLayout(notices, inner, f)
+	for i, pair := range edge {
 		if i > 0 {
 			x += lipgloss.Width(footSep)
 		}
@@ -473,16 +481,31 @@ func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
 		keys = append(keys, presentation.PaintedKey{X0: x, X1: x + width, Label: pair[0]})
 		x += width
 	}
+	for row, pairs := range stack {
+		x := footStart
+		for i, pair := range pairs {
+			if i > 0 {
+				x += lipgloss.Width(footSep)
+			}
+			width := lipgloss.Width(footPart(pair, f.GlyphMode))
+			keys = append(keys, presentation.PaintedKey{X0: x, X1: min(x+width, footStart+inner), Y: row - len(stack), Label: pair[0]})
+			x += width
+		}
+	}
 	return keys
 }
 
-func (p Panel) footPairs(notices []Notice, inner int, f Frame) [][2]string {
+func noticeCloseKeys(binding keybind.Binding) string {
 	closeKeys := "esc/q"
-	for _, key := range closeBinding(f.CloseKey).Keys() {
+	for _, key := range closeBinding(binding).Keys() {
 		if key.Tea() != "q" {
 			closeKeys += "/" + key.Glyph()
 		}
 	}
+	return closeKeys
+}
+func (p Panel) footActions(notices []Notice, f Frame) [][2]string {
+	closeKeys := noticeCloseKeys(f.CloseKey)
 	if len(notices) == 0 {
 		return [][2]string{{"r", "refresh"}, {closeKeys, ""}}
 	}
@@ -497,28 +520,47 @@ func (p Panel) footPairs(notices []Notice, inner int, f Frame) [][2]string {
 		update = [][2]string{{"u", "update"}}
 	}
 	rest := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {closeKeys, ""}}...)
-	actions := append(slices.Clone(sections), rest...)
-	// Navigation shrinks, then drops, then the sections and the actions lose
-	// their words, so every key a click can run stays on the edge.
-	keysOnly := func(pairs [][2]string) [][2]string {
-		bare := make([][2]string, len(pairs))
-		for i, pair := range pairs {
-			bare[i] = [2]string{pair[0], ""}
-		}
-		return bare
+	return append(sections, rest...)
+}
+func (p Panel) footPairs(notices []Notice, inner int, f Frame) [][2]string {
+	actions := p.footActions(notices, f)
+	candidates := [][][2]string{actions}
+	if len(notices) > 0 {
+		candidates = append([][][2]string{
+			append([][2]string{{"↑↓", "message"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
+			append([][2]string{{"↑↓", "message"}, {"pgup/pgdn", "scroll"}}, actions...),
+		}, candidates...)
 	}
-	bare := keysOnly(append([][2]string{{"↑↓", ""}}, actions...))
-	for _, pairs := range [][][2]string{
-		append([][2]string{{"↑↓", "message"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
-		append([][2]string{{"↑↓", "message"}, {"pgup/pgdn", "scroll"}}, actions...),
-		actions,
-		append(keysOnly(sections), rest...),
-	} {
+	for _, pairs := range candidates {
 		if lipgloss.Width(footText(pairs, f.GlyphMode)) <= inner+1 {
 			return pairs
 		}
 	}
-	return bare
+	return nil
+}
+func (p Panel) footLayout(notices []Notice, inner int, f Frame) ([][2]string, [][][2]string) {
+	if edge := p.footPairs(notices, inner, f); edge != nil {
+		return edge, nil
+	}
+	keys := p.footActions(notices, f)
+	for _, key := range keys {
+		if lipgloss.Width(footPart(key, f.GlyphMode)) > inner {
+			for i := range keys {
+				keys[i][1] = ""
+			}
+			break
+		}
+	}
+	var stack [][][2]string
+	var row [][2]string
+	for _, key := range keys {
+		if row != nil && lipgloss.Width(footText(append(row, key), f.GlyphMode)) > inner {
+			stack = append(stack, row)
+			row = nil
+		}
+		row = append(row, key)
+	}
+	return nil, append(stack, row)
 }
 
 func footPart(pair [2]string, mode presentation.GlyphMode) string {
@@ -555,7 +597,7 @@ func legend(t Theme) string {
 // accent border with legends set into the top and bottom edges, a second
 // legend at the top edge's right, and the card fill behind every row.
 // inner is the content column's width.
-func cardFrame(rows []string, inner int, topLegend, topRight, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {
+func cardFrame(rows, footRows []string, inner int, topLegend, topRight, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {
 	g := presentation.ChromeFor(mode)
 	border := t.Border
 	edge := border.Render("│")
@@ -577,6 +619,10 @@ func cardFrame(rows []string, inner int, topLegend, topRight, bottomLegend strin
 	for _, row := range rows {
 		row = ansi.Truncate(row, inner, "…")
 		lines = append(lines, edge+t.Fill(" "+row, inner+2)+edge)
+	}
+	for _, row := range footRows {
+		row = ansi.Truncate(row, inner, "…")
+		lines = append(lines, edge+padRight(" "+row, inner+2)+edge)
 	}
 	return append(lines, legend(g.BottomLeftGlyph, bottomLegend, "", g.BottomRightGlyph))
 }
