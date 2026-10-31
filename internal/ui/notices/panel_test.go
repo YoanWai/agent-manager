@@ -12,7 +12,7 @@ func testSources(latest string) Sources {
 	return Sources{
 		Store:  true,
 		Update: Update{Version: "v0.2.0", Latest: latest},
-		Feed:   []Message{{ID: testTip, Title: "A tip", URL: RepoURL + "#readme"}},
+		Feed:   []Message{{ID: testTip, Kind: KindTip, Title: "A tip", URL: RepoURL + "#readme"}},
 	}
 }
 

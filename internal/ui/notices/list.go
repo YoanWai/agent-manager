@@ -1,7 +1,9 @@
 package notices
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -68,6 +70,8 @@ func (p Panel) Active(src Sources) []Notice {
 		}
 		notices = append(notices, Notice{
 			ID:            "update-" + src.Update.Latest,
+			Kind:          KindRelease,
+			Subtitle:      newestHeadline(releaseRange.Releases),
 			Glyph:         g.UpdateGlyph,
 			Tint:          TintAccent,
 			Title:         title,
@@ -97,6 +101,8 @@ func (p Panel) Active(src Sources) []Notice {
 		}
 		notices = append(notices, Notice{
 			ID:           "whatsnew-" + src.Update.Version,
+			Kind:         KindRelease,
+			Subtitle:     newestHeadline(releaseRange.Releases),
 			Glyph:        g.NewGlyph,
 			Tint:         TintAccent2,
 			Title:        title,
@@ -114,6 +120,8 @@ func (p Panel) Active(src Sources) []Notice {
 	for _, msg := range src.Feed {
 		notices = append(notices, Notice{
 			ID:       msg.ID,
+			Kind:     msg.Kind,
+			Subtitle: msg.Banner,
 			Glyph:    g.FeedGlyph,
 			Tint:     TintAccent2,
 			Title:    msg.Title,
@@ -121,14 +129,18 @@ func (p Panel) Active(src Sources) []Notice {
 			Accent:   msg.Accent,
 			Body:     msg.Body,
 			URL:      msg.URL,
+			Action:   msg.Action,
+			Expires:  msg.Expires,
 		})
 	}
 	if src.ConfigImportError != "" {
 		notices = append(notices, Notice{
-			ID:    ConfigNotImported,
-			Glyph: g.SettingsGlyph,
-			Tint:  TintWarm,
-			Title: "Your config.toml was not carried into Settings",
+			ID:       ConfigNotImported,
+			Kind:     KindHeadsUp,
+			Subtitle: "Settings could not import it",
+			Glyph:    g.SettingsGlyph,
+			Tint:     TintWarm,
+			Title:    "Your config.toml was not carried into Settings",
 			Body: []string{
 				"The keys and the editor live in Settings now. A config.toml that",
 				"names them is read once to carry them over, and yours was refused:",
@@ -151,5 +163,6 @@ func (p Panel) Active(src Sources) []Notice {
 			kept = append(kept, n)
 		}
 	}
+	slices.SortStableFunc(kept, func(a, b Notice) int { return cmp.Compare(a.Kind, b.Kind) })
 	return kept
 }

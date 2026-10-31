@@ -149,7 +149,18 @@ func (s *State) Greet(st Store) (string, error) {
 func (s *State) Sources() notices.Sources {
 	messages := make([]notices.Message, len(s.Feed))
 	for i, msg := range s.Feed {
-		messages[i] = notices.Message{ID: msg.ID, Title: msg.Title, Headline: msg.Headline, Body: msg.Body, Accent: msg.Accent, URL: msg.URL}
+		messages[i] = notices.Message{
+			ID:       msg.ID,
+			Kind:     noticeKind(msg.Kind),
+			Title:    msg.Title,
+			Banner:   msg.Banner,
+			Headline: msg.Headline,
+			Body:     msg.Body,
+			Accent:   msg.Accent,
+			URL:      msg.URL,
+			Action:   msg.Action,
+			Expires:  msg.ExpiresAt,
+		}
 	}
 	return notices.Sources{
 		Update: notices.Update{
@@ -166,6 +177,16 @@ func (s *State) Sources() notices.Sources {
 		WhatsNewVersion: s.WhatsNewVersion,
 		WhatsNewFrom:    s.WhatsNewFrom,
 	}
+}
+
+func noticeKind(kind string) notices.Kind {
+	switch kind {
+	case feed.KindHeadsUp:
+		return notices.KindHeadsUp
+	case feed.KindTip:
+		return notices.KindTip
+	}
+	return notices.KindNews
 }
 
 // IndexRanges keeps catalog scans out of the paint path. It runs only when

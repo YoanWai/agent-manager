@@ -29,8 +29,20 @@ const (
 
 const warmHex = "#e2c044"
 
+// Kind groups notices in the list, in the order the groups are shown.
+type Kind uint8
+
+const (
+	KindRelease Kind = iota
+	KindNews
+	KindHeadsUp
+	KindTip
+)
+
 type Notice struct {
 	ID            string
+	Kind          Kind
+	Subtitle      string
 	Glyph         string
 	Tint          Tint
 	Title         string
@@ -42,6 +54,8 @@ type Notice struct {
 	After         []string
 	RangeComplete bool
 	URL           string
+	Action        string
+	Expires       time.Time
 }
 
 func (n Notice) IsUpdate() bool {
@@ -142,10 +156,14 @@ type ReleaseRange struct {
 
 type Message struct {
 	ID       string
+	Kind     Kind
 	Title    string
+	Banner   string
 	Headline string
 	Body     []string
 	// Accent holds phrases of Body to draw in the accent color, never an empty one.
-	Accent []string
-	URL    string
+	Accent  []string
+	URL     string
+	Action  string
+	Expires time.Time
 }
