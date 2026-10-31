@@ -142,3 +142,22 @@ func TestHelpRowNamesTheConfiguredKey(t *testing.T) {
 		}
 	}
 }
+
+// A help key the user sets never takes a key the keymap gives another
+// action, so adding a binding to keymap is all it takes to protect it.
+func TestHelpKeyNeverTakesAKeymapKey(t *testing.T) {
+	for _, b := range keymap {
+		if b.Action == actHelp {
+			continue
+		}
+		for _, name := range b.Keys {
+			key, err := keybind.Parse(name)
+			if err != nil {
+				continue
+			}
+			if got := EffectiveHelpBinding(keybind.Keys(key)).Label(); got != "" {
+				t.Errorf("help key %q kept although %q is %v", got, name, b.Action)
+			}
+		}
+	}
+}

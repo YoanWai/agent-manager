@@ -254,6 +254,13 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 	return m
 }
 
+// handleFormKey types a key into the open New Session form the way the
+// stack hands it over.
+func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	_, cmd := m.form().Key(m, msg)
+	return m, cmd
+}
+
 func (m *Model) applyCmd(t *testing.T, cmd tea.Cmd) {
 	t.Helper()
 	if cmd == nil {

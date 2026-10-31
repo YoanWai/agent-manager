@@ -15,6 +15,7 @@ import (
 	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -87,7 +88,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	q := m.quick()
 	// The move and toggle effects change the bar's own aim and toggle, so
 	// they land before a later repaint reads them.
-	cmd := uiquick.Decide(m.quickBarHost(), q, composer.TypedText(msg))
+	cmd := uiquick.Decide(m.quickBarHost(), q, spawn.TypedText(msg))
 	return m, cmd
 }
 

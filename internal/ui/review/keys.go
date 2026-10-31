@@ -7,19 +7,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-var localKeyCommands = map[string]string{
-	"ctrl+c": "ctrl+c", "q": "q", "esc": "q",
-	"up": "up", "k": "up", "down": "down", "j": "down",
-	"ctrl+d": "ctrl+d", "ctrl+u": "ctrl+u", "pgup": "pgup", "pgdn": "pgdn",
-	"g": "g", "G": "G", "J": "tab", "tab": "tab", "K": "shift+tab", "shift+tab": "shift+tab",
-	"n": "n", "N": "N", "s": "s", "r": "r", "b": "b", "B": "B", "u": "u", "f": "f",
-	"space": "space", "c": "c", "d": "d", "C": "C", "o": "o", "f3": "o",
-}
-
+// EffectiveHelpBinding is the configured help key less any key the keymap
+// already gives another action.
 func EffectiveHelpBinding(configured keybind.Binding) keybind.Binding {
 	var keys []keybind.Key
 	for _, key := range configured.Keys() {
-		if localKeyCommands[keybind.Normalize(key.Tea())] == "" {
+		if b, ok := bindingFor(keybind.Normalize(key.Tea())); !ok || b.Action == actHelp {
 			keys = append(keys, key)
 		}
 	}
