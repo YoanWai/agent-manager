@@ -831,12 +831,57 @@ func TestDefaultBase(t *testing.T) {
 			withRemote(t, dir)
 			return driver, dir
 		}, "origin/main"},
+		{"a remote named neither upstream nor origin", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", "-o", "company", fork, work)
+			// A removed origin can leave its HEAD behind, naming a branch
+			// that no longer exists.
+			gitIn(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
+			return driver, work
+		}, "company/main"},
+		{"a configured origin whose HEAD names a missing branch", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", "-o", "company", fork, work)
+			gitIn(t, work, "remote", "add", "origin", fork)
+			gitIn(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
+			return driver, work
+		}, "company/main"},
+		{"other remotes by name", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", "-o", "zeta", fork, work)
+			gitIn(t, work, "remote", "add", "alpha", fork)
+			gitIn(t, work, "fetch", "-q", "alpha")
+			gitIn(t, work, "update-ref", "refs/remotes/alpha/trunk", "refs/remotes/alpha/main")
+			gitIn(t, work, "symbolic-ref", "refs/remotes/alpha/HEAD", "refs/remotes/alpha/trunk")
+			return driver, work
+		}, "alpha/trunk"},
+		{"a local branch named like the remote's default", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", fork, work)
+			gitIn(t, work, "update-ref", "refs/remotes/origin/trunk", "refs/remotes/origin/main")
+			gitIn(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+			// Shortening origin/HEAD's target is ambiguous now, so git names
+			// it in full, and origin/trunk alone names the local branch.
+			gitIn(t, work, "branch", "origin/trunk")
+			return driver, work
+		}, "remotes/origin/trunk"},
 		{"no remote", func(t *testing.T) (*Driver, string) {
 			driver, dir := testRepo(t)
 			write(t, dir, "a.txt", "x")
 			commit(t, dir, "seed")
 			return driver, dir
 		}, "main"},
+		{"a tag named like the local branch", func(t *testing.T) (*Driver, string) {
+			driver, dir := testRepo(t)
+			write(t, dir, "a.txt", "x")
+			commit(t, dir, "seed")
+			gitIn(t, dir, "tag", "main")
+			return driver, dir
+		}, "heads/main"},
 		{"no default branch", func(t *testing.T) (*Driver, string) {
 			driver, dir := testRepo(t)
 			gitIn(t, dir, "checkout", "-q", "-b", "trunk")
@@ -848,10 +893,60 @@ func TestDefaultBase(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			driver, dir := tc.layout(t)
-			if got := driver.DefaultBase(dir); got != tc.want {
-				t.Fatalf("DefaultBase = %q, want %q", got, tc.want)
+			if got, err := driver.DefaultBase(dir); err != nil || got != tc.want {
+				t.Fatalf("DefaultBase = %q, %v, want %q", got, err, tc.want)
 			}
 		})
+	}
+}
+
+// A local branch sharing the remote default's short name, at another
+// commit, does not move the base off the remote branch.
+func TestBaseRefPrefersTheRemoteOverALocalNamesake(t *testing.T) {
+	driver, _, _, fork := forkClone(t)
+	work := filepath.Join(t.TempDir(), "clone")
+	gitIn(t, fork, "clone", "-q", fork, work)
+	gitIn(t, work, "config", "user.email", "test@test")
+	gitIn(t, work, "config", "user.name", "test")
+	remote, err := driver.run(work, "rev-parse", "refs/remotes/origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, work, "checkout", "-q", "-b", "origin/main")
+	write(t, work, "local.txt", "x")
+	commit(t, work, "local")
+	gitIn(t, work, "checkout", "-q", "-b", "feature")
+	write(t, work, "feature.txt", "x")
+	commit(t, work, "feature")
+	ref, describe, err := driver.BaseRef(work)
+	if want := "remotes/origin/main@" + remote[:7]; err != nil || ref != remote || describe != want {
+		t.Fatalf("BaseRef = %q, %q, %v, want %q, %q", ref, describe, err, remote, want)
+	}
+}
+
+// A repo whose remotes git cannot list fails base detection, rather than
+// falling back to a local branch or HEAD its remotes may disagree with.
+func TestDefaultBaseReportsUnlistableRemotes(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	withRemote(t, dir)
+	config, err := os.OpenFile(filepath.Join(dir, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.WriteString("[remote \"broken\n"); err != nil {
+		t.Fatal(err)
+	}
+	config.Close()
+	if base, err := driver.DefaultBase(dir); err == nil {
+		t.Fatalf("DefaultBase = %q, want an error", base)
+	}
+	if _, err := driver.worktreeBase(dir, ""); err == nil {
+		t.Fatal("worktreeBase should fail instead of falling back to HEAD")
+	}
+	if ref, _, err := driver.BaseRef(dir); err == nil {
+		t.Fatalf("BaseRef = %q, want an error", ref)
 	}
 }
 

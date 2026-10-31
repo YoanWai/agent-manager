@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
@@ -582,5 +584,22 @@ func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	if m.formWorktreeOn() {
 		t.Fatal("toggle should turn worktree off in a repo dir")
+	}
+}
+
+// A base lookup that fails reads as a failure in the preview, not as the
+// HEAD a repo with no default branch falls back to.
+func TestSpawnBasePreviewNamesAFailedLookup(t *testing.T) {
+	m := buildModel(t)
+	m.prefs.baseFetchOff = true
+	key := uilaunch.BaseFetchKey{Dir: t.TempDir()}
+	m.ledger.spawner.BaseFetches = map[uilaunch.BaseFetchKey]uilaunch.BaseFetch{key: {}}
+	m.recordBaseFetch(uilaunch.BaseFetchedMsg{Key: key, LookupErr: errors.New("bad config line")})
+	if got := ansi.Strip(m.spawnBaseLabel(key.Dir, "")); got != "base lookup failed" {
+		t.Fatalf("label = %q, want base lookup failed", got)
+	}
+	m.recordBaseFetch(uilaunch.BaseFetchedMsg{Key: key})
+	if got := ansi.Strip(m.spawnBaseLabel(key.Dir, "")); got != "HEAD (auto)" {
+		t.Fatalf("label = %q, want HEAD (auto) when the repo names no default", got)
 	}
 }

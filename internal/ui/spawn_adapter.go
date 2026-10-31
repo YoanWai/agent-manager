@@ -434,6 +434,8 @@ func (m *Model) spawnBaseLabel(dir, group string) string {
 		switch {
 		case !fetch.Resolved:
 			label = uitheme.SubtleStyle().Render("…")
+		case fetch.LookupErr != nil:
+			label = uitheme.SubtleStyle().Render("base lookup failed")
 		case fetch.Detected == "":
 			label = uitheme.ValueStyle().Render("HEAD") + uitheme.SubtleStyle().Render(" (auto)")
 		default:
