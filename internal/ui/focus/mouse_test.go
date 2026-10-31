@@ -219,20 +219,19 @@ func TestLinkClicksUseDisplayedText(t *testing.T) {
 // so new pane output under a still mouse is read again.
 func TestOverLinkFollowsThePointer(t *testing.T) {
 	model := mouseModel(t, []string{"read https://example.com/docs now"}, 80, PaneUpdate{})
-	ctx := mouseContext(time.Unix(85, 0), 1)
 	if model.OverLink() {
 		t.Fatal("over a link before the mouse ever moved")
 	}
-	model.Mouse(hover(testOriginX+8, testOriginY), ctx)
+	model.TrackPointer(testOriginX+8, testOriginY)
 	if !model.OverLink() {
 		t.Fatal("hovering the URL is not over a link")
 	}
-	model.Mouse(hover(testOriginX+1, testOriginY), ctx)
+	model.TrackPointer(testOriginX+1, testOriginY)
 	if model.OverLink() {
 		t.Fatal("hovering plain text is over a link")
 	}
 
-	model.Mouse(hover(testOriginX+8, testOriginY), ctx)
+	model.TrackPointer(testOriginX+8, testOriginY)
 	model.PrepareFrame(FrameContext{
 		Preview: "no links left here\n", Width: 80, Height: 1,
 		OriginX: testOriginX, OriginY: testOriginY, CaretRow: -1,
@@ -242,7 +241,7 @@ func TestOverLinkFollowsThePointer(t *testing.T) {
 	}
 
 	model = mouseModel(t, []string{"read https://example.com/docs now"}, 80, PaneUpdate{})
-	model.Mouse(hover(testOriginX+8, testOriginY), ctx)
+	model.TrackPointer(testOriginX+8, testOriginY)
 	model.Enter(EnterContext{SessionID: "s1"})
 	if model.OverLink() {
 		t.Fatal("entering focus kept a pointer position from before")
@@ -411,10 +410,6 @@ func leftPress(x, y int) tea.MouseMsg {
 
 func leftRelease(x, y int) tea.MouseMsg {
 	return tea.MouseMsg{Action: tea.MouseActionRelease, Button: tea.MouseButtonLeft, X: x, Y: y}
-}
-
-func hover(x, y int) tea.MouseMsg {
-	return tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonNone, X: x, Y: y}
 }
 
 func clickURL(model *Model, x, y int) string {

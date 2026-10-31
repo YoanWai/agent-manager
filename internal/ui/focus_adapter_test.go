@@ -121,7 +121,7 @@ func TestFocusHoverShowsTheHandOverALink(t *testing.T) {
 	m, _ := focusedShotPane(t, 80, 0, 0, "read https://example.com/docs now")
 	hover := func(x int) string {
 		sink.Reset()
-		m.handleFocusMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonNone, X: x, Y: 0})
+		m.handleMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonNone, X: x, Y: 0})
 		m.syncPointerShape()
 		return sink.String()
 	}
@@ -141,6 +141,13 @@ func TestFocusHoverShowsTheHandOverALink(t *testing.T) {
 	m.syncPointerShape()
 	if got := sink.String(); got != reset {
 		t.Fatalf("a list over the pane wrote %q, want %q", got, reset)
+	}
+	hover(1)
+	sink.Reset()
+	m.Pop()
+	m.syncPointerShape()
+	if got := sink.String(); got != "" {
+		t.Fatalf("closing the list over plain text wrote %q", got)
 	}
 
 	m, _ = focusedShotPane(t, 80, 0, 0, "read https://example.com/docs now")

@@ -40,6 +40,9 @@ func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
 		m.gens.foreground++
 	}
+	if m.focused() {
+		m.focus.pane.TrackPointer(msg.X, msg.Y)
+	}
 	return m.routeMouse(msg)
 }
 

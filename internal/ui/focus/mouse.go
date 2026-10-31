@@ -86,7 +86,6 @@ type MouseResult struct {
 }
 
 func (m *Model) Mouse(msg tea.MouseMsg, ctx MouseContext) MouseResult {
-	m.pointer = pointerAt{known: true, x: msg.X, y: msg.Y}
 	if tea.MouseEvent(msg).IsWheel() {
 		if !ctx.RuntimeReady {
 			return MouseResult{}
@@ -182,6 +181,10 @@ func (m *Model) Mouse(msg tea.MouseMsg, ctx MouseContext) MouseResult {
 	}
 	return MouseResult{}
 }
+
+// TrackPointer records where the mouse rests, including under a card that
+// covers the pane, so the hand comes back only where the mouse really is.
+func (m *Model) TrackPointer(x, y int) { m.pointer = pointerAt{known: true, x: x, y: y} }
 
 // OverLink reports whether the mouse rests on a link a click would open.
 func (m Model) OverLink() bool {
