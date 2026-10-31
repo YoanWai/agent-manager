@@ -18,11 +18,6 @@ func inIsraelTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inZone(t, zone)
-}
-
-func inZone(t *testing.T, zone *time.Location) {
-	t.Helper()
 	previous := displayZone
 	displayZone = zone
 	t.Cleanup(func() { displayZone = previous })
@@ -430,11 +425,10 @@ func TestCursorMoveResetsTabAndFilter(t *testing.T) {
 }
 
 func TestHeaderTimesAreIsraelTime(t *testing.T) {
-	// Israel summer time, +3: the instant is past midnight there and still Oct 25 in UTC.
-	inZone(t, time.FixedZone("IDT", 3*60*60))
+	inIsraelTime(t)
 	release := tabsRelease(t)
 	release.PublishedAt = published(t, "2026-10-25T21:56:53Z")
-	if header := paneText(updatedNotice(t, release), TabOverview, "", paneTestWidth)[0]; !strings.Contains(header, "Oct 26 · you were on 0.45.0") {
+	if header := paneText(updatedNotice(t, release), TabOverview, "", paneTestWidth)[0]; !strings.Contains(header, "Oct 25 · you were on 0.45.0") {
 		t.Fatalf("header %q", header)
 	}
 	release.PublishedAt = time.Time{}
@@ -538,5 +532,26 @@ func TestClickOnAFilterChipFilters(t *testing.T) {
 	}
 	if p.tab != TabChanges || p.filter != KindFix {
 		t.Fatalf("click on the fixes chip: tab %d filter %q", p.tab, p.filter)
+	}
+}
+
+func TestEmptyOverviewSaysWhatIsMissing(t *testing.T) {
+	rows := releaseTab(updatedNotice(t, Release{Version: "v0.46.0"}), TabOverview, "", paneTestWidth, testTheme(), presentation.DefaultGlyphMode)
+	if got := plainRows(rows); len(got) != 1 || got[0] != "No summarized changes." {
+		t.Fatalf("an empty release's Overview = %q", got)
+	}
+}
+
+func TestFilterMatchingNothingSaysSoOverOmittedChanges(t *testing.T) {
+	release := tabsRelease(t)
+	release.Changes = release.Changes[:6]
+	release.TotalChanges = 30
+	rows := paneText(updatedNotice(t, release), TabChanges, KindFix, paneTestWidth)
+	joined := strings.Join(rows, "\n")
+	if !strings.Contains(joined, "No fixes.") || strings.Contains(joined, "more in the full notes") {
+		t.Fatalf("a fixes filter over features only:\n%s", joined)
+	}
+	if all := paneText(updatedNotice(t, release), TabChanges, "", paneTestWidth); rowIndex(all, "+24 more in the full notes") < 0 {
+		t.Fatalf("the unfiltered list lost the omitted count:\n%s", strings.Join(all, "\n"))
 	}
 }

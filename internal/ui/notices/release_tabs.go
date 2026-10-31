@@ -70,7 +70,13 @@ func overviewTab(n Notice, width int, t Theme, mode presentation.GlyphMode) []st
 		}
 	}
 	rows = appendPartial(rows, n, width, t, mode)
-	return spaced(rows, countChips(n, width, t, mode)...)
+	if chips := countChips(n, width, t, mode); len(chips) > 0 {
+		rows = spaced(rows, chips...)
+	}
+	if len(rows) == 0 {
+		return []string{t.Muted.Render("No summarized changes.")}
+	}
+	return rows
 }
 
 // highlightRows sets each label in one column so the details line up; an
@@ -146,7 +152,7 @@ func changesTab(n Notice, filter string, width int, t Theme, mode presentation.G
 				section = append(section, changeRow(change, scopeColumn, width, t, mode)...)
 			}
 		}
-		if omitted := release.TotalChanges - len(release.Changes); omitted > 0 {
+		if omitted := release.TotalChanges - len(release.Changes); omitted > 0 && filter == "" {
 			section = append(section, t.Muted.Render(fmt.Sprintf("+%d more in the full notes", omitted)))
 		}
 		switch {
