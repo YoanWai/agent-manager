@@ -578,7 +578,7 @@ func TestPagingHintFitsFullFocusFooter(t *testing.T) {
 		t.Fatalf("default config: %v", err)
 	}
 	m, sessID := focusedWithHistory(t, "paging-footer")
-	m.services.cfg.Tools["gemini"] = shipped.Tools["gemini"]
+	m.services.cfg.CLIs["gemini"] = shipped.CLIs["gemini"]
 	for i := range m.workspace.sessions {
 		if m.workspace.sessions[i].ID == sessID {
 			m.workspace.sessions[i].Tool = "gemini"

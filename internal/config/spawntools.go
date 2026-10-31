@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"maps"
 	"runtime"
 	"slices"
 	"sort"
@@ -12,13 +13,12 @@ import (
 // alphabetically.
 var toolDisplayOrder = []string{"claude", "opencode", "codex", "grok", "gemini", "pi"}
 
-// AgentToolNames is every configured agent CLI in picker order. The shell
-// tool is not a CLI to spawn agents with, so it is left out, as is a CLI
-// this OS cannot run.
-func (c Config) AgentToolNames() []string {
-	names := make([]string, 0, len(c.Tools))
-	for _, name := range c.ToolNames() {
-		if !c.Tools[name].Shell && checkSupported(runtime.GOOS, name) == nil {
+// CLINames is every configured agent CLI in picker order, leaving out a
+// CLI this OS cannot run.
+func (c Config) CLINames() []string {
+	names := make([]string, 0, len(c.CLIs))
+	for _, name := range slices.Sorted(maps.Keys(c.CLIs)) {
+		if checkSupported(runtime.GOOS, name) == nil {
 			names = append(names, name)
 		}
 	}
@@ -52,10 +52,10 @@ func checkSupported(goos, name string) error {
 	return nil
 }
 
-// EnabledAgentTools is the create-session picker: configured tools minus any
-// the user hid in settings. Existing sessions keep their tool even when hidden.
-func (c Config) EnabledAgentTools(hidden map[string]bool) []string {
-	all := c.AgentToolNames()
+// EnabledCLIs is the create-session picker: configured CLIs minus any the
+// user hid in settings. Existing sessions keep their CLI even when hidden.
+func (c Config) EnabledCLIs(hidden map[string]bool) []string {
+	all := c.CLINames()
 	if len(hidden) == 0 {
 		return all
 	}
@@ -68,10 +68,10 @@ func (c Config) EnabledAgentTools(hidden map[string]bool) []string {
 	return out
 }
 
-// DefaultAgentTool is the CLI a new session runs when none is named: the
+// DefaultCLI is the CLI a new session runs when none is named: the
 // settings choice while it is still enabled, else the first enabled one.
-func (c Config) DefaultAgentTool(chosen string, hidden map[string]bool) string {
-	enabled := c.EnabledAgentTools(hidden)
+func (c Config) DefaultCLI(chosen string, hidden map[string]bool) string {
+	enabled := c.EnabledCLIs(hidden)
 	if len(enabled) == 0 {
 		return ""
 	}

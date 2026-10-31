@@ -512,9 +512,9 @@ func TestAltScreenPaneShrinksWithTheBox(t *testing.T) {
 func TestFitsHeightToolShrinksWithTheBox(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	tool := m.services.cfg.Tools["quietchat"]
+	tool := m.services.cfg.CLIs["quietchat"]
 	tool.FitsHeight = true
-	m.services.cfg.Tools["quietchat"] = tool
+	m.services.cfg.CLIs["quietchat"] = tool
 	createSessionOn(t, m, "inline", "quietchat", t.TempDir())
 	m.applyCmd(t, m.refreshCmd())
 	m.selectSessionRow(t, "inline")

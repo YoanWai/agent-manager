@@ -19,14 +19,14 @@ from pathlib import Path
 
 from smoke import Sandbox, profile_dir
 
-BUILTIN_TOOLS = ('antigravity', 'claude', 'command-code', 'codex', 'gemini',
-                 'grok', 'hermes', 'muse', 'opencode', 'pi', 'terminal')
+BUILTIN_CLIS = ('antigravity', 'claude', 'command-code', 'codex', 'gemini',
+                'grok', 'hermes', 'muse', 'opencode', 'pi')
 FAKE_CLI = 'command-code'
 FAKE_BIN = 'cmd'
 # [tools.*] blocks in config.toml only ignore builtins, so the fixture swap
 # must live on PATH, not in the file; hidden_tools keeps the pickers to the
 # two fixture tools.
-HIDDEN_TOOLS = [name for name in BUILTIN_TOOLS if name != FAKE_CLI]
+HIDDEN_TOOLS = [name for name in BUILTIN_CLIS if name != FAKE_CLI]
 READY_MARKER = 'fixture-cli ready'
 SESSION_NAME = 'fixagent'
 

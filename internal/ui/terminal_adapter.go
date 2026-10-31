@@ -24,14 +24,14 @@ import (
 const terminalKeyWindow = 250 * time.Millisecond
 
 func (m *Model) shellTool() (string, config.Tool) {
-	return m.services.cfg.ShellTool()
+	return m.services.cfg.Terminal()
 }
 
-// isShell reports whether a session's tool opens a shell rather than an
-// agent. A tool the binary no longer ships answers false: a name we cannot
+// isShell reports whether a session's row runs a tool pane rather than an
+// agent. A name the binary no longer ships answers false: a name we cannot
 // resolve is not something we can claim runs a shell.
 func (m *Model) isShell(toolName string) bool {
-	return m.services.cfg.Tools[toolName].Shell
+	return m.services.cfg.IsTool(toolName)
 }
 
 // terminalKey spawns a shell unless T arrived inside the burst a held key

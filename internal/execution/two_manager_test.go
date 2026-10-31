@@ -37,7 +37,7 @@ type twoManagers struct {
 func pair(t *testing.T, sameSocket bool) *twoManagers {
 	t.Helper()
 	cfg := config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"ready-tool": {
 				Command:        `sh -c 'printf "❯ "; while IFS= read -r line; do printf "\n❯ "; done'`,
 				DefaultStatus:  status.Idle,
@@ -109,7 +109,7 @@ func (p *twoManagers) ageHeartbeat(t *testing.T, to time.Time) {
 func (p *twoManagers) spawnReady(t *testing.T) store.Session {
 	t.Helper()
 	id := uuid.NewString()[:8]
-	tool := p.cfg.Tools["ready-tool"]
+	tool := p.cfg.CLIs["ready-tool"]
 	plan := launch.Assemble("ready-tool", tool, "", false, false)
 	cwd := t.TempDir()
 	command, env, err := launch.Environment(p.hooks, "ready-tool", tool, plan.Command, id, cwd, time.Time{}, nil)

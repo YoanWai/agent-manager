@@ -58,7 +58,7 @@ func (s *Sessions) Snapshot(sessionID string) (Snapshot, error) {
 	}
 	for _, sess := range stored {
 		_, running := panes[sess.ID]
-		if runtime.cfg.Tools[sess.Tool].Shell {
+		if runtime.cfg.IsTool(sess.Tool) {
 			snapshot.Terminals = append(snapshot.Terminals, runtime.terminalInfo(sess, running, names[sess.ParentID]))
 			continue
 		}

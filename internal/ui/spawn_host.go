@@ -31,7 +31,7 @@ type spawnHost struct{ m *Model }
 func (m *Model) spawnHost() spawnHost { return spawnHost{m: m} }
 
 func (h spawnHost) ChoiceCaps(toolName string) spawn.Caps {
-	tool := h.m.services.cfg.Tools[toolName]
+	tool := h.m.services.cfg.CLIs[toolName]
 	return spawn.Caps{
 		Catalog:  tool.Catalog != "",
 		Profiles: tool.ProfileArgs != "",
@@ -223,7 +223,7 @@ func (m *Model) cachedSpawnWorktreeDefault(group string) bool {
 }
 
 func (m *Model) cachedEnabledToolNames() []string {
-	return m.services.cfg.EnabledAgentTools(m.cachedHiddenTools())
+	return m.services.cfg.EnabledCLIs(m.cachedHiddenTools())
 }
 
 // groupBase is the ref a spawn into group branches from: the nearest ancestor
@@ -429,7 +429,7 @@ func (m *Model) saveChoiceSetting(key, value string) {
 }
 
 func (m *Model) choiceSettingKeys() []string {
-	return choiceSettingKeys(slices.Sorted(maps.Keys(m.services.cfg.Tools)))
+	return choiceSettingKeys(slices.Sorted(maps.Keys(m.services.cfg.CLIs)))
 }
 
 // directoryPreflight is the read-only filesystem and repository seam a spawn

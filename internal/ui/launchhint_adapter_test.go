@@ -260,7 +260,7 @@ func TestReportLaunchErrorOpensHintForUnknownMissingCLI(t *testing.T) {
 func TestSpawnMissingCLIPromptsInstall(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	m.services.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["claude"] = config.CLI{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
 
 	m.openForm()
 	m.form().SetName("agent")
@@ -298,7 +298,7 @@ func TestReviveMissingCLIPromptsInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	m.workspace.sessions = []store.Session{sess}
-	m.services.cfg.Tools["claude"] = config.Tool{
+	m.services.cfg.CLIs["claude"] = config.CLI{
 		Command:       "cat",
 		ReviveCommand: "am-missing-cli-xyz",
 		DefaultStatus: status.Idle,
@@ -357,7 +357,7 @@ func TestRestartHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["hermes"] = config.CLI{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	sess := store.Session{ID: newID(), Name: "agent", Tool: "hermes", Cwd: t.TempDir()}
 	if err := m.services.store.CreateSession(sess); err != nil {
@@ -381,7 +381,7 @@ func TestQuickSpawnHermesWithoutMCPSupportClosesTheBar(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["hermes"] = config.CLI{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 	if err := m.services.store.CreateGroup("backend", t.TempDir()); err != nil {
 		t.Fatalf("create group: %v", err)
@@ -410,7 +410,7 @@ func TestFormSpawnRefusedByTheHintReleasesItsImages(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["hermes"] = config.CLI{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 
 	m.openForm()
@@ -510,7 +510,7 @@ func TestSpawnHermesWithoutMCPSupportPromptsInstall(t *testing.T) {
 		t.Skip("fake Hermes executable is a shell script")
 	}
 	m := buildModel(t)
-	m.services.cfg.Tools["hermes"] = config.Tool{Command: "cat", DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["hermes"] = config.CLI{Command: "cat", DefaultStatus: status.Idle}
 	installSDKlessHermes(t)
 
 	m.openForm()
@@ -684,7 +684,7 @@ func installFixture(t *testing.T, m *Model, command string) (retryName, image st
 	}
 	retryName = "retried-agent"
 	image = tempImage(t, "mock.png")
-	m.services.cfg.Tools[installRetryTool] = config.Tool{Command: "am-fake-cli", DefaultStatus: status.Idle}
+	m.services.cfg.CLIs[installRetryTool] = config.CLI{Command: "am-fake-cli", DefaultStatus: status.Idle}
 	w, h := m.paneTargetSize()
 	retry := uilaunch.Request{
 		ID:       newID(),
@@ -934,9 +934,9 @@ func quits(msg tea.Msg) bool {
 func TestLaunchHintRetryThatStopsAgainKeepsTheImages(t *testing.T) {
 	m := buildModel(t)
 	_, image := installFixture(t, m, fakeInstallCommand(t))
-	tool := m.services.cfg.Tools[installRetryTool]
+	tool := m.services.cfg.CLIs[installRetryTool]
 	tool.Command = "am-next-missing-cli"
-	m.services.cfg.Tools[installRetryTool] = tool
+	m.services.cfg.CLIs[installRetryTool] = tool
 
 	m.applyCmd(t, pressInLaunchHint(t, m, 'i'))
 	waitForInstallToSettle(t, m)
@@ -1022,7 +1022,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 	if err := m.services.store.SetArchived(sess.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	m.services.cfg.Tools["claude"] = config.Tool{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["claude"] = config.CLI{Command: "am-missing-cli-xyz", DefaultStatus: status.Idle}
 	m.openConfirm(confirmTarget{prompt: uidialogs.Confirm{Action: uidialogs.ConfirmRestore}, lifecycle: uilifecycle.Target{Action: uilifecycle.Action(uidialogs.ConfirmRestore), Sessions: []store.Session{sess}}})
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
@@ -1034,7 +1034,7 @@ func TestInstallFinishesARefusedRestore(t *testing.T) {
 
 	// What the install unblocks has to be the whole restore, not the
 	// revive alone, so the retry is run here with a working CLI.
-	m.services.cfg.Tools["claude"] = config.Tool{Command: testfixture.Cat(), DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["claude"] = config.CLI{Command: testfixture.Cat(), DefaultStatus: status.Idle}
 	if hintFix(m).Retry == nil {
 		t.Fatal("missing captured restore retry")
 	}

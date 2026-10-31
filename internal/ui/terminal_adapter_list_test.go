@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/YoanWai/agent-manager/internal/clipboard"
-	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/testenv"
@@ -44,7 +43,7 @@ func pressTerminalKey(t *testing.T, m *Model) {
 	}
 }
 
-// shellToolName is the block buildModel ships with shell = true.
+// shellToolName is the tool buildModel ships as the terminal.
 const shellToolName = "terminal"
 
 // resolved is a path as the multiplexer reports it back. tmux follows
@@ -441,7 +440,7 @@ func TestTerminalSessionRevives(t *testing.T) {
 	}
 }
 
-// The shell block is not a CLI to spawn agents with: it stays out of every
+// The terminal tool is not a CLI to spawn agents with: it stays out of every
 // picker, but a shell session keeps it on rename so saving cannot silently
 // turn the shell into an agent.
 func TestShellToolStaysOutOfPickers(t *testing.T) {
@@ -457,19 +456,6 @@ func TestShellToolStaysOutOfPickers(t *testing.T) {
 	m.openRename()
 	if got := openRename(m).Tool(); got != shellToolName {
 		t.Fatalf("rename tool = %q, want %q", got, shellToolName)
-	}
-}
-
-func TestShellToolIsFoundByItsFlag(t *testing.T) {
-	t.Parallel()
-	m := buildModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{
-		"claude": {Command: "cat"},
-		"zsh":    {Shell: true},
-	}}
-	name, tool := m.shellTool()
-	if name != "zsh" || tool.Command != "" {
-		t.Fatalf("shellTool() = %q %+v, want the zsh block", name, tool)
 	}
 }
 

@@ -60,7 +60,7 @@ func newResizeSurface(m *Model) *uigeometry.Surface {
 // costs a tool, the effect lane a pin rides, and the ratio save it starts.
 type paneSizing struct{ *Model }
 
-func (r paneSizing) FitsHeight(tool string) bool { return r.services.cfg.Tools[tool].FitsHeight }
+func (r paneSizing) FitsHeight(tool string) bool { return r.services.cfg.CLIs[tool].FitsHeight }
 
 func (r paneSizing) Queue(request uigeometrypanes.Resize) { r.queueGeometry(request) }
 

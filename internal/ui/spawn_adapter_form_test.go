@@ -371,7 +371,7 @@ func TestGroupDefaultPathFillsSessionDir(t *testing.T) {
 func TestFormPromptComposesWithSettings(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	tool := m.services.cfg.Tools["claude-hooked"]
+	tool := m.services.cfg.CLIs["claude-hooked"]
 	tool.Command = "cat"
 
 	command, _, err := launch.Environment(m.services.hooks, "claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01", t.TempDir(), time.Time{}, nil)
@@ -871,7 +871,7 @@ func sessionHasPendingInput(t *testing.T, m *Model, id, want string) bool {
 func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	plain := m.services.cfg.Tools["claude"]
+	plain := m.services.cfg.CLIs["claude"]
 	_, env, err := launch.Environment(m.services.hooks, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("launch.Environment: %v", err)
@@ -880,7 +880,7 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 		t.Fatalf("plain tool env = %v, want session id", env)
 	}
 
-	hooked := m.services.cfg.Tools["claude-hooked"]
+	hooked := m.services.cfg.CLIs["claude-hooked"]
 	_, env, err = launch.Environment(m.services.hooks, "hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("launch.Environment hooked: %v", err)

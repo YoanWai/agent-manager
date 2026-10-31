@@ -7,13 +7,13 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 )
 
-// Shells and blocks without a command hold no binary: a terminal row is a
-// shell whatever gets typed into it.
+// Only CLIs hold a binary, and a CLI whose command names none holds none: a
+// terminal row is a shell whatever gets typed into it.
 type ToolBinaries map[string]string
 
 func NewToolBinaries(cfg config.Config) ToolBinaries {
-	binaries := make(ToolBinaries, len(cfg.Tools))
-	for name, tool := range cfg.Tools {
+	binaries := make(ToolBinaries, len(cfg.CLIs))
+	for name, tool := range cfg.CLIs {
 		binaries[name] = toolBinary(tool)
 	}
 	return binaries
@@ -31,10 +31,7 @@ var interpreters = map[string]bool{
 	"uv": true, "uvx": true,
 }
 
-func toolBinary(tool config.Tool) string {
-	if tool.Shell {
-		return ""
-	}
+func toolBinary(tool config.CLI) string {
 	fields := strings.Fields(tool.Command)
 	if len(fields) == 0 {
 		return ""

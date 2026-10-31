@@ -74,7 +74,7 @@ func TestCommandCodeRowShapes(t *testing.T) {
 // behind MatchesActivityCutoff refuses it just the same, so neither door
 // can stamp arbitrary rows as composer rows.
 func TestDegenerateCutoffStampsNothing(t *testing.T) {
-	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"degenerate": {Command: "x", ActivityCutoff: "^"},
 	}})
 	if err != nil {
@@ -94,7 +94,7 @@ func TestDegenerateCutoffStampsNothing(t *testing.T) {
 // placeholder shows until the first prompt is typed, and a composer cleared
 // afterwards paints "❯" with nothing after it for the rest of the session.
 func TestComposerIsEmpty(t *testing.T) {
-	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"command-code": {
 			ActivityCutoff:      `(?m)^❯`,
 			ComposerPlaceholder: "Ask your question...",
@@ -119,7 +119,7 @@ func TestComposerIsEmpty(t *testing.T) {
 	}
 	// A tool that declares no placeholder never takes the parked-caret
 	// path, so a bare marker of its own is not empty for this purpose.
-	plain, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+	plain, err := NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"claude": {ActivityCutoff: `(?m)^❯`},
 	}})
 	if err != nil {
@@ -176,7 +176,7 @@ func TestAntigravityReplyReading(t *testing.T) {
 }
 
 func TestInputPrefix(t *testing.T) {
-	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"claude":     {ActivityCutoff: `(?m)^❯`},
 		"gemini":     {ActivityCutoff: `(?m)^\s*[>!*] `},
 		"unmarked":   {},
@@ -288,7 +288,7 @@ func TestTerminalInputPrefixReadsShellPrompts(t *testing.T) {
 // or blank-row wide on purpose: the guard that rejects a degenerate cutoff
 // does not apply to a prefix written deliberately.
 func TestInputPrefixOverride(t *testing.T) {
-	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"pi":       {InputPrefix: `^$`},
 		"opencode": {InputPrefix: `(?m)^\s*┃`},
 		"marker":   {ActivityCutoff: `(?m)^❯`, InputPrefix: `^\s*›`},

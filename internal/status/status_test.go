@@ -12,7 +12,7 @@ import (
 func testEngine(t *testing.T) *Engine {
 	t.Helper()
 	cfg := config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"claude": {
 				Command:       "claude",
 				DefaultStatus: "idle",
@@ -57,7 +57,7 @@ func TestMatch(t *testing.T) {
 }
 
 func TestMatchWaitingOnlyOverridesWorkingFirstMatch(t *testing.T) {
-	cfg := config.Config{Tools: map[string]config.Tool{
+	cfg := config.Config{CLIs: map[string]config.CLI{
 		"custom": {Rules: []config.Rule{
 			{State: "errored", Pattern: "error signal"},
 			{State: "working", Pattern: "working signal"},
@@ -73,7 +73,7 @@ func TestMatchWaitingOnlyOverridesWorkingFirstMatch(t *testing.T) {
 		t.Fatalf("Match() = %q want %q", got, Errored)
 	}
 
-	cfg.Tools["custom"] = config.Tool{Rules: []config.Rule{
+	cfg.CLIs["custom"] = config.CLI{Rules: []config.Rule{
 		{State: "working", Pattern: "working signal"},
 		{State: "errored", Pattern: "error signal"},
 		{State: "waiting", Pattern: "waiting signal"},
@@ -92,7 +92,7 @@ func TestMatchLegacyClaudeRuleOrderStillResolvesWaiting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	claude := cfg.Tools["claude"]
+	claude := cfg.CLIs["claude"]
 	claude.Rules = []config.Rule{
 		{State: Working, Pattern: `(?m)^[✻✳✶✽✢·✦✧+*] \S+… \(`},
 		{State: Working, Pattern: "esc to interrupt"},
@@ -100,7 +100,7 @@ func TestMatchLegacyClaudeRuleOrderStillResolvesWaiting(t *testing.T) {
 		{State: Waiting, Pattern: `(?m)^[ \x{A0}]*❯[ \x{A0}]+\d+\.`},
 		{State: Errored, Pattern: `(?im)^\s*error:`},
 	}
-	cfg.Tools["claude"] = claude
+	cfg.CLIs["claude"] = claude
 	engine, err := NewEngine(cfg)
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
@@ -668,7 +668,7 @@ func TestCommandCodePanes(t *testing.T) {
 
 func TestNewEngineBadPattern(t *testing.T) {
 	cfg := config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"bad": {Rules: []config.Rule{{State: "working", Pattern: "("}}},
 		},
 	}
@@ -677,7 +677,7 @@ func TestNewEngineBadPattern(t *testing.T) {
 	}
 
 	cfg = config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"bad": {LimitLine: "("},
 		},
 	}
@@ -688,7 +688,7 @@ func TestNewEngineBadPattern(t *testing.T) {
 
 func TestNewEngineRejectsDialogQuestionWithoutAGroup(t *testing.T) {
 	cfg := config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"bad": {DialogQuestion: `Do you want to .*\?`},
 		},
 	}

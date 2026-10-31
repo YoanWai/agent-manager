@@ -96,11 +96,8 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 		source.WorktreeBranch != request.Source.WorktreeBranch {
 		return result, fmt.Errorf("%s changed while the fork was in the queue; reopen the fork dialog", source.Name)
 	}
-	tool, ok := s.Config.Tools[request.Source.Tool]
-	if !ok {
-		return result, fmt.Errorf("tool %s is no longer configured", request.Source.Tool)
-	}
-	if err := ValidateForkSource(request.Source.Tool, tool, request.Source); err != nil {
+	tool, err := ForkSource(s.Config, request.Source)
+	if err != nil {
 		return result, err
 	}
 	if !preflight.ResolveDir(request.Source.Cwd) {
@@ -198,14 +195,22 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 	return result, launched.LabelError
 }
 
-// ValidateForkSource refuses a source its tool cannot fork, naming the piece
-// the configuration is missing.
-func ValidateForkSource(toolName string, tool config.Tool, source store.Session) error {
-	// A shell has no fork_command either, but saying so names a config
-	// field for a row that was never going to have a conversation.
-	if tool.Shell {
-		return fmt.Errorf("%s is a shell, not an agent - there is no conversation to fork", source.Name)
+// ForkSource is the CLI a source forks with. A tool pane has no
+// conversation to fork, so it is refused before any CLI field is named.
+func ForkSource(cfg config.Config, source store.Session) (config.CLI, error) {
+	if cfg.IsTool(source.Tool) {
+		return config.CLI{}, fmt.Errorf("%s is a shell, not an agent - there is no conversation to fork", source.Name)
 	}
+	tool, ok := cfg.CLIs[source.Tool]
+	if !ok {
+		return config.CLI{}, fmt.Errorf("tool %s is no longer configured", source.Tool)
+	}
+	return tool, ValidateForkSource(source.Tool, tool, source)
+}
+
+// ValidateForkSource refuses a source its CLI cannot fork, naming the piece
+// the configuration is missing.
+func ValidateForkSource(toolName string, tool config.CLI, source store.Session) error {
 	if tool.ForkCommand == "" {
 		return fmt.Errorf("tool %s has no fork_command", toolName)
 	}

@@ -1215,7 +1215,7 @@ func TestArchivedRowReadsDead(t *testing.T) {
 
 func TestShellRowSkipsThePromptLine(t *testing.T) {
 	m := shotModel()
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {}}, Tools: map[string]config.Tool{"terminal": {}}}
 	m.prefs.comfortableRows = true
 	shell := sessionRow(t, m, "add-rate-limiting")
 	shell.sess.Tool = "terminal"

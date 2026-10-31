@@ -16,14 +16,10 @@ func TestRestartLaunchIsAFreshStartForEveryShippedTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Tools) < 6 {
-		t.Fatalf("built-in tools = %d, expected every shipped CLI", len(cfg.Tools))
+	if len(cfg.CLIs) < 6 {
+		t.Fatalf("built-in tools = %d, expected every shipped CLI", len(cfg.CLIs))
 	}
-	for name, tool := range cfg.Tools {
-		// A shell has no conversation for a restart to start fresh.
-		if tool.Shell {
-			continue
-		}
+	for name, tool := range cfg.CLIs {
 		command, agentSessionID := RestartLaunch(tool)
 		if !strings.HasPrefix(command, tool.Command) {
 			t.Errorf("%s: restart command %q does not start from its launch command %q", name, command, tool.Command)

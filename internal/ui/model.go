@@ -206,7 +206,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 		},
 		rail:      uirailpersist.Load(st),
 		ssh:       uilink.New(remote.New(deps.ProfileDir), connections),
-		settings:  uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.Tools)))),
+		settings:  uipersist.New(uipersist.StoreWriter{Store: st}, choiceSettingKeys(slices.Sorted(maps.Keys(cfg.CLIs)))),
 		focus:     focusState{runtime: focusruntime.State{}, imeCursor: &uiframe.CursorAnchor{}},
 		workspace: workspace{capture: uicapture.New(st, driver)},
 		startup: startupState{

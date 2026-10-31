@@ -94,7 +94,7 @@ func TestArchiveExtensionUsesCanonicalBackendAndNextObservation(t *testing.T) {
 		}
 	}
 	backend, err := sessioncmd.BorrowBackend(sessioncmd.Runtime{
-		Config: config.Config{Tools: map[string]config.Tool{"fake": {}}}, Store: st, Driver: driver,
+		Config: config.Config{CLIs: map[string]config.CLI{"fake": {}}}, Store: st, Driver: driver,
 		Hooks: hooks.NewManager(dir), Snapshot: st.SetSnapshot,
 	})
 	if err != nil {

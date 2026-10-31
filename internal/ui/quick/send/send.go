@@ -75,7 +75,7 @@ func RunSend(services Services, request SendRequest) (SendResult, error) {
 	if !SameTarget(current, request.Session) {
 		return result, errors.New("quick-send target changed its identity, tool, launch, or socket before the accepted prompt ran")
 	}
-	if services.Config.Tools[current.Tool].Shell {
+	if services.Config.IsTool(current.Tool) {
 		return result, errors.New(uisession.ShellPromptHint(current.Name))
 	}
 	exists, err := services.SessionExists(services.Driver, current.ID)

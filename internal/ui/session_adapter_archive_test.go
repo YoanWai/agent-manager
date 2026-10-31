@@ -328,7 +328,7 @@ func TestRestoreArchivedGroupRecoversLegacyHiddenRowsWithoutRevivingDead(t *test
 			t.Fatal(err)
 		}
 	}
-	if err := m.services.tmux.Create(live.ID, dir, m.services.cfg.Tools[live.Tool].Command, nil, 80, 24); err != nil {
+	if err := m.services.tmux.Create(live.ID, dir, m.services.cfg.CLIs[live.Tool].Command, nil, 80, 24); err != nil {
 		t.Fatal(err)
 	}
 	m.applyCmd(t, m.refreshCmd())
@@ -371,7 +371,7 @@ func TestNestedGroupRestoreIsVisibleAcrossPolls(t *testing.T) {
 	if err := m.services.store.SetGroupArchived("a", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.services.tmux.Create(live.ID, live.Cwd, m.services.cfg.Tools[live.Tool].Command, nil, 80, 24); err != nil {
+	if err := m.services.tmux.Create(live.ID, live.Cwd, m.services.cfg.CLIs[live.Tool].Command, nil, 80, 24); err != nil {
 		t.Fatal(err)
 	}
 	beforePID, err := m.services.tmux.PanePID(live.ID)
@@ -544,8 +544,8 @@ func TestGroupRestoreRetryKeepsScopeAndRollsBackFailedLaunches(t *testing.T) {
 			m := buildModel(t)
 			seedGroups(t, m, "zone", "zone/nested")
 			missingTool := "codex"
-			m.services.cfg.Tools["claude"] = config.Tool{Command: testfixture.Cat(), DefaultStatus: status.Idle}
-			m.services.cfg.Tools[missingTool] = config.Tool{Command: "am-missing-cli-564", DefaultStatus: status.Idle}
+			m.services.cfg.CLIs["claude"] = config.CLI{Command: testfixture.Cat(), DefaultStatus: status.Idle}
+			m.services.cfg.CLIs[missingTool] = config.CLI{Command: "am-missing-cli-564", DefaultStatus: status.Idle}
 			first := store.Session{ID: newID(), Name: "first", Group: "zone", Tool: "claude", Cwd: t.TempDir(), Status: status.Dead, Archived: true}
 			second := store.Session{ID: newID(), Name: "second", Group: "zone/nested", Tool: missingTool, Cwd: t.TempDir(), Status: status.Dead, Archived: true}
 			if failFirst {
@@ -585,7 +585,7 @@ func TestGroupRestoreRetryKeepsScopeAndRollsBackFailedLaunches(t *testing.T) {
 				retry := fix.Retry
 				m.Pop()
 				if attempt == 1 {
-					m.services.cfg.Tools[missingTool] = config.Tool{Command: testfixture.Cat(), DefaultStatus: status.Idle}
+					m.services.cfg.CLIs[missingTool] = config.CLI{Command: testfixture.Cat(), DefaultStatus: status.Idle}
 				}
 				m.enqueueEffect(retry, 0, false)
 				m.drainEffects(t)
@@ -626,7 +626,7 @@ func TestNestedRestoreAncestorFailureRollsBackAndRetries(t *testing.T) {
 	if err := m.services.store.SetGroupArchived("a", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := m.services.tmux.Create(live.ID, live.Cwd, m.services.cfg.Tools[live.Tool].Command, nil, 80, 24); err != nil {
+	if err := m.services.tmux.Create(live.ID, live.Cwd, m.services.cfg.CLIs[live.Tool].Command, nil, 80, 24); err != nil {
 		t.Fatal(err)
 	}
 	pid, err := m.services.tmux.PanePID(live.ID)
@@ -690,7 +690,7 @@ func TestNestedRestoreInstallCompletesCapturedGroup(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			m.services.cfg.Tools[installRetryTool] = config.Tool{Command: "am-fake-cli", DefaultStatus: status.Idle}
+			m.services.cfg.CLIs[installRetryTool] = config.CLI{Command: "am-fake-cli", DefaultStatus: status.Idle}
 			m.rail.SetArchived(true)
 			m.applyCmd(t, m.refreshCmd())
 			m.selectGroupRow(t, "a/b")

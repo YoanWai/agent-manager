@@ -263,7 +263,7 @@ func TestTurnEndedState(t *testing.T) {
 // the text.
 func TestTypingHold(t *testing.T) {
 	cfg := config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"claude": {
 				Command:        "claude",
 				DefaultStatus:  "idle",

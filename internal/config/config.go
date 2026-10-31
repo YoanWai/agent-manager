@@ -3,9 +3,11 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -23,19 +25,15 @@ type Rule struct {
 	Pattern string `toml:"pattern"`
 }
 
-type Tool struct {
+// CLI is an agent CLI the manager runs in a session.
+type CLI struct {
 	Command string `toml:"command"`
 	// MinimumVersion is the oldest release of the CLI the launch, revive,
 	// fork and catalog commands still work with. Empty skips the check.
 	MinimumVersion string `toml:"minimum_version"`
-	// Shell marks the tool that opens a plain shell rather than an agent
-	// CLI: it is what T spawns, it stays out of the CLI pickers, and the
-	// keys that write into a pane refuse it, since a sentence typed at a
-	// shell is a command. Carried by the flag, never by the name.
-	Shell         bool   `toml:"shell"`
-	ReviveCommand string `toml:"revive_command"`
-	PromptFlag    string `toml:"prompt_flag"`
-	PromptMode    string `toml:"prompt_mode"`
+	ReviveCommand  string `toml:"revive_command"`
+	PromptFlag     string `toml:"prompt_flag"`
+	PromptMode     string `toml:"prompt_mode"`
 	// SessionIDFlag makes a new session launch with an id we choose (e.g.
 	// claude/grok/pi "--session-id <uuid>"), so revive can later resume that
 	// exact conversation deterministically.
@@ -184,7 +182,26 @@ type Choice struct {
 	Profile  string
 }
 
+// Tool is a pane the manager provides itself rather than an agent. It
+// stays out of the CLI pickers, and the keys that write into an agent's
+// pane refuse it.
+type Tool struct {
+	Command       string `toml:"command"`
+	DefaultStatus string `toml:"default_status"`
+	InputPrefix   string `toml:"input_prefix"`
+}
+
+// TerminalTool is the tool the terminal key opens.
+const TerminalTool = "terminal"
+
+// Launch is the definition the shared launch path starts the tool's pane
+// from: its command, with none of an agent's resume, fork or model lines.
+func (t Tool) Launch() CLI {
+	return CLI{Command: t.Command, DefaultStatus: t.DefaultStatus, InputPrefix: t.InputPrefix}
+}
+
 type Config struct {
+	CLIs  map[string]CLI
 	Tools map[string]Tool
 }
 
@@ -313,7 +330,7 @@ func dirInside(path, dir string) bool {
 // WithChoice puts the choice's flags on every line that launches the tool.
 // A line the tool leaves empty stays empty, so the fallbacks that read
 // emptiness still take the same path.
-func (t Tool) WithChoice(choice Choice) Tool {
+func (t CLI) WithChoice(choice Choice) CLI {
 	flags := choice.flags(t)
 	t.Env = choice.env(t)
 	t.Command = placeChoice(t.Command, flags)
@@ -337,7 +354,7 @@ func placeChoice(line, flags string) string {
 	return line + flags
 }
 
-func (c Choice) flags(t Tool) string {
+func (c Choice) flags(t CLI) string {
 	values := strings.NewReplacer(
 		"{provider}", tmux.ShellQuote(c.Provider),
 		"{model}", tmux.ShellQuote(c.Model),
@@ -357,7 +374,7 @@ func (c Choice) flags(t Tool) string {
 	return flags.String()
 }
 
-func (c Choice) env(t Tool) map[string]string {
+func (c Choice) env(t CLI) map[string]string {
 	name, value, found := strings.Cut(t.ModelEnv, "=")
 	if !found || c.Model == "" {
 		return nil
@@ -368,20 +385,44 @@ func (c Choice) env(t Tool) map[string]string {
 
 // Default returns the built-in configuration without touching the filesystem.
 func Default() (Config, error) {
-	var shipped struct {
-		Tools map[string]Tool `toml:"tools"`
+	return parse(builtinCLIs, builtinTools)
+}
+
+func parse(clis, tools string) (Config, error) {
+	var shippedCLIs struct {
+		CLIs map[string]CLI `toml:"clis"`
 	}
-	if _, err := toml.Decode(builtinTools, &shipped); err != nil {
+	if _, err := toml.Decode(clis, &shippedCLIs); err != nil {
 		return Config{}, err
 	}
-	cfg := Config{Tools: shipped.Tools}
+	var shippedTools struct {
+		Tools map[string]Tool `toml:"tools"`
+	}
+	if _, err := toml.Decode(tools, &shippedTools); err != nil {
+		return Config{}, err
+	}
+	for name := range shippedTools.Tools {
+		if _, both := shippedCLIs.CLIs[name]; both {
+			return Config{}, fmt.Errorf("%q is defined as both a CLI and a tool; a session row names one or the other", name)
+		}
+	}
+	cfg := Config{CLIs: shippedCLIs.CLIs, Tools: shippedTools.Tools}
 	cfg.applyDefaults()
 	return cfg, nil
 }
 
 func (c *Config) applyDefaults() {
+	if c.CLIs == nil {
+		c.CLIs = map[string]CLI{}
+	}
 	if c.Tools == nil {
 		c.Tools = map[string]Tool{}
+	}
+	for name, cli := range c.CLIs {
+		if cli.DefaultStatus == "" {
+			cli.DefaultStatus = "idle"
+			c.CLIs[name] = cli
+		}
 	}
 	for name, tool := range c.Tools {
 		if tool.DefaultStatus == "" {
@@ -391,25 +432,31 @@ func (c *Config) applyDefaults() {
 	}
 }
 
-// ToolNames lists the configured tools by name, so a sentence naming them
-// reads the same on every run.
-func (c Config) ToolNames() []string {
-	names := make([]string, 0, len(c.Tools))
-	for name := range c.Tools {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+// IsTool reports whether a session row runs one of the manager's own panes
+// rather than an agent. A name in neither registry is not a tool.
+func (c Config) IsTool(name string) bool {
+	_, isTool := c.Tools[name]
+	return isTool
 }
 
-// ShellTool returns the shell tool, by name so the pick is stable. The
-// binary ships exactly one, so a loaded config always has it.
-func (c Config) ShellTool() (string, Tool) {
-	chosen := ""
-	for name, tool := range c.Tools {
-		if tool.Shell && (chosen == "" || name < chosen) {
-			chosen = name
-		}
+// Pane is what a session row launches, revives and is read with: the CLI
+// it names, or the tool's pane.
+func (c Config) Pane(name string) (CLI, bool) {
+	if cli, isCLI := c.CLIs[name]; isCLI {
+		return cli, true
 	}
-	return chosen, c.Tools[chosen]
+	if tool, isTool := c.Tools[name]; isTool {
+		return tool.Launch(), true
+	}
+	return CLI{}, false
+}
+
+// ToolNames lists the tools by name, so a list naming them reads the same
+// on every run.
+func (c Config) ToolNames() []string {
+	return slices.Sorted(maps.Keys(c.Tools))
+}
+
+func (c Config) Terminal() (string, Tool) {
+	return TerminalTool, c.Tools[TerminalTool]
 }

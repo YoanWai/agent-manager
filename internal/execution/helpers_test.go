@@ -102,7 +102,7 @@ func buildModel(t *testing.T) *harness {
 		t.Skip(tmux.Binary + " not installed")
 	}
 	cfg := config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 			// Parks the terminal cursor below its footer and paints the
 			// composer's caret itself, so the arrow step reads the
@@ -125,13 +125,6 @@ func buildModel(t *testing.T) *harness {
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},
 				},
-			},
-			// The terminal tab, carrying no command and the shell flag, the
-			// way the generated config ships it.
-			"terminal": {
-				Shell:         true,
-				DefaultStatus: status.Idle,
-				InputPrefix:   `(?m)^\s*(?:(?:\S+\s+){0,3}[❯>$#›»→%➜]|PS [^\n>]*>)\s`,
 			},
 			// Shows every control character it is sent as ^X, with the tty
 			// flow and line-editing keys turned off so ctrl+q and ctrl+r
@@ -234,16 +227,23 @@ func buildModel(t *testing.T) *harness {
 				DefaultStatus: status.Idle,
 			},
 		},
+		// The terminal tab, carrying no command, the way the binary ships it.
+		Tools: map[string]config.Tool{
+			"terminal": {
+				DefaultStatus: status.Idle,
+				InputPrefix:   `(?m)^\s*(?:(?:\S+\s+){0,3}[❯>$#›»→%➜]|PS [^\n>]*>)\s`,
+			},
+		},
 	}
 	// Windows has no cat or sh: the tools run the test binary's stand-ins.
 	if runtime.GOOS == "windows" {
 		for _, name := range testfixture.Tools() {
-			tool, ok := cfg.Tools[name]
+			tool, ok := cfg.CLIs[name]
 			if !ok {
 				continue
 			}
 			tool.Command = testfixture.Command(name)
-			cfg.Tools[name] = tool
+			cfg.CLIs[name] = tool
 		}
 	}
 	dbPath := filepath.Join(t.TempDir(), "state.db")
@@ -298,7 +298,7 @@ func (h *harness) applyCmd(t *testing.T, cmd func() any) {
 }
 func (h *harness) sessionRows() []store.Session { return h.sessions }
 func (h *harness) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
-	tool := h.cfg.Tools[toolName]
+	tool := h.cfg.CLIs[toolName]
 	id := uuid.NewString()[:8]
 	repo, branch := "", ""
 	if worktree {

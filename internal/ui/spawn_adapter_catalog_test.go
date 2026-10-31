@@ -26,9 +26,9 @@ func TestCatalogIsReadFromTheKeptAnswer(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	m.services.configDir = t.TempDir()
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	tool.Catalog, tool.CatalogCommand, tool.ModelArgs = "claude", "sh", "--model {model}"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 	if _, err := os.Stat(filepath.Join(m.services.configDir, "catalogs")); err == nil {
 		t.Fatal("a fresh config dir holds catalogs")
 	}
@@ -93,13 +93,13 @@ func TestAnOlderCLIOpensTheUpdateDialogInsteadOfListingModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	tool := config.Tool{
+	tool := config.CLI{
 		Command:        "pi",
 		Catalog:        "pi",
 		CatalogCommand: "pi --mode rpc --no-session",
 		MinimumVersion: "0.84.3",
 	}
-	m.services.cfg.Tools["pi"] = tool
+	m.services.cfg.CLIs["pi"] = tool
 	if err := catalog.Keep(m.services.configDir, "pi", tool, catalog.Catalog{Models: []catalog.Model{{ID: "kept"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -132,13 +132,13 @@ func TestAnUpdatedCLIIsAskedAgainRightAway(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	tool := config.Tool{
+	tool := config.CLI{
 		Command:        "pi",
 		Catalog:        "pi",
 		CatalogCommand: "pi --mode rpc --no-session",
 		MinimumVersion: "0.84.3",
 	}
-	m.services.cfg.Tools["pi"] = tool
+	m.services.cfg.CLIs["pi"] = tool
 	kept := catalog.Catalog{Models: []catalog.Model{{ID: "kept"}}}
 	if err := catalog.Keep(m.services.configDir, "pi", tool, kept); err != nil {
 		t.Fatal(err)
@@ -220,7 +220,7 @@ func TestAMousePressLeavesTheQuickDraftUnderTheUpdateDialog(t *testing.T) {
 func TestAMissingCLIWithAFloorDoesNotOpenTheUpdateDialog(t *testing.T) {
 	m := buildModel(t)
 	t.Setenv("PATH", t.TempDir())
-	m.services.cfg.Tools["pi"] = config.Tool{
+	m.services.cfg.CLIs["pi"] = config.CLI{
 		Command:        "pi",
 		Catalog:        "pi",
 		CatalogCommand: "pi --mode rpc --no-session",

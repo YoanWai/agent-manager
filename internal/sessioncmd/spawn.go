@@ -63,12 +63,12 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 			return Session{}, err
 		}
 	}
-	tool, known := runtime.cfg.Tools[toolName]
-	if !known {
-		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(runtime.cfg.AgentToolNames(), ", "))
-	}
-	if tool.Shell {
+	if runtime.cfg.IsTool(toolName) {
 		return Session{}, fmt.Errorf("tool %q opens a shell, not an agent; use %s for that", toolName, runtime.words.CreateTerminal)
+	}
+	tool, known := runtime.cfg.CLIs[toolName]
+	if !known {
+		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(runtime.cfg.CLINames(), ", "))
 	}
 	group, dir, err := runtime.createTarget(caller, opts.Group, opts.Directory)
 	if err != nil {
@@ -153,7 +153,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 
 type resumeRequest struct {
 	toolName, id, dir, environment, profile string
-	tool                                    config.Tool
+	tool                                    config.CLI
 	worktree                                *bool
 	named, prompted                         bool
 }
@@ -197,7 +197,7 @@ func (r *runtime) resumable(req resumeRequest) (string, error) {
 // toolFor is the CLI a spawn runs when it names none. A terminal or a script
 // runs no agent to copy, so it takes the one picked in Settings.
 func (r *runtime) toolFor(caller store.Session) (string, error) {
-	if caller.ID == "" || r.cfg.Tools[caller.Tool].Shell {
+	if caller.ID == "" || r.cfg.IsTool(caller.Tool) {
 		return r.settingsTool()
 	}
 	return caller.Tool, nil
@@ -212,10 +212,10 @@ func (r *runtime) settingsTool() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if name := r.cfg.DefaultAgentTool(chosen, hidden); name != "" {
+	if name := r.cfg.DefaultCLI(chosen, hidden); name != "" {
 		return name, nil
 	}
-	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(r.cfg.AgentToolNames(), ", "))
+	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(r.cfg.CLINames(), ", "))
 }
 
 // worktreeGit is the driver that opens the session's own checkout, or nil

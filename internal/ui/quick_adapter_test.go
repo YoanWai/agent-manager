@@ -770,9 +770,9 @@ func TestQuickRemembersPickOnlyAfterInstallRetrySucceeds(t *testing.T) {
 	submitFormSession(t, m, "first")
 
 	installCommand := fakeInstallCommand(t)
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	tool.Command = "am-fake-cli"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
 	for i, name := range quickTools(m) {

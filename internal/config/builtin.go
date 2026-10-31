@@ -1,8 +1,8 @@
 package config
 
-// builtinTools is the only source of tool definitions, so a release that
-// fixes a CLI's new screen fixes it for everyone on that release.
-const builtinTools = `# Rules are matched top-down against the visible pane text (ANSI stripped);
+// builtinCLIs is the only source of agent CLI definitions, so a release
+// that fixes a CLI's new screen fixes it for everyone on that release.
+const builtinCLIs = `# Rules are matched top-down against the visible pane text (ANSI stripped);
 # first match wins, except a matching waiting rule outranks a working match.
 # A limit_line match is errored even when a turn-end summary or a limit
 # dialog would otherwise settle the turn.
@@ -19,7 +19,7 @@ const builtinTools = `# Rules are matched top-down against the visible pane text
 # region stops changing and nothing matches, its last content line
 # decides finished versus waiting (question mark waits).
 
-[tools.claude]
+[clis.claude]
 command = "claude"
 session_report = "claude"
 # revive (v) launches a new session with this id, so it can later resume
@@ -91,7 +91,7 @@ rules = [
   { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 
-[tools.opencode]
+[clis.opencode]
 # OpenCode 2's shared background server never sees a launch's environment,
 # so the model, the MCP config and the session id reach it only through a
 # private server
@@ -161,7 +161,7 @@ rules = [
   { state = "waiting", pattern = "(?m)^[ \\t]*┃[^\\n]*(?:⇆|↑↓)[^\\n]*\\besc\\b[^\\n]*(?:\\n[ \\t]*┃[^\\n]*)*(?:\\n[ \\t]*)*\\z" },
 ]
 
-[tools.codex]
+[clis.codex]
 command = "codex"
 session_report = "codex"
 # codex mints its own session id; capture it after launch and resume it
@@ -224,7 +224,7 @@ rules = [
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
 
-[tools.muse]
+[clis.muse]
 command = "muse"
 session_report = "muse"
 session_store = "muse"
@@ -253,7 +253,7 @@ rules = [
   { state = "errored", pattern = "(?m)^retained session not found: session [^\\n]+ has no saved log(?:\\n[ \\t]*)*\\z" },
 ]
 
-[tools.grok]
+[clis.grok]
 command = "grok"
 session_report = "grok"
 # runs inline while the manager's control client is attached, and keeps its
@@ -304,7 +304,7 @@ rules = [
   { state = "errored", pattern = "(?im)^\\s*error:" },
 ]
 
-[tools.gemini]
+[clis.gemini]
 command = "gemini"
 session_report = "gemini"
 # revive (v) launches a new session with this id, so it can later resume
@@ -360,7 +360,7 @@ rules = [
 ]
 
 # Antigravity CLI (agy), Google's successor to Gemini CLI
-[tools.antigravity]
+[clis.antigravity]
 command = "agy"
 # 1.3.4 is the first agy that takes a model's base id without --effort.
 minimum_version = "1.3.4"
@@ -404,7 +404,7 @@ rules = [
   { state = "working", pattern = "(?m)^esc to cancel\\b" },
 ]
 
-[tools.hermes]
+[clis.hermes]
 # The classic REPL exposes stable prompt markers for status and prompt delivery.
 command = "hermes --cli"
 session_report = "hermes"
@@ -444,23 +444,7 @@ rules = [
   { state = "working", pattern = "msg=interrupt · /queue · /bg · /steer · Ctrl\\+C cancel" },
 ]
 
-# The terminal tab "T" spawns: a shell in the group's directory, listed
-# beside the agents but with nothing running in it. An empty command leaves
-# the pane on $SHELL; set one to open a different shell instead. shell = true
-# is what marks it: the CLI pickers skip it, and the keys that write into a
-# pane refuse it, because a sentence typed at a shell is a command.
-[tools.terminal]
-command = ""
-shell = true
-default_status = "idle"
-# A generic prompt row (a bare marker, or "yoan@mac ~ %") is where ← can
-# hand focus back to the list without costing the shell a keystroke. Up to
-# three leading tokens cover user@host-and-path prompts; % and ➜ cover
-# stock zsh and oh-my-zsh, and "PS <path>>" covers PowerShell, whose path
-# runs into its marker and may hold spaces.
-input_prefix = "(?m)^\\s*(?:(?:\\S+\\s+){0,3}[❯>$#›»→%➜]|PS [^\\n>]*>)\\s"
-
-[tools.pi]
+[clis.pi]
 command = "pi"
 # 0.84.3 is the first pi whose set_model stays in the session. Earlier
 # releases save every model the catalog asks about as the user's default.
@@ -504,7 +488,7 @@ rules = [
   { state = "working", pattern = "(?ms)^[ \\t]*(?:[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*\\n[ \\t]*\\n─{8,}[ \\t]*|─+[ \\t]+[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏][ \\t]+(?:Working|Running|Retrying|Compacting context|Auto-compacting|Context overflow detected, Auto-compacting|Summarizing branch)\\b[^\\n]*)\\n(?:(?:[^─\\n][^\\n]*)?\\n)*─{8,}[ \\t]*(?:\\n[^\\n]*){2,5}[ \\t]*(?:\\n[ \\t]*)*\\z" },
 ]
 
-[tools.omp]
+[clis.omp]
 command = "omp"
 session_report = "omp"
 # omp mints its own UUIDv7 and writes the session file once the first
@@ -544,7 +528,7 @@ rules = [
   { state = "errored", pattern = "(?ms)^ Error: [^\\n]*(?:\\n[ \\t]+\\S[^\\n]*){0,8}\\n(?:[ \\t]*\\n)*(?:[ \\t]{20,}\\S[^\\n]*\\n)? [^ \\n][^\\n]*\\n╰─(?:[ \\t][^\\n]*)?(?:\\n(?:[ \\t][^\\n]*)?)*\\z" },
 ]
 
-[tools.command-code]
+[clis.command-code]
 command = "cmd"
 session_report = "command-code"
 # command-code mints its own session id; capture it after launch and resume it
@@ -595,7 +579,7 @@ rules = [
   { state = "errored", pattern = "(?im)^\\s*(?:⚠ )?Error:" },
 ]
 
-[tools.cursor]
+[clis.cursor]
 command = "cursor-agent"
 session_report = "none"
 # Cursor mints the chat id after launch. The capturer reads meta.json.
@@ -620,4 +604,20 @@ rules = [
   { state = "working", pattern = "(?m)^[ \\t]*│[ \\t]*⏳ Trusting workspace" },
   { state = "working", pattern = "(?m)(?:^[ \\t]*\\p{Braille}{2}\\s+(?:Working|Running)\\b|^[ \\t]*→ [^\\n]*ctrl\\+c to stop)(?:\\n[^\\n]*){0,16}(?:\\n[ \\t]*)*\\z" },
 ]
+`
+
+// builtinTools is the only source of the manager's own panes. A name here
+// is never also a CLI, since a session row stores one name for either.
+const builtinTools = `# The terminal tab "T" spawns: a shell in the group's directory, listed
+# beside the agents but with nothing running in it. An empty command leaves
+# the pane on $SHELL; set one to open a different shell instead.
+[tools.terminal]
+command = ""
+default_status = "idle"
+# A generic prompt row (a bare marker, or "yoan@mac ~ %") is where ← can
+# hand focus back to the list without costing the shell a keystroke. Up to
+# three leading tokens cover user@host-and-path prompts; % and ➜ cover
+# stock zsh and oh-my-zsh, and "PS <path>>" covers PowerShell, whose path
+# runs into its marker and may hold spaces.
+input_prefix = "(?m)^\\s*(?:(?:\\S+\\s+){0,3}[❯>$#›»→%➜]|PS [^\\n>]*>)\\s"
 `

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"sort"
 	"strings"
 	"time"
 
@@ -197,12 +196,7 @@ func (m *Model) openFork() {
 		m.reportErr("select a session to fork")
 		return
 	}
-	tool, ok := m.services.cfg.Tools[entry.sess.Tool]
-	if !ok {
-		m.reportErr("tool " + entry.sess.Tool + " is no longer configured")
-		return
-	}
-	if err := uiapply.ValidateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
+	if _, err := uiapply.ForkSource(m.services.cfg, entry.sess); err != nil {
 		m.reportErr(err.Error())
 		return
 	}
@@ -303,15 +297,7 @@ func (m *Model) openRename() {
 		}
 		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup(entry.group, dir, uidialogs.WorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group], m.workspace.groupEnvs[entry.group])
 	} else {
-		tools := m.services.cfg.AgentToolNames()
-		shells := []string{}
-		for _, name := range m.services.cfg.ToolNames() {
-			if m.services.cfg.Tools[name].Shell {
-				shells = append(shells, name)
-			}
-		}
-		sort.Strings(shells)
-		tools = append(tools, shells...)
+		tools := append(m.services.cfg.CLINames(), m.services.cfg.ToolNames()...)
 		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "", "")
 	}
 	// Each opening's reads outrank the last one's, so a scan a cancelled

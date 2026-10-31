@@ -50,10 +50,10 @@ func TestDefaultCommandCodeStyleRegisters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := Style("command-code", cfg.Tools["command-code"].MCP); got != "command-code" {
+	if got := Style("command-code", cfg.CLIs["command-code"].MCP); got != "command-code" {
 		t.Fatalf("default command-code style = %q, want command-code", got)
 	}
-	if got := Style("pi", cfg.Tools["pi"].MCP); got != StyleNone {
+	if got := Style("pi", cfg.CLIs["pi"].MCP); got != StyleNone {
 		t.Fatalf("default pi style = %q, want %q", got, StyleNone)
 	}
 }

@@ -771,12 +771,12 @@ func TestForkClearsStatusFilter(t *testing.T) {
 	m.rebuildRows()
 	m.selectSessionRow(t, "source")
 
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = "true {id}; cat"
 	if runtime.GOOS == "windows" {
 		tool.ForkCommand = testfixture.ModeCommand("cat-stdin") + " {id}"
 	}
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 
 	m.openFork()
 	openFork(m).SetName("fork-under-filter")
