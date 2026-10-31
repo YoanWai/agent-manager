@@ -259,3 +259,6 @@ func (m *Model) handleBrowserOpen(msg browserOpenMsg) {
 }
 
 func DisableAlternateScroll() error { return uiterminal.DisableAlternateScroll() }
+
+// ResetPointer gives the terminal its own pointer back when the manager exits.
+func ResetPointer() { uiterminal.ShowHand(false) }

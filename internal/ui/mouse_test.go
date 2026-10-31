@@ -72,6 +72,21 @@ func TestSyncMouseCaptureRespectsMouseDisabled(t *testing.T) {
 	}
 }
 
+// A focused pane asks for every motion, so the mouse hovering a link
+// reaches it with no button held.
+func TestSyncMouseCaptureAsksFocusForEveryMotion(t *testing.T) {
+	m := &Model{}
+	m.push(newFocusSurface(m))
+	cmd := m.syncMouseCapture()
+	if cmd == nil || cmd() != tea.EnableMouseAllMotion() {
+		t.Fatal("focus did not ask for every motion")
+	}
+	m.clearSurfaces()
+	if cmd := m.syncMouseCapture(); cmd == nil || m.mouse.hover {
+		t.Fatal("leaving focus kept every motion on")
+	}
+}
+
 func TestDragReleasePersistsAndExits(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {

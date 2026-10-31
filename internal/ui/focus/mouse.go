@@ -57,6 +57,11 @@ type forwardedGesture struct {
 	row, col int
 }
 
+type pointerAt struct {
+	known bool
+	x, y  int
+}
+
 type MouseContext struct {
 	SessionID    string
 	Rows         int
@@ -175,6 +180,23 @@ func (m *Model) Mouse(msg tea.MouseMsg, ctx MouseContext) MouseResult {
 		return MouseResult{Copy: m.copyRequest()}
 	}
 	return MouseResult{}
+}
+
+// TrackPointer records where the mouse rests, including under a card that
+// covers the pane, so the hand comes back only where the mouse really is.
+func (m *Model) TrackPointer(x, y int) { m.pointer = pointerAt{known: true, x: x, y: y} }
+
+// ForgetPointer drops the resting position, which nothing reports while
+// another program holds the terminal.
+func (m *Model) ForgetPointer() { m.pointer = pointerAt{} }
+
+// OverLink reports whether the mouse rests on a link a click would open.
+func (m Model) OverLink() bool {
+	if !m.pointer.known {
+		return false
+	}
+	row, col, inside := m.paneCell(m.pointer.x, m.pointer.y)
+	return inside && m.linkAt(row, col) != ""
 }
 
 func (m *Model) wheel(up bool, x, y int, ctx MouseContext) MouseResult {

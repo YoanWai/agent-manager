@@ -15,10 +15,10 @@ import (
 // setting and stays on regardless, the way it always has.
 //
 // An open row menu asks for every motion, pressed or not, so hovering an
-// entry can light it up.
+// entry can light it up, and so does focus, so hovering a link shows the hand.
 func (m *Model) syncMouseCapture() tea.Cmd {
 	release := m.prefs.mouseDisabled && !m.focused()
-	hover := !release && m.base == baseList && m.rail.MenuOpen()
+	hover := !release && (m.focused() || m.base == baseList && m.rail.MenuOpen())
 	if release == m.mouse.released && hover == m.mouse.hover {
 		return nil
 	}
@@ -39,6 +39,9 @@ func (m *Model) syncMouseCapture() tea.Cmd {
 func (m *Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if msg.Action == tea.MouseActionPress {
 		m.gens.foreground++
+	}
+	if m.focused() {
+		m.focus.pane.TrackPointer(msg.X, msg.Y)
 	}
 	return m.routeMouse(msg)
 }

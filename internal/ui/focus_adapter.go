@@ -33,6 +33,7 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		return routed(m, nil)
 
 	case linkPageMsg:
+		m.handOffTerminal()
 		return routed(m, uiterminal.ShowLinkPage(msg.url))
 
 	case uifocus.CopiedMessage:
@@ -147,6 +148,23 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		model = m
 	}
 	return model, cmd
+}
+
+// syncPointerShape shows the hand while the mouse rests on a link a click in
+// the focused pane would open.
+func (m *Model) syncPointerShape() {
+	top, _ := m.top()
+	_, focusOnTop := top.(*uifocus.Surface)
+	uiterminal.ShowHand(focusOnTop && m.focus.pane.OverLink())
+}
+
+// handOffTerminal readies the terminal for a program that takes the screen.
+// The pointer resets while the alternate screen that showed the hand is still
+// up, since kitty keeps one pointer per screen, and the resting position is
+// dropped, since the mouse goes unreported until the manager is back.
+func (m *Model) handOffTerminal() {
+	m.focus.pane.ForgetPointer()
+	uiterminal.ShowHand(false)
 }
 
 // paneCaretRow resolves the root-owned status fact that a tool's terminal
@@ -317,7 +335,7 @@ func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 	m.watchSelection()
 	keepPaneFacts := m.focus.runtime.KeepsPaneFacts(&m.focus.pane, sess.ID)
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID, KeepPaneFacts: keepPaneFacts})
-	return tea.Batch(tea.EnableMouseCellMotion, m.cursorBlink())
+	return tea.Batch(tea.EnableMouseAllMotion, m.cursorBlink())
 }
 
 // applyFocusEffect enters focus once the dead-pane probe has run.
