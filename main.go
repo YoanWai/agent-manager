@@ -386,6 +386,7 @@ func run() (resultErr error) {
 	final, runErr := program.Run()
 	catalog.StopAll()
 	ui.ResetTerminalColors()
+	ui.ResetPointer()
 	stopRuntime()
 	if abandoned := model.AbandonedEffects(); len(abandoned) > 0 && runErr == nil {
 		runErr = fmt.Errorf("quit before these finished, so check their result: %s", strings.Join(abandoned, "; "))

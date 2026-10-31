@@ -30,7 +30,7 @@ func TestHandoffsPutThePointerBack(t *testing.T) {
 		if err := run(); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if !strings.HasPrefix(sink.String(), "\x1b]22;\x1b\\") {
+		if !strings.HasPrefix(sink.String(), resetPointer) {
 			t.Fatalf("%s wrote %q before the pointer reset", name, sink.String())
 		}
 		sink.Reset()

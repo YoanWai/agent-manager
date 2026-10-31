@@ -112,7 +112,7 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 // terminal its own pointer back.
 func TestFocusHoverShowsTheHandOverALink(t *testing.T) {
 	const hand = "\x1b]22;pointer\x1b\\\x1b]22;hand2\x1b\\"
-	const reset = "\x1b]22;\x1b\\"
+	const reset = "\x1b]22;text\x1b\\\x1b]22;\x1b\\"
 	var sink strings.Builder
 	previous := termseq.Out
 	termseq.Out = &sink

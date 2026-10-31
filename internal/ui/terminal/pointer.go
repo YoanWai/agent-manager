@@ -3,10 +3,11 @@ package terminal
 import "github.com/YoanWai/agent-manager/internal/termseq"
 
 // The hand goes out under its CSS name, then its X11 one: Ghostty and kitty
-// skip a name they do not know, iTerm2 resets on one, so X11 comes last.
+// skip a name they do not know, iTerm2 resets on one, so X11 comes last. The
+// reset names text first for Ghostty before 1.4, which ignores the empty one.
 const (
 	handPointer  = "\x1b]22;pointer\x1b\\\x1b]22;hand2\x1b\\"
-	resetPointer = "\x1b]22;\x1b\\"
+	resetPointer = "\x1b]22;text\x1b\\\x1b]22;\x1b\\"
 )
 
 // handShown is the pointer the one terminal was last told to show. Updates
