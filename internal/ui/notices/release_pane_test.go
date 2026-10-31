@@ -48,7 +48,7 @@ func tabsRelease(t *testing.T) Release {
 			{Label: "Thanks by role", Text: "People who built, found or started something are thanked in their own group."},
 		},
 	}
-	scopes := []string{"UI", "Notices", "Feed", "Update", "Tmux", "E2e"}
+	scopes := []string{"UI", "Notices", "Feed", "Update", "Tmux", "E2E"}
 	add := func(kind string, count int, words string) {
 		for i := range count {
 			release.Changes = append(release.Changes, Change{Kind: kind, Scope: scopes[(len(release.Changes)+i)%len(scopes)], Text: fmt.Sprintf("%s %02d", words, i+1)})
@@ -57,7 +57,7 @@ func tabsRelease(t *testing.T) Release {
 	add(KindFeature, 6, "Show the release in tabs")
 	add(KindFix, 10, "Keep the bottom edge on screen")
 	add(KindOther, 7, "Cover the inbox in tests")
-	release.Changes = append(release.Changes, Change{Kind: KindOther, Scope: "E2e", Text: "Run the panel scenario on every platform", Author: "@ribeirojose"})
+	release.Changes = append(release.Changes, Change{Kind: KindOther, Scope: "E2E", Text: "Run the panel scenario on every platform", Author: "@ribeirojose"})
 	release.TotalChanges = len(release.Changes)
 	release.Thanks = []Thanks{
 		{Handle: "@ribeirojose", Group: ThanksBuilt, Text: "built the quit router", Refs: []string{"#861"}},
@@ -110,18 +110,18 @@ func TestReleaseHeaderShowsVersionDateAndOrigin(t *testing.T) {
 	if !strings.HasSuffix(first, "notes on GitHub") || lipgloss.Width(first) != paneTestWidth {
 		t.Fatalf("the link sits at the right edge: %q", first)
 	}
-	if rows[1] != "Every release, in three tabs" {
-		t.Fatalf("the headline follows the version: %q", rows[1])
+	if rows[1] != "" || rows[2] != "Every release, in three tabs" || rows[3] != "" {
+		t.Fatalf("the headline follows the version after a blank row:\n%s", strings.Join(rows, "\n"))
 	}
 	available := paneText(availableNotice(t, tabsRelease(t)), TabOverview, "", paneTestWidth)
-	if !strings.Contains(available[0], "out now · you're on 0.45.0") {
-		t.Fatalf("available header %q", available[0])
+	if !strings.Contains(available[0], "out now · you're on 0.45.0") || strings.Contains(available[0], "notes on GitHub") {
+		t.Fatalf("available header %q, want the notes link moved into the update bar", available[0])
 	}
 }
 
 func TestAvailableReleaseShowsTheUpdateCallToAction(t *testing.T) {
 	available := strings.Join(paneText(availableNotice(t, tabsRelease(t)), TabOverview, "", paneTestWidth), "\n")
-	if !strings.Contains(available, "u  Update to 0.46.0 and restart") {
+	if at := strings.Index(available, "u    Update to 0.46.0 and restart"); at < 0 || !strings.Contains(available[at:], "↵  notes on GitHub") {
 		t.Fatalf("available release lacks the call to action:\n%s", available)
 	}
 	updated := strings.Join(paneText(updatedNotice(t, tabsRelease(t)), TabOverview, "", paneTestWidth), "\n")
@@ -156,8 +156,8 @@ func TestTabCountsAreMutedAndTheActiveTabUnderlined(t *testing.T) {
 	strip := rowIndex(plain, "Overview")
 	under := []rune(plain[strip+1])
 	start := len([]rune(plain[strip][:strings.Index(plain[strip], "Changes")]))
-	if string(under[start]) != "━" || strings.TrimSpace(string(under[:start])) != "" {
-		t.Fatalf("the underline sits under the active tab:\n%s\n%s", plain[strip], plain[strip+1])
+	if string(under[start]) != "━" || string(under[start-3]) != "─" || string(under[len(under)-1]) != "─" || len(under) != paneTestWidth {
+		t.Fatalf("the accent underline sits under the active tab on a rule across the pane:\n%s\n%s", plain[strip], plain[strip+1])
 	}
 	if strings.Contains(joined, theme.Subtle.Render("24")) {
 		t.Fatal("a tab count uses the subtle token")

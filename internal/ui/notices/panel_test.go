@@ -71,7 +71,7 @@ func TestPanelRunsOnCopiedSources(t *testing.T) {
 
 	frame := testFrame()
 	frame.Status = "refresh failed"
-	if view := strings.Join(p.View(notices, frame), "\n"); !strings.Contains(view, "refresh failed") || !strings.Contains(view, "v0.3.0 available") {
+	if view := strings.Join(p.View(notices, frame), "\n"); !strings.Contains(view, "refresh failed") || !strings.Contains(view, "0.3.0 available") {
 		t.Fatalf("view missed the status or the list:\n%s", view)
 	}
 
@@ -89,12 +89,13 @@ func TestUpdateNoticeHighlightsPressU(t *testing.T) {
 	notices := p.Active(testSources("v0.3.0"))
 	view := strings.Join(p.View(notices, testFrame()), "\n")
 	theme := testTheme()
-	if !strings.Contains(view, theme.Key.Render("u update")) || !strings.Contains(ansi.Strip(view), "u  Update to 0.3.0 and restart") {
+	updateKey := lipgloss.NewStyle().Foreground(theme.Accent).Render("u") + theme.Muted.Render(" update")
+	if !strings.Contains(view, updateKey) || !strings.Contains(ansi.Strip(view), "u    Update to 0.3.0 and restart") {
 		t.Fatalf("update notice lacks its call to action:\n%s", ansi.Strip(view))
 	}
 	p.Key(key("down"), notices, testFrame())
 	next := strings.Join(p.View(notices, testFrame()), "\n")
-	if strings.Contains(next, theme.Key.Render("u update")) || strings.Contains(ansi.Strip(next), "Update to") {
+	if strings.Contains(next, updateKey) || strings.Contains(ansi.Strip(next), "Update to") {
 		t.Fatalf("press u stays on the update notice only:\n%s", ansi.Strip(next))
 	}
 }

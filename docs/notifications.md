@@ -31,7 +31,8 @@ shows:
 - The version, then its publish date (or `out now` for an available release)
   and the version you were on. Dates read in your local time zone.
 - The headline.
-- For an available release, a bar that reads `u  Update to X and restart`.
+- For an available release, a bar that reads `u  Update to X and restart`,
+  with the notes link at its right.
 
 Three tabs follow, with a count on Changes and Thanks.
 
@@ -55,9 +56,9 @@ appearance.
 ### A feed message
 
 A feed message shows a label chip for its kind (NEWS, HEADS UP or TIP), its
-`banner`, `until <date>` when it expires, the title and the body. When the entry
-has a `url`, a bar below the body reads `↵` and the entry's `action` text, with
-the link beside it.
+`banner`, `until <date>` at the right when it expires, the title and the body.
+When the entry has a `url`, a bar below the body in the kind's color reads `↵`
+and the entry's `action` text, with the link's host at its right.
 
 The config import warning that appears when `config.toml` could not be carried
 into Settings is a HEADS UP message.

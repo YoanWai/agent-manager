@@ -2489,7 +2489,7 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 	m.release.Feed = []feed.Message{{ID: noticeTip, Title: "A tip", Body: []string{strings.Repeat("a tip wide enough to give the card room for every key ", 2)}}}
 	m.openNotices("")
 
-	for _, key := range []string{"↑↓ pick", "pgup/pgdn"} {
+	for _, key := range []string{"↑↓ message", "pgup/pgdn"} {
 		x, y := paintedCell(t, m, key)
 		if _, ok := m.layout.keyHits.At(x, y); ok {
 			t.Fatalf("%q moves the cursor; the rows and the wheel answer for it", key)

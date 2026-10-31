@@ -35,7 +35,8 @@ func testTheme() Theme {
 		Title:    lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Bold(true),
 		Fill:     presentation.PadRight,
 		Surface:  presentation.PadRight,
-		Callout:  presentation.PadRight,
+		Raised:   presentation.PadRight,
+		Callout:  func(row string, width int, _ lipgloss.Color) string { return presentation.PadRight(row, width) },
 	}
 }
 

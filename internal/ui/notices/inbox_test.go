@@ -192,7 +192,7 @@ func TestSplitInboxSetsTheListBesideTheMessage(t *testing.T) {
 			if seam := 2 + listWidth; string(cells[seam]) != "│" {
 				t.Fatalf("no seam after the list in %q", row)
 			}
-			if !strings.Contains(row, "v0.46.0  out now") {
+			if !strings.Contains(row, "v0.46.0   out now") {
 				t.Fatalf("the message does not start beside the list: %q", row)
 			}
 			return

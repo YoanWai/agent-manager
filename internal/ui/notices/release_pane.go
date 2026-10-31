@@ -45,21 +45,20 @@ func releasePane(n Notice, tab Tab, filter string, width int, t Theme, mode pres
 // headline, the update bar when one is on offer, the tabs and, on Changes,
 // the filter chips.
 func releaseHead(n Notice, tab Tab, filter string, width int, t Theme, mode presentation.GlyphMode) ([]string, []paneHit) {
-	rows := []string{versionLine(n, width, t, mode)}
+	rows := []string{versionLine(n, width, t, mode), ""}
 	if n.Headline != "" {
-		rows = appendWrapped(rows, []textRun{{text: n.Headline}}, width, headingStyle(t), t)
+		rows = append(appendWrapped(rows, []textRun{{text: n.Headline}}, width, headingStyle(t), t), "")
 	}
 	if n.IsUpdate() {
-		rows = append(rows, callToAction(n, width, t, mode))
+		rows = append(rows, callToAction(n, width, t, mode), "")
 	}
-	rows = append(rows, "")
-	strip, under, hits := tabStrip(n, tab, filter, t, mode)
+	strip, under, hits := tabStrip(n, tab, filter, width, t, mode)
 	for i := range hits {
 		hits[i].line = len(rows)
 	}
 	rows = append(rows, strip, under)
 	if tab == TabChanges && changeCount(n) > 0 {
-		chips, chipHits := filterChips(n, filter, t, mode)
+		chips, chipHits := filterChips(n, filter, width, t, mode)
 		for i := range chipHits {
 			chipHits[i].line = len(rows) + 1
 		}
@@ -79,16 +78,34 @@ func releaseTab(n Notice, tab Tab, filter string, width int, t Theme, mode prese
 	return overviewTab(n, width, t, mode)
 }
 
+// versionLine is the version chip, when it came out and what this install
+// is on, and the notes link at the right; an available release moves the
+// link into its update bar.
 func versionLine(n Notice, width int, t Theme, mode presentation.GlyphMode) string {
-	line := chip("v"+bareVersion(n.Version), t.Accent, t) + " " + t.Muted.Render(origin(n))
-	if n.URL == "" {
+	line := chip("v"+bareVersion(n.Version), t.Accent, t) + "  " + t.Muted.Render(origin(n))
+	if n.URL == "" || n.IsUpdate() {
 		return line
 	}
-	link := t.Muted.Render(presentation.KeyLabel(mode, "↵") + " notes on GitHub")
-	if gap := width - lipgloss.Width(line) - lipgloss.Width(link); gap >= 2 {
-		line += strings.Repeat(" ", gap) + link
+	return atRight(line, notesLink(t, mode), width)
+}
+
+func notesLink(t Theme, mode presentation.GlyphMode) string {
+	return keyChip("↵", t, mode) + t.Muted.Render(" notes on GitHub")
+}
+
+// keyChip is a key to press, bright on the raised fill.
+func keyChip(key string, t Theme, mode presentation.GlyphMode) string {
+	label := " " + presentation.KeyLabel(mode, key) + " "
+	return t.Raised(lipgloss.NewStyle().Foreground(t.Bright).Render(label), ansi.StringWidth(label))
+}
+
+// atRight sets right at the row's right edge, when two spaces still fit
+// before it.
+func atRight(row, right string, width int) string {
+	if gap := width - lipgloss.Width(row) - lipgloss.Width(right); gap >= 2 {
+		return row + strings.Repeat(" ", gap) + right
 	}
-	return line
+	return row
 }
 
 // origin is when the release came out, or how many it spans, and the
@@ -116,7 +133,11 @@ func origin(n Notice) string {
 func bareVersion(version string) string { return strings.TrimPrefix(version, "v") }
 
 func callToAction(n Notice, width int, t Theme, mode presentation.GlyphMode) string {
-	return actionBar("u", "Update to "+bareVersion(n.Version)+" and restart", "", width, t, mode)
+	right := ""
+	if n.URL != "" {
+		right = notesLink(t, mode)
+	}
+	return actionBar("u", "Update to "+bareVersion(n.Version)+" and restart", right, t.Accent, width, t, mode)
 }
 
 // chip is a label on a fill, in whichever of the backdrop's ink and the bright text reads clearer on it.
@@ -131,28 +152,30 @@ func chipInk(fill lipgloss.Color, t Theme) lipgloss.Color {
 	return t.Ink
 }
 
-// actionBar is a call to action on the faint accent fill: the key, what it
-// does and, dim, where it leads, cut to the prose measure.
-func actionBar(key, label, detail string, width int, t Theme, mode presentation.GlyphMode) string {
-	room := min(width, proseWidth)
-	bar := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).SectionBarGlyph)
-	row := bar + " " + t.Key.Render(key) + "  " + t.Value.Render(label)
-	if detail != "" {
-		row += "  " + t.Muted.Render(ansi.Truncate(detail, max(room-lipgloss.Width(row)-2, 0), "…"))
+// actionBar is a call to action across the pane on a fill tinted toward
+// tone: a bar and the key in that tone, what it does, and at the right
+// where it leads.
+func actionBar(key, label, right string, tone lipgloss.Color, width int, t Theme, mode presentation.GlyphMode) string {
+	bar := lipgloss.NewStyle().Foreground(tone).Render(presentation.GlyphsFor(mode).SectionBarGlyph)
+	row := bar + " " + chip(" "+presentation.KeyLabel(mode, key)+" ", tone, t) + "  " + headingStyle(t).Render(label)
+	if right != "" {
+		room := width - lipgloss.Width(row) - 3
+		row = atRight(row, ansi.Truncate(right, max(room, 0), "…"), width-1)
 	}
-	return t.Callout(row, room)
+	return t.Callout(row, width, tone)
 }
 
-// tabStrip names each tab with its count, the active one bright over an
-// accent underline.
-func tabStrip(n Notice, active Tab, filter string, t Theme, mode presentation.GlyphMode) (strip, under string, hits []paneHit) {
+// tabStrip names each tab with its count over a rule across the pane, the
+// active tab bright with the rule in the accent under it.
+func tabStrip(n Notice, active Tab, filter string, width int, t Theme, mode presentation.GlyphMode) (strip, under string, hits []paneHit) {
 	counts := [...]int{TabChanges: changeCount(n), TabThanks: len(mergedThanks(n.Releases))}
 	underline := lipgloss.NewStyle().Foreground(t.Accent)
 	x := 0
 	for index, label := range tabLabels {
 		tab := Tab(index)
-		if index > 0 {
-			strip, under, x = strip+"   ", under+"   ", x+3
+		lead := 2
+		if index == 0 {
+			lead = 1
 		}
 		style, text := t.Muted, label
 		if tab == active {
@@ -164,59 +187,77 @@ func tabStrip(n Notice, active Tab, filter string, t Theme, mode presentation.Gl
 			cell += " " + t.Muted.Render(count)
 			text += " " + count
 		}
-		cells := ansi.StringWidth(text)
-		strip += cell
+		cells := lead + ansi.StringWidth(text) + 2
+		strip += strings.Repeat(" ", lead) + cell + "  "
 		if tab == active {
 			under += underline.Render(strings.Repeat(presentation.ChromeFor(mode).RuleGlyph, cells))
 		} else {
-			under += strings.Repeat(" ", cells)
+			under += t.Subtle.Render(strings.Repeat("─", cells))
 		}
 		hits = append(hits, paneHit{x0: x, x1: x + cells, tab: tab, filter: filter})
 		x += cells
 	}
-	return strip, under, hits
+	return strip, under + t.Subtle.Render(strings.Repeat("─", max(width-x, 0))), hits
 }
 
-func filterChips(n Notice, active string, t Theme, mode presentation.GlyphMode) (string, []paneHit) {
+// filterChips is a chip per filter, each count in its kind's color and the
+// active chip raised and bright, with the key that steps them at the right.
+func filterChips(n Notice, active string, width int, t Theme, mode presentation.GlyphMode) (string, []paneHit) {
 	var row string
 	var hits []paneHit
 	x := 0
 	for index, filter := range changeFilters {
 		if index > 0 {
-			row, x = row+"  ", x+2
+			row, x = row+" ", x+1
 		}
-		style := t.Muted
-		if filter == active {
-			style = headingStyle(t)
-		}
-		label, text := style.Render("All"), "All"
+		label, text := t.Muted.Render("All"), "All"
 		if filter != "" {
 			count := strconv.Itoa(kindCount(n, filter))
-			label, text = changeMark(filter, t, mode)+" "+style.Render(count), "x "+count
+			label, text = changeMark(filter, t, mode)+" "+kindStyle(filter, t).Render(count), "x "+count
 		}
 		cells := ansi.StringWidth(text) + 2
 		if filter == active {
-			row += t.Surface(" "+label+" ", cells)
+			if filter == "" {
+				label = headingStyle(t).Render("All")
+			} else {
+				label = changeMark(filter, t, mode) + " " + headingStyle(t).Render(strconv.Itoa(kindCount(n, filter)))
+			}
+			row += t.Raised(" "+label+" ", cells)
 		} else {
-			row += " " + label + " "
+			row += t.Surface(" "+label+" ", cells)
 		}
 		hits = append(hits, paneHit{x0: x, x1: x + cells, tab: TabChanges, filter: filter})
 		x += cells
 	}
-	return row, hits
+	return atRight(row, keyChip("f", t, mode)+t.Muted.Render(" filter"), width), hits
 }
 
-// changeMark is a change kind's glyph in its color: finished green for a
-// feature, working orange for a fix, dim for the rest.
+// kindStyle is a change kind's color: finished green for a feature,
+// working orange for a fix, dim for the rest.
+func kindStyle(kind string, t Theme) lipgloss.Style {
+	switch kind {
+	case KindFeature:
+		return lipgloss.NewStyle().Foreground(t.Finished)
+	case KindFix:
+		return lipgloss.NewStyle().Foreground(t.Working)
+	}
+	return t.Muted
+}
+
+// changeMark is a change kind's glyph in its color.
 func changeMark(kind string, t Theme, mode presentation.GlyphMode) string {
+	return kindStyle(kind, t).Render(changeGlyph(kind, mode))
+}
+
+func changeGlyph(kind string, mode presentation.GlyphMode) string {
 	g := presentation.GlyphsFor(mode)
 	switch kind {
 	case KindFeature:
-		return lipgloss.NewStyle().Foreground(t.Finished).Render(g.FeatureGlyph)
+		return g.FeatureGlyph
 	case KindFix:
-		return lipgloss.NewStyle().Foreground(t.Working).Render(g.FixGlyph)
+		return g.FixGlyph
 	}
-	return t.Muted.Render(g.OtherGlyph)
+	return g.OtherGlyph
 }
 
 func changeCount(n Notice) int {

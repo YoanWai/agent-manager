@@ -91,7 +91,7 @@ func listRows(notices []Notice, cursor, width int, t Theme, mode presentation.Gl
 			lines = append(lines, "  "+t.Muted.Render(ansi.Truncate(n.Subtitle, width-5, "…")))
 		}
 		for _, line := range lines {
-			add(listRow(line, i == cursor, width, t, mode), i)
+			add(listRow(line, i == cursor, kindColor(n.Kind, t), width, t, mode), i)
 		}
 	}
 	return rows, owners
@@ -141,18 +141,18 @@ func kindColor(kind Kind, t Theme) lipgloss.Color {
 }
 
 // listRow sets a line after the selection bar's column, on the surface fill
-// when it is the selected notice's.
-func listRow(line string, selected bool, width int, t Theme, mode presentation.GlyphMode) string {
+// with the bar in the notice's kind color when it is the selected notice's.
+func listRow(line string, selected bool, tone lipgloss.Color, width int, t Theme, mode presentation.GlyphMode) string {
 	if !selected {
 		return padRight("  "+line, width)
 	}
-	bar := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).SectionBarGlyph)
+	bar := lipgloss.NewStyle().Foreground(tone).Render(presentation.GlyphsFor(mode).SectionBarGlyph)
 	return t.Surface(bar+" "+line, width)
 }
 
 // besideList sets the message right of the list, a seam between them.
 func besideList(list, message []string, t Theme) []string {
-	seam := t.Border.Render("│") + strings.Repeat(" ", panePadding)
+	seam := t.Subtle.Render("│") + strings.Repeat(" ", panePadding)
 	rows := make([]string, max(len(list), len(message)))
 	for i := range rows {
 		left, right := "", ""

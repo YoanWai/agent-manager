@@ -26,12 +26,14 @@ var thanksGroups = []struct {
 	{ThanksStarted, "STARTED SOMETHING"},
 }
 
-// Column caps keep a long label, scope or handle from squeezing the text
-// beside it.
+// A highlight's label takes a fixed column so details line up from one
+// release to the next. The caps keep a long scope or handle from squeezing
+// the text beside it, and a handle column never narrows below its floor.
 const (
-	labelColumnMax  = 24
-	scopeColumnMax  = 14
-	handleColumnMax = 20
+	labelColumn       = 26
+	scopeColumnMax    = 14
+	handleColumnFloor = 14
+	handleColumnMax   = 20
 )
 
 // overviewTab is the newest release's summary and highlights, each older
@@ -54,7 +56,8 @@ func overviewTab(n Notice, width int, t Theme, mode presentation.GlyphMode) []st
 		if n.IsUpdate() {
 			heading = "WHAT YOU GET"
 		}
-		rows = spaced(rows, groupLabel(heading, t))
+		bar := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).SectionBarGlyph)
+		rows = spaced(rows, bar+groupLabel(heading, t), "")
 		rows = append(rows, highlightRows(newest.Highlights, width, t, mode)...)
 	}
 	for index := len(n.Releases) - 2; index >= 0; index-- {
@@ -82,11 +85,7 @@ func overviewTab(n Notice, width int, t Theme, mode presentation.GlyphMode) []st
 // highlightRows sets each label in one column so the details line up; an
 // unlabelled highlight wraps under its bullet.
 func highlightRows(highlights []Highlight, width int, t Theme, mode presentation.GlyphMode) []string {
-	labelColumn := 0
-	for _, highlight := range highlights {
-		labelColumn = max(labelColumn, ansi.StringWidth(highlight.Label))
-	}
-	labelColumn = min(labelColumn, labelColumnMax, width/3)
+	column := min(labelColumn, width/3)
 	mark := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).HighlightGlyph) + " "
 	var rows []string
 	for _, highlight := range highlights {
@@ -95,7 +94,7 @@ func highlightRows(highlights []Highlight, width int, t Theme, mode presentation
 			rows = append(rows, hanging(mark, 2, runs, width, t.Value, t.Key)...)
 			continue
 		}
-		rows = append(rows, besideColumn(mark+headingStyle(t).Render(highlight.Label), labelColumn+2, runs, width, t.Value, t.Key)...)
+		rows = append(rows, besideColumn(mark+headingStyle(t).Render(highlight.Label), column+2, runs, width, t.Value, t.Key)...)
 	}
 	return rows
 }
@@ -118,16 +117,18 @@ func changeCounts(changes []Change) string {
 
 func countChips(n Notice, width int, t Theme, mode presentation.GlyphMode) []string {
 	var chips []string
+	add := func(glyph, text string, style lipgloss.Style) {
+		chips = append(chips, t.Surface(style.Render(" "+glyph+" "+text+" "), ansi.StringWidth(glyph+text)+3))
+	}
 	for _, group := range changeGroups {
 		if count := kindCount(n, group.kind); count > 0 {
-			chips = append(chips, changeMark(group.kind, t, mode)+" "+t.Muted.Render(plural(count, group.one, group.many)))
+			add(changeGlyph(group.kind, mode), plural(count, group.one, group.many), kindStyle(group.kind, t))
 		}
 	}
 	if people := len(mergedThanks(n.Releases)); people > 0 {
-		heart := lipgloss.NewStyle().Foreground(t.Accent2).Render(presentation.GlyphsFor(mode).PeopleGlyph)
-		chips = append(chips, heart+" "+t.Muted.Render(plural(people, "person", "people")))
+		add(presentation.GlyphsFor(mode).PeopleGlyph, plural(people, "person", "people"), lipgloss.NewStyle().Foreground(t.Accent2))
 	}
-	return flow(chips, "   ", width)
+	return flow(chips, "  ", width)
 }
 
 // changesTab lists every change in the range, newest release first, each
@@ -178,7 +179,7 @@ func changeRow(change Change, scopeColumn, width int, t Theme, mode presentation
 	if change.Kind == KindOther {
 		text, scope = t.Muted, t.Muted
 	}
-	lead, indent := changeMark(change.Kind, t, mode)+" ", 2
+	lead, indent := changeMark(change.Kind, t, mode)+"  ", 3
 	if scopeColumn > 0 {
 		lead += padRight(scope.Render(ansi.Truncate(change.Scope, scopeColumn, "…")), scopeColumn) + "  "
 		indent += scopeColumn + 2
@@ -198,7 +199,7 @@ func thanksTab(n Notice, width int, t Theme, mode presentation.GlyphMode) []stri
 	for _, person := range people {
 		handleColumn = max(handleColumn, ansi.StringWidth(person.Handle))
 	}
-	handleColumn = min(handleColumn, handleColumnMax, width/3)
+	handleColumn = min(max(handleColumn, handleColumnFloor), handleColumnMax, width/3)
 	handle := lipgloss.NewStyle().Foreground(t.Accent2).Bold(true)
 	for _, group := range thanksGroups {
 		section := []string{thanksMark(group.group, t, mode) + " " + groupLabel(group.label, t)}

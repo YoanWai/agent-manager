@@ -117,10 +117,12 @@ type Theme struct {
 	Border lipgloss.Style
 	Title  lipgloss.Style
 	Fill   func(row string, width int) string
-	// Surface fills the selected list row over the card.
+	// Surface fills the selected list row and a chip over the card; Raised
+	// is one step above it, for a key and the active filter.
 	Surface func(row string, width int) string
-	// Callout is the faint accent fill behind a call to action.
-	Callout func(row string, width int) string
+	Raised  func(row string, width int) string
+	// Callout is a call to action's faint fill, tinted toward tone.
+	Callout func(row string, width int, tone lipgloss.Color) string
 }
 
 const FeedPendingText = "checking messages…"
@@ -407,7 +409,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 		rows = append(rows, besideList(list, message, t)...)
 	} else {
 		rows = append(rows, list...)
-		rows = append(rows, t.Border.Render(strings.Repeat(presentation.ChromeFor(f.GlyphMode).DashedRuleGlyph, inner)))
+		rows = append(rows, t.Subtle.Render(strings.Repeat(presentation.ChromeFor(f.GlyphMode).DashedRuleGlyph, inner)))
 		top = len(rows)
 		rows = append(rows, message...)
 	}
@@ -422,7 +424,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 // corner and the dash before it.
 const footStart = 2
 
-const footSep = " · "
+const footSep = "  "
 
 // Foot is where each key the bottom edge names was painted, the ones the
 // edge's truncation cut left out.
@@ -477,8 +479,8 @@ func (p Panel) footPairs(notices []Notice, inner int, f Frame) [][2]string {
 	}
 	bare := keysOnly(append([][2]string{{"↑↓", ""}}, actions...))
 	for _, pairs := range [][][2]string{
-		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
-		append([][2]string{{"↑↓", "pick"}, {"pgup/pgdn", "scroll"}}, actions...),
+		append([][2]string{{"↑↓", "message"}, {"pgup/pgdn/home/end", "scroll"}}, actions...),
+		append([][2]string{{"↑↓", "message"}, {"pgup/pgdn", "scroll"}}, actions...),
 		actions,
 		append(keysOnly(sections), rest...),
 	} {
@@ -493,14 +495,15 @@ func footPart(pair [2]string, mode presentation.GlyphMode) string {
 	return strings.TrimSpace(presentation.KeyLabel(mode, pair[0]) + " " + pair[1])
 }
 
+// renderFoot draws each key in the accent and what it does in dim.
 func renderFoot(pairs [][2]string, t Theme, mode presentation.GlyphMode) string {
+	keyStyle := lipgloss.NewStyle().Foreground(t.Accent)
 	parts := make([]string, len(pairs))
 	for i, pair := range pairs {
-		style := t.Muted
-		if pair[0] == "u" {
-			style = t.Key
+		parts[i] = keyStyle.Render(presentation.KeyLabel(mode, pair[0]))
+		if pair[1] != "" {
+			parts[i] += t.Muted.Render(" " + pair[1])
 		}
-		parts[i] = style.Render(footPart(pair, mode))
 	}
 	return strings.Join(parts, t.Muted.Render(footSep))
 }
@@ -513,14 +516,14 @@ func footText(pairs [][2]string, mode presentation.GlyphMode) string {
 	return strings.Join(parts, footSep)
 }
 
-// legend is the card's title, set into the border: lowercase, warm,
+// legend is the card's title, set into the border: lowercase and bright,
 // no fill, so it reads as a fieldset legend rather than a badge.
 func legend(t Theme) string {
 	return t.Title.Render(" messages ")
 }
 
 // cardFrame wraps content rows in the notices fieldset: a rounded
-// yellow border with legends set into the top and bottom edges, a second
+// accent border with legends set into the top and bottom edges, a second
 // legend at the top edge's right, and the card fill behind every row.
 // inner is the content column's width.
 func cardFrame(rows []string, inner int, topLegend, topRight, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {

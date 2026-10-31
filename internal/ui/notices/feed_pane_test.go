@@ -27,16 +27,16 @@ func TestFeedPaneShowsKindChipBannerAndExpiry(t *testing.T) {
 	}
 	rows := feedPane(n, 80, theme, presentation.DefaultGlyphMode)
 	plain := plainRows(rows)
-	if plain[0] != " HEADS UP  control mode can crash · until Nov 22" {
-		t.Fatalf("first row = %q, want the chip, the banner and the local expiry date", plain[0])
+	if !strings.HasPrefix(plain[0], " HEADS UP   control mode can crash ") || !strings.HasSuffix(plain[0], " until Nov 22") || lipgloss.Width(plain[0]) != 80 {
+		t.Fatalf("first row = %q, want the chip, the banner and the local expiry date at the right", plain[0])
 	}
-	if want := chip("HEADS UP", theme.Working, theme) + " " + theme.Muted.Render("control mode can crash · until Nov 22"); rows[0] != want {
+	if want := chip("HEADS UP", theme.Working, theme) + "  " + theme.Muted.Render("control mode can crash"); !strings.HasPrefix(rows[0], want) || !strings.HasSuffix(rows[0], theme.Muted.Render("until Nov 22")) {
 		t.Fatalf("chip and banner styled %q, want %q", rows[0], want)
 	}
-	if rows[1] != headingStyle(theme).Render("tmux below 3.7") {
-		t.Fatalf("title row = %q, want it bright bold", rows[1])
+	if plain[1] != "" || rows[2] != headingStyle(theme).Render("tmux below 3.7") {
+		t.Fatalf("a blank row, then the title bright bold:\n%s", strings.Join(plain, "\n"))
 	}
-	if at := rowIndex(plain, "Update tmux"); at != 3 || plain[2] != "" {
+	if at := rowIndex(plain, "Update tmux"); at != 4 || plain[3] != "" {
 		t.Fatalf("a blank row and then the body:\n%s", strings.Join(plain, "\n"))
 	}
 
@@ -58,8 +58,11 @@ func TestFeedCallToActionUsesTheActionOrOpenLink(t *testing.T) {
 	rows := feedPane(n, 80, theme, presentation.DefaultGlyphMode)
 	plain := plainRows(rows)
 	last := strings.TrimRight(plain[len(plain)-1], " ")
-	if last != "▍ ↵  Join on Discord  discord.gg" {
-		t.Fatalf("call to action = %q", last)
+	if !strings.HasPrefix(last, "▍   ↵    Join on Discord  ") || !strings.HasSuffix(last, "  discord.gg") || lipgloss.Width(last) != 79 {
+		t.Fatalf("call to action = %q, want the key, the action and the host at the right", last)
+	}
+	if !strings.Contains(rows[len(rows)-1], chip(" ↵ ", theme.Accent2, theme)) {
+		t.Fatalf("the key is not on the kind's fill: %q", rows[len(rows)-1])
 	}
 	if !strings.Contains(rows[len(rows)-1], theme.Muted.Render("discord.gg")) {
 		t.Fatalf("the link host is not dim: %q", rows[len(rows)-1])
@@ -69,7 +72,8 @@ func TestFeedCallToActionUsesTheActionOrOpenLink(t *testing.T) {
 	}
 
 	n.Action = ""
-	if got := feedText(n, 80); strings.TrimRight(got[len(got)-1], " ") != "▍ ↵  Open link  discord.gg" {
+	got := feedText(n, 80)
+	if bar := strings.TrimRight(got[len(got)-1], " "); !strings.HasPrefix(bar, "▍   ↵    Open link  ") || !strings.HasSuffix(bar, "discord.gg") {
 		t.Fatalf("without an action the bar reads %q, want Open link", got[len(got)-1])
 	}
 	if got := feedText(n, 30); lipgloss.Width(got[len(got)-1]) > 30 {
@@ -134,13 +138,13 @@ func TestConfigImportWarningDrawsAsAHeadsUp(t *testing.T) {
 		t.Fatalf("test setup: last notice is %s", warning.ID)
 	}
 	rows := feedText(warning, 80)
-	if !strings.HasPrefix(rows[0], " HEADS UP  Settings could not import it") {
+	if !strings.HasPrefix(rows[0], " HEADS UP   Settings could not import it") {
 		t.Fatalf("first row = %q", rows[0])
 	}
 	if rowIndex(rows, "bad key") < 0 {
 		t.Fatalf("the reason is missing:\n%s", strings.Join(rows, "\n"))
 	}
-	if got := strings.TrimRight(rows[len(rows)-1], " "); got != "▍ ↵  Read what Settings holds  github.com" {
+	if got := strings.TrimRight(rows[len(rows)-1], " "); !strings.HasPrefix(got, "▍   ↵    Read what Settings holds  ") || !strings.HasSuffix(got, "  github.com") {
 		t.Fatalf("call to action = %q, want the link's host", got)
 	}
 	if rowIndex(rows, "Enter opens") >= 0 {

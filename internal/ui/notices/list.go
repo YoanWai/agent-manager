@@ -56,9 +56,9 @@ func (p Panel) Active(src Sources) []Notice {
 	var notices []Notice
 	if src.Update.Latest != "" {
 		releaseRange := src.Update.Available
-		title := src.Update.Latest + " available"
+		title := bareVersion(src.Update.Latest) + " available"
 		if len(releaseRange.Releases) > 1 {
-			title = releaseCountLabel(releaseRange) + " releases available · " + src.Update.Latest
+			title = releaseCountLabel(releaseRange) + " releases available · " + bareVersion(src.Update.Latest)
 		}
 		var body []string
 		if len(releaseRange.Releases) == 0 {

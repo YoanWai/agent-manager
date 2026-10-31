@@ -160,7 +160,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	m.openNotices("update-v0.6.0")
 
 	n := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()]
-	if n.Title != "4 releases available · v0.6.0" {
+	if n.Title != "4 releases available · 0.6.0" {
 		t.Fatalf("title = %q", n.Title)
 	}
 	if len(n.Releases) != 4 {
@@ -168,7 +168,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	}
 	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
-		"4 releases available · v0.6.0",
+		"4 releases available · 0.6.0",
 		"v0.3.0",
 		"v0.6.0",
 		"4 releases · you're on 0.2.0",
@@ -353,7 +353,7 @@ func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	}}
 	m.openNotices("feed-canonical")
 	modal := ansi.Strip(preparedView(m))
-	if !strings.Contains(modal, "◆ One title everywhere") || strings.Count(modal, "legacy compact copy") != 1 || !strings.Contains(modal, "NEWS  legacy compact copy") {
+	if !strings.Contains(modal, "◆ One title everywhere") || strings.Count(modal, "legacy compact copy") != 1 || !strings.Contains(modal, "NEWS   legacy compact copy") {
 		t.Fatalf("modal should list the title and keep the banner to the message's dim line:\n%s", modal)
 	}
 }
@@ -494,7 +494,7 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	if !strings.Contains(joined, "╰") {
 		t.Fatalf("short terminal ate the modal's bottom border:\n%s", joined)
 	}
-	if !strings.Contains(joined, "↑↓ · r · ↵ · x · esc") {
+	if !strings.Contains(joined, "↑↓  r  ↵  x  esc") {
 		t.Fatalf("short terminal ate the key hint:\n%s", joined)
 	}
 	if !strings.Contains(joined, "┃") {
@@ -958,7 +958,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		Releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
 	})
 	updFrame := ansi.Strip(preparedView(upd))
-	for _, want := range []string{"messages", "v0.3.0 available", "you're on 0.2.0", "u update", "x dismiss"} {
+	for _, want := range []string{"messages", "0.3.0 available", "you're on 0.2.0", "u update", "x dismiss"} {
 		if !strings.Contains(updFrame, want) {
 			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
 		}
@@ -1362,8 +1362,8 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		mode                                          presentation.GlyphMode
 		feed, update, refresh, download, link, cursor string
 	}{
-		{presentation.GlyphModeBasic, "i", "^", "R", "v", "| enter", "|"},
-		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "▍ ↵", "▍"},
+		{presentation.GlyphModeBasic, "i", "^", "R", "v", "|   enter", "|"},
+		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "▍   ↵", "▍"},
 	} {
 		m.prefs.glyphMode = tc.mode
 		notices := m.activeNotices()
@@ -1376,7 +1376,7 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		m.notices.Open(notices, "literal")
 		got := ansi.Strip(strings.Join(m.notices.View(notices, m.noticesFrame()), "\n"))
 		tail := got
-		for _, want := range []string{tc.feed + " " + text, tc.update + " v1.1.0 available", tc.refresh + " refreshing", tc.download + " downloading", tc.link + "  Open link  example.com"} {
+		for _, want := range []string{tc.feed + " " + text, tc.update + " 1.1.0 available", tc.refresh + " refreshing", tc.download + " downloading", tc.link + "    Open link", "example.com"} {
 			if !strings.Contains(tail, want) {
 				t.Fatalf("%s tail missing %q: %s", tc.mode, want, tail)
 			}

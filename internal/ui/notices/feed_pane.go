@@ -12,7 +12,11 @@ var feedLabels = [...]string{KindNews: "NEWS", KindHeadsUp: "HEADS UP", KindTip:
 // feedPane is a news entry, heads-up or tip: its kind, banner and expiry,
 // the title, the body, and the link it opens when it has one.
 func feedPane(n Notice, width int, t Theme, mode presentation.GlyphMode) []string {
-	rows := []string{ansi.Truncate(chip(feedLabels[n.Kind], kindColor(n.Kind, t), t)+" "+t.Muted.Render(feedMeta(n)), width, "…")}
+	head := chip(feedLabels[n.Kind], kindColor(n.Kind, t), t) + "  " + t.Muted.Render(n.Subtitle)
+	if expires := feedExpiry(n); expires != "" {
+		head = atRight(ansi.Truncate(head, max(width-ansi.StringWidth(expires)-2, 0), "…"), t.Muted.Render(expires), width)
+	}
+	rows := []string{ansi.Truncate(head, width, "…"), ""}
 	rows = appendWrapped(rows, []textRun{{text: n.Title}}, width, headingStyle(t), t)
 	var body []string
 	for _, line := range n.Body {
@@ -28,7 +32,7 @@ func feedPane(n Notice, width int, t Theme, mode presentation.GlyphMode) []strin
 	if action == "" {
 		action = "Open link"
 	}
-	return spaced(rows, actionBar(presentation.KeyLabel(mode, "↵"), action, linkHost(n.URL), width, t, mode))
+	return spaced(rows, actionBar("↵", action, t.Muted.Render(linkHost(n.URL)), kindColor(n.Kind, t), width, t, mode))
 }
 
 // linkHost is the host a link leads to, or the whole URL when it does not parse.
@@ -40,16 +44,16 @@ func linkHost(raw string) string {
 	return parsed.Host
 }
 
-// feedMeta is the banner, then the day the entry expires in the viewer's zone.
-func feedMeta(n Notice) string {
+// feedExpiry is the day the entry expires in the viewer's zone.
+func feedExpiry(n Notice) string {
 	if n.Expires.IsZero() {
-		return n.Subtitle
+		return ""
 	}
-	return n.Subtitle + " · until " + n.Expires.In(displayZone).Format("Jan 2")
+	return "until " + n.Expires.In(displayZone).Format("Jan 2")
 }
 
 // feedMeasure is a feed notice's rows as they would read unwrapped, for the
 // modal's width.
 func feedMeasure(n Notice) []string {
-	return append([]string{" " + feedLabels[n.Kind] + "  " + feedMeta(n), n.Title}, n.Body...)
+	return append([]string{" " + feedLabels[n.Kind] + "   " + n.Subtitle + "  " + feedExpiry(n), n.Title}, n.Body...)
 }

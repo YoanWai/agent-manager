@@ -640,7 +640,7 @@ func labelCase(label string) string {
 
 func releaseAcronym(word string) bool {
 	switch strings.ToLower(word) {
-	case "ai", "api", "ci", "cli", "cpu", "mcp", "os", "pr", "ram", "tui", "ui":
+	case "ai", "api", "ci", "cli", "cpu", "e2e", "mcp", "os", "pr", "ram", "tui", "ui":
 		return true
 	default:
 		return false

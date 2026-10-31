@@ -155,7 +155,7 @@ func TestCleanChangeKeepsEveryTypeAndSplitsTheScope(t *testing.T) {
 	cases := map[string]Change{
 		"feat(ui): first-run setup by @YoanWai in https://github.com/YoanWai/agent-manager/pull/919":            {Kind: KindFeature, Scope: "UI", Text: "First-run setup"},
 		"perf(tmux): one spawn per poll by @a in https://github.com/YoanWai/agent-manager/pull/1":               {Kind: KindFix, Scope: "Tmux", Text: "One spawn per poll", Author: "@a"},
-		"test(e2e): await preview redraws by @ribeirojose in https://github.com/YoanWai/agent-manager/pull/862": {Kind: KindOther, Scope: "E2e", Text: "Await preview redraws", Author: "@ribeirojose"},
+		"test(e2e): await preview redraws by @ribeirojose in https://github.com/YoanWai/agent-manager/pull/862": {Kind: KindOther, Scope: "E2E", Text: "Await preview redraws", Author: "@ribeirojose"},
 		"ci: run staticcheck by @YoanWai in https://github.com/YoanWai/agent-manager/pull/910":                  {Kind: KindOther, Text: "Run staticcheck"},
 		"Untyped line by @b in https://github.com/YoanWai/agent-manager/pull/2":                                 {Kind: KindOther, Text: "Untyped line", Author: "@b"},
 	}
