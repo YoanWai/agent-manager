@@ -37,13 +37,16 @@ shows:
 Three tabs follow, with a count on Changes and Thanks.
 
 - **Overview** holds the summary and the highlights under WHAT'S NEW (WHAT YOU
-  GET for an available release). A highlight with a label shows the label in a
-  column and its detail beside it. Counts of features, fixes, under-the-hood
-  changes and people close the tab.
-- **Changes** lists every change in the release in the order the notes give
-  them. Each row has a glyph for its kind, the scope, the text, and the handle
-  of an outside contributor at the right. Under-the-hood rows are dim. `f` steps the filter through All,
-  features, fixes and under the hood.
+  GET for an available release). When every highlight fits on one row, the
+  labels form a column with each detail beside it. When a detail would wrap,
+  each highlight is a block: its label, its detail under it, and a blank row
+  before the next. Counts of features, fixes, under-the-hood changes and people
+  close the tab.
+- **Changes** lists every change in the release as three blocks, features,
+  fixes and under the hood, each in the order the notes give them. Each row has
+  a glyph for its kind, the scope, the text, and the handle of an outside
+  contributor at the right. Under-the-hood rows are dim. `f` steps the filter
+  through All, features, fixes and under the hood.
 - **Thanks** names each person once, under BUILT IT, FOUND IT or STARTED
   SOMETHING, with what they did and their pull request and issue numbers.
 
@@ -132,7 +135,7 @@ Two or three sentences of summary. `Backticks` put a word in the accent color.
   `###` headings group the bullets. A bullet above the first heading sits under
   Built it. The trailing `(#...)` becomes the numbers column on the Thanks tab.
 
-The Changes tab lists What's Changed in the order the notes give. A change's
+The Changes tab lists What's Changed by kind, in the order the notes give. A change's
 Conventional Commit type sets its glyph and color and what `f` filters. `feat`
 is a feature, `fix` and `perf` are fixes, and every other type (`docs`,
 `chore`, `test`, `ci`, `build`, `refactor`, `style`, or no type at all) is under

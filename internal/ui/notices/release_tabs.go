@@ -26,11 +26,10 @@ var thanksGroups = []struct {
 	{ThanksStarted, "STARTED SOMETHING"},
 }
 
-// A highlight's label takes a fixed column so details line up from one
-// release to the next. The caps keep a long scope or handle from squeezing
-// the text beside it, and a handle column never narrows below its floor.
+// Column caps keep a long label, scope or handle from squeezing the text
+// beside it, and a handle column never narrows below its floor.
 const (
-	labelColumn       = 26
+	labelColumnMax    = 26
 	scopeColumnMax    = 14
 	handleColumnFloor = 14
 	handleColumnMax   = 20
@@ -82,21 +81,60 @@ func overviewTab(n Notice, width int, t Theme, mode presentation.GlyphMode) []st
 	return rows
 }
 
-// highlightRows sets each label in one column so the details line up; an
-// unlabelled highlight wraps under its bullet.
+// highlightRows lays highlights out as a table, labels in a column and
+// details beside them, while every detail fits on its row. A detail that
+// would wrap turns them into blocks instead: the label, its detail under it,
+// and a blank row between highlights.
 func highlightRows(highlights []Highlight, width int, t Theme, mode presentation.GlyphMode) []string {
-	column := min(labelColumn, width/3)
-	mark := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).HighlightGlyph) + " "
-	var rows []string
+	column := 0
 	for _, highlight := range highlights {
+		column = max(column, ansi.StringWidth(highlight.Label))
+	}
+	column = min(column, labelColumnMax, width/3)
+	mark := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).HighlightGlyph) + " "
+	if highlightsFitBeside(highlights, column, width) {
+		var rows []string
+		for _, highlight := range highlights {
+			runs := markedRuns(highlight.Text)
+			if highlight.Label == "" {
+				rows = append(rows, hanging(mark, 2, runs, width, t.Value, t.Key)...)
+				continue
+			}
+			rows = append(rows, besideColumn(mark+headingStyle(t).Render(highlight.Label), column+2, runs, width, t.Value, t.Key)...)
+		}
+		return rows
+	}
+	var rows []string
+	for index, highlight := range highlights {
+		if index > 0 {
+			rows = append(rows, "")
+		}
 		runs := markedRuns(highlight.Text)
 		if highlight.Label == "" {
 			rows = append(rows, hanging(mark, 2, runs, width, t.Value, t.Key)...)
 			continue
 		}
-		rows = append(rows, besideColumn(mark+headingStyle(t).Render(highlight.Label), column+2, runs, width, t.Value, t.Key)...)
+		rows = append(rows, mark+headingStyle(t).Render(highlight.Label))
+		if len(runs) > 0 {
+			rows = append(rows, hanging("  ", 2, runs, width, t.Value, t.Key)...)
+		}
 	}
 	return rows
+}
+
+// highlightsFitBeside reports whether every highlight reads on one row with
+// its label in a column cells wide.
+func highlightsFitBeside(highlights []Highlight, column, width int) bool {
+	for _, highlight := range highlights {
+		text := ansi.StringWidth(plainMarks(highlight.Text))
+		switch {
+		case highlight.Label == "" && 2+text > width:
+			return false
+		case highlight.Label != "" && (ansi.StringWidth(highlight.Label) > column || 2+column+2+text > width):
+			return false
+		}
+	}
+	return true
 }
 
 func changeCounts(changes []Change) string {
@@ -132,7 +170,8 @@ func countChips(n Notice, width int, t Theme, mode presentation.GlyphMode) []str
 }
 
 // changesTab lists every change in the range, newest release first, each
-// release under its version when there are several.
+// release under its version when there are several. Features, fixes and the
+// rest each form a block, in the order the notes give them.
 func changesTab(n Notice, filter string, width int, t Theme, mode presentation.GlyphMode) []string {
 	if changeCount(n) == 0 {
 		return appendPartial([]string{t.Muted.Render("No summarized changes.")}, n, width, t, mode)
@@ -148,9 +187,18 @@ func changesTab(n Notice, filter string, width int, t Theme, mode presentation.G
 	for index := len(n.Releases) - 1; index >= 0; index-- {
 		release := n.Releases[index]
 		var section []string
-		for _, change := range release.Changes {
-			if filter == "" || change.Kind == filter {
-				section = append(section, changeRow(change, scopeColumn, width, t, mode)...)
+		for _, group := range changeGroups {
+			if filter != "" && group.kind != filter {
+				continue
+			}
+			var kind []string
+			for _, change := range release.Changes {
+				if change.Kind == group.kind {
+					kind = append(kind, changeRow(change, scopeColumn, width, t, mode)...)
+				}
+			}
+			if len(kind) > 0 {
+				section = spaced(section, kind...)
 			}
 		}
 		if omitted := release.TotalChanges - len(release.Changes); omitted > 0 && filter == "" {

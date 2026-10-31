@@ -258,13 +258,14 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 }
 
 // splitView sets the list beside the message when the terminal is wide
-// enough, and tall enough for the list's two-line rows.
+// enough, and tall enough for the list's two-line rows between a blank row
+// above and below.
 func (p Panel) splitView(notices []Notice, f Frame) bool {
 	if !split(f.Width) {
 		return false
 	}
 	list, _ := listRows(notices, p.cursor, listWidth, f.Theme, f.GlyphMode, true)
-	return 1+len(list)+2 <= f.Height
+	return 1+len(list)+1+2 <= f.Height
 }
 
 // minPageRows is the least of a tab a release keeps in view below its
@@ -406,7 +407,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	if splitView {
 		p.listCols = listWidth
 		left = listWidth + 1 + panePadding
-		rows = append(rows, besideList(list, message, t)...)
+		rows = append(rows, besideList(append(list, ""), message, t)...)
 	} else {
 		rows = append(rows, list...)
 		rows = append(rows, t.Subtle.Render(strings.Repeat(presentation.ChromeFor(f.GlyphMode).DashedRuleGlyph, inner)))

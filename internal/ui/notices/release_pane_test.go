@@ -164,10 +164,8 @@ func TestTabCountsAreMutedAndTheActiveTabUnderlined(t *testing.T) {
 	}
 }
 
-func TestOverviewAlignsHighlightLabels(t *testing.T) {
-	release := tabsRelease(t)
-	release.Highlights = append(release.Highlights, Highlight{Text: "An older `highlight` without a label that runs long enough to wrap onto a second row under its bullet"})
-	rows := paneText(updatedNotice(t, release), TabOverview, "", 60)
+func TestOverviewAlignsHighlightLabelsWhenEveryDetailFits(t *testing.T) {
+	rows := paneText(updatedNotice(t, tabsRelease(t)), TabOverview, "", paneTestWidth)
 	column := func(label, text string) int {
 		at := rowIndex(rows, label)
 		if at < 0 {
@@ -176,18 +174,35 @@ func TestOverviewAlignsHighlightLabels(t *testing.T) {
 		return strings.Index(rows[at], text)
 	}
 	inbox, merged := column("Inbox", "Messages sit"), column("Every merged PR", "Tests, CI")
-	if inbox != merged || inbox <= len("◆ Every merged PR") {
-		t.Fatalf("highlight details start at %d and %d:\n%s", inbox, merged, strings.Join(rows, "\n"))
+	if inbox != merged || inbox != len("◆ Every merged PR")+2 {
+		t.Fatalf("highlight details start at %d and %d, want two cells after the longest label:\n%s", inbox, merged, strings.Join(rows, "\n"))
 	}
+	if at := rowIndex(rows, "Inbox"); rows[at+1] == "" {
+		t.Fatalf("a table of one-row highlights takes no blank rows:\n%s", strings.Join(rows, "\n"))
+	}
+	if available := paneText(availableNotice(t, tabsRelease(t)), TabOverview, "", paneTestWidth); rowIndex(available, "WHAT YOU GET") < 0 {
+		t.Fatalf("an available release names what it gives:\n%s", strings.Join(available, "\n"))
+	}
+}
+
+func TestOverviewStacksHighlightsWhenADetailWouldWrap(t *testing.T) {
+	release := tabsRelease(t)
+	release.Highlights = append(release.Highlights, Highlight{Text: "An older `highlight` without a label that runs long enough to wrap onto a second row under its bullet"})
+	rows := paneText(updatedNotice(t, release), TabOverview, "", 60)
 	if rowIndex(rows, "WHAT'S NEW") < 0 {
 		t.Fatalf("no WHAT'S NEW label:\n%s", strings.Join(rows, "\n"))
+	}
+	inbox := rowIndex(rows, "◆ Inbox")
+	if inbox < 0 || strings.TrimSpace(rows[inbox]) != "◆ Inbox" || !strings.HasPrefix(rows[inbox+1], "  Messages sit") {
+		t.Fatalf("a label takes its own row with the detail under it:\n%s", strings.Join(rows, "\n"))
+	}
+	merged := rowIndex(rows, "◆ Every merged PR")
+	if merged < 2 || rows[merged-1] != "" {
+		t.Fatalf("a blank row separates highlights:\n%s", strings.Join(rows, "\n"))
 	}
 	older := rowIndex(rows, "◆ An older highlight")
 	if older < 0 || !strings.HasPrefix(rows[older+1], "  ") || rows[older+1][2] == ' ' {
 		t.Fatalf("an unlabelled highlight wraps under its bullet:\n%s", strings.Join(rows, "\n"))
-	}
-	if available := paneText(availableNotice(t, release), TabOverview, "", 60); rowIndex(available, "WHAT YOU GET") < 0 {
-		t.Fatalf("an available release names what it gives:\n%s", strings.Join(available, "\n"))
 	}
 }
 
@@ -578,5 +593,25 @@ func TestChipInkReadsOnEveryTheme(t *testing.T) {
 				t.Logf("%s %s chip: the better ink %s on %s reaches only %.2f:1", palette.Name, groupLabels[kind], best, fill, ratio)
 			}
 		}
+	}
+}
+
+func TestChangesGroupFeaturesFixesAndTheRest(t *testing.T) {
+	release := tabsRelease(t)
+	release.Changes = []Change{
+		{Kind: KindFix, Scope: "UI", Text: "First fix"},
+		{Kind: KindOther, Scope: "CI", Text: "Some chore"},
+		{Kind: KindFeature, Scope: "UI", Text: "A feature"},
+		{Kind: KindFix, Scope: "UI", Text: "Second fix"},
+	}
+	release.TotalChanges = len(release.Changes)
+	rows := paneText(updatedNotice(t, release), TabChanges, "", paneTestWidth)
+	feature, first, second, chore := rowIndex(rows, "A feature"), rowIndex(rows, "First fix"), rowIndex(rows, "Second fix"), rowIndex(rows, "Some chore")
+	if !(feature < first && first+1 == second && second < chore) || rows[first-1] != "" || rows[chore-1] != "" {
+		t.Fatalf("features, fixes and the rest form blocks in note order:\n%s", strings.Join(rows, "\n"))
+	}
+	fixes := paneText(updatedNotice(t, release), TabChanges, KindFix, paneTestWidth)
+	if at := rowIndex(fixes, "First fix"); at < 0 || fixes[at-1] != "" || rowIndex(fixes, "A feature") >= 0 {
+		t.Fatalf("a filtered list holds one block:\n%s", strings.Join(fixes, "\n"))
 	}
 }
