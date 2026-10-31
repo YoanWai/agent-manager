@@ -486,7 +486,7 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	if view := ansi.Strip(m.viewForm()); !strings.Contains(view, uilaunch.WorktreeUnavailable) {
 		t.Fatalf("an aged answer should read unavailable until the toggle asks again: %q", view)
 	}
-	m.form().SetWorktree(false)
+	m.form().SetWorktree(true)
 	m.form().FocusField(m.spawnHost(), spawn.FieldWorktree)
 	_, probe := m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	if probe == nil {
