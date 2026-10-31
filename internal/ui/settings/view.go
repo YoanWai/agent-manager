@@ -147,6 +147,8 @@ func (s *State) View(ctx ViewContext) Frame {
 			lines = append(lines, row(FieldTheme, label(FieldTheme), palette.Name)+"  "+themeSwatch(palette))
 		case FieldGlyphs:
 			lines = append(lines, symbolsRow)
+		case FieldReviewScope:
+			lines = append(lines, row(FieldReviewScope, label(FieldReviewScope), reviewScopeLabel(s.ReviewScope)))
 		case FieldEditor:
 			lines = append(lines, editorLine)
 		case FieldKeybindings:

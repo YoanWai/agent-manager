@@ -256,6 +256,7 @@ func TestReviewScope(t *testing.T) {
 	}{
 		{name: "uncommitted", session: "abc123", scope: "uncommitted", wantScope: "uncommitted"},
 		{name: "branch trimmed", session: "abc123", scope: " branch ", wantScope: "branch"},
+		{name: "commit", session: "abc123", scope: "commit", wantScope: "commit"},
 		{name: "last commit", session: "abc123", scope: "last_commit", wantScope: "last_commit"},
 		{name: "staged", session: "abc123", scope: "staged", wantScope: "staged"},
 		{name: "unknown", session: "abc123", scope: "workspace", wantErr: "unknown scope"},
