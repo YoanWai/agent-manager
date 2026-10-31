@@ -16,10 +16,12 @@ the feed `banner`. A message that has not been read yet is bold and ends in a
 
 A terminal 124 columns wide or more splits the panel, as long as it is tall
 enough to show the whole list. The list sits on the left and the message on the
-right, with prose wrapped at 76 columns. A narrower terminal, or a wide but
-short one, puts the list above the message, one line per row, with the same
-tabs.
-Compatible glyph mode draws an ASCII stand-in for every glyph.
+right. A release summary wraps at 76 columns and the rest of a message wraps at
+the width of its pane. A narrower terminal, or a wide but short one, puts the
+list above the message, one line per row, with the same tabs.
+Compatible glyph mode draws an ASCII stand-in for each kind, unread, highlight
+and call-to-action glyph. The `↑↓` key hint and the `·` separator stay as
+they are, and the rules and the scrollbar follow the app's compatible chrome.
 
 ### A release
 
@@ -110,11 +112,11 @@ Two or three sentences of summary. `Backticks` put a word in the accent color.
 
 ## Thank you
 ### Built it
-- @handle added X (#123).
+- @handle added X (#123)
 ### Found it
-- @handle reported Y (#124, #125).
+- @handle reported Y (#124, #125)
 ### Started something
-- @handle opened a draft for Z (#126).
+- @handle opened a draft for Z (#126)
 ```
 
 - **Headline**: a bold first line under the version heading. It shows under the
