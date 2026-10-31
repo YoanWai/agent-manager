@@ -615,3 +615,27 @@ func TestChangesGroupFeaturesFixesAndTheRest(t *testing.T) {
 		t.Fatalf("a filtered list holds one block:\n%s", strings.Join(fixes, "\n"))
 	}
 }
+
+func TestArrowsAndHLStepTheTabs(t *testing.T) {
+	notices := []Notice{updatedNotice(t, tabsRelease(t)), {ID: "feed-tip", Kind: KindTip, Title: "A tip"}}
+	p := NewPanel(map[string]bool{}, map[string]bool{})
+	p.Open(notices, "")
+	for _, step := range []struct {
+		key  string
+		want Tab
+	}{
+		{"right", TabChanges},
+		{"l", TabThanks},
+		{"right", TabOverview},
+		{"left", TabThanks},
+		{"h", TabChanges},
+	} {
+		if out := p.Key(key(step.key), notices, testFrame()); out.Action != Stay || p.tab != step.want {
+			t.Fatalf("%s = %+v on tab %d, want tab %d", step.key, out, p.tab, step.want)
+		}
+	}
+	p.Key(key("down"), notices, testFrame())
+	if p.Key(key("right"), notices, testFrame()); p.Cursor() != 1 {
+		t.Fatalf("→ on a feed message moved the cursor to %d", p.Cursor())
+	}
+}

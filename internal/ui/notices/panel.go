@@ -183,9 +183,9 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 		if p.cursor < len(notices)-1 {
 			p.show(p.cursor + 1)
 		}
-	case "tab":
+	case "tab", "right", "l":
 		p.stepTab(notices, 1)
-	case "shift+tab":
+	case "shift+tab", "left", "h":
 		p.stepTab(notices, len(tabLabels)-1)
 	case "f":
 		if p.onRelease(notices) && p.tab == TabChanges {
@@ -560,7 +560,7 @@ func closeBinding(binding keybind.Binding) keybind.Binding {
 	var keys []keybind.Key
 	for _, key := range binding.Keys() {
 		switch key.Tea() {
-		case "r", "u", "up", "k", "down", "j", "pgup", "ctrl+u", "pgdn", "ctrl+d", "home", "g", "end", "G", "enter", "x", "d", "tab", "shift+tab", "f":
+		case "r", "u", "up", "k", "down", "j", "pgup", "ctrl+u", "pgdn", "ctrl+d", "home", "g", "end", "G", "enter", "x", "d", "tab", "shift+tab", "right", "l", "left", "h", "f":
 			continue
 		}
 		keys = append(keys, key)

@@ -71,7 +71,7 @@ into Settings is a HEADS UP message.
 | Key | Action |
 |---|---|
 | `↑` `↓` or `k` `j` | Previous or next message |
-| `tab` `shift+tab` | Next or previous tab, on a release |
+| `→` `←`, `l` `h` or `tab` `shift+tab` | Next or previous tab, on a release |
 | `f` | Step the filter, on the Changes tab |
 | `pgup` `pgdn` `home` `end` | Scroll the message |
 | `↵` | Open the release notes or the feed link |
