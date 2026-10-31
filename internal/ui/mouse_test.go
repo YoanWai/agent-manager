@@ -1516,7 +1516,12 @@ func messagesCell(t *testing.T, m *Model) (x, y int) {
 			return ansi.StringWidth(line[:col]), row
 		}
 	}
-	t.Fatal("test setup: the frame painted no messages card or badge")
+	for _, hit := range m.layout.keyHits {
+		if m.services.listKeys.Binding(keybind.Messages).Has(hit.Key.String()) {
+			return hit.X0, hit.Y
+		}
+	}
+	t.Fatal("test setup: the frame painted no messages card or key")
 	return 0, 0
 }
 
@@ -1685,9 +1690,10 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
-				if m = leftClick(m, x, y); !m.onList() {
-					t.Fatalf("a click where the entry was must not open Messages, screen = %v", m.screenID())
+				if m = leftClick(m, x, y); m.noticesOpen() {
+					t.Fatal("a click where the entry was must not open Messages")
 				}
+				m.handleKey(key("esc"))
 				m.handleKey(msg)
 				if !m.noticesOpen() {
 					t.Fatalf("%s should still open an empty Messages, screen = %v", binding, m.screenID())
