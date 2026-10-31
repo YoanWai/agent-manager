@@ -230,9 +230,19 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 
 ## Sponsors
 
-Thank you to [@dempc6469](https://github.com/dempc6469) for supporting my open source work.
+<p align="center">Thank you for supporting my open source work.</p>
 
-You can support continued development through [GitHub Sponsors](https://github.com/sponsors/YoanWai).
+<p align="center">
+  <a href="https://github.com/dempc6469">
+    <img src="https://github.com/dempc6469.png?size=144" width="72" height="72" alt="dempc6469">
+    <br>
+    <sub><b>@dempc6469</b></sub>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sponsors/YoanWai"><img src="https://img.shields.io/badge/Sponsor_this_project-bf4b78?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=1f2328" alt="Sponsor this project" height="28"></a>
+</p>
 
 ## License
 
