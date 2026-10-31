@@ -74,7 +74,7 @@ var (
 	markdownLink      = regexp.MustCompile(`\[([^]]+)]\([^)]+\)`)
 	boldLine          = regexp.MustCompile(`^\*\*([^*]+)\*\*$`)
 	highlightLabel    = regexp.MustCompile("^`([^`]+)`\\s*(.*)$")
-	thanksRefs        = regexp.MustCompile(`\s*\((#\d+(?:,\s*#\d+)*)\)$`)
+	thanksRefs        = regexp.MustCompile(`\s*\((#\d+(?:,\s*#\d+)*)\)\.?$`)
 )
 
 const (
@@ -97,6 +97,38 @@ type Thanks struct {
 	Refs   []string `json:"refs,omitempty"`
 }
 
+// UnmarshalJSON also reads the plain string a parser 1 catalog stored, so that catalog paints until it is refetched.
+func (highlight *Highlight) UnmarshalJSON(raw []byte) error {
+	if !isJSONString(raw) {
+		type fields Highlight
+		return json.Unmarshal(raw, (*fields)(highlight))
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return err
+	}
+	*highlight = Highlight{Text: text}
+	return nil
+}
+
+// UnmarshalJSON also reads the plain string a parser 1 catalog stored, filed under Built it.
+func (thanks *Thanks) UnmarshalJSON(raw []byte) error {
+	if !isJSONString(raw) {
+		type fields Thanks
+		return json.Unmarshal(raw, (*fields)(thanks))
+	}
+	var line string
+	if err := json.Unmarshal(raw, &line); err != nil {
+		return err
+	}
+	*thanks = parseThanks(line, ThanksBuilt)
+	return nil
+}
+
+func isJSONString(raw []byte) bool {
+	return len(raw) > 0 && raw[0] == '"'
+}
+
 // Change is one line of a release's generated list.
 type Change struct {
 	Kind   string `json:"kind"`
@@ -106,10 +138,8 @@ type Change struct {
 }
 
 // Release is one stable GitHub release with a compact, terminal-safe summary.
-// The panel lists Changes under Highlights for the newest release. Changes are every
-// line of the generated list, kept up to a bound that TotalChanges
-// may exceed.
-// Highlights and Summary keep the backticks their author put around the words to accent.
+// Changes holds every generated line up to a bound that TotalChanges may exceed.
+// Summary and highlight text keep their accent backticks. A highlight's Label is stored without them.
 type Release struct {
 	Version      string      `json:"version"`
 	URL          string      `json:"url"`
@@ -148,12 +178,12 @@ type cache struct {
 // legacyCache is update-check.json from releases before v0.40.0, whose change rows carry no kind and seed as other.
 type legacyCache struct {
 	Releases []struct {
-		Version      string   `json:"version"`
-		URL          string   `json:"url"`
-		Highlights   []string `json:"highlights"`
-		Thanks       []string `json:"thanks"`
-		Changes      []string `json:"changes"`
-		TotalChanges int      `json:"total_changes"`
+		Version      string      `json:"version"`
+		URL          string      `json:"url"`
+		Highlights   []Highlight `json:"highlights"`
+		Thanks       []Thanks    `json:"thanks"`
+		Changes      []string    `json:"changes"`
+		TotalChanges int         `json:"total_changes"`
 	} `json:"releases"`
 }
 
@@ -218,29 +248,13 @@ func legacyCatalog(path string) cache {
 		seeded.Releases = append(seeded.Releases, Release{
 			Version:      release.Version,
 			URL:          release.URL,
-			Highlights:   legacyHighlights(release.Highlights),
-			Thanks:       legacyThanks(release.Thanks),
+			Highlights:   release.Highlights,
+			Thanks:       release.Thanks,
 			Changes:      changes,
 			TotalChanges: release.TotalChanges,
 		})
 	}
 	return seeded
-}
-
-func legacyHighlights(rows []string) []Highlight {
-	var highlights []Highlight
-	for _, row := range rows {
-		highlights = append(highlights, Highlight{Text: row})
-	}
-	return highlights
-}
-
-func legacyThanks(rows []string) []Thanks {
-	var thanks []Thanks
-	for _, row := range rows {
-		thanks = append(thanks, parseThanks(row, ThanksBuilt))
-	}
-	return thanks
 }
 
 func check(ctx context.Context, configDir, current string, force bool) (Result, error) {
@@ -413,8 +427,7 @@ func bulletText(line string) (string, bool) {
 	return strings.TrimSpace(line[2:]), true
 }
 
-// Prose under an authored heading is the release page's own copy, written
-// for a browser rather than a modal, so only bullets travel.
+// extractHighlights keeps only bullets, since the prose under the heading is the release page's copy.
 func extractHighlights(body, tag string) []Highlight {
 	labeled := !Newer(labeledNotesSince, tag)
 	var highlights []Highlight

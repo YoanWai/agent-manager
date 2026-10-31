@@ -462,6 +462,39 @@ func TestFailedFetchKeepsTheLegacySeedOnScreen(t *testing.T) {
 	}
 }
 
+func TestParserOneCatalogPaintsUntilItIsRefetched(t *testing.T) {
+	dir := t.TempDir()
+	seedFile(t, dir, cacheFile, parserOneCatalogJSON)
+
+	cached := Cached(dir, "v0.44.0")
+	if cached.Latest != "v0.45.0" || len(cached.Releases) != 1 {
+		t.Fatalf("a parser 1 catalog must still paint: %+v", cached)
+	}
+	release := cached.Releases[0]
+	if !slices.Equal(release.Highlights, []Highlight{{Text: "`agent-manager export` and `import` move settings to another machine."}}) {
+		t.Fatalf("highlights = %+v", release.Highlights)
+	}
+	wantThanks := []Thanks{{Handle: "@subbeh", Group: ThanksBuilt, Text: "built environment profiles", Refs: []string{"#832", "#834"}}}
+	if !slices.EqualFunc(release.Thanks, wantThanks, sameThanks) {
+		t.Fatalf("thanks = %+v, want %+v", release.Thanks, wantThanks)
+	}
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if got := r.Header.Get("If-None-Match"); got != "" {
+			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the parser 1 shape", got)
+		}
+		fmt.Fprint(w, `[{"tag_name":"v0.45.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.45.0","body":"## What's Changed\n* feat(ui): reparsed"}]`)
+	}))
+	defer server.Close()
+	defer swapReleasesURL(server.URL)()
+
+	if _, err := Check(context.Background(), dir, "v0.44.0"); err != nil || calls.Load() != 1 {
+		t.Fatalf("err=%v calls=%d, want one full fetch", err, calls.Load())
+	}
+}
+
 func testRelease(version string, changes ...string) Release {
 	release := Release{
 		Version:      version,
@@ -523,6 +556,13 @@ const legacyCatalogJSON = `{
 		 "changes": ["UI: Older"], "total_changes": 1}
 	]
 }`
+
+const parserOneCatalogJSON = `{"checked_at":"2099-01-01T00:00:00+02:00","parser":1,"etag":"W/\"parser-1\"","releases":[` +
+	`{"version":"v0.45.0","url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.45.0",` +
+	`"headline":"A first-run setup","summary":"A fresh install now opens a short setup.",` +
+	"\"highlights\":[\"`agent-manager export` and `import` move settings to another machine.\"]," +
+	`"thanks":["@subbeh built environment profiles (#832, #834)"],` +
+	`"changes":[{"kind":"feat","text":"Env: Launch sessions under named environment profiles","author":"@subbeh"}],"total_changes":16}]}`
 
 func releaseServer(t *testing.T, calls *atomic.Int32, version string) *httptest.Server {
 	t.Helper()
@@ -800,6 +840,13 @@ func TestThanksReadGroupsHandlesAndRefs(t *testing.T) {
 func TestUngroupedThanksWithoutRefsStayUnderBuilt(t *testing.T) {
 	want := []Thanks{{Handle: "@someone", Group: ThanksBuilt, Text: "asked for it"}}
 	if got := extractThanks("## Thank you\n- @someone asked for it\n"); !slices.EqualFunc(got, want, sameThanks) {
+		t.Fatalf("extractThanks() = %+v, want %+v", got, want)
+	}
+}
+
+func TestThanksRefsMayEndTheSentence(t *testing.T) {
+	want := []Thanks{{Handle: "@someone", Group: ThanksBuilt, Text: "added X", Refs: []string{"#1", "#2"}}}
+	if got := extractThanks("## Thank you\n- @someone added X (#1, #2).\n"); !slices.EqualFunc(got, want, sameThanks) {
 		t.Fatalf("extractThanks() = %+v, want %+v", got, want)
 	}
 }
