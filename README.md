@@ -10,6 +10,10 @@
 <p align="center">agent manager is a local terminal app that connects to your existing subscriptions and tools.</p>
 
 <p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <a href="https://peerlist.io/yoanwai/project/agent-manager" target="_blank" rel="noopener noreferrer">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/brand/peerlist-laurel-dark.webp">
@@ -35,7 +39,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=for-the-badge&label=license&labelColor=1f2328&color=59636e" alt="licence"></a>
 </p>
 
-![five prompts to five fresh agents without moving the cursor, one per CLI, the first on Opus at high effort picked in the prompt bar, then a session's diff opened in review](docs/demo.gif)
+![three agents spawned from the quick prompt bar, one each on Claude Code, Codex and Gemini CLI, tab picking the CLI each time, each new agent landing in the list](docs/demo.gif)
 
 Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side. Each tool runs in its own persistent tmux session.
 
@@ -178,7 +182,7 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 | drag `⠿` / `=` | Reorder a row, drop it into another group, or nest a terminal under an agent |
 | `[…]` / right click | The row's actions: attach, prompt, review, fork, rename, move, archive, kill, delete and more |
 | click the list / mouse back | Focused: back to the list. A click on another row focuses that one |
-| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. In beta, and Settings can turn the pair off |
+| `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. Settings can turn the pair off |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
 | `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
@@ -205,7 +209,7 @@ Configuration (Settings, the editor `o` opens, and the key tables) is in [docs/c
 
 ```bash
 go run .
-env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...   # end-to-end tests drive a real tmux server
+mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest SHELL=/bin/sh go test -race ./...   # end-to-end tests drive a real tmux server
 ```
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the checks CI runs, and [AGENTS.md](AGENTS.md) if you point a coding agent at this repo.
@@ -223,6 +227,20 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 ### Contributors
 
 <a href="https://github.com/YoanWai/agent-manager/graphs/contributors"><img src="https://raw.githubusercontent.com/YoanWai/agent-manager/badges/contributors.png" alt="Contributors"></a>
+
+## Sponsors
+
+<p align="center">
+  <a href="https://github.com/dempc6469">
+    <img src="https://github.com/dempc6469.png?size=144" width="72" height="72" alt="dempc6469">
+    <br>
+    <sub><b>@dempc6469</b></sub>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sponsors/YoanWai"><img src="https://img.shields.io/badge/Sponsor_this_project-bf4b78?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=1f2328" alt="Sponsor this project" height="28"></a>
+</p>
 
 ## License
 

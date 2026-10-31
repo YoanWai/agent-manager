@@ -243,27 +243,21 @@ func TestFetchCapsCountAndSize(t *testing.T) {
 	}
 }
 
-func TestFetchCarriesHeadlineAndAccent(t *testing.T) {
-	serve(t, `[{"id":"pickers","banner":"Pickers are here","title":"v0.40.0: pickers are here","headline":"Model + reasoning pickers are here!","accent":["ctrl+l","ctrl+x"],"body":["ctrl+l opens the model list and ctrl+x steps the effort."]}]`)
+func TestFetchCarriesAccent(t *testing.T) {
+	serve(t, `[{"id":"pickers","banner":"Pickers are here","title":"v0.40.0: pickers are here","accent":["ctrl+l","ctrl+x"],"body":["ctrl+l opens the model list and ctrl+x steps the effort."]}]`)
 	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
-	if msg.Headline != "Model + reasoning pickers are here!" {
-		t.Fatalf("headline = %q", msg.Headline)
-	}
 	if !slices.Equal(msg.Accent, []string{"ctrl+l", "ctrl+x"}) {
 		t.Fatalf("accent = %q", msg.Accent)
 	}
 }
 
-func TestFetchBoundsHeadlineAndAccent(t *testing.T) {
+func TestFetchBoundsAccent(t *testing.T) {
 	phrases := []string{`""`, `"` + strings.Repeat("y", maxAccentLen+20) + `"`}
 	for index := 0; index < maxAccents+2; index++ {
 		phrases = append(phrases, `"phrase `+strconv.Itoa(index)+`"`)
 	}
-	serve(t, `[{"id":"bounded","banner":"x","title":"x","headline":"`+strings.Repeat("h", maxHeadlineLen+20)+`","accent":[`+strings.Join(phrases, ",")+`]}]`)
+	serve(t, `[{"id":"bounded","banner":"x","title":"x","accent":[`+strings.Join(phrases, ",")+`]}]`)
 	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
-	if len([]rune(msg.Headline)) != maxHeadlineLen {
-		t.Fatalf("headline is %d characters, want %d", len([]rune(msg.Headline)), maxHeadlineLen)
-	}
 	if len(msg.Accent) != maxAccents {
 		t.Fatalf("kept %d accent phrases, want %d", len(msg.Accent), maxAccents)
 	}
@@ -511,6 +505,7 @@ func TestLegacyFeedSeedIsFetchedAtOnceWithoutItsETag(t *testing.T) {
 func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	shapes := map[int][]string{
 		1: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at"},
+		2: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at", "kind", "action"},
 	}
 	want, ok := shapes[feedParser]
 	if !ok {
@@ -523,5 +518,63 @@ func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("rawMessage has fields %q, parser %d names %q: a changed field set needs a higher parser number", got, feedParser, want)
+	}
+}
+
+func TestSanitizeKeepsKindActionAndExpiry(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	raw := []rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: "heads-up", Action: "Join on Discord", ExpiresAt: "2026-11-22T12:00:00Z"}}
+	got := sanitize(raw, "0.46.0", now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 message, got %+v", got)
+	}
+	if got[0].Kind != KindHeadsUp {
+		t.Errorf("kind = %q, want %q", got[0].Kind, KindHeadsUp)
+	}
+	if got[0].Action != "Join on Discord" {
+		t.Errorf("action = %q", got[0].Action)
+	}
+	if want := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC); !got[0].ExpiresAt.Equal(want) {
+		t.Errorf("expires at = %v, want %v", got[0].ExpiresAt, want)
+	}
+}
+
+func TestSanitizeKeepsEveryKnownKind(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	for _, kind := range []string{KindNews, KindHeadsUp, KindTip} {
+		got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: kind}}, "0.46.0", now)
+		if len(got) != 1 || got[0].Kind != kind {
+			t.Errorf("kind %q came back as %+v", kind, got)
+		}
+	}
+}
+
+func TestUnknownOrMissingKindReadsAsNews(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	for _, kind := range []string{"", "survey"} {
+		got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: kind}}, "0.46.0", now)
+		if len(got) != 1 || got[0].Kind != KindNews {
+			t.Errorf("kind %q = %+v, want %q", kind, got, KindNews)
+		}
+	}
+}
+
+func TestMissingExpiryLeavesTheZeroTime(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t"}}, "0.46.0", now)
+	if len(got) != 1 || !got[0].ExpiresAt.IsZero() {
+		t.Fatalf("expires at = %+v", got)
+	}
+}
+
+func TestActionIsCleanedAndBounded(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	action := "\x1b[31m" + strings.Repeat("x", 60)
+	got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Action: action}}, "0.46.0", now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 message, got %+v", got)
+	}
+	if want := strings.Repeat("x", maxActionLen); got[0].Action != want {
+		t.Errorf("action = %q, want %d x runes with no escape", got[0].Action, maxActionLen)
 	}
 }

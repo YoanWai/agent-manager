@@ -51,7 +51,7 @@ func TestSecondQuitBindingAbandonsDrain(t *testing.T) {
 			}
 			m.queueRail([]uirail.Mutation{{Kind: uirail.SaveCollapsed, Collapsed: []string{"a"}}}, 0, false)
 			m.Update(msg)
-			if !m.effects.quitting || m.effects.main.active == nil {
+			if !m.effects.Quitting || m.effects.Main.Active == nil {
 				t.Fatal("first quit did not begin draining")
 			}
 			if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}); cmd != nil {

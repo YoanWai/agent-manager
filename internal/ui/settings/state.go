@@ -14,9 +14,12 @@ import (
 const (
 	GlyphModeSetting   = presentation.GlyphModeSetting
 	DefaultToolSetting = "default_tool"
-	ThemeSetting       = "theme"
-	ThemeAutoSetting   = "theme_auto"
+	ThemeSetting       = uitheme.ThemeSetting
+	ThemeAutoSetting   = uitheme.ThemeAutoSetting
 	DiffLayoutSetting  = "diff_layout"
+	// ReviewScopeSetting is the scope review opens a session in when it
+	// has none of its own stored.
+	ReviewScopeSetting = "review_scope"
 	// SessionLayoutSetting is the list's shape: "full" gives the rail the
 	// whole width, anything else keeps the split with the preview beside it.
 	SessionLayoutSetting = "layout"
@@ -27,8 +30,8 @@ const (
 	// leaves the terminal's own colors, anything else paints the theme's.
 	BackgroundSetting = "background"
 	FocusKeySetting   = "focus_key"
-	// ArrowStepSetting is the beta ←→ pair: "off" turns it off, anything
-	// else leaves it on.
+	// ArrowStepSetting is the ←→ step in/out pair: "off" turns it off,
+	// anything else leaves it on.
 	ArrowStepSetting = "arrow_step_keys"
 	// MouseSetting is app-wide mouse reporting: "off" gives the rail and
 	// content column back to the terminal's own click-drag text selection,
@@ -64,6 +67,7 @@ const (
 	FieldHeader
 	FieldStats
 	FieldLayout
+	FieldReviewScope
 	FieldQuickClose
 	FieldFocusKey
 	FieldArrowStep
@@ -78,6 +82,7 @@ const (
 	FieldCLIs
 	FieldPrompts
 	FieldEnvs
+	FieldSetup
 	FieldDocs
 	FieldBugReport
 	FieldFeatureRequest
@@ -94,6 +99,7 @@ type State struct {
 	ThemeIndex      int
 	Field           int
 	LayoutSplit     bool
+	ReviewScope     string
 	QuickCloseSend  bool
 	EnterFocuses    bool
 	ArrowStep       bool
@@ -136,9 +142,8 @@ type State struct {
 	glyphWidth      int
 	envsHidden      bool
 	Editor          EditorRow
-	// Prompts is the saved prompts panel, open over the rows.
-	Prompts Prompts
-	Dirty   bool
+	Prompts         Prompts
+	Dirty           bool
 	// Baseline is what the dialog started from, by key: a save writes
 	// only keys that differ, so it never puts this process's stale cache
 	// over another writer's value. A missing key is always written.
@@ -148,10 +153,8 @@ type State struct {
 
 // Tools is the configured CLI set the dialog offers, copied from the config.
 type Tools struct {
-	// Agents is every agent CLI in picker order.
 	Agents []string
-	// Known holds every configured tool name, shells included.
-	Known map[string]bool
+	Known  map[string]bool
 }
 
 // Enabled is Agents without the hidden ones.
@@ -200,13 +203,13 @@ type Snapshot struct {
 	Theme   string
 }
 
-// FromSnapshot builds the dialog the cached values describe.
 func FromSnapshot(s Snapshot) State {
 	value := func(key string) string { return s.Values[key] }
 	hidden := s.Tools.KnownHidden(s.Hidden)
 	names := s.Tools.Enabled(hidden)
 	state := State{
 		GlyphMode:   presentation.GlyphMode(value(GlyphModeSetting)),
+		ReviewScope: reviewScope(value(ReviewScopeSetting)),
 		ToolNames:   names,
 		ToolIndex:   ToolIndex(names, value(DefaultToolSetting)),
 		ThemeIndex:  uitheme.Index(s.Theme),

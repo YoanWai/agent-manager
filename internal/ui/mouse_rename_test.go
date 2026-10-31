@@ -39,43 +39,47 @@ func TestGroupEditFieldsAnswerClicks(t *testing.T) {
 	m.applyCmd(t, m.refreshCmd())
 	m.selectGroupRow(t, "team")
 	m.openRename()
+	rename, ok := surfaceOf[*uidialogs.RenameSurface](m)
+	if !ok {
+		t.Fatal("test setup did not open the group edit")
+	}
 	leftWidth, _ := m.splitWidths()
 	x := leftWidth + 6
 
 	y := frameRow(t, m, "env")
 	m.clickAt(x, y)
-	if m.rename.Focus() != uidialogs.RenameEnvField || m.rename.env != "" {
-		t.Fatalf("first click on env = focus %d env %q, want the row focused", m.rename.Focus(), m.rename.env)
+	if rename.Focus() != uidialogs.RenameEnvField || rename.Env != "" {
+		t.Fatalf("first click on env = focus %d env %q, want the row focused", rename.Focus(), rename.Env)
 	}
 	m.clickAt(x, y)
-	if m.rename.env != "work" {
-		t.Fatalf("second click on env = %q, want work", m.rename.env)
+	if rename.Env != "work" {
+		t.Fatalf("second click on env = %q, want work", rename.Env)
 	}
 	y = frameRow(t, m, "worktree")
 	m.clickAt(x, y)
 	m.clickAt(x, y)
-	if m.rename.Focus() != uidialogs.RenameWorktreeField || m.rename.Worktree() != 1 {
-		t.Fatalf("two clicks on worktree = focus %d index %d", m.rename.Focus(), m.rename.Worktree())
+	if rename.Focus() != uidialogs.RenameWorktreeField || rename.Worktree() != 1 {
+		t.Fatalf("two clicks on worktree = focus %d index %d", rename.Focus(), rename.Worktree())
 	}
 	m.clickAt(leftWidth-2, y)
-	if m.rename.Focus() != uidialogs.RenameWorktreeField {
+	if rename.Focus() != uidialogs.RenameWorktreeField {
 		t.Fatal("a click on the rail moved the edit's focus")
 	}
 	// A right click, whose release X10 reports without its button, steps
 	// nothing.
 	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonRight})
 	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
-	if m.rename.Worktree() != 1 {
-		t.Fatalf("a right click stepped the worktree to %d", m.rename.Worktree())
+	if rename.Worktree() != 1 {
+		t.Fatalf("a right click stepped the worktree to %d", rename.Worktree())
 	}
 	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
-	if m.rename.Worktree() != 2 {
-		t.Fatalf("a left click with a buttonless release left the worktree at %d", m.rename.Worktree())
+	if rename.Worktree() != 2 {
+		t.Fatalf("a left click with a buttonless release left the worktree at %d", rename.Worktree())
 	}
 	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m.handleMouse(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionRelease, Button: tea.MouseButtonNone})
-	_, cmd := m.handleRenameKey(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.applyCmd(t, cmd)
 	groups, err := m.services.store.Groups()
 	if err != nil {

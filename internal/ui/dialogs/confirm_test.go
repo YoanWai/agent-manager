@@ -53,7 +53,6 @@ func TestConfirmKeys(t *testing.T) {
 		{tea.KeyMsg{Type: tea.KeyEsc}, ConfirmCancel},
 		{runes("y"), ConfirmAccept},
 		{tea.KeyMsg{Type: tea.KeyEnter}, ConfirmAccept},
-		{tea.KeyMsg{Type: tea.KeyCtrlC}, ConfirmQuit},
 	}
 	for _, tc := range cases {
 		if got := c.Key(tc.key); got != tc.want {
@@ -69,7 +68,7 @@ func TestConfirmAnswerAndTone(t *testing.T) {
 	if c := (Confirm{Action: ConfirmRevive}); c.Answer() != "revive" || c.Destructive() {
 		t.Fatalf("revive answers %q destructive=%v", c.Answer(), c.Destructive())
 	}
-	if c := (Confirm{}); c.Answer() != "delete" || !c.Destructive() {
+	if c := (Confirm{Action: ConfirmDelete}); c.Answer() != "delete" || !c.Destructive() {
 		t.Fatalf("delete answers %q destructive=%v", c.Answer(), c.Destructive())
 	}
 	if c := (Confirm{Action: ConfirmRemoveConnection, Group: true}); c.Title("") != "⚠ Remove connection" || c.Answer() != "remove" || !c.Destructive() {

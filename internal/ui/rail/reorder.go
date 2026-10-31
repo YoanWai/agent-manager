@@ -171,7 +171,7 @@ func (m *Model) reorderKey(msg tea.KeyMsg, ctx KeyContext) Decision {
 	key := keybind.Normalize(msg.String())
 	action, _ := ctx.ListKeys.ActionFor(key)
 	switch {
-	case key == "ctrl+c" || action == keybind.Quit:
+	case action == keybind.Quit:
 		m.finishReorder()
 		return m.intent(Quit)
 	case key == "enter" || key == "space":

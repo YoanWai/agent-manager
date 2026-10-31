@@ -74,11 +74,11 @@ func TestOperationArgv(t *testing.T) {
 		{"spawn full", func(ctx context.Context, c *Client) error {
 			_, err := c.Spawn(ctx, "gpu", sessioncmd.CreateSessionOptions{
 				Tool: "codex", Name: "fix-it", Group: &group, Directory: "/srv/my repo", Prompt: text,
-				Worktree: &yes, Model: "m", Effort: "high", Profile: "work",
+				Worktree: &yes, Model: "m", Effort: "high", Profile: "work", Resume: "conv-1",
 			})
 			return err
 		}, []string{"spawn", "--json", "--name=fix-it", "--prompt=" + text, "--tool=codex", "--model=m", "--effort=high",
-			"--profile=work", "--directory=/srv/my repo", "--group=-team/a", "--worktree=true"}},
+			"--profile=work", "--directory=/srv/my repo", "--resume=conv-1", "--group=-team/a", "--worktree=true"}},
 		{"spawn into root without worktree", func(ctx context.Context, c *Client) error {
 			_, err := c.Spawn(ctx, "gpu", sessioncmd.CreateSessionOptions{Group: &root, Worktree: &no})
 			return err

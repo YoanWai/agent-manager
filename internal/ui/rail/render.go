@@ -122,18 +122,21 @@ func (r renderer) searchFieldLine() string {
 
 func (r renderer) filterBadgeLines() []string {
 	var lines []string
-	badge := func(label, key, action string) {
-		lines = append(lines, strings.Repeat(" ", railInset)+r.palette.scopeBadge.Render(label)+
-			r.palette.subtle.Render("  ")+r.palette.keyCap(key, action))
+	badge := func(label, action, hint string) {
+		line := strings.Repeat(" ", railInset) + r.palette.scopeBadge.Render(label)
+		if keyCap := r.listHint(action, hint); keyCap != "" {
+			line += r.palette.subtle.Render("  ") + keyCap
+		}
+		lines = append(lines, line)
 	}
 	if r.model.showArchived {
-		badge("ARCHIVED", "t", "back to active")
+		badge("ARCHIVED", keybind.Archived, "back to active")
 	}
 	if r.model.filter != statusFilterAll {
-		badge("ATTENTION", "w", "show all")
+		badge("ATTENTION", keybind.Filter, "show all")
 	}
 	if r.model.hideEmptyGroups && !r.model.showArchived {
-		badge("HIDE EMPTY", "e", "show empty")
+		badge("HIDE EMPTY", keybind.EmptyGroups, "show empty")
 	}
 	return lines
 }

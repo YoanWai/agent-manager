@@ -12,13 +12,12 @@ import re
 import shlex
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import time
 import uuid
 from pathlib import Path
 
-from smoke import Sandbox
+from smoke import Sandbox, profile_dir
 
 BUILTIN_TOOLS = ('antigravity', 'claude', 'command-code', 'codex', 'gemini',
                  'grok', 'hermes', 'muse', 'opencode', 'pi', 'terminal')
@@ -53,13 +52,6 @@ def config_fixture_text():
     return 'poll_interval = "1s"\n'
 
 
-def profile_dir(sandbox):
-    # os.UserConfigDir: Library/Application Support on macOS, XDG_CONFIG_HOME elsewhere.
-    if sys.platform == 'darwin':
-        return sandbox.home / 'Library' / 'Application Support' / 'agent-manager'
-    return sandbox.home / '.config' / 'agent-manager'
-
-
 def write_fixture(sandbox, slow_seconds=0):
     bin_dir = sandbox.home / 'bin'
     bin_dir.mkdir()
@@ -67,7 +59,7 @@ def write_fixture(sandbox, slow_seconds=0):
     fake.write_text(fake_cli_script(READY_MARKER, slow_seconds))
     fake.chmod(0o755)
     config_dir = profile_dir(sandbox)
-    config_dir.mkdir(parents=True)
+    config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / 'config.toml').write_text(config_fixture_text())
     sandbox.env['PATH'] = str(bin_dir) + ':' + sandbox.env.get('PATH', '')
 
@@ -145,25 +137,71 @@ def select_setting(sandbox, label, marker):
     raise AssertionError(f'Settings field {label!r} was not found')
 
 
+RAIL_WIDTH = 35
+
+
 def preview_of(frame):
-    return '\n'.join(line[35:] for line in frame.splitlines())
+    return '\n'.join(line[RAIL_WIDTH:] for line in frame.splitlines())
 
 
 def select_row(sandbox, name, step):
-    """Select the fixture agent by its live-pane marker, excluding group tables."""
-    def session_detail(frame):
-        return READY_MARKER in preview_of(frame)
+    """Put the cursor on the row called name, and prove it landed there.
 
-    deadline = time.monotonic() + 15
-    while time.monotonic() < deadline:
-        key(sandbox, 'j')
-        time.sleep(0.4)  # render settle; the capture right after a keypress can be stale
-        if session_detail(capture(sandbox)):
-            time.sleep(0.4)
-            if session_detail(capture(sandbox)):
-                (sandbox.artifacts / (step + '-selected.txt')).write_text(capture(sandbox))
-                return
-    raise AssertionError(f'fixture agent {name} not reachable in the preview')
+    The marker is not enough to know which row is selected: a group's terminal
+    and an agent inside it can both preview the same fixture agent, and taking
+    whichever comes first renames the wrong one. The rail's cursor glyph sits
+    beside the selected row, so the two facts are checked together.
+
+    A capture taken right after the cursor moves can still show the previous
+    frame, so both have to hold over two reads. They are observations rather
+    than pauses: a fixed pause holds only as long as the machine that chose it.
+    """
+    def on_row(frame):
+        return READY_MARKER in preview_of(frame) and row_selected(frame, name)
+
+    def settled(_):
+        first = capture(sandbox)
+        if not on_row(first):
+            return False
+        second = capture(sandbox)
+        if not on_row(second):
+            return False
+        (sandbox.artifacts / (step + '-selected.txt')).write_text(second)
+        return True
+
+    # Down, then up, then down: the fixture agent sits near the top of a short
+    # list, so a step that overshoots has to be walked back. Every step is
+    # confirmed before the next, and the row has to hold once more after the
+    # last one, since a key still in flight lands after the check.
+    if settled(''):
+        return
+
+    steps = ['j'] * 6 + ['k'] * 12 + ['j'] * 6
+    for attempt, move in enumerate(steps):
+        key(sandbox, move)
+        try:
+            sandbox.wait(f'{step}-selected-{attempt}', lambda: '', settled, timeout=0.6)
+        except TimeoutError:
+            continue
+        try:
+            sandbox.wait(f'{step}-settled-{attempt}', lambda: '', settled, timeout=0.6)
+        except TimeoutError:
+            continue
+        return
+    raise AssertionError(f'row {name!r} not reachable in the list')
+
+
+def row_selected(frame, name):
+    """Whether the selection is on the row named name.
+
+    The rail's cursor is a highlight, which a NO_COLOR capture does not show,
+    so the name is read from the detail block instead: it describes the
+    selected session and no other. Both a group table and an agent table can
+    preview the same fixture marker, which is why the marker alone cannot say
+    which row is under the cursor.
+    """
+    detail = preview_of(frame)
+    return re.search(r'^[^\n]*\b' + re.escape(name) + r'\b', detail, re.MULTILINE) is not None
 
 
 def agent_panes(sandbox, command, name='pane'):

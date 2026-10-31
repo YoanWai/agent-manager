@@ -19,6 +19,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/sysstat"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/testfixture"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/x/ansi"
@@ -45,6 +46,12 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	// An inherited GIT_DIR points the temp repos these tests build at the
+	// repo running them.
+	if err := testenv.IsolateGit(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	cleanup, err := testfixture.Prepare(testSocket)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -196,11 +203,20 @@ func buildModel(t *testing.T) *harness {
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},
+			// Like gemini and hermes, takes the first Enter after a paste as a line break above its frame.
+			"guarded-tool": {
+				Command: `sh -c 'stty raw -echo; f="\0337\r\n────────\0338"; printf "\033[?2004h❯ $f"; p=0; ` +
+					`while :; do c=$(dd bs=65536 count=1 2>/dev/null | od -An -v -c | tr -d " \n"); ` +
+					`case "$c" in *201~*) p=1; printf "[Pasted text #1 +6 lines]";; ` +
+					`"\\r") if [ $p = 1 ]; then p=2; printf "\r\n\033[2K$f"; elif [ $p = 2 ]; then p=0; printf "\r\n\033[2K❯ $f"; fi;; esac; done'`,
+				DefaultStatus:  status.Idle,
+				ActivityCutoff: "(?m)^❯",
+			},
 			// Draws its input line at once and takes the prompt it launched
 			// with a couple of seconds later, the way an agent finishes
 			// booting; the take has to outlast a whole poll pass.
 			"slow-take-tool": {
-				Command:        `sh -c 'printf "❯ "; sleep 2; printf "\n❯ %s\n❯ " "$0"; cat'`,
+				Command:        `sh -c 'printf "❯ "; sleep 2; printf "\n❯ %s\n❯ " "$0"; while IFS= read -r line; do printf "\n❯ "; done'`,
 				DefaultStatus:  status.Idle,
 				ActivityCutoff: "(?m)^❯",
 			},

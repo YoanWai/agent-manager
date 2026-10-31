@@ -1,7 +1,8 @@
 // Package quick is the docked prompt bar: its tool and choice, the list
-// open above its prompt, its keys, clicks and view, and the answer or spawn
-// enter asks for. The root opens it, owns its prompt box, moves its target
-// and runs what its Request asks for.
+// open above its prompt, its keys, clicks and view, the answer or spawn
+// enter asks for, and the non-card surface it sits on the stack behind. The
+// root opens it, owns its prompt box, moves its target and runs what its
+// Request asks for.
 package quick
 
 import (
@@ -13,7 +14,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Target is the selected row the bar answers or spawns into.
 type Target struct {
 	Group   string
 	IsGroup bool
@@ -42,15 +42,12 @@ type Request struct {
 	// Move steps the list cursor, which retargets the bar.
 	Move int
 	// Toggle flips the worktree choice once the target is known to host one.
-	Toggle bool
-	// Catalog names the CLI the bar moved to, whose choices are new.
+	Toggle  bool
 	Catalog string
 	// Close dismisses the bar; its prompt has let go of its images.
 	Close bool
-	// Send answers the selected session with Text.
-	Send bool
-	Text string
-	// Spawn starts a session in the selected group.
+	Send  bool
+	Text  string
 	Spawn *spawn.Request
 	// LoadSaved asks for the catalog the saved prompts list opened on;
 	// InsertSaved puts the picked one at the caret as a chip.
@@ -91,14 +88,11 @@ type Bar struct {
 	choice          spawn.Choice
 	env             spawn.EnvPick
 	// picking is the list open above the prompt, which takes the typing.
-	picking int
-	// savedList is the saved prompts list ctrl+o opens above the prompt.
+	picking   int
 	savedList spawn.SavedList
-	// hits are relative to the bar's first painted line.
-	hits []Hit
+	hits      []Hit
 }
 
-// NewBar opens on names[index], its worktree toggle at the target's default.
 func NewBar(h spawn.ChoiceHost, names []string, index int, worktree bool) Bar {
 	return Bar{
 		lastEnter: time.Now(),
@@ -118,18 +112,14 @@ func (q *Bar) Tool() string {
 	return q.toolNames[q.toolIndex]
 }
 
-// Tools are the CLIs tab steps through, and the picked one's index.
 func (q *Bar) Tools() ([]string, int) { return q.toolNames, q.toolIndex }
 
-// SetTools takes a newer tool list and pick, leaving the choice be.
 func (q *Bar) SetTools(names []string, index int) {
 	q.toolNames, q.toolIndex = names, index
 }
 
-// RestartChoice starts the choice over on the current CLI.
 func (q *Bar) RestartChoice(h spawn.ChoiceHost) { q.choice = spawn.NewChoice(h, q.Tool()) }
 
-// Choice is the model, effort and profile a spawn launches with.
 func (q *Bar) Choice() *spawn.Choice { return &q.choice }
 
 // Env is the environment profile a spawn launches under.
@@ -138,7 +128,6 @@ func (q *Bar) Env() *spawn.EnvPick { return &q.env }
 // Worktree is the worktree toggle.
 func (q *Bar) Worktree() bool { return q.worktree }
 
-// WorktreeTouched says the toggle is an explicit choice this run.
 func (q *Bar) WorktreeTouched() bool { return q.worktreeTouched }
 
 // DefaultWorktree moves a toggle the user has not touched.
@@ -156,10 +145,8 @@ func (q *Bar) SetWorktree(on bool) {
 	q.defaultsTouched = true
 }
 
-// DefaultsTouched says the user chose a tool or worktree since opening.
 func (q *Bar) DefaultsTouched() bool { return q.defaultsTouched }
 
-// Picking is the list open above the prompt.
 func (q *Bar) Picking() int { return q.picking }
 
 // HandleKey runs while the quick bar is docked in the sidebar: arrows
@@ -226,7 +213,6 @@ func (q *Bar) HandleKey(h Host, msg tea.KeyMsg) (tea.Cmd, Request) {
 	return prompt.Type(msg), Request{}
 }
 
-// LoadSaved fills the saved prompts list with the catalog read.
 func (q *Bar) LoadSaved(rows []spawn.Saved, err error) {
 	if q.savedList.Open() {
 		q.savedList.Load(rows, err)
@@ -457,12 +443,10 @@ func (q *Bar) handlePickKey(h Host, msg tea.KeyMsg) tea.Cmd {
 	return ch.TypeFilter(msg)
 }
 
-// Hit is a clickable stretch of the bar, relative to its first line.
 type Hit struct {
 	Line, X0, X1 int
 	Action       int
-	// Entry is the model list row a ClickEntry picks.
-	Entry int
+	Entry        int
 }
 
 // What a click on a stretch does.
@@ -473,15 +457,12 @@ const (
 	ClickProfile
 	ClickWorktree
 	ClickEntry
-	// ClickSaved picks the saved prompt on list line Entry.
 	ClickSaved
 	ClickEnv
 )
 
-// Hits are the bar's clickable stretches as last painted.
 func (q *Bar) Hits() []Hit { return q.hits }
 
-// HitAt is the stretch at a column and line of the bar.
 func (q *Bar) HitAt(col, line int) (Hit, bool) {
 	for _, hit := range q.hits {
 		if hit.Line == line && col >= hit.X0 && col < hit.X1 {
@@ -491,7 +472,6 @@ func (q *Bar) HitAt(col, line int) (Hit, bool) {
 	return Hit{}, false
 }
 
-// Click steps what a stretch shows the way its key does.
 func (q *Bar) Click(h Host, hit Hit) Request {
 	switch hit.Action {
 	case ClickTool:

@@ -9,6 +9,25 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
+func headingStyle(t Theme) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(t.Bright).Bold(true)
+}
+
+func appendWrapped(rows []string, runs []textRun, width int, base lipgloss.Style, t Theme) []string {
+	lines := wrapRuns(runs, width)
+	if len(lines) == 0 {
+		return append(rows, "")
+	}
+	for _, line := range lines {
+		rows = append(rows, renderRuns(line, base, t.Key))
+	}
+	return rows
+}
+
+func plainMarks(text string) string {
+	return strings.ReplaceAll(text, "`", "")
+}
+
 type textRun struct {
 	text   string
 	accent bool

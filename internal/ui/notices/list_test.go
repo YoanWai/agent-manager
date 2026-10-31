@@ -1,83 +1,97 @@
 package notices
 
 import (
-	"strings"
+	"slices"
 	"testing"
-
-	"github.com/YoanWai/agent-manager/internal/keybind"
+	"time"
 )
 
-func bindingOf(t *testing.T, specs ...string) keybind.Binding {
-	t.Helper()
-	keys := make([]keybind.Key, 0, len(specs))
-	for _, spec := range specs {
-		key, err := keybind.Parse(spec)
-		if err != nil {
-			t.Fatalf("Parse(%q): %v", spec, err)
-		}
-		keys = append(keys, key)
+func TestActiveSortsKindsAndFillsSubtitles(t *testing.T) {
+	expires := time.Date(2026, time.November, 20, 0, 0, 0, 0, time.UTC)
+	src := Sources{
+		Store: true,
+		Update: Update{
+			Version: "v0.45.0",
+			Latest:  "v0.46.0",
+			Available: ReleaseRange{Releases: []Release{
+				{Version: "v0.45.1", Headline: "Older headline"},
+				{Version: "v0.46.0", Headline: "A first-run setup"},
+			}},
+		},
+		Feed: []Message{
+			{ID: "feed-heads-up", Kind: KindHeadsUp, Title: "Heads up", Banner: "Config moves soon"},
+			{ID: "feed-news", Kind: KindNews, Title: "Discord", Banner: "Agent Manager has a Discord now", Action: "Join on Discord", Expires: expires},
+		},
+		ConfigImportError: "bad key",
 	}
-	return keybind.Keys(keys...)
+	notices := NewPanel(map[string]bool{}, map[string]bool{}).Active(src)
+
+	wantKinds := []Kind{KindRelease, KindNews, KindHeadsUp, KindHeadsUp}
+	gotKinds := make([]Kind, len(notices))
+	for i, notice := range notices {
+		gotKinds[i] = notice.Kind
+	}
+	if !slices.Equal(gotKinds, wantKinds) {
+		t.Fatalf("kinds = %v, want %v", gotKinds, wantKinds)
+	}
+	wantIDs := []string{"update-v0.46.0", "feed-news", "feed-heads-up", ConfigNotImported}
+	if got := ids(notices); !slices.Equal(got, wantIDs) {
+		t.Fatalf("ids = %v, want %v", got, wantIDs)
+	}
+	if notices[0].Subtitle != "A first-run setup" {
+		t.Fatalf("release subtitle = %q", notices[0].Subtitle)
+	}
+	if notices[1].Subtitle != "Agent Manager has a Discord now" {
+		t.Fatalf("news subtitle = %q", notices[1].Subtitle)
+	}
+	if notices[1].Action != "Join on Discord" || !notices[1].Expires.Equal(expires) {
+		t.Fatalf("news action/expires = %q / %v", notices[1].Action, notices[1].Expires)
+	}
+	if notices[3].Subtitle != "Settings could not import it" {
+		t.Fatalf("config warning subtitle = %q", notices[3].Subtitle)
+	}
 }
 
-func sessionOf(t *testing.T, detach, review, editor []string) keybind.Table {
-	t.Helper()
-	return keybind.DefaultSession().
-		With(keybind.Detach, bindingOf(t, detach...)).
-		With(keybind.Review, bindingOf(t, review...)).
-		With(keybind.Editor, bindingOf(t, editor...))
-}
-
-// The welcome card's session-key row is laid out on the card's columns and
-// follows the table, so a first run under a remapped config reads right.
-func TestWelcomeSessionKeysLineFollowsTheKeyTable(t *testing.T) {
-	src := Sources{SessionKeys: keybind.DefaultSession()}
-	if got := src.welcomeSessionKeysLine(); got != "ctrl+q back to the manager   ctrl+r review its diff" {
-		t.Errorf("default line = %q", got)
+func TestActiveKeepsFeedOrderWithinAKind(t *testing.T) {
+	src := Sources{
+		Store:  true,
+		Update: Update{Version: "v0.45.0"},
+		Feed: []Message{
+			{ID: "tip-b", Kind: KindTip},
+			{ID: "news-b", Kind: KindNews},
+			{ID: "tip-a", Kind: KindTip},
+			{ID: "news-a", Kind: KindNews},
+		},
 	}
-	src.SessionKeys = sessionOf(t, []string{"f9"}, nil, []string{"f3"})
-	if got := src.welcomeSessionKeysLine(); got != "f9     back to the manager" {
-		t.Errorf("review off line = %q", got)
+	got := ids(NewPanel(map[string]bool{}, map[string]bool{}).Active(src))
+	want := []string{"news-b", "news-a", "tip-b", "tip-a"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ids = %v, want %v", got, want)
 	}
 }
 
-func TestWelcomeSessionKeysLineOmitsDisabledActions(t *testing.T) {
-	src := Sources{SessionKeys: sessionOf(t, nil, []string{"ctrl+r"}, nil)}
-	got := src.welcomeSessionKeysLine()
-	if strings.Contains(got, "back to the manager") || !strings.Contains(got, "ctrl+r review its diff") {
-		t.Fatalf("detach off line = %q", got)
+func TestActiveWhatsNewSubtitleIsTheNewestHeadline(t *testing.T) {
+	src := Sources{
+		Store:           true,
+		WhatsNewVersion: "v0.46.0",
+		WhatsNewFrom:    "v0.45.0",
+		Update: Update{
+			Version: "v0.46.0",
+			Installed: ReleaseRange{Releases: []Release{
+				{Version: "v0.46.0", Headline: "A first-run setup"},
+			}},
+		},
 	}
-
-	src.SessionKeys = sessionOf(t, nil, nil, nil)
-	if got := src.welcomeSessionKeysLine(); got != "" {
-		t.Fatalf("all session actions off line = %q", got)
+	notices := NewPanel(map[string]bool{}, map[string]bool{}).Active(src)
+	if len(notices) != 1 || notices[0].Kind != KindRelease || notices[0].Subtitle != "A first-run setup" {
+		t.Fatalf("notices = %+v", notices)
 	}
 }
 
-// The welcome's list keys follow the list table the same way: a moved key
-// is named where it moved to, and an action turned off is left out.
-func TestWelcomeBodyFollowsTheListTable(t *testing.T) {
-	src := Sources{SessionKeys: keybind.DefaultSession(), ListKeys: keybind.DefaultList()}
-	body := strings.Join(src.welcomeBody(), "\n")
-	for _, want := range []string{"n      new session           space  quick prompt mode", "↵      focus it              A      attach it full screen", "x / v  kill / revive         s      settings", "space on a group row", "Press ? for every key: the map scrolls, and / searches it.", "Settings (s)", "Marks missing? Settings (s), symbols, Compatible."} {
-		if !strings.Contains(body, want) {
-			t.Errorf("default welcome is missing %q:\n%s", want, body)
-		}
-	}
-	src.ListKeys = src.ListKeys.
-		With(keybind.NewSession, bindingOf(t, "N")).
-		With(keybind.Prompt, bindingOf(t)).
-		With(keybind.Search, bindingOf(t)).
-		With(keybind.Settings, bindingOf(t, "S"))
-	body = strings.Join(src.welcomeBody(), "\n")
-	for _, want := range []string{"N      new session", "Press ? for every key: the map scrolls.", "Settings (S)", "x / v  kill / revive         S      settings", "Marks missing? Settings (S), symbols, Compatible."} {
-		if !strings.Contains(body, want) {
-			t.Errorf("remapped welcome is missing %q:\n%s", want, body)
-		}
-	}
-	for _, gone := range []string{"prompt it", "on a group row", "searches it", "n      new session"} {
-		if strings.Contains(body, gone) {
-			t.Errorf("remapped welcome should drop %q:\n%s", gone, body)
-		}
+func TestActiveReleaseWithoutHeadlineHasNoSubtitle(t *testing.T) {
+	src := Sources{Store: true, Update: Update{Version: "v0.45.0", Latest: "v0.46.0"}}
+	notices := NewPanel(map[string]bool{}, map[string]bool{}).Active(src)
+	if len(notices) != 1 || notices[0].Subtitle != "" {
+		t.Fatalf("notices = %+v", notices)
 	}
 }

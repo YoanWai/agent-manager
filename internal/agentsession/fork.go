@@ -20,7 +20,7 @@ func Fork(sessionStore, cwd, sourceID string) (string, error) {
 	if !MintsForkID(sessionStore) {
 		return "", fmt.Errorf("session_store %q makes no fork of its own", sessionStore)
 	}
-	out, err := runOpencode(cwd, "api", "session.fork", "--standalone", "--param", "sessionID="+sourceID, "--data", "{}")
+	out, err := runOpencode(cwd, managerEnv, "api", "session.fork", "--standalone", "--param", "sessionID="+sourceID, "--data", "{}")
 	if err != nil {
 		return "", fmt.Errorf("opencode could not fork %s: %w", sourceID, err)
 	}

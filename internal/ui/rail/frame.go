@@ -20,7 +20,6 @@ const (
 	MenuGlyph       = "[…]"
 )
 
-// Theme is the palette the root renders with, read straight from ui/theme.
 type Theme = theme.Theme
 
 // Rename is a root-owned editor rendered in the row named by Target.
@@ -108,7 +107,6 @@ func (f Frame) InWindow(selection Selection) bool {
 	return f.visible[selection.key()]
 }
 
-// Overlay paints the already prepared menu over root's composed frame.
 func (f Frame) Overlay(frame string) string {
 	if len(f.Menu) == 0 {
 		return frame

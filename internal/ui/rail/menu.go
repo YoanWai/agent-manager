@@ -209,9 +209,6 @@ func (m *Model) menuKey(msg tea.KeyMsg, ctx KeyContext) Decision {
 	key := keybind.Normalize(msg.String())
 	action, _ := ctx.ListKeys.ActionFor(key)
 	switch {
-	case key == "ctrl+c":
-		m.menu = rowMenu{}
-		return m.intent(Quit)
 	case key == "esc":
 		m.menu = rowMenu{}
 		return Decision{Consumed: true}

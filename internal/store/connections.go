@@ -15,9 +15,9 @@ var ErrConnectionNotFound = errors.New("connection does not exist")
 // Connection is an SSH destination whose manager's sessions show in this
 // one's list. internal/remote validates its fields; the store keeps them.
 type Connection struct {
-	Name        string
-	Destination string
-	Binary      string
+	Name        string `json:"name"`
+	Destination string `json:"destination"`
+	Binary      string `json:"binary"`
 }
 
 func (s *Store) Connections() ([]Connection, error) {

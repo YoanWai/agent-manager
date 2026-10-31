@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// State owns the key map's search, scroll, and visible scope.
 type State struct {
 	scroll    int
 	query     string
@@ -28,11 +27,9 @@ type Action uint8
 const (
 	Stay Action = iota
 	Close
-	Quit
 	OpenDocs
 )
 
-// Viewport is the catalog window currently available inside the dialog.
 type Viewport struct {
 	Rows     int
 	Lines    int
@@ -55,7 +52,6 @@ func (s *State) scrollBy(delta int, viewport Viewport) {
 	s.scroll = min(max(s.scroll+delta, 0), s.scrollLimit(viewport))
 }
 
-// Searching reports whether typed keys go to the search.
 func (s State) Searching() bool { return s.searching }
 
 // Click is a press on line of the card's body. The search line takes the
@@ -71,9 +67,6 @@ func (s State) page(viewport Viewport) int {
 }
 
 func (s *State) Update(msg tea.KeyMsg, viewport Viewport) Action {
-	if msg.String() == "ctrl+c" {
-		return Quit
-	}
 	if s.searching {
 		s.updateSearch(msg, viewport)
 		return Stay

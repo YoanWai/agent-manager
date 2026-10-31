@@ -75,8 +75,13 @@ func (p *Runner) maybeSendPendingInput(sess store.Session, pane string, agentAli
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), automaticDeliveryTimeout)
 	defer cancel()
-	if _, err := p.tmux.SendTextContext(ctx, sess.ID, input); err != nil {
-		return false, fmt.Errorf("send pending input to %s: %w", sess.Name, err)
+	if _, err := p.tmux.SubmitTextContext(ctx, sess.ID, input, p.composerDrafted(sess)); err != nil {
+		err = fmt.Errorf("send pending input to %s: %w", sess.Name, err)
+		if errors.Is(err, tmux.ErrUnsubmitted) {
+			_, consumeErr := p.store.ConsumeClaimedPendingInput(sess.ID, input)
+			return false, errors.Join(err, consumeErr)
+		}
+		return false, err
 	}
 	consumed, err := p.store.ConsumeClaimedPendingInput(sess.ID, input)
 	if err != nil {

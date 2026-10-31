@@ -29,3 +29,15 @@ func TestGroupRollupCountsTheSubtreeOnly(t *testing.T) {
 		t.Fatalf("an empty subtree should render no breakdown, got %q", got)
 	}
 }
+
+func TestRootRollupCountsUngroupedOnly(t *testing.T) {
+	sessions := []rail.Session{
+		{ID: "a", Group: "", Status: "working"},
+		{ID: "b", Group: "", Status: "idle"},
+		{ID: "c", Group: "work", Status: "waiting"},
+	}
+	counts := rail.GroupStatusCounts(sessions, "")
+	if counts["working"] != 1 || counts["idle"] != 1 || len(counts) != 2 {
+		t.Fatalf("root rollup = %v, want only the ungrouped sessions", counts)
+	}
+}

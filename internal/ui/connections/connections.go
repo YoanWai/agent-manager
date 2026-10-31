@@ -16,8 +16,7 @@ import (
 // client. The rows are the last good snapshot's, kept while the host is
 // unreachable.
 type Host struct {
-	OK bool
-	// Err is the last refresh's failure, and Trouble its kind.
+	OK       bool
 	Err      string
 	Trouble  remote.Trouble
 	Failures int
@@ -34,7 +33,6 @@ type Group struct {
 	Archived bool
 }
 
-// Session is an agent or a terminal on a host, as its snapshot listed it.
 type Session struct {
 	ID, Name, Tool, Directory, Group, Status, ParentID string
 	Archived                                           bool
@@ -49,7 +47,6 @@ type Connections struct {
 	hosts   map[string]Host
 	polling map[string]bool
 	Preview Preview
-	Dialog  Dialog
 }
 
 // SetList adopts the stored connections. A host no longer listed, or

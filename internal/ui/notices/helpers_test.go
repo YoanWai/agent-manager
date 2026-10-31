@@ -1,6 +1,7 @@
 package notices
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -19,17 +20,23 @@ func useTrueColor(t *testing.T) {
 // testTheme gives each role its own color, so a test can tell them apart.
 func testTheme() Theme {
 	return Theme{
-		Accent:      lipgloss.Color("#00a0ff"),
-		Accent2:     lipgloss.Color("#a000ff"),
-		Bright:      lipgloss.Color("#ffffff"),
-		SubtleColor: lipgloss.Color("#808080"),
-		Subtle:      lipgloss.NewStyle().Foreground(lipgloss.Color("#606060")),
-		Muted:       lipgloss.NewStyle().Foreground(lipgloss.Color("#a0a0a0")),
-		Value:       lipgloss.NewStyle().Foreground(lipgloss.Color("#e0e0e0")),
-		Key:         lipgloss.NewStyle().Foreground(lipgloss.Color("#00ffa0")),
-		Border:      lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")),
-		Title:       lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Bold(true),
-		Fill:        presentation.PadRight,
+		Accent:   lipgloss.Color("#00a0ff"),
+		Accent2:  lipgloss.Color("#a000ff"),
+		Bright:   lipgloss.Color("#ffffff"),
+		Working:  lipgloss.Color("#ff8000"),
+		Waiting:  lipgloss.Color("#c080ff"),
+		Finished: lipgloss.Color("#00c040"),
+		Ink:      lipgloss.Color("#101010"),
+		Subtle:   lipgloss.NewStyle().Foreground(lipgloss.Color("#606060")),
+		Muted:    lipgloss.NewStyle().Foreground(lipgloss.Color("#a0a0a0")),
+		Value:    lipgloss.NewStyle().Foreground(lipgloss.Color("#e0e0e0")),
+		Key:      lipgloss.NewStyle().Foreground(lipgloss.Color("#00ffa0")),
+		Border:   lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")),
+		Title:    lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Bold(true),
+		Fill:     presentation.PadRight,
+		Surface:  presentation.PadRight,
+		Raised:   presentation.PadRight,
+		Callout:  func(row string, width int, _ lipgloss.Color) string { return presentation.PadRight(row, width) },
 	}
 }
 
@@ -47,6 +54,23 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEnd}
 	case "home":
 		return tea.KeyMsg{Type: tea.KeyHome}
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
+	case "shift+tab":
+		return tea.KeyMsg{Type: tea.KeyShiftTab}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+func rowIndex(rows []string, want string) int {
+	for index, row := range rows {
+		if strings.Contains(row, want) {
+			return index
+		}
+	}
+	return -1
 }

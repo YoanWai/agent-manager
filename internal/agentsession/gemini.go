@@ -20,10 +20,13 @@ func recaptureGemini(root, cwd string, snapshot map[string]int64, claimed map[st
 	return recaptureCandidates(cands, err, snapshot)
 }
 
-func geminiRoot() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
+func geminiRoot(env Env) string {
+	home := env.get("GEMINI_CLI_HOME")
+	if home == "" {
+		var err error
+		if home, err = env.homeDir(); err != nil {
+			return ""
+		}
 	}
 	return filepath.Join(home, ".gemini", "tmp")
 }

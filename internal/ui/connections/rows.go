@@ -20,7 +20,6 @@ type Target struct {
 	ID    string
 }
 
-// Row is the row a target names, as the last snapshot of its host has it.
 type Row struct {
 	Kind     Kind
 	Host     string

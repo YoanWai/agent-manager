@@ -67,6 +67,7 @@ type SetSummary struct {
 	BaseDesc     string
 	BaseRef      string
 	BaseOverride string
+	Commit       string
 	Files        []FileSummary
 }
 
@@ -96,6 +97,8 @@ type Snapshot struct {
 	RepoSelected string
 	Worktrees    []Worktree
 	SendPending  bool
+	Commits      []git.Commit
+	CommitPin    CommitPin
 }
 
 type LoadRequest struct {
@@ -109,6 +112,7 @@ type LoadRequest struct {
 	Resolve      bool
 	Restored     map[string]bool
 	BaseOverride *string
+	Commit       CommitLoad
 }
 
 type LoadResult struct {
@@ -126,6 +130,18 @@ type LoadResult struct {
 	Worktrees   []Worktree
 	MissingRepo string
 	Refresh     bool
+	// The commit scope's list, newest first, the target bounding it, and
+	// what a rewrite since the last load moved: Rewrites maps old SHAs to
+	// their replacements.
+	Commits      []git.Commit
+	CommitTarget string
+	Head         string
+	Rewrites     map[string]string
+	RewriteErr   error
+	CommitNotice string
+	// Pinned reports the resolved commit pins the scope rather than
+	// following HEAD.
+	Pinned bool
 }
 
 type FileRequest struct {
@@ -153,6 +169,7 @@ type ProbeRequest struct {
 	Scope        git.Scope
 	RepoSelected string
 	GitRoot      string
+	Commit       string
 }
 
 type ProbeResult struct {
@@ -317,8 +334,8 @@ const (
 	NavigationRepoPicker
 	NavigationBranchPicker
 	NavigationBasePicker
+	NavigationCommitPicker
 	NavigationOpenEditor
-	NavigationQuit
 )
 
 type KeyContext struct {
