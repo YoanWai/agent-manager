@@ -357,6 +357,15 @@ func run() (resultErr error) {
 		tea.WithFPS(120),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(model.CursorOutput(os.Stdout)),
+		// The pointer resets while the screen that showed the hand is still
+		// up, since kitty keeps one per screen and an interrupt skips Update.
+		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
+			switch msg.(type) {
+			case tea.QuitMsg, tea.InterruptMsg:
+				ui.ResetPointer()
+			}
+			return msg
+		}),
 	)
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
