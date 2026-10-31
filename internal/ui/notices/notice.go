@@ -8,8 +8,6 @@ package notices
 import (
 	"strings"
 	"time"
-
-	"github.com/charmbracelet/lipgloss"
 )
 
 // IDs of the notices that ship in the binary.
@@ -18,16 +16,6 @@ const (
 )
 
 const RepoURL = "https://github.com/YoanWai/agent-manager"
-
-type Tint uint8
-
-const (
-	TintAccent Tint = iota
-	TintAccent2
-	TintWarm
-)
-
-const warmHex = "#e2c044"
 
 // Kind groups notices in the list, in the order the groups are shown.
 type Kind uint8
@@ -43,8 +31,6 @@ type Notice struct {
 	ID            string
 	Kind          Kind
 	Subtitle      string
-	Glyph         string
-	Tint          Tint
 	Title         string
 	Headline      string
 	Accent        []string
@@ -61,17 +47,6 @@ type Notice struct {
 
 func (n Notice) IsUpdate() bool {
 	return strings.HasPrefix(n.ID, "update-")
-}
-
-func (n Notice) mark(t Theme) string {
-	color := lipgloss.Color(warmHex)
-	switch n.Tint {
-	case TintAccent:
-		color = t.Accent
-	case TintAccent2:
-		color = t.Accent2
-	}
-	return lipgloss.NewStyle().Foreground(color).Render(n.Glyph)
 }
 
 // Change kinds, as the release catalog files them.

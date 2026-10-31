@@ -1355,22 +1355,12 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		mode                                          presentation.GlyphMode
 		feed, update, refresh, download, link, cursor string
 	}{
-		{presentation.GlyphModeBasic, "i", "^", "R", "v", "@", ">"},
-		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "↗", "▸"},
+		{presentation.GlyphModeBasic, "i", "^", "R", "v", "@", "|"},
+		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "↗", "▍"},
 	} {
 		m.prefs.glyphMode = tc.mode
 		notices := m.activeNotices()
 		for _, n := range notices {
-			want := ""
-			switch n.ID {
-			case "literal":
-				want = tc.feed
-			case "update-v1.1.0":
-				want = tc.update
-			}
-			if want != "" && n.Glyph != want {
-				t.Fatalf("%s/%s glyph=%q", tc.mode, n.ID, n.Glyph)
-			}
 			if n.ID == "literal" && (n.Title != text || strings.Join(n.Body, "") != text) {
 				t.Fatal("external message rewritten")
 			}
@@ -1379,7 +1369,7 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		m.notices.Open(notices, "literal")
 		got := ansi.Strip(strings.Join(m.notices.View(notices, m.noticesFrame()), "\n"))
 		tail := got
-		for _, want := range []string{tc.refresh + " refreshing", tc.download + " downloading", tc.link + " example.com"} {
+		for _, want := range []string{tc.feed + " " + text, tc.update + " v1.1.0 available", tc.refresh + " refreshing", tc.download + " downloading", tc.link + " example.com"} {
 			if !strings.Contains(tail, want) {
 				t.Fatalf("%s tail missing %q: %s", tc.mode, want, tail)
 			}

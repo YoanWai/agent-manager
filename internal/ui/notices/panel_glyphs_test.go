@@ -35,3 +35,44 @@ func TestCompatibleNoticeFooterMeasuresDisplayedKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestCompatibleModeUsesASCIIForEveryNewGlyph(t *testing.T) {
+	want := map[presentation.GlyphMode][9]string{
+		presentation.GlyphModeAdvanced: {"▲", "✧", "✚", "●", "◌", "◇", "♥", "▍", "●"},
+		presentation.GlyphModeBasic:    {"!", "?", "+", "*", "-", "o", "&", "|", "*"},
+	}
+	for mode, glyphs := range want {
+		g := presentation.GlyphsFor(mode)
+		got := [9]string{g.HeadsUpGlyph, g.TipGlyph, g.FeatureGlyph, g.FixGlyph, g.OtherGlyph, g.StartedGlyph, g.PeopleGlyph, g.SectionBarGlyph, g.UnreadGlyph}
+		if got != glyphs {
+			t.Fatalf("%s glyphs = %q, want %q", mode, got, glyphs)
+		}
+	}
+
+	src := inboxSources()
+	src.Feed = append(src.Feed, Message{ID: "feed-tip", Kind: KindTip, Title: "Try the tip", Banner: "a quick one"})
+	src.Update.Version = src.Update.Latest
+	src.WhatsNewVersion, src.WhatsNewFrom = src.Update.Latest, "v0.45.0"
+	src.ConfigImportError = "bad key"
+	p := NewPanel(map[string]bool{}, map[string]bool{})
+	p.See(inboxHeadsUp)
+	notices := p.Active(src)
+	// The card's own chrome draws box lines and an ellipsis in either mode;
+	// the bottom edge's keys still name ↑↓, so it is left out.
+	chrome := "─│█…"
+	for _, width := range []int{100, 160} {
+		for i := range notices {
+			p.Open(notices, notices[i].ID)
+			f := inboxFrame(width)
+			f.GlyphMode = presentation.GlyphModeBasic
+			view := p.View(notices, f)
+			for _, line := range view[:len(view)-1] {
+				for _, r := range ansi.Strip(line) {
+					if r > 0x7f && !strings.ContainsRune(chrome, r) {
+						t.Fatalf("width %d, %s: %q in the compatible view: %q", width, notices[i].ID, r, ansi.Strip(line))
+					}
+				}
+			}
+		}
+	}
+}

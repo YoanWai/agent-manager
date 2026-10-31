@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 )
 
 // Update is what the root knows of releases: this build, a newer release,
@@ -25,10 +23,9 @@ type Update struct {
 // Sources are the root facts the notice list is built from, copied so the
 // panel never reaches into the store, the network or the key tables.
 type Sources struct {
-	GlyphMode presentation.GlyphMode
-	Store     bool
-	Update    Update
-	Feed      []Message
+	Store  bool
+	Update Update
+	Feed   []Message
 	// WhatsNewVersion and WhatsNewFrom mirror the persisted what's-new
 	// settings; ConfigImportError is why an old config.toml was refused.
 	WhatsNewVersion   string
@@ -56,7 +53,6 @@ func (p Panel) Active(src Sources) []Notice {
 	if !src.Store {
 		return nil
 	}
-	g := presentation.GlyphsFor(src.GlyphMode)
 	var notices []Notice
 	if src.Update.Latest != "" {
 		releaseRange := src.Update.Available
@@ -72,8 +68,6 @@ func (p Panel) Active(src Sources) []Notice {
 			ID:            "update-" + src.Update.Latest,
 			Kind:          KindRelease,
 			Subtitle:      newestHeadline(releaseRange.Releases),
-			Glyph:         g.UpdateGlyph,
-			Tint:          TintAccent,
 			Title:         title,
 			Headline:      newestHeadline(releaseRange.Releases),
 			ReleaseNotes:  true,
@@ -103,8 +97,6 @@ func (p Panel) Active(src Sources) []Notice {
 			ID:           "whatsnew-" + src.Update.Version,
 			Kind:         KindRelease,
 			Subtitle:     newestHeadline(releaseRange.Releases),
-			Glyph:        g.NewGlyph,
-			Tint:         TintAccent2,
 			Title:        title,
 			Headline:     newestHeadline(releaseRange.Releases),
 			ReleaseNotes: true,
@@ -122,8 +114,6 @@ func (p Panel) Active(src Sources) []Notice {
 			ID:       msg.ID,
 			Kind:     msg.Kind,
 			Subtitle: msg.Banner,
-			Glyph:    g.FeedGlyph,
-			Tint:     TintAccent2,
 			Title:    msg.Title,
 			Headline: msg.Headline,
 			Accent:   msg.Accent,
@@ -138,8 +128,6 @@ func (p Panel) Active(src Sources) []Notice {
 			ID:       ConfigNotImported,
 			Kind:     KindHeadsUp,
 			Subtitle: "Settings could not import it",
-			Glyph:    g.SettingsGlyph,
-			Tint:     TintWarm,
 			Title:    "Your config.toml was not carried into Settings",
 			Body: []string{
 				"The keys and the editor live in Settings now. A config.toml that",

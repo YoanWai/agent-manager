@@ -61,8 +61,12 @@ func (s *Surface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
 	return true, cmd
 }
 
-func (s *Surface) Click(h surface.Host, line int) tea.Cmd {
-	cmd := s.apply(h, s.panel.Click(line, s.root.ActiveNotices(), s.root.NoticesFrame()))
+func (s *Surface) Click(h surface.Host, line int) tea.Cmd { return s.ClickAt(h, 0, line) }
+
+// ClickAt takes the column too: a split inbox shows the message beside the
+// list, on the same rows.
+func (s *Surface) ClickAt(h surface.Host, col, line int) tea.Cmd {
+	cmd := s.apply(h, s.panel.Click(col, line, s.root.ActiveNotices(), s.root.NoticesFrame()))
 	s.seeSelected()
 	return cmd
 }

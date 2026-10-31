@@ -11,6 +11,8 @@ import (
 
 const docsURL = uinotices.DocsURL
 
+var _ columnClicker = (*uinotices.Surface)(nil)
+
 // noticesPanel is the messages modal: uinotices.Panel owns the list it
 // builds, the cursor, the body scroll, the dismissed and seen sets, and
 // uirelease.State the releases and the feed. The root keeps a refused config
@@ -25,7 +27,6 @@ type noticesPanel struct {
 // the panel never reaches into the store or the key tables itself.
 func (m *Model) noticeSources() uinotices.Sources {
 	sources := m.release.Sources()
-	sources.GlyphMode = m.prefs.glyphMode
 	sources.Store = m.services.store != nil
 	sources.ConfigImportError = m.notices.ImportError
 	return sources

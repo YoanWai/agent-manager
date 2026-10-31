@@ -17,8 +17,10 @@ type Panel struct {
 	cursor int
 	scroll int
 	// lines is the notice each painted row inside the frame shows, for
-	// clicks.
-	lines presentation.Lines[int]
+	// clicks; listCols is how far across a row its notice reaches, zero
+	// for the whole row.
+	lines    presentation.Lines[int]
+	listCols int
 	// dismissed holds the notice ids the user closed for good; the set
 	// persists in settings so a dismissed message never comes back.
 	dismissed map[string]bool
@@ -89,6 +91,8 @@ type Theme struct {
 	Accent      lipgloss.Color
 	Accent2     lipgloss.Color
 	Bright      lipgloss.Color
+	Working     lipgloss.Color
+	Waiting     lipgloss.Color
 	SubtleColor lipgloss.Color
 	Subtle      lipgloss.Style
 	Muted       lipgloss.Style
@@ -98,6 +102,8 @@ type Theme struct {
 	Border lipgloss.Style
 	Title  lipgloss.Style
 	Fill   func(row string, width int) string
+	// Surface fills the selected list row over the card.
+	Surface func(row string, width int) string
 }
 
 const FeedPendingText = "checking messages…"
@@ -187,13 +193,13 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 	return Outcome{}
 }
 
-// Click is a press on row line inside the frame. The first click on a
-// title selects it; one on the title already selected opens its link, the
+// Click is a press at col of row line inside the frame. The first click on
+// a row selects it; one on the row already selected opens its link, the
 // way ↵ does.
-func (p *Panel) Click(line int, notices []Notice, f Frame) Outcome {
+func (p *Panel) Click(col, line int, notices []Notice, f Frame) Outcome {
 	i, ok := p.lines.At(line)
 	switch {
-	case !ok:
+	case !ok || p.listCols > 0 && col >= p.listCols:
 		return Outcome{}
 	case !presentation.ClickRow(&p.cursor, i):
 		p.scroll = 0
@@ -206,9 +212,9 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	if p.cursor >= len(notices) {
 		return 0
 	}
-	inner := innerWidth(notices, f.Width)
-	room := bodyRoom(f.Height, len(notices), len(p.tail(notices, f, inner))+1)
-	body, _ := bodyLayout(notices[p.cursor], inner, room, f.Theme, f.GlyphMode)
+	_, pane := inboxWidths(notices, f.Width)
+	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f), len(p.tail(notices, f, pane))+1)
+	body, _ := bodyLayout(notices[p.cursor], pane, room, f.Theme, f.GlyphMode)
 	return max(0, len(body)-room)
 }
 
@@ -223,8 +229,18 @@ func (p *Panel) scrollBy(notices []Notice, rows int, f Frame) {
 	p.scroll = min(max(min(p.scroll, limit)+rows, 0), limit)
 }
 
-func bodyRoom(height, noticeCount, tailRows int) int {
-	return max(1, height-2-(noticeCount+2)-tailRows)
+func bodyRoom(height, above, tailRows int) int {
+	return max(1, height-2-above-tailRows)
+}
+
+// rowsAbovePane is the blank top row, and when stacked the list and its rule.
+func (p Panel) rowsAbovePane(notices []Notice, f Frame) int {
+	if split(f.Width) {
+		return 1
+	}
+	inner, _ := inboxWidths(notices, f.Width)
+	list, _ := listRows(notices, p.cursor, inner, f.Theme, f.GlyphMode, false)
+	return len(list) + 2
 }
 
 func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
@@ -251,45 +267,49 @@ func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
 
 func (p *Panel) View(notices []Notice, f Frame) []string {
 	t := f.Theme
-	inner := innerWidth(notices, f.Width)
+	inner, pane := inboxWidths(notices, f.Width)
 	p.lines.Reset()
+	p.listCols = 0
+	foot := renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode)
 	if len(notices) == 0 {
 		rows := []string{t.Subtle.Render("nothing new")}
 		rows = append(rows, p.tail(notices, f, inner)...)
-		frame := cardFrame(rows, inner, legend(t), renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode), t, f.GlyphMode)
-		return frame
+		return cardFrame(rows, inner, legend(t), "", foot, t, f.GlyphMode)
 	}
-	var rows []string
-	rows = append(rows, "")
-	p.lines.Skip(1)
-	for i, n := range notices {
-		marker := "  "
-		title := t.Value.Render(n.Title)
-		if i == p.cursor {
-			marker = lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(f.GlyphMode).NoticeSelectionGlyph + " ")
-			title = lipgloss.NewStyle().Foreground(t.Bright).Bold(true).Render(n.Title)
-		}
-		rows = append(rows, marker+n.mark(t)+" "+title)
-		p.lines.Show(i, 1)
+	splitView := split(f.Width)
+	listColumn := inner
+	if splitView {
+		listColumn = listWidth
 	}
-	selected := notices[p.cursor]
-	rows = append(rows, t.Border.Render(strings.Repeat(presentation.ChromeFor(f.GlyphMode).DashedRuleGlyph, inner)))
+	list, owners := listRows(notices, p.cursor, listColumn, t, f.GlyphMode, splitView)
 
-	tail := p.tail(notices, f, inner)
+	tail := p.tail(notices, f, pane)
 	tail = append(tail, "")
-
-	room := bodyRoom(f.Height, len(notices), len(tail))
-	body, scrolls := bodyLayout(selected, inner, room, t, f.GlyphMode)
+	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f), len(tail))
+	body, scrolls := bodyLayout(notices[p.cursor], pane, room, t, f.GlyphMode)
 	if scrolls {
-		body = scrollWindow(body, room, p.scroll, inner, t, f.GlyphMode)
+		body = scrollWindow(body, room, p.scroll, pane, t, f.GlyphMode)
 	}
-	rows = append(rows, body...)
-	rows = append(rows, tail...)
+	message := append(body, tail...)
 
-	frame := cardFrame(rows, inner,
-		legend(t),
-		renderFoot(footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey), t, f.GlyphMode), t, f.GlyphMode)
-	return frame
+	rows := []string{""}
+	p.lines.Skip(1)
+	for _, owner := range owners {
+		if owner < 0 {
+			p.lines.Skip(1)
+		} else {
+			p.lines.Show(owner, 1)
+		}
+	}
+	if splitView {
+		p.listCols = listWidth
+		rows = append(rows, besideList(list, message, t)...)
+	} else {
+		rows = append(rows, list...)
+		rows = append(rows, t.Border.Render(strings.Repeat(presentation.ChromeFor(f.GlyphMode).DashedRuleGlyph, inner)))
+		rows = append(rows, message...)
+	}
+	return cardFrame(rows, inner, legend(t), unreadCount(notices, t), foot, t, f.GlyphMode)
 }
 
 // footStart is the column the bottom edge's text starts at, after its
@@ -301,7 +321,7 @@ const footSep = " · "
 // Foot is where each key the bottom edge names was painted, the ones the
 // edge's truncation cut left out.
 func (p Panel) Foot(notices []Notice, f Frame) []presentation.PaintedKey {
-	inner := innerWidth(notices, f.Width)
+	inner, _ := inboxWidths(notices, f.Width)
 	var keys []presentation.PaintedKey
 	x := footStart
 	for i, pair := range footPairs(notices, p.cursor, inner, f.GlyphMode, f.CloseKey) {
@@ -382,30 +402,33 @@ func legend(t Theme) string {
 }
 
 // cardFrame wraps content rows in the notices fieldset: a rounded
-// yellow border with legends set into the top and bottom edges and the
-// card fill behind every row. inner is the content column's width.
-func cardFrame(rows []string, inner int, topLegend, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {
+// yellow border with legends set into the top and bottom edges, a second
+// legend at the top edge's right, and the card fill behind every row.
+// inner is the content column's width.
+func cardFrame(rows []string, inner int, topLegend, topRight, bottomLegend string, t Theme, mode presentation.GlyphMode) []string {
 	g := presentation.ChromeFor(mode)
 	border := t.Border
 	edge := border.Render("│")
-	legend := func(left, label, right string) string {
+	legend := func(left, label, trailing, right string) string {
 		label = ansi.Truncate(label, inner+1, "…")
-		dashes := inner + 2 - lipgloss.Width(label)
 		if label != "" {
 			label = border.Render("─") + label
-			dashes--
 		}
-		if dashes < 0 {
-			dashes = 0
+		if trailing != "" {
+			trailing += border.Render("─")
 		}
-		return border.Render(left) + label + border.Render(strings.Repeat("─", dashes)+right)
+		if lipgloss.Width(label)+lipgloss.Width(trailing) > inner+2 {
+			trailing = ""
+		}
+		dashes := max(inner+2-lipgloss.Width(label)-lipgloss.Width(trailing), 0)
+		return border.Render(left) + label + border.Render(strings.Repeat("─", dashes)) + trailing + border.Render(right)
 	}
-	lines := []string{legend(g.TopLeftGlyph, topLegend, g.TopRightGlyph)}
+	lines := []string{legend(g.TopLeftGlyph, topLegend, topRight, g.TopRightGlyph)}
 	for _, row := range rows {
 		row = ansi.Truncate(row, inner, "…")
 		lines = append(lines, edge+t.Fill(" "+row, inner+2)+edge)
 	}
-	return append(lines, legend(g.BottomLeftGlyph, bottomLegend, g.BottomRightGlyph))
+	return append(lines, legend(g.BottomLeftGlyph, bottomLegend, "", g.BottomRightGlyph))
 }
 
 func padRight(s string, width int) string { return presentation.PadRight(s, width) }

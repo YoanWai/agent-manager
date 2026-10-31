@@ -22,6 +22,8 @@ func testTheme() Theme {
 		Accent:      lipgloss.Color("#00a0ff"),
 		Accent2:     lipgloss.Color("#a000ff"),
 		Bright:      lipgloss.Color("#ffffff"),
+		Working:     lipgloss.Color("#ff8000"),
+		Waiting:     lipgloss.Color("#c080ff"),
 		SubtleColor: lipgloss.Color("#808080"),
 		Subtle:      lipgloss.NewStyle().Foreground(lipgloss.Color("#606060")),
 		Muted:       lipgloss.NewStyle().Foreground(lipgloss.Color("#a0a0a0")),
@@ -30,6 +32,7 @@ func testTheme() Theme {
 		Border:      lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")),
 		Title:       lipgloss.NewStyle().Foreground(lipgloss.Color("#e2c044")).Bold(true),
 		Fill:        presentation.PadRight,
+		Surface:     presentation.PadRight,
 	}
 }
 

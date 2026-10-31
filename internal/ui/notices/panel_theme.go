@@ -13,6 +13,8 @@ func PanelTheme() Theme {
 		Accent:      uitheme.ColorAccent(),
 		Accent2:     uitheme.ColorAccent2(),
 		Bright:      uitheme.ColorBright(),
+		Working:     uitheme.ColorWorking(),
+		Waiting:     uitheme.ColorWaiting(),
 		SubtleColor: uitheme.ColorSubtle(),
 		Subtle:      uitheme.SubtleStyle(),
 		Muted:       uitheme.MutedStyle(),
@@ -21,6 +23,7 @@ func PanelTheme() Theme {
 		Border:      noticeBorderStyle(),
 		Title:       noticeTitleStyle(),
 		Fill:        func(row string, width int) string { return uitheme.Paint(row, width, noticeCardHex()) },
+		Surface:     func(row string, width int) string { return uitheme.Paint(row, width, uitheme.Current().Surface) },
 	}
 }
 
