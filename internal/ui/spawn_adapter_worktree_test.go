@@ -70,6 +70,7 @@ func TestWorktreeToggleFreshness(t *testing.T) {
 			{name: "fresh negative", wantErr: true},
 			{name: "fresh positive", cached: true, want: true},
 			{name: "expired negative discovers repo", stale: true, probed: true, want: true},
+			{name: "expired negative discovers repo with the choice on", stale: true, from: true, probed: true, want: true},
 			{name: "expired negative remains unavailable", stale: true, wantErr: true},
 			{name: "expired positive becomes unavailable", cached: true, stale: true, wantErr: true},
 			{name: "expired positive enables once", cached: true, stale: true, probed: true, want: true},
@@ -79,18 +80,16 @@ func TestWorktreeToggleFreshness(t *testing.T) {
 			t.Run(surface+"/"+tt.name, func(t *testing.T) {
 				m := buildModel(t)
 				var dir string
-				var generation int
-				target := uilaunch.ProbeForm
 				worktree := func() bool { return m.form().Worktree() }
 				if quick {
 					m.openQuickMode()
 					m.quick().SetWorktree(tt.from)
-					dir, generation, target = m.quickTargetDir(), m.quick().Gen, uilaunch.ProbeQuick
+					dir = m.quickTargetDir()
 					worktree = func() bool { return m.quick().Worktree() }
 				} else {
 					m.openForm()
 					m.form().SetWorktree(tt.from)
-					dir, generation = m.formSpawnDir(), m.formPromptFor().Gen
+					dir = m.formSpawnDir()
 				}
 				at := time.Now()
 				if tt.stale {
@@ -115,10 +114,9 @@ func TestWorktreeToggleFreshness(t *testing.T) {
 					if got := m.ledger.spawner.WorktreeRepos[dir]; got.Capable != tt.cached || !got.At.Equal(at) {
 						t.Fatal("requesting a refresh discarded the display observation")
 					}
-					m.handleWorktreeProbe(uilaunch.ProbeMsg{Request: uilaunch.ProbeRequest{
-						Target: target, Generation: generation, Sequence: m.gens.worktreeProbe,
-						Dir: dir, Toggle: true, From: tt.from,
-					}, Capable: tt.probed})
+					msg := cmd().(uilaunch.ProbeMsg)
+					msg.Capable = tt.probed
+					m.handleWorktreeProbe(msg)
 				}
 				if got := worktree(); got != tt.want || strings.Contains(m.errBar.text, "need a git repository") != tt.wantErr {
 					t.Fatalf("toggle = %t error = %q; want %t error %t", got, m.errBar.text, tt.want, tt.wantErr)

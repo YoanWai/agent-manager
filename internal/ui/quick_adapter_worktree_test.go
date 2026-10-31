@@ -57,6 +57,11 @@ func TestQuickToggleSeesARepoInitialisedWhileOpen(t *testing.T) {
 	// before the answer is cached and only moved into place after.
 	initGitRepo(t, seed)
 	m := quickGroupModel(t, dir)
+	if err := m.services.store.SetGroupWorktree("grp", "on"); err != nil {
+		t.Fatalf("set worktree: %v", err)
+	}
+	m.applyCmd(t, m.refreshCmd())
+	m.selectGroupRow(t, "grp")
 	m.openQuickMode()
 	m.applyTestMsg(t, m.quickWorktreeProbeCmd(false)())
 	ageWorktreeAnswer(m, m.quickTargetDir())

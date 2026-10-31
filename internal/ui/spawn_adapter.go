@@ -641,15 +641,16 @@ func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	if f.Remote.On() {
 		return nil
 	}
-	return m.requestDirectoryProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
+	dir := m.formSpawnDir()
+	return m.requestDirectoryProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, dir, toggleOn, m.worktreeToggleFrom(uilaunch.ProbeForm, dir))
 }
 
 func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	if _, remote := m.remoteTarget(); remote {
 		return nil
 	}
-	q := m.quick()
-	return m.requestDirectoryProbe(uilaunch.ProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
+	dir := m.quickTargetDir()
+	return m.requestDirectoryProbe(uilaunch.ProbeQuick, m.quick().Gen, dir, toggleOn, m.worktreeToggleFrom(uilaunch.ProbeQuick, dir))
 }
 
 func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) {
@@ -669,6 +670,7 @@ func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) 
 	default:
 		return m, nil
 	}
+	from := m.worktreeToggleFrom(request.Target, request.Dir)
 	m.ledger.spawner.RememberWorktree(request.Dir, msg.Capable, time.Now())
 	if !request.Toggle {
 		return m, nil
@@ -678,18 +680,27 @@ func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) 
 		return m, nil
 	}
 	m.clearErr()
+	if from != request.From {
+		return m, nil
+	}
 	if request.Target == uilaunch.ProbeForm {
-		if m.form().Worktree() != request.From {
-			return m, nil
-		}
 		m.form().SetWorktree(!request.From)
 	} else {
-		if m.quick().Worktree() != request.From {
-			return m, nil
-		}
 		m.quick().SetWorktree(!request.From)
 	}
 	return m, nil
+}
+
+// worktreeToggleFrom is the state a toggle flips. A directory last seen
+// outside a repo reads unavailable, which counts as off.
+func (m *Model) worktreeToggleFrom(target uilaunch.ProbeTarget, dir string) bool {
+	if capable, known := m.cachedWorktreeCapability(dir); known && !capable {
+		return false
+	}
+	if target == uilaunch.ProbeForm {
+		return m.form().Worktree()
+	}
+	return m.quick().Worktree()
 }
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.
