@@ -284,7 +284,11 @@ func (m *Model) rowLegend() legendSection {
 
 func (m *Model) viewLegend() legendSection {
 	ctx := m.railLegendContext()
-	if glyph, label := m.messagesAlert(); glyph != "" {
+	switch glyph, label := m.messagesAlert(); {
+	case glyph == "":
+	case label == messagesReadLabel:
+		ctx.Messages = [2]string{glyph, label}
+	default:
 		ctx.Unread = [2]string{glyph, label}
 	}
 	return legendOf(m.rail.ViewLegend(ctx))

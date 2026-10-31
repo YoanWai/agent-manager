@@ -47,7 +47,7 @@ func noticeModel(st *store.Store, version string) *Model {
 			listKeys: keybind.DefaultList(),
 		},
 		notices: noticesPanel{
-			Panel: uinotices.NewPanel(uirelease.Dismissed(st)),
+			Panel: uinotices.NewPanel(uirelease.Dismissed(st), uirelease.Seen(st)),
 		},
 	}
 }
@@ -160,7 +160,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	m.openNotices("update-v0.6.0")
 
 	n := m.activeNotices()[noticesSurfaceOf(m).Panel().Cursor()]
-	if n.Title != "4 releases available · v0.6.0" {
+	if n.Title != "4 releases available · 0.6.0" {
 		t.Fatalf("title = %q", n.Title)
 	}
 	if len(n.Releases) != 4 {
@@ -168,14 +168,21 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	}
 	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
-		"4 releases available · v0.6.0",
+		"4 releases available · 0.6.0",
 		"v0.3.0",
-		"Worktree: Respect group defaults",
 		"v0.6.0",
-		"Press u to update to v0.6.0",
+		"4 releases · you're on 0.2.0",
+		"Update to 0.6.0 and restart",
 	} {
 		if !strings.Contains(frame, want) {
 			t.Fatalf("cumulative modal missing %q:\n%s", want, frame)
+		}
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	changes := ansi.Strip(preparedView(m))
+	for _, want := range []string{"v0.3.0", "Worktree: Respect group defaults", "Sessions: Keep focus after refresh"} {
+		if !strings.Contains(changes, want) {
+			t.Fatalf("the Changes tab misses %q:\n%s", want, changes)
 		}
 	}
 }
@@ -206,7 +213,7 @@ func TestPostUpdateNoticeUsesPersistedStartingVersion(t *testing.T) {
 	frame := ansi.Strip(preparedView(m))
 	for _, want := range []string{
 		"Updated across 4 releases · v0.5.0",
-		"Updated from v0.1.0 to v0.5.0.",
+		"4 releases · you were on 0.1.0",
 		"v0.2.0",
 		"v0.5.0",
 	} {
@@ -346,8 +353,8 @@ func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	}}
 	m.openNotices("feed-canonical")
 	modal := ansi.Strip(preparedView(m))
-	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
-		t.Fatalf("modal did not use the canonical title:\n%s", modal)
+	if !strings.Contains(modal, "◆ One title everywhere") || strings.Count(modal, "legacy compact copy") != 1 || !strings.Contains(modal, "NEWS   legacy compact copy") {
+		t.Fatalf("modal should list the title and keep the banner to the message's dim line:\n%s", modal)
 	}
 }
 
@@ -487,7 +494,7 @@ func TestNoticesShortTerminalKeepsFrameAndHint(t *testing.T) {
 	if !strings.Contains(joined, "╰") {
 		t.Fatalf("short terminal ate the modal's bottom border:\n%s", joined)
 	}
-	if !strings.Contains(joined, "↑↓ · r · ↵ · x · esc") {
+	if !strings.Contains(joined, "↑↓  r  ↵  x  esc") {
 		t.Fatalf("short terminal ate the key hint:\n%s", joined)
 	}
 	if !strings.Contains(joined, "┃") {
@@ -951,7 +958,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		Releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
 	})
 	updFrame := ansi.Strip(preparedView(upd))
-	for _, want := range []string{"messages", "v0.3.0 available", "You are on v0.2.0", "u update", "x dismiss"} {
+	for _, want := range []string{"messages", "0.3.0 available", "you're on 0.2.0", "u update", "x dismiss"} {
 		if !strings.Contains(updFrame, want) {
 			t.Fatalf("update modal missing %q:\n%s", want, updFrame)
 		}
@@ -1081,7 +1088,10 @@ func TestUpdateRefreshFailureDoesNotInstallCachedTag(t *testing.T) {
 func TestUpdateActionClearsStaleNoticeWhenAlreadyCurrent(t *testing.T) {
 	m := noticeModel(noticeStore(t), "v0.3.0")
 	m.release.Latest = "v0.4.0"
+	// Read already, so the reselect after the refresh sends no SeenRequest to make quit non-nil.
+	m.notices.See(noticeTip)
 	m.openNotices("update-v0.4.0")
+	m.drainEffects(t)
 
 	origRefresh := uirelease.RefreshForApply
 	defer func() { uirelease.RefreshForApply = origRefresh }()
@@ -1352,22 +1362,12 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		mode                                          presentation.GlyphMode
 		feed, update, refresh, download, link, cursor string
 	}{
-		{presentation.GlyphModeBasic, "i", "^", "R", "v", "@", ">"},
-		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "↗", "▸"},
+		{presentation.GlyphModeBasic, "i", "^", "R", "v", "|   enter", "|"},
+		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "▍   ↵", "▍"},
 	} {
 		m.prefs.glyphMode = tc.mode
 		notices := m.activeNotices()
 		for _, n := range notices {
-			want := ""
-			switch n.ID {
-			case "literal":
-				want = tc.feed
-			case "update-v1.1.0":
-				want = tc.update
-			}
-			if want != "" && n.Glyph != want {
-				t.Fatalf("%s/%s glyph=%q", tc.mode, n.ID, n.Glyph)
-			}
 			if n.ID == "literal" && (n.Title != text || strings.Join(n.Body, "") != text) {
 				t.Fatal("external message rewritten")
 			}
@@ -1376,7 +1376,7 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		m.notices.Open(notices, "literal")
 		got := ansi.Strip(strings.Join(m.notices.View(notices, m.noticesFrame()), "\n"))
 		tail := got
-		for _, want := range []string{tc.refresh + " refreshing", tc.download + " downloading", tc.link + " example.com"} {
+		for _, want := range []string{tc.feed + " " + text, tc.update + " 1.1.0 available", tc.refresh + " refreshing", tc.download + " downloading", tc.link + "    Open link", "example.com"} {
 			if !strings.Contains(tail, want) {
 				t.Fatalf("%s tail missing %q: %s", tc.mode, want, tail)
 			}
@@ -1740,5 +1740,135 @@ func TestNoticesToggleDoesNotOverrideRefresh(t *testing.T) {
 	_, cmd := m.handleKey(key("r"))
 	if !m.noticesOpen() || cmd == nil || !m.release.Refreshing {
 		t.Fatal("toggle stole local refresh action")
+	}
+}
+
+const noticeNews = "feed-news"
+
+// seenModel lists two feed messages, the tip first, with the startup feed
+// check landed so the footer chip reads the notices themselves.
+func seenModel(st *store.Store) *Model {
+	m := noticeModel(st, "v0.2.0")
+	m.release.Feed = append(m.release.Feed, feed.Message{ID: noticeNews, Title: "Some news", Body: []string{"more"}})
+	m.release.FeedPending = false
+	m.layout.width, m.layout.height = 100, 34
+	return m
+}
+
+func unreadIDs(notices []uinotices.Notice) []string {
+	var ids []string
+	for _, n := range notices {
+		if n.Unread {
+			ids = append(ids, n.ID)
+		}
+	}
+	return ids
+}
+
+func TestOpeningThePanelMarksTheSelectedNoticeSeen(t *testing.T) {
+	st := noticeStore(t)
+	m := seenModel(st)
+	if got := unreadIDs(m.activeNotices()); !slices.Equal(got, []string{noticeTip, noticeNews}) {
+		t.Fatalf("a fresh store should leave both unread, got %v", got)
+	}
+	m.openNotices(noticeTip)
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); !slices.Equal(got, []string{noticeNews}) {
+		t.Fatalf("unread after opening on the tip = %v, want the news alone", got)
+	}
+	if raw, err := st.Setting(uirelease.SeenSetting); err != nil || raw != `["`+noticeTip+`"]` {
+		t.Fatalf("seen setting = %q, %v", raw, err)
+	}
+}
+
+func TestMovingTheCursorMarksTheNextNoticeSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.handleKey(key("down"))
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); got != nil {
+		t.Fatalf("unread after moving to the news = %v, want none", got)
+	}
+}
+
+func TestClickingAMessageMarksItSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	x, y := paintedCell(t, m, "Some news")
+	m = leftClick(m, x, y)
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); got != nil {
+		t.Fatalf("unread after clicking the news = %v, want none", got)
+	}
+}
+
+func TestFooterChipSaysMessagesOnceEverythingIsSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.Pop()
+	m.drainEffects(t)
+	if _, label := m.messagesAlert(); label != "unread" {
+		t.Fatalf("one unseen notice: chip = %q, want unread", label)
+	}
+	persistNoticeDismissal(t, m, noticeNews)
+	if _, label := m.messagesAlert(); label != "messages" {
+		t.Fatalf("every active notice seen: chip = %q, want messages", label)
+	}
+	persistNoticeDismissal(t, m, noticeTip)
+	if glyph, label := m.messagesAlert(); glyph != "" || label != "" {
+		t.Fatalf("nothing active: chip = %q %q, want none", glyph, label)
+	}
+}
+
+func TestReadMessagesChipIsADimPair(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.handleKey(key("down"))
+	m.Pop()
+	m.drainEffects(t)
+	legend := m.viewLegend()
+	if legend.Alerts != nil {
+		t.Fatalf("a read inbox raised the loud alert: %v", legend.Alerts)
+	}
+	if len(legend.Pairs) == 0 || legend.Pairs[0][1] != "messages" {
+		t.Fatalf("the read chip should lead the quiet pairs, got %v", legend.Pairs)
+	}
+}
+
+func TestSeenSurvivesARestart(t *testing.T) {
+	st := noticeStore(t)
+	m := seenModel(st)
+	m.openNotices(noticeTip)
+	m.drainEffects(t)
+
+	reopened := seenModel(st)
+	if got := unreadIDs(reopened.activeNotices()); !slices.Equal(got, []string{noticeNews}) {
+		t.Fatalf("unread after a restart = %v, want the news alone", got)
+	}
+}
+
+func TestSeenWriteFailureKeepsTheMark(t *testing.T) {
+	st := noticeStore(t)
+	if err := st.SetSetting(uirelease.SeenSetting, `{broken`); err != nil {
+		t.Fatalf("seed malformed setting: %v", err)
+	}
+	m := seenModel(st)
+	m.openNotices(noticeTip)
+	m.drainEffects(t)
+	if !strings.HasPrefix(m.errBar.text, "mark message read: ") || !strings.Contains(m.errBar.text, "decode setting") {
+		t.Fatalf("status bar = %q", m.errBar.text)
+	}
+	if got := unreadIDs(m.activeNotices()); !slices.Equal(got, []string{noticeNews}) {
+		t.Fatalf("a failed write dropped the in-memory mark: unread = %v", got)
+	}
+}
+
+func TestMovingAnOpenPanelMarksItsNoticeSeen(t *testing.T) {
+	m := seenModel(noticeStore(t))
+	m.openNotices(noticeTip)
+	m.openNotices(noticeNews)
+	m.drainEffects(t)
+	if got := unreadIDs(m.activeNotices()); got != nil {
+		t.Fatalf("unread after the open panel moved to the news = %v, want none", got)
 	}
 }

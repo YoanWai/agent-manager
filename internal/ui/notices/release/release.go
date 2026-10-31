@@ -24,6 +24,7 @@ import (
 
 const (
 	DismissedSetting    = "dismissed_notices"
+	SeenSetting         = "seen_notices"
 	LastSeenSetting     = "last_seen_version"
 	WhatsNewSetting     = "whats_new_version"
 	WhatsNewFromSetting = "whats_new_from_version"
@@ -95,20 +96,24 @@ func (s *State) UseCached(configDir string) {
 	s.Checked = len(cached.Releases) > 0
 }
 
-func Dismissed(st Store) map[string]bool {
-	dismissed := map[string]bool{}
-	raw, err := st.Setting(DismissedSetting)
+func Dismissed(st Store) map[string]bool { return noticeIDs(st, DismissedSetting) }
+
+func Seen(st Store) map[string]bool { return noticeIDs(st, SeenSetting) }
+
+func noticeIDs(st Store, key string) map[string]bool {
+	set := map[string]bool{}
+	raw, err := st.Setting(key)
 	if err != nil || raw == "" {
-		return dismissed
+		return set
 	}
 	var ids []string
 	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
-		return dismissed
+		return set
 	}
 	for _, id := range ids {
-		dismissed[id] = true
+		set[id] = true
 	}
-	return dismissed
+	return set
 }
 
 const SetupGreeting = "setup"
@@ -149,7 +154,17 @@ func (s *State) Greet(st Store) (string, error) {
 func (s *State) Sources() notices.Sources {
 	messages := make([]notices.Message, len(s.Feed))
 	for i, msg := range s.Feed {
-		messages[i] = notices.Message{ID: msg.ID, Title: msg.Title, Headline: msg.Headline, Body: msg.Body, Accent: msg.Accent, URL: msg.URL}
+		messages[i] = notices.Message{
+			ID:      msg.ID,
+			Kind:    noticeKind(msg.Kind),
+			Title:   msg.Title,
+			Banner:  msg.Banner,
+			Body:    msg.Body,
+			Accent:  msg.Accent,
+			URL:     msg.URL,
+			Action:  msg.Action,
+			Expires: msg.ExpiresAt,
+		}
 	}
 	return notices.Sources{
 		Update: notices.Update{
@@ -168,6 +183,16 @@ func (s *State) Sources() notices.Sources {
 	}
 }
 
+func noticeKind(kind string) notices.Kind {
+	switch kind {
+	case feed.KindHeadsUp:
+		return notices.KindHeadsUp
+	case feed.KindTip:
+		return notices.KindTip
+	}
+	return notices.KindNews
+}
+
 // IndexRanges keeps catalog scans out of the paint path. It runs only when
 // startup state or a background GitHub result changes.
 func (s *State) IndexRanges() {
@@ -180,15 +205,24 @@ func releaseRange(catalog update.ReleaseRange) notices.ReleaseRange {
 	for _, release := range catalog.Releases {
 		changes := make([]notices.Change, len(release.Changes))
 		for i, change := range release.Changes {
-			changes[i] = notices.Change{Kind: change.Kind, Text: change.Text, Author: change.Author}
+			changes[i] = notices.Change{Kind: change.Kind, Scope: change.Scope, Text: change.Text, Author: change.Author}
+		}
+		highlights := make([]notices.Highlight, len(release.Highlights))
+		for i, highlight := range release.Highlights {
+			highlights[i] = notices.Highlight{Label: highlight.Label, Text: highlight.Text}
+		}
+		thanks := make([]notices.Thanks, len(release.Thanks))
+		for i, entry := range release.Thanks {
+			thanks[i] = notices.Thanks{Handle: entry.Handle, Group: entry.Group, Text: entry.Text, Refs: entry.Refs}
 		}
 		out.Releases = append(out.Releases, notices.Release{
 			Version:      release.Version,
 			URL:          release.URL,
+			PublishedAt:  release.PublishedAt,
 			Headline:     release.Headline,
 			Summary:      release.Summary,
-			Highlights:   release.Highlights,
-			Thanks:       release.Thanks,
+			Highlights:   highlights,
+			Thanks:       thanks,
 			Changes:      changes,
 			TotalChanges: release.TotalChanges,
 		})

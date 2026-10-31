@@ -26,7 +26,7 @@ const (
 	cacheFile       = "feed-messages.json"
 	legacyCacheFile = "message-feed.json"
 	// feedParser names the fields this build keeps of an entry. Raise it whenever rawMessage changes.
-	feedParser = 1
+	feedParser = 2
 	// checkInterval matches the release check. The feed exists to reach
 	// installs that are already running, so a floor longer than that one
 	// lets a release notice arrive hours before the message announcing it,
@@ -43,6 +43,7 @@ const (
 	maxHeadlineLen = 60
 	maxAccents     = 8
 	maxAccentLen   = 40
+	maxActionLen   = 40
 	maxURLLen      = 200
 	feedIDPattern  = `^[a-z0-9][a-z0-9-]{0,63}$`
 )
@@ -52,26 +53,35 @@ var feedURL = "https://raw.githubusercontent.com/YoanWai/agent-manager/main/docs
 
 var validFeedID = regexp.MustCompile(feedIDPattern)
 
+const (
+	KindNews    = "news"
+	KindHeadsUp = "heads-up"
+	KindTip     = "tip"
+)
+
 // Message is one entry of the remote feed, already validated and safe to
 // render. ID carries a "feed-" prefix so remote entries can never collide
 // with the notices built into the binary.
 type Message struct {
 	ID string
-	// Banner remains in the wire contract for released clients; current UI
-	// surfaces use Title as their one canonical label.
-	Banner   string
-	Title    string
-	Headline string
-	Body     []string
+	// Banner is the dim line under Title, in the list and over the message.
+	Banner string
+	Title  string
+	Body   []string
 	// Accent holds phrases of Body to draw in the accent color, never an empty one.
 	Accent []string
 	URL    string
+	Kind   string
+	Action string
+	// ExpiresAt is the zero time for an entry that never expires.
+	ExpiresAt time.Time
 }
 
 type rawMessage struct {
-	ID         string   `json:"id"`
-	Banner     string   `json:"banner"`
-	Title      string   `json:"title"`
+	ID     string `json:"id"`
+	Banner string `json:"banner"`
+	Title  string `json:"title"`
+	// Headline is drawn only by v0.40.0 through v0.45.0, which still read this file.
 	Headline   string   `json:"headline"`
 	Accent     []string `json:"accent"`
 	Body       []string `json:"body"`
@@ -79,6 +89,8 @@ type rawMessage struct {
 	MinVersion string   `json:"min_version"`
 	MaxVersion string   `json:"max_version"`
 	ExpiresAt  string   `json:"expires_at"`
+	Kind       string   `json:"kind"`
+	Action     string   `json:"action"`
 }
 
 type cache struct {
@@ -193,18 +205,22 @@ func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 		if !update.VersionWithin(version, entry.MinVersion, entry.MaxVersion) {
 			continue
 		}
+		var expiresAt time.Time
 		if entry.ExpiresAt != "" {
-			expiresAt, err := time.Parse(time.RFC3339, entry.ExpiresAt)
+			var err error
+			expiresAt, err = time.Parse(time.RFC3339, entry.ExpiresAt)
 			if err != nil || !now.Before(expiresAt) {
 				continue
 			}
 		}
 		msg := Message{
-			ID:       "feed-" + entry.ID,
-			Banner:   cleanText(entry.Banner, maxBannerLen),
-			Title:    cleanText(entry.Title, maxTitleLen),
-			Headline: cleanText(entry.Headline, maxHeadlineLen),
-			URL:      entry.URL,
+			ID:        "feed-" + entry.ID,
+			Banner:    cleanText(entry.Banner, maxBannerLen),
+			Title:     cleanText(entry.Title, maxTitleLen),
+			URL:       entry.URL,
+			Kind:      knownKind(entry.Kind),
+			Action:    cleanText(entry.Action, maxActionLen),
+			ExpiresAt: expiresAt,
 		}
 		if msg.Banner == "" || msg.Title == "" {
 			continue
@@ -228,6 +244,15 @@ func sanitize(raw []rawMessage, version string, now time.Time) []Message {
 		messages = append(messages, msg)
 	}
 	return messages
+}
+
+// knownKind reads a kind this build does not know as news, so a future kind still shows.
+func knownKind(kind string) string {
+	switch kind {
+	case KindHeadsUp, KindTip:
+		return kind
+	}
+	return KindNews
 }
 
 // safeURL admits only an https URL with a real host that is already

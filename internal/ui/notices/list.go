@@ -1,10 +1,10 @@
 package notices
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"strings"
-
-	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 )
 
 // Update is what the root knows of releases: this build, a newer release,
@@ -23,10 +23,9 @@ type Update struct {
 // Sources are the root facts the notice list is built from, copied so the
 // panel never reaches into the store, the network or the key tables.
 type Sources struct {
-	GlyphMode presentation.GlyphMode
-	Store     bool
-	Update    Update
-	Feed      []Message
+	Store  bool
+	Update Update
+	Feed   []Message
 	// WhatsNewVersion and WhatsNewFrom mirror the persisted what's-new
 	// settings; ConfigImportError is why an old config.toml was refused.
 	WhatsNewVersion   string
@@ -54,33 +53,30 @@ func (p Panel) Active(src Sources) []Notice {
 	if !src.Store {
 		return nil
 	}
-	g := presentation.GlyphsFor(src.GlyphMode)
 	var notices []Notice
 	if src.Update.Latest != "" {
 		releaseRange := src.Update.Available
-		title := src.Update.Latest + " available"
+		title := bareVersion(src.Update.Latest) + " available"
 		if len(releaseRange.Releases) > 1 {
-			title = releaseCountLabel(releaseRange) + " releases available · " + src.Update.Latest
+			title = releaseCountLabel(releaseRange) + " releases available · " + bareVersion(src.Update.Latest)
 		}
-		body := []string{"You are on " + src.Update.Version + ". Here is everything released since then:"}
+		var body []string
 		if len(releaseRange.Releases) == 0 {
-			body = append(body, "The generated change summary is not available yet; r refreshes it now.")
+			body = []string{"The generated change summary is not available yet; r refreshes it now."}
 		}
 		notices = append(notices, Notice{
 			ID:            "update-" + src.Update.Latest,
-			Glyph:         g.UpdateGlyph,
-			Tint:          TintAccent,
+			Kind:          KindRelease,
+			Subtitle:      newestHeadline(releaseRange.Releases),
 			Title:         title,
 			Headline:      newestHeadline(releaseRange.Releases),
 			ReleaseNotes:  true,
 			Body:          body,
 			Releases:      releaseRange.Releases,
 			RangeComplete: releaseRange.Complete,
-			After: []string{
-				"`Press u to update to " + src.Update.Latest + " and restart.` Every release above is included.",
-				"Enter opens the full release notes.",
-			},
-			URL: src.Update.URL,
+			Version:       src.Update.Latest,
+			From:          src.Update.Version,
+			URL:           src.Update.URL,
 		})
 	}
 	if src.WhatsNewVersion == src.Update.Version {
@@ -89,46 +85,46 @@ func (p Panel) Active(src Sources) []Notice {
 		if len(releaseRange.Releases) > 1 {
 			title = "Updated across " + releaseCountLabel(releaseRange) + " releases · " + src.Update.Version
 		}
-		body := []string{"Updated from " + src.WhatsNewFrom + " to " + src.Update.Version + "."}
+		var body []string
 		if len(releaseRange.Releases) == 0 && !src.Update.Checked {
-			body = append(body, "Loading the change summary from GitHub…")
+			body = []string{"Loading the change summary from GitHub…"}
 		} else if len(releaseRange.Releases) == 0 {
-			body = append(body, "No generated change summary was found; r refreshes GitHub now.")
+			body = []string{"No generated change summary was found; r refreshes GitHub now."}
 		}
 		notices = append(notices, Notice{
-			ID:           "whatsnew-" + src.Update.Version,
-			Glyph:        g.NewGlyph,
-			Tint:         TintAccent2,
-			Title:        title,
-			Headline:     newestHeadline(releaseRange.Releases),
-			ReleaseNotes: true,
-			Body:         body,
-			Releases:     releaseRange.Releases,
-			After: []string{
-				"Enter opens the full release notes.",
-			},
+			ID:            "whatsnew-" + src.Update.Version,
+			Kind:          KindRelease,
+			Subtitle:      newestHeadline(releaseRange.Releases),
+			Title:         title,
+			Headline:      newestHeadline(releaseRange.Releases),
+			ReleaseNotes:  true,
+			Body:          body,
+			Releases:      releaseRange.Releases,
 			RangeComplete: releaseRange.Complete,
+			Version:       src.Update.Version,
+			From:          src.WhatsNewFrom,
 			URL:           RepoURL + "/releases/tag/v" + strings.TrimPrefix(src.Update.Version, "v"),
 		})
 	}
 	for _, msg := range src.Feed {
 		notices = append(notices, Notice{
 			ID:       msg.ID,
-			Glyph:    g.FeedGlyph,
-			Tint:     TintAccent2,
+			Kind:     msg.Kind,
+			Subtitle: msg.Banner,
 			Title:    msg.Title,
-			Headline: msg.Headline,
 			Accent:   msg.Accent,
 			Body:     msg.Body,
 			URL:      msg.URL,
+			Action:   msg.Action,
+			Expires:  msg.Expires,
 		})
 	}
 	if src.ConfigImportError != "" {
 		notices = append(notices, Notice{
-			ID:    ConfigNotImported,
-			Glyph: g.SettingsGlyph,
-			Tint:  TintWarm,
-			Title: "Your config.toml was not carried into Settings",
+			ID:       ConfigNotImported,
+			Kind:     KindHeadsUp,
+			Subtitle: "Settings could not import it",
+			Title:    "Your config.toml was not carried into Settings",
 			Body: []string{
 				"The keys and the editor live in Settings now. A config.toml that",
 				"names them is read once to carry them over, and yours was refused:",
@@ -139,17 +135,17 @@ func (p Panel) Active(src Sources) []Notice {
 				"you set them in Settings. The file is not read again, and is yours",
 				"to delete.",
 			},
-			After: []string{
-				"Enter opens the page on what Settings holds.",
-			},
-			URL: RepoURL + "/blob/main/docs/configuration.md",
+			URL:    RepoURL + "/blob/main/docs/configuration.md",
+			Action: "Read what Settings holds",
 		})
 	}
 	kept := notices[:0]
 	for _, n := range notices {
 		if !p.dismissed[n.ID] {
+			n.Unread = !p.seen[n.ID]
 			kept = append(kept, n)
 		}
 	}
+	slices.SortStableFunc(kept, func(a, b Notice) int { return cmp.Compare(a.Kind, b.Kind) })
 	return kept
 }

@@ -5,6 +5,7 @@ package theme
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -54,6 +55,27 @@ func HexRGB(hex string) (int, int, int) {
 		return 0, 0, 0
 	}
 	return int(val>>16) & 0xff, int(val>>8) & 0xff, int(val) & 0xff
+}
+
+// ContrastRatio is the WCAG contrast between two hex colors, from 1 to 21.
+func ContrastRatio(a, b string) float64 {
+	lighter, darker := relativeLuminance(a), relativeLuminance(b)
+	if lighter < darker {
+		lighter, darker = darker, lighter
+	}
+	return (lighter + 0.05) / (darker + 0.05)
+}
+
+func relativeLuminance(hex string) float64 {
+	red, green, blue := HexRGB(hex)
+	channel := func(value int) float64 {
+		scaled := float64(value) / 255
+		if scaled <= 0.03928 {
+			return scaled / 12.92
+		}
+		return math.Pow((scaled+0.055)/1.055, 2.4)
+	}
+	return 0.2126*channel(red) + 0.7152*channel(green) + 0.0722*channel(blue)
 }
 
 // Mix blends two hex colors, ratio 0 returning a and 1 returning b. Used

@@ -1,14 +1,16 @@
 package notices
 
 import (
+	"errors"
 	"fmt"
 
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 )
 
-// Store is the persisted dismissal a queued one writes through.
+// Store is the persisted dismissal or read mark a queued one writes through.
 type Store interface {
 	DismissNotice(id string) error
+	SeeNotice(id string) error
 }
 
 // Services is what the notices effect lane captures for one job.
@@ -32,6 +34,22 @@ func (r DismissRequest) Run(services Services) (uieffects.Result, error) {
 	}
 	if err := services.Store.DismissNotice(r.ID); err != nil {
 		return nil, fmt.Errorf("dismiss notice %q: %w", r.ID, err)
+	}
+	return nil, nil
+}
+
+// SeenRequest persists one read mark the panel already shows. A failure
+// keeps the mark: the notice reads as read for the rest of this run.
+type SeenRequest struct{ ID string }
+
+func (SeenRequest) EffectName() string { return "notice read mark" }
+
+func (r SeenRequest) Run(services Services) (uieffects.Result, error) {
+	if services.Store == nil {
+		return nil, errors.New("mark message read: store is unavailable")
+	}
+	if err := services.Store.SeeNotice(r.ID); err != nil {
+		return nil, fmt.Errorf("mark message read: %w", err)
 	}
 	return nil, nil
 }
