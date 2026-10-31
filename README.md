@@ -228,6 +228,12 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 
 <a href="https://github.com/YoanWai/agent-manager/graphs/contributors"><img src="https://raw.githubusercontent.com/YoanWai/agent-manager/badges/contributors.png" alt="Contributors"></a>
 
+## Sponsors
+
+Thank you to [@dempc6469](https://github.com/dempc6469) for supporting my open source work.
+
+You can support continued development through [GitHub Sponsors](https://github.com/sponsors/YoanWai).
+
 ## License
 
 [Apache-2.0](LICENSE)
