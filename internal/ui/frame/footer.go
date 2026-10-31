@@ -29,19 +29,16 @@ type Focus struct {
 // transient tier pads to, and the full screen layout has no preview box to
 // hold still.
 type Footer struct {
-	Mode       presentation.GlyphMode
-	List       []Section
-	Reference  [][]Section
-	Room       int
-	Width      int
-	FullLayout bool
-	ArrowStep  bool
+	Mode        presentation.GlyphMode
+	List        []Section
+	Measurement Measurement
+	Width       int
+	FullLayout  bool
+	ArrowStep   bool
 }
 
-func (f Footer) Layout() (LegendMode, int) {
-	badge, quiet := TitleStyles()
-	return LegendLayout(f.Reference, f.Width, f.Room, LiveCap(f.Mode), badge, quiet, Separator())
-}
+func (f Footer) Layout() (LegendMode, int) { return f.Measurement.Mode, f.Measurement.Rows }
+
 func (f Footer) ListLegend() Legend {
 	mode, rows := f.Layout()
 	badge, quiet := TitleStyles()

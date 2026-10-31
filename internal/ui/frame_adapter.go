@@ -313,13 +313,12 @@ func (m *Model) footer() legend {
 // footerOf is the footer's height rule, over the base screen's tiers.
 func (m *Model) footerOf() uiframe.Footer {
 	return uiframe.Footer{
-		Mode:       m.prefs.glyphMode,
-		List:       m.listTiers(),
-		Reference:  m.legendReference(),
-		Room:       max(uiframe.MaxRows, (m.layout.height-m.listChromeRows()-1)/2),
-		Width:      m.layout.width,
-		FullLayout: m.prefs.fullLayout,
-		ArrowStep:  m.prefs.arrowStep,
+		Mode:        m.prefs.glyphMode,
+		List:        m.listTiers(),
+		Measurement: m.layout.footer.Measure(m.legendReference(), m.layout.width, max(uiframe.MaxRows, (m.layout.height-m.listChromeRows()-1)/2), m.prefs.glyphMode),
+		Width:       m.layout.width,
+		FullLayout:  m.prefs.fullLayout,
+		ArrowStep:   m.prefs.arrowStep,
 	}
 }
 
