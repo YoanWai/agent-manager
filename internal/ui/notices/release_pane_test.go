@@ -711,3 +711,23 @@ func TestTabsTakeClicksWhenTheHeaderScrolls(t *testing.T) {
 		t.Fatalf("click on the Thanks tab of a short pane = %+v, tab %d", out, p.tab)
 	}
 }
+
+func TestTabStripFitsANarrowPane(t *testing.T) {
+	rows := paneText(updatedNotice(t, tabsRelease(t)), TabOverview, "", 32)
+	strip := rows[rowIndex(rows, "Overview")]
+	if !strings.Contains(strip, "Thanks 10") || lipgloss.Width(strip) > 32 {
+		t.Fatalf("the tabs overflow a 32-column pane: %q", strip)
+	}
+}
+
+func TestThanksNotesAPartialRange(t *testing.T) {
+	n := updatedNotice(t, tabsRelease(t))
+	n.RangeComplete = false
+	if rows := paneText(n, TabThanks, "", paneTestWidth); rowIndex(rows, "covers part of this range") < 0 {
+		t.Fatalf("Thanks hides that the range is partial:\n%s", strings.Join(rows, "\n"))
+	}
+	n.Releases[0].Thanks = nil
+	if rows := paneText(n, TabThanks, "", paneTestWidth); rowIndex(rows, "covers part of this range") < 0 {
+		t.Fatalf("an empty Thanks hides that the range is partial:\n%s", strings.Join(rows, "\n"))
+	}
+}

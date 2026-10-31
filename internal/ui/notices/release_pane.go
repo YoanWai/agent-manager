@@ -178,29 +178,41 @@ func actionBar(key, label, right string, tone lipgloss.Color, width int, t Theme
 }
 
 // tabStrip names each tab with its count over a rule across the pane, the
-// active tab bright with the rule in the accent under it.
+// active tab bright with the rule in the accent under it. Tabs pad by two
+// cells a side, or by one in a pane too narrow for that.
 func tabStrip(n Notice, active Tab, filter string, width int, t Theme, mode presentation.GlyphMode) (strip, under string, hits []paneHit) {
 	counts := [...]int{TabChanges: changeCount(n), TabThanks: len(mergedThanks(n.Releases))}
+	texts := make([]string, len(tabLabels))
+	natural := 0
+	for index, label := range tabLabels {
+		texts[index] = label
+		if Tab(index) != TabOverview {
+			texts[index] += " " + strconv.Itoa(counts[index])
+		}
+		natural += ansi.StringWidth(texts[index]) + 4
+	}
+	pad := 2
+	if natural-1 > width {
+		pad = 1
+	}
 	underline := lipgloss.NewStyle().Foreground(t.Accent)
 	x := 0
 	for index, label := range tabLabels {
 		tab := Tab(index)
-		lead := 2
+		lead := pad
 		if index == 0 {
-			lead = 1
+			lead = pad - 1
 		}
-		style, text := t.Muted, label
+		style := t.Muted
 		if tab == active {
 			style = headingStyle(t)
 		}
 		cell := style.Render(label)
 		if tab != TabOverview {
-			count := strconv.Itoa(counts[tab])
-			cell += " " + t.Muted.Render(count)
-			text += " " + count
+			cell += " " + t.Muted.Render(strconv.Itoa(counts[tab]))
 		}
-		cells := lead + ansi.StringWidth(text) + 2
-		strip += strings.Repeat(" ", lead) + cell + "  "
+		cells := lead + ansi.StringWidth(texts[index]) + pad
+		strip += strings.Repeat(" ", lead) + cell + strings.Repeat(" ", pad)
 		if tab == active {
 			under += underline.Render(strings.Repeat(presentation.ChromeFor(mode).RuleGlyph, cells))
 		} else {

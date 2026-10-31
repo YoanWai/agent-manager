@@ -233,7 +233,7 @@ func changeRow(change Change, scopeColumn, width int, t Theme, mode presentation
 func thanksTab(n Notice, width int, t Theme, mode presentation.GlyphMode) []string {
 	people := mergedThanks(n.Releases)
 	if len(people) == 0 {
-		return []string{t.Muted.Render("No thank-you lines.")}
+		return appendPartial([]string{t.Muted.Render("No thank-you lines.")}, n, width, t, mode)
 	}
 	rows := appendWrapped(nil, []textRun{{text: thanksLine(n, len(people))}}, width, t.Value, t)
 	handleColumn := 0
@@ -255,7 +255,7 @@ func thanksTab(n Notice, width int, t Theme, mode presentation.GlyphMode) []stri
 			rows = spaced(rows, section...)
 		}
 	}
-	return rows
+	return appendPartial(rows, n, width, t, mode)
 }
 
 func thanksLine(n Notice, people int) string {
