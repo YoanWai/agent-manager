@@ -3,6 +3,7 @@ package notices
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/charmbracelet/x/ansi"
@@ -50,7 +51,9 @@ func TestCompatibleModeUsesASCIIForEveryNewGlyph(t *testing.T) {
 	}
 
 	src := inboxSources()
-	src.Feed = append(src.Feed, Message{ID: "feed-tip", Kind: KindTip, Title: "Try the tip", Banner: "a quick one"})
+	src.Feed[1].URL, src.Feed[1].Action = "https://github.com/tmux/tmux/issues/4511", "Read the tmux issue"
+	src.Feed[1].Expires = time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	src.Feed = append(src.Feed, Message{ID: "feed-tip", Kind: KindTip, Title: "Try the tip", Banner: "a quick one", Body: []string{"Press s for Settings."}, URL: RepoURL + "#readme"})
 	src.Update.Version = src.Update.Latest
 	src.WhatsNewVersion, src.WhatsNewFrom = src.Update.Latest, "v0.45.0"
 	src.ConfigImportError = "bad key"
@@ -73,6 +76,43 @@ func TestCompatibleModeUsesASCIIForEveryNewGlyph(t *testing.T) {
 						t.Fatalf("width %d, %s: %q in the compatible view: %q", width, notices[i].ID, r, ansi.Strip(line))
 					}
 				}
+			}
+		}
+	}
+}
+
+func TestCompatibleNoticeChromeKeepsBodyAndScrollGeometry(t *testing.T) {
+	const literal = "◂▸╭╮╰╯━╸┃┄▀▄▐▜▟"
+	n := Notice{Kind: KindNews, Title: "Title", Body: []string{literal}}
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		rows := feedPane(n, 80, testTheme(), mode)
+		if !strings.Contains(ansi.Strip(strings.Join(rows, "\n")), literal) {
+			t.Fatal("notice body was converted")
+		}
+		thumb := "█"
+		if mode == presentation.GlyphModeAdvanced {
+			thumb = "┃"
+		}
+		body := make([]string, 12)
+		for i := range body {
+			body[i] = "text"
+		}
+		for _, offset := range []int{0, 4, 8} {
+			window := scrollWindow(body, 4, offset, 20, testTheme(), mode)
+			if len(window) != 4 {
+				t.Fatal("scroll height changed")
+			}
+			count := 0
+			for _, row := range window {
+				if ansi.StringWidth(row) != 20 {
+					t.Fatal("scroll width changed")
+				}
+				if strings.HasSuffix(ansi.Strip(row), thumb) {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Fatalf("offset %d has %d thumbs", offset, count)
 			}
 		}
 	}

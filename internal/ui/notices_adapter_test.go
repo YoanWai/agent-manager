@@ -353,8 +353,8 @@ func TestFeedUsesCanonicalTitleInModal(t *testing.T) {
 	}}
 	m.openNotices("feed-canonical")
 	modal := ansi.Strip(preparedView(m))
-	if !strings.Contains(modal, "One title everywhere") || strings.Contains(modal, "legacy compact copy") {
-		t.Fatalf("modal did not use the canonical title:\n%s", modal)
+	if !strings.Contains(modal, "◆ One title everywhere") || strings.Count(modal, "legacy compact copy") != 1 || !strings.Contains(modal, "NEWS  legacy compact copy") {
+		t.Fatalf("modal should list the title and keep the banner to the message's dim line:\n%s", modal)
 	}
 }
 
@@ -1362,8 +1362,8 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		mode                                          presentation.GlyphMode
 		feed, update, refresh, download, link, cursor string
 	}{
-		{presentation.GlyphModeBasic, "i", "^", "R", "v", "@", "|"},
-		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "↗", "▍"},
+		{presentation.GlyphModeBasic, "i", "^", "R", "v", "| enter", "|"},
+		{presentation.GlyphModeAdvanced, "◆", "↑", "↻", "↓", "▍ ↵", "▍"},
 	} {
 		m.prefs.glyphMode = tc.mode
 		notices := m.activeNotices()
@@ -1376,7 +1376,7 @@ func TestNoticeMarksAreResolvedWithoutChangingExternalContent(t *testing.T) {
 		m.notices.Open(notices, "literal")
 		got := ansi.Strip(strings.Join(m.notices.View(notices, m.noticesFrame()), "\n"))
 		tail := got
-		for _, want := range []string{tc.feed + " " + text, tc.update + " v1.1.0 available", tc.refresh + " refreshing", tc.download + " downloading", tc.link + " example.com"} {
+		for _, want := range []string{tc.feed + " " + text, tc.update + " v1.1.0 available", tc.refresh + " refreshing", tc.download + " downloading", tc.link + "  Open link  example.com"} {
 			if !strings.Contains(tail, want) {
 				t.Fatalf("%s tail missing %q: %s", tc.mode, want, tail)
 			}

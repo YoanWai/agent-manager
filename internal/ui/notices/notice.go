@@ -41,7 +41,6 @@ type Notice struct {
 	// this install is on, or was on before it updated.
 	Version       string
 	From          string
-	After         []string
 	RangeComplete bool
 	URL           string
 	Action        string
@@ -106,12 +105,11 @@ type ReleaseRange struct {
 }
 
 type Message struct {
-	ID       string
-	Kind     Kind
-	Title    string
-	Banner   string
-	Headline string
-	Body     []string
+	ID     string
+	Kind   Kind
+	Title  string
+	Banner string
+	Body   []string
 	// Accent holds phrases of Body to draw in the accent color, never an empty one.
 	Accent  []string
 	URL     string

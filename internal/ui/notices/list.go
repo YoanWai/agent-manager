@@ -112,7 +112,6 @@ func (p Panel) Active(src Sources) []Notice {
 			Kind:     msg.Kind,
 			Subtitle: msg.Banner,
 			Title:    msg.Title,
-			Headline: msg.Headline,
 			Accent:   msg.Accent,
 			Body:     msg.Body,
 			URL:      msg.URL,
@@ -136,10 +135,8 @@ func (p Panel) Active(src Sources) []Notice {
 				"you set them in Settings. The file is not read again, and is yours",
 				"to delete.",
 			},
-			After: []string{
-				"Enter opens the page on what Settings holds.",
-			},
-			URL: RepoURL + "/blob/main/docs/configuration.md",
+			URL:    RepoURL + "/blob/main/docs/configuration.md",
+			Action: "Read what Settings holds",
 		})
 	}
 	kept := notices[:0]

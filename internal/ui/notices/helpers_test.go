@@ -1,6 +1,7 @@
 package notices
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -58,4 +59,13 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyShiftTab}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+}
+
+func rowIndex(rows []string, want string) int {
+	for index, row := range rows {
+		if strings.Contains(row, want) {
+			return index
+		}
+	}
+	return -1
 }

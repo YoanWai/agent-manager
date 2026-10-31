@@ -79,8 +79,7 @@ func releaseTab(n Notice, tab Tab, filter string, width int, t Theme, mode prese
 }
 
 func versionLine(n Notice, width int, t Theme, mode presentation.GlyphMode) string {
-	chip := lipgloss.NewStyle().Background(t.Accent).Foreground(t.Ink).Bold(true).Render(" v" + bareVersion(n.Version) + " ")
-	line := chip + " " + t.Muted.Render(origin(n))
+	line := chip("v"+bareVersion(n.Version), t.Accent, t) + " " + t.Muted.Render(origin(n))
 	if n.URL == "" {
 		return line
 	}
@@ -116,8 +115,24 @@ func origin(n Notice) string {
 func bareVersion(version string) string { return strings.TrimPrefix(version, "v") }
 
 func callToAction(n Notice, width int, t Theme, mode presentation.GlyphMode) string {
+	return actionBar("u", "Update to "+bareVersion(n.Version)+" and restart", "", width, t, mode)
+}
+
+// chip is a label on a fill, in the backdrop's ink.
+func chip(text string, fill lipgloss.Color, t Theme) string {
+	return lipgloss.NewStyle().Background(fill).Foreground(t.Ink).Bold(true).Render(" " + text + " ")
+}
+
+// actionBar is a call to action on the faint accent fill: the key, what it
+// does and, dim, where it leads, cut to the prose measure.
+func actionBar(key, label, detail string, width int, t Theme, mode presentation.GlyphMode) string {
+	room := min(width, proseWidth)
 	bar := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.GlyphsFor(mode).SectionBarGlyph)
-	return t.Callout(bar+" "+t.Key.Render("u")+"  "+t.Value.Render("Update to "+bareVersion(n.Version)+" and restart"), min(width, proseWidth))
+	row := bar + " " + t.Key.Render(key) + "  " + t.Value.Render(label)
+	if detail != "" {
+		row += "  " + t.Muted.Render(ansi.Truncate(detail, max(room-lipgloss.Width(row)-2, 0), "…"))
+	}
+	return t.Callout(row, room)
 }
 
 // tabStrip names each tab with its count, the active one bright over an

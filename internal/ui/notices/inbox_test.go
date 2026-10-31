@@ -207,7 +207,7 @@ func TestClickOnAListRowSelectsThatNotice(t *testing.T) {
 	f := inboxFrame(160)
 	line := func(text string) int {
 		for row, plain := range plainRows(p.View(notices, f)) {
-			if strings.Contains(plain, text) {
+			if strings.Contains(ansi.Cut(plain, 0, 2+listWidth), text) {
 				return row - 1
 			}
 		}
@@ -229,5 +229,53 @@ func TestClickOnAListRowSelectsThatNotice(t *testing.T) {
 	}
 	if !slices.Contains(ids(notices), inboxNews) || notices[1].ID != inboxNews {
 		t.Fatalf("test setup: %v", ids(notices))
+	}
+}
+
+func pickersRelease() Release {
+	return Release{
+		Version:  "v0.40.0",
+		Headline: "Model + reasoning pickers are here!",
+		Summary:  "Every session runs on its own model. Press `ctrl+x` for effort.",
+		Highlights: []Highlight{
+			{Text: "`Model and reasoning pickers` are here, in the New Session modal"},
+			{Text: "Antigravity CLI and Oh My Pi are built-in agents"},
+		},
+		Thanks: []Thanks{{Handle: "@someone", Group: ThanksBuilt, Text: "asked for it", Refs: []string{"#1"}}},
+		Changes: []Change{
+			{Kind: KindFeature, Text: "Config: Add Antigravity CLI support", Author: "@mateuszgachowski"},
+			{Kind: KindFix, Text: "UI: Keep the focused pane painted"},
+			{Kind: KindFix, Text: "Codex: Keep pending messages out of the reply line", Author: "@drakeo338"},
+			{Kind: KindOther, Text: "Ship the agent skills"},
+		},
+		TotalChanges: 4,
+	}
+}
+
+func TestSummaryNeverWidensTheModal(t *testing.T) {
+	release := pickersRelease()
+	release.Summary = strings.Repeat("a long summary sentence ", 20)
+	notices := []Notice{{ReleaseNotes: true, Releases: []Release{release}}}
+	if got := innerWidth(notices, 300); got > 90 {
+		t.Fatalf("inner width %d follows the summary, want it to follow the longest row", got)
+	}
+}
+
+func TestModalWidthStopsAtItsCeiling(t *testing.T) {
+	notices := []Notice{{Body: []string{strings.Repeat("x", 400)}}}
+	if got := innerWidth(notices, 300); got != modalMax+scrollbarWidth {
+		t.Fatalf("inner width = %d, want %d", got, modalMax+scrollbarWidth)
+	}
+	if got := innerWidth(notices, 100); got != 92 {
+		t.Fatalf("inner width = %d, want the terminal less 8", got)
+	}
+}
+
+func TestOlderHeadlineWidensTheModal(t *testing.T) {
+	older := Release{Version: "v0.39.0", Headline: strings.Repeat("h", 80), Highlights: []Highlight{{Text: "A highlight"}}}
+	n := Notice{ReleaseNotes: true, Releases: []Release{older, pickersRelease()}, RangeComplete: true}
+	want := lipgloss.Width("v0.39.0 · "+older.Headline) + scrollbarWidth
+	if got := innerWidth([]Notice{n}, 300); got != want {
+		t.Fatalf("inner width = %d, want %d to fit the older release's heading", got, want)
 	}
 }

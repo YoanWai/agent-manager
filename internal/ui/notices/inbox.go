@@ -19,6 +19,40 @@ const (
 
 func split(width int) bool { return width >= splitMinWidth }
 
+// modalMax is the widest row the modal makes room for, the longest line remote text may carry.
+const modalMax = 160
+
+const scrollbarWidth = 2
+
+// proseWidth keeps a paragraph to a readable measure on a wide modal.
+const proseWidth = 76
+
+// modalInner is the modal content column's floor, sized for the welcome
+// notice's longest body line; longer bodies widen it up to the terminal.
+const modalInner = 62
+
+func innerWidth(notices []Notice, terminalWidth int) int {
+	widest := 0
+	for _, n := range notices {
+		for _, line := range measure(n) {
+			widest = max(widest, lipgloss.Width(line))
+		}
+	}
+	inner := min(max(widest+scrollbarWidth, modalInner), modalMax+scrollbarWidth)
+	if fit := terminalWidth - 8; inner > fit {
+		inner = max(fit, 1)
+	}
+	return inner
+}
+
+// measure leaves the summary out: a paragraph wraps to the modal and must never widen it.
+func measure(n Notice) []string {
+	if !n.ReleaseNotes {
+		return feedMeasure(n)
+	}
+	return append(append([]string{n.Headline}, n.Body...), releaseMeasure(n)...)
+}
+
 // inboxWidths is the card's content column and the message pane inside it:
 // the same column stacked, the room right of the list and its seam split.
 func inboxWidths(notices []Notice, width int, splitView bool) (inner, pane int) {
@@ -79,19 +113,31 @@ func titleLine(n Notice, width int, t Theme, mode presentation.GlyphMode) string
 
 func kindGlyph(n Notice, t Theme, mode presentation.GlyphMode) string {
 	g := presentation.GlyphsFor(mode)
-	glyph, color := g.FeedGlyph, t.Accent2
+	glyph := g.FeedGlyph
 	switch n.Kind {
 	case KindRelease:
-		glyph, color = g.NewGlyph, t.Accent
+		glyph = g.NewGlyph
 		if n.IsUpdate() {
 			glyph = g.UpdateGlyph
 		}
 	case KindHeadsUp:
-		glyph, color = g.HeadsUpGlyph, t.Working
+		glyph = g.HeadsUpGlyph
 	case KindTip:
-		glyph, color = g.TipGlyph, t.Waiting
+		glyph = g.TipGlyph
 	}
-	return lipgloss.NewStyle().Foreground(color).Render(glyph)
+	return lipgloss.NewStyle().Foreground(kindColor(n.Kind, t)).Render(glyph)
+}
+
+func kindColor(kind Kind, t Theme) lipgloss.Color {
+	switch kind {
+	case KindRelease:
+		return t.Accent
+	case KindHeadsUp:
+		return t.Working
+	case KindTip:
+		return t.Waiting
+	}
+	return t.Accent2
 }
 
 // listRow sets a line after the selection bar's column, on the surface fill

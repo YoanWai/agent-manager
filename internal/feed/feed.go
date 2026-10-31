@@ -64,8 +64,7 @@ const (
 // with the notices built into the binary.
 type Message struct {
 	ID string
-	// Banner remains in the wire contract for released clients; current UI
-	// surfaces use Title as their one canonical label.
+	// Banner is the dim line under Title, in the list and over the message.
 	Banner   string
 	Title    string
 	Headline string

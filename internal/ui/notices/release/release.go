@@ -155,16 +155,15 @@ func (s *State) Sources() notices.Sources {
 	messages := make([]notices.Message, len(s.Feed))
 	for i, msg := range s.Feed {
 		messages[i] = notices.Message{
-			ID:       msg.ID,
-			Kind:     noticeKind(msg.Kind),
-			Title:    msg.Title,
-			Banner:   msg.Banner,
-			Headline: msg.Headline,
-			Body:     msg.Body,
-			Accent:   msg.Accent,
-			URL:      msg.URL,
-			Action:   msg.Action,
-			Expires:  msg.ExpiresAt,
+			ID:      msg.ID,
+			Kind:    noticeKind(msg.Kind),
+			Title:   msg.Title,
+			Banner:  msg.Banner,
+			Body:    msg.Body,
+			Accent:  msg.Accent,
+			URL:     msg.URL,
+			Action:  msg.Action,
+			Expires: msg.ExpiresAt,
 		}
 	}
 	return notices.Sources{

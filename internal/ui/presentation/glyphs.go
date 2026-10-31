@@ -52,7 +52,7 @@ type GlyphSet struct {
 	PromptGlyph, ReplyGlyph, SearchGlyph, SelectionGlyph                                          string
 	SettingsGlyph, NewSessionGlyph, NewGlyph, ArchiveGlyph, RestoreGlyph                          string
 	RestartGlyph, DeleteGlyph, MoveGlyph, ResetGlyph, ReviewGlyph, SetupGlyph                     string
-	FeedGlyph, UpdateGlyph, DownloadGlyph, RefreshGlyph, LinkGlyph                                string
+	FeedGlyph, UpdateGlyph, DownloadGlyph, RefreshGlyph                                           string
 	WarningGlyph, CardErrorGlyph, DiffErrorGlyph, DiffCleanGlyph, DiffDoneGlyph, DiffPendingGlyph string
 	WorktreeGlyph, AfterTurnArchiveGlyph, AfterTurnKillGlyph                                      string
 	WorkingGlyph, StartingGlyph, WaitingGlyph, FinishedGlyph, ErroredGlyph, IdleGlyph             string
@@ -72,7 +72,7 @@ func GlyphsFor(mode GlyphMode) GlyphSet {
 			PromptGlyph: "❯", ReplyGlyph: "↳", SearchGlyph: "⌕", SelectionGlyph: "❯",
 			SettingsGlyph: "⚙", NewSessionGlyph: "◆", NewGlyph: "✦", ArchiveGlyph: "◇", RestoreGlyph: "◆",
 			RestartGlyph: "↻", DeleteGlyph: "⚠", MoveGlyph: "⇄", ResetGlyph: "↺", ReviewGlyph: "⌥", SetupGlyph: "◈",
-			FeedGlyph: "◆", UpdateGlyph: "↑", DownloadGlyph: "↓", RefreshGlyph: "↻", LinkGlyph: "↗",
+			FeedGlyph: "◆", UpdateGlyph: "↑", DownloadGlyph: "↓", RefreshGlyph: "↻",
 			WarningGlyph: "▲", CardErrorGlyph: "⚠", DiffErrorGlyph: "✖", DiffCleanGlyph: "✓", DiffDoneGlyph: "✔", DiffPendingGlyph: "○",
 			WorktreeGlyph: "⎇", AfterTurnArchiveGlyph: "↓", AfterTurnKillGlyph: "■",
 			HeadsUpGlyph: "▲", TipGlyph: "✧", FeatureGlyph: "✚", FixGlyph: "●", OtherGlyph: "◌", StartedGlyph: "◇", PeopleGlyph: "♥",
@@ -88,7 +88,7 @@ func GlyphsFor(mode GlyphMode) GlyphSet {
 		PromptGlyph: ">", ReplyGlyph: "<", SearchGlyph: "/", SelectionGlyph: ">",
 		SettingsGlyph: "#", NewSessionGlyph: "+", NewGlyph: "+", ArchiveGlyph: "A", RestoreGlyph: "R",
 		RestartGlyph: "R", DeleteGlyph: "!", MoveGlyph: "M", ResetGlyph: "R", ReviewGlyph: "D", SetupGlyph: "!",
-		FeedGlyph: "i", UpdateGlyph: "^", DownloadGlyph: "v", RefreshGlyph: "R", LinkGlyph: "@",
+		FeedGlyph: "i", UpdateGlyph: "^", DownloadGlyph: "v", RefreshGlyph: "R",
 		WarningGlyph: "!", CardErrorGlyph: "x", DiffErrorGlyph: "x", DiffCleanGlyph: "+", DiffDoneGlyph: "+", DiffPendingGlyph: ".",
 		WorktreeGlyph: branchGlyph, AfterTurnArchiveGlyph: "A", AfterTurnKillGlyph: "K",
 		ShellGlyph: ">", LoaderHead: "*", LoaderTail: ":", LoaderRest: ".", StartupFrames: startupFrames[:],

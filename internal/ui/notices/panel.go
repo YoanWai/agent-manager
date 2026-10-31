@@ -250,7 +250,7 @@ func (p Panel) ScrollLimit(notices []Notice, f Frame) int {
 	}
 	splitView := p.splitView(notices, f)
 	_, pane := inboxWidths(notices, f.Width, splitView)
-	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(p.tail(notices, f, pane))+1)
+	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(frameTail(f))+1)
 	layout := p.message(notices[p.cursor], pane, room, f)
 	return max(0, len(layout.body)-layout.room)
 }
@@ -282,8 +282,11 @@ type paneLayout struct {
 func (p Panel) message(n Notice, width, room int, f Frame) paneLayout {
 	t, mode := f.Theme, f.GlyphMode
 	if !n.ReleaseNotes {
-		body, scrolls := bodyLayout(n, width, room, t, mode)
-		return paneLayout{body: body, room: room, scrolls: scrolls}
+		layout := paneLayout{body: feedPane(n, width, t, mode), room: room}
+		if len(layout.body) > room {
+			layout.body, layout.scrolls = feedPane(n, max(width-scrollbarWidth, 1), t, mode), true
+		}
+		return layout
 	}
 	head, hits := releaseHead(n, p.tab, p.filter, width, t, mode)
 	layout := paneLayout{head: head, hits: hits, room: room - len(head)}
@@ -297,6 +300,24 @@ func (p Panel) message(n Notice, width, room int, f Frame) paneLayout {
 		layout.body, layout.scrolls = render(max(width-scrollbarWidth, 1)), true
 	}
 	return layout
+}
+
+func scrollWindow(body []string, room, offset, inner int, t Theme, mode presentation.GlyphMode) []string {
+	lastOffset := len(body) - room
+	offset = min(max(offset, 0), lastOffset)
+	thumb := max(1, room*room/len(body))
+	thumbTop := offset * (room - thumb) / lastOffset
+	track := t.Subtle.Render("│")
+	grip := lipgloss.NewStyle().Foreground(t.Accent).Render(presentation.ChromeFor(mode).ScrollThumbGlyph)
+	rows := make([]string, room)
+	for index := range rows {
+		cell := track
+		if index >= thumbTop && index < thumbTop+thumb {
+			cell = grip
+		}
+		rows[index] = padRight(body[offset+index], inner-1) + cell
+	}
+	return rows
 }
 
 func (p *Panel) Wheel(step int, notices []Notice, f Frame) {
@@ -324,13 +345,8 @@ func (p Panel) rowsAbovePane(notices []Notice, f Frame, splitView bool) int {
 	return len(list) + 2
 }
 
-func (p Panel) tail(notices []Notice, f Frame, inner int) []string {
+func frameTail(f Frame) []string {
 	var tail []string
-	if p.cursor < len(notices) {
-		if url := notices[p.cursor].URL; url != "" && !notices[p.cursor].ReleaseNotes {
-			tail = append(tail, f.Theme.Muted.Render(presentation.GlyphsFor(f.GlyphMode).LinkGlyph+" "+presentation.TruncateTail(strings.TrimPrefix(url, "https://"), inner-2)))
-		}
-	}
 	if f.Refreshing {
 		tail = append(tail, lipgloss.NewStyle().Foreground(f.Theme.Accent2).Render(presentation.GlyphsFor(f.GlyphMode).RefreshGlyph+" refreshing releases and messages…"))
 	}
@@ -356,7 +372,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	foot := renderFoot(p.footPairs(notices, inner, f), t, f.GlyphMode)
 	if len(notices) == 0 {
 		rows := []string{t.Muted.Render("nothing new")}
-		rows = append(rows, p.tail(notices, f, inner)...)
+		rows = append(rows, frameTail(f)...)
 		return cardFrame(rows, inner, legend(t), "", foot, t, f.GlyphMode)
 	}
 	listColumn := inner
@@ -365,7 +381,7 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	}
 	list, owners := listRows(notices, p.cursor, listColumn, t, f.GlyphMode, splitView)
 
-	tail := p.tail(notices, f, pane)
+	tail := frameTail(f)
 	tail = append(tail, "")
 	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(tail))
 	layout := p.message(notices[p.cursor], pane, room, f)

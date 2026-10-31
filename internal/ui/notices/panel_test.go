@@ -1,10 +1,13 @@
 package notices
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -243,5 +246,40 @@ func TestActiveMarksUnseenNoticesUnread(t *testing.T) {
 	}
 	if !slices.Equal(unread, []string{testTip}) {
 		t.Fatalf("unread = %v, want the tip alone", unread)
+	}
+}
+
+func TestScrollWindowDrawsAThumbThatFollowsTheOffset(t *testing.T) {
+	body := make([]string, 40)
+	for index := range body {
+		body[index] = fmt.Sprintf("row %02d", index)
+	}
+	top := scrollWindow(body, 10, 0, 20, testTheme(), presentation.DefaultGlyphMode)
+	if len(top) != 10 || !strings.HasSuffix(ansi.Strip(top[0]), "┃") || !strings.HasSuffix(ansi.Strip(top[9]), "│") {
+		t.Fatalf("at the top the thumb leads the track:\n%s", ansi.Strip(strings.Join(top, "\n")))
+	}
+	middle := scrollWindow(body, 10, 15, 20, testTheme(), presentation.DefaultGlyphMode)
+	for index, row := range middle {
+		thumb := index == 4 || index == 5
+		if strings.HasSuffix(ansi.Strip(row), "┃") != thumb {
+			t.Fatalf("in the middle the thumb sits on rows 4 and 5:\n%s", ansi.Strip(strings.Join(middle, "\n")))
+		}
+	}
+	bottom := scrollWindow(body, 10, 30, 20, testTheme(), presentation.DefaultGlyphMode)
+	if !strings.HasSuffix(ansi.Strip(bottom[9]), "┃") || !strings.HasPrefix(ansi.Strip(bottom[9]), "row 39") {
+		t.Fatalf("at the bottom the thumb ends the track and the last row shows:\n%s", ansi.Strip(strings.Join(bottom, "\n")))
+	}
+	for _, row := range top {
+		if lipgloss.Width(row) != 20 {
+			t.Fatalf("every row fills the inner width: %q is %d", ansi.Strip(row), lipgloss.Width(row))
+		}
+	}
+}
+
+func TestScrollWindowClampsAnOffsetPastTheEnd(t *testing.T) {
+	body := []string{"a", "b", "c", "d", "e", "f"}
+	rows := scrollWindow(body, 4, 99, 10, testTheme(), presentation.DefaultGlyphMode)
+	if got := ansi.Strip(rows[3]); !strings.HasPrefix(got, "f") {
+		t.Fatalf("an offset past the end shows the last page, got %q", got)
 	}
 }
