@@ -149,28 +149,12 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return model, cmd
 }
 
-// The hand goes out under its CSS name, then its X11 one: Ghostty and kitty
-// skip a name they do not know, iTerm2 resets on one, so X11 comes last.
-const (
-	handPointer  = "\x1b]22;pointer\x1b\\\x1b]22;hand2\x1b\\"
-	resetPointer = "\x1b]22;\x1b\\"
-)
-
 // syncPointerShape shows the hand while the mouse rests on a link a click in
-// the focused pane would open. Terminals without OSC 22 ignore both.
+// the focused pane would open.
 func (m *Model) syncPointerShape() {
 	top, _ := m.top()
 	_, focusOnTop := top.(*uifocus.Surface)
-	hand := focusOnTop && m.focus.pane.OverLink()
-	if hand == m.mouse.hand {
-		return
-	}
-	m.mouse.hand = hand
-	if hand {
-		emitToTerminal(handPointer)
-		return
-	}
-	emitToTerminal(resetPointer)
+	uiterminal.ShowHand(focusOnTop && m.focus.pane.OverLink())
 }
 
 // paneCaretRow resolves the root-owned status fact that a tool's terminal

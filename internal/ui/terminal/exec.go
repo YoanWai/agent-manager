@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"io"
 	"os"
 	"os/exec"
 
@@ -15,5 +16,32 @@ func ExecProcess(cmd *exec.Cmd, fn tea.ExecCallback) tea.Cmd {
 	if cmd.Stdout == nil {
 		cmd.Stdout = os.Stdout
 	}
-	return tea.ExecProcess(cmd, fn)
+	return tea.Exec(childCommand{cmd}, fn)
+}
+
+// childCommand runs cmd on the terminal with the terminal's own pointer, and
+// otherwise wires it the way tea.ExecProcess does.
+type childCommand struct{ *exec.Cmd }
+
+func (c childCommand) Run() error {
+	ShowHand(false)
+	return c.Cmd.Run()
+}
+
+func (c childCommand) SetStdin(r io.Reader) {
+	if c.Stdin == nil {
+		c.Stdin = r
+	}
+}
+
+func (c childCommand) SetStdout(w io.Writer) {
+	if c.Stdout == nil {
+		c.Stdout = w
+	}
+}
+
+func (c childCommand) SetStderr(w io.Writer) {
+	if c.Stderr == nil {
+		c.Stderr = w
+	}
 }

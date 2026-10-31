@@ -41,6 +41,7 @@ func (p *LinkPage) SetStdout(w io.Writer) { p.stdout = w }
 func (p *LinkPage) SetStderr(io.Writer)   {}
 
 func (p *LinkPage) Run() error {
+	ShowHand(false)
 	clipboardNote := "It is on your clipboard too, if your terminal accepts clipboard writes."
 	if err := copyToClipboard(p.URL); err != nil {
 		clipboardNote = fmt.Sprintf("Copying it to your clipboard failed: %v", err)

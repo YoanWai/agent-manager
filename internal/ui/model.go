@@ -97,8 +97,6 @@ type mouseCapture struct {
 	// back to the terminal, so a drag selects its text.
 	released bool
 	hover    bool
-	// hand is the link pointer the terminal was last told to show.
-	hand bool
 	// pressed is what the last left press landed on, which its release
 	// clicks when it comes back up over the same one.
 	pressed clickTarget
