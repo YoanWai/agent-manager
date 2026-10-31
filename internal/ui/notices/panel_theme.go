@@ -6,7 +6,7 @@ import (
 )
 
 // PanelTheme is the messages card's palette: the manager's own tones on the
-// backdrop, framed in the accent.
+// rail's fill, one step above the backdrop, framed in the accent.
 func PanelTheme() Theme {
 	return Theme{
 		Accent:   uitheme.ColorAccent(),
@@ -22,11 +22,11 @@ func PanelTheme() Theme {
 		Key:      uitheme.KeyStyle(),
 		Border:   lipgloss.NewStyle().Foreground(uitheme.ColorAccent()),
 		Title:    lipgloss.NewStyle().Foreground(uitheme.ColorBright()).Bold(true),
-		Fill:     func(row string, width int) string { return uitheme.Paint(row, width, uitheme.BackdropHex()) },
+		Fill:     func(row string, width int) string { return uitheme.Paint(row, width, uitheme.PanelHex()) },
 		Surface:  func(row string, width int) string { return uitheme.Paint(row, width, uitheme.Current().Surface) },
 		Raised:   func(row string, width int) string { return uitheme.Paint(row, width, uitheme.Current().Subtle) },
 		Callout: func(row string, width int, tone lipgloss.Color) string {
-			return uitheme.Paint(row, width, uitheme.Mix(uitheme.Current().Bg, string(tone), 0.1))
+			return uitheme.Paint(row, width, uitheme.Mix(uitheme.PanelHex(), string(tone), 0.14))
 		},
 	}
 }
