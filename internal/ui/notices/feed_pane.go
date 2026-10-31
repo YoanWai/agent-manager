@@ -32,7 +32,8 @@ func feedPane(n Notice, width int, t Theme, mode presentation.GlyphMode) []strin
 	if action == "" {
 		action = "Open link"
 	}
-	return spaced(rows, actionBar("↵", action, t.Muted.Render(linkHost(n.URL)), kindColor(n.Kind, t), width, t, mode))
+	bar, _ := actionBar("↵", action, t.Muted.Render(linkHost(n.URL)), kindColor(n.Kind, t), width, t, mode)
+	return spaced(rows, bar)
 }
 
 // linkHost is the host a link leads to, or the whole URL when it does not parse.
@@ -44,7 +45,6 @@ func linkHost(raw string) string {
 	return parsed.Host
 }
 
-// feedExpiry is the day the entry expires in the viewer's zone.
 func feedExpiry(n Notice) string {
 	if n.Expires.IsZero() {
 		return ""

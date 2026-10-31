@@ -226,14 +226,23 @@ func (p *Panel) stepTab(notices []Notice, step int) {
 }
 
 // Click is a press at col of row line inside the frame. A click on a tab or
-// a filter chip shows it. The first click on a row selects it; one on the
-// row already selected opens its link, the way ↵ does.
+// a filter chip shows it, one on the update bar updates the way u does, and
+// one on a link opens it the way ↵ does.
+// The first click on a row selects it; one on the row already selected opens
+// its link, the way ↵ does.
 func (p *Panel) Click(col, line int, notices []Notice, f Frame) Outcome {
 	for _, hit := range p.hits {
-		if line == hit.line && col >= hit.x0 && col < hit.x1 {
-			p.tab, p.filter, p.scroll = hit.tab, hit.filter, 0
-			return Outcome{}
+		if line != hit.line || col < hit.x0 || col >= hit.x1 {
+			continue
 		}
+		switch hit.action {
+		case StartUpdate:
+			return p.Key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}}, notices, f)
+		case OpenLink:
+			return p.Key(tea.KeyMsg{Type: tea.KeyEnter}, notices, f)
+		}
+		p.tab, p.filter, p.scroll = hit.tab, hit.filter, 0
+		return Outcome{}
 	}
 	i, ok := p.lines.At(line)
 	switch {
@@ -272,12 +281,15 @@ func (p Panel) splitView(notices []Notice, f Frame) bool {
 // fixed header; a shorter room scrolls the header with the tab.
 const minPageRows = 4
 
+// paneLayout is the message pane: the head that stays put and the body that
+// scrolls under it, with what a click on each reaches.
 type paneLayout struct {
-	head    []string
-	hits    []paneHit
-	body    []string
-	room    int
-	scrolls bool
+	head     []string
+	hits     []paneHit
+	body     []string
+	bodyHits []paneHit
+	room     int
+	scrolls  bool
 }
 
 // message lays the selected notice out in room rows: a release keeps its
@@ -285,22 +297,32 @@ type paneLayout struct {
 func (p Panel) message(n Notice, width, room int, f Frame) paneLayout {
 	t, mode := f.Theme, f.GlyphMode
 	if !n.ReleaseNotes {
-		layout := paneLayout{body: feedPane(n, width, t, mode), room: room}
+		render := func(width int) ([]string, []paneHit) {
+			rows := feedPane(n, width, t, mode)
+			if n.URL == "" {
+				return rows, nil
+			}
+			return rows, []paneHit{{line: len(rows) - 1, x1: width, action: OpenLink}}
+		}
+		layout := paneLayout{room: room}
+		layout.body, layout.bodyHits = render(width)
 		if len(layout.body) > room {
-			layout.body, layout.scrolls = feedPane(n, max(width-scrollbarWidth, 1), t, mode), true
+			layout.body, layout.bodyHits = render(max(width-scrollbarWidth, 1))
+			layout.scrolls = true
 		}
 		return layout
 	}
 	head, hits := releaseHead(n, p.tab, p.filter, width, t, mode)
 	layout := paneLayout{head: head, hits: hits, room: room - len(head)}
-	render := func(width int) []string { return releaseTab(n, p.tab, p.filter, width, t, mode) }
+	render := func(width int) ([]string, []paneHit) { return releaseTab(n, p.tab, p.filter, width, t, mode), nil }
 	if layout.room < minPageRows {
 		layout = paneLayout{room: room}
-		render = func(width int) []string { return releasePane(n, p.tab, p.filter, width, t, mode) }
+		render = func(width int) ([]string, []paneHit) { return releasePane(n, p.tab, p.filter, width, t, mode) }
 	}
-	layout.body = render(width)
+	layout.body, layout.bodyHits = render(width)
 	if len(layout.body) > layout.room {
-		layout.body, layout.scrolls = render(max(width-scrollbarWidth, 1)), true
+		layout.body, layout.bodyHits = render(max(width-scrollbarWidth, 1))
+		layout.scrolls = true
 	}
 	return layout
 }
@@ -388,8 +410,9 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	tail = append(tail, "")
 	room := bodyRoom(f.Height, p.rowsAbovePane(notices, f, splitView), len(tail))
 	layout := p.message(notices[p.cursor], pane, room, f)
-	body := layout.body
+	body, offset := layout.body, 0
 	if layout.scrolls {
+		offset = min(max(p.scroll, 0), len(body)-layout.room)
 		body = scrollWindow(body, layout.room, p.scroll, pane, t, f.GlyphMode)
 	}
 	message := append(append(layout.head, body...), tail...)
@@ -417,6 +440,12 @@ func (p *Panel) View(notices []Notice, f Frame) []string {
 	for _, hit := range layout.hits {
 		hit.line, hit.x0, hit.x1 = hit.line+top, hit.x0+left, hit.x1+left
 		p.hits = append(p.hits, hit)
+	}
+	for _, hit := range layout.bodyHits {
+		if row := hit.line - offset; row >= 0 && row < layout.room {
+			hit.line, hit.x0, hit.x1 = top+len(layout.head)+row, hit.x0+left, hit.x1+left
+			p.hits = append(p.hits, hit)
+		}
 	}
 	return cardFrame(rows, inner, legend(t), unreadCount(notices, t), foot, t, f.GlyphMode)
 }
@@ -496,7 +525,6 @@ func footPart(pair [2]string, mode presentation.GlyphMode) string {
 	return strings.TrimSpace(presentation.KeyLabel(mode, pair[0]) + " " + pair[1])
 }
 
-// renderFoot draws each key in the accent and what it does in dim.
 func renderFoot(pairs [][2]string, t Theme, mode presentation.GlyphMode) string {
 	keyStyle := lipgloss.NewStyle().Foreground(t.Accent)
 	parts := make([]string, len(pairs))

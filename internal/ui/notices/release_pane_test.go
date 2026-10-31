@@ -94,8 +94,13 @@ func availableNotice(t *testing.T, releases ...Release) Notice {
 
 const paneTestWidth = 120
 
+func paneRows(n Notice, tab Tab, filter string, width int, t Theme, mode presentation.GlyphMode) []string {
+	rows, _ := releasePane(n, tab, filter, width, t, mode)
+	return rows
+}
+
 func paneText(n Notice, tab Tab, filter string, width int) []string {
-	return plainRows(releasePane(n, tab, filter, width, testTheme(), presentation.DefaultGlyphMode))
+	return plainRows(paneRows(n, tab, filter, width, testTheme(), presentation.DefaultGlyphMode))
 }
 
 func TestReleaseHeaderShowsVersionDateAndOrigin(t *testing.T) {
@@ -145,7 +150,7 @@ func TestTabStripCountsChangesAndPeople(t *testing.T) {
 func TestTabCountsAreMutedAndTheActiveTabUnderlined(t *testing.T) {
 	useTrueColor(t)
 	theme := testTheme()
-	raw := releasePane(updatedNotice(t, tabsRelease(t)), TabChanges, "", paneTestWidth, theme, presentation.DefaultGlyphMode)
+	raw := paneRows(updatedNotice(t, tabsRelease(t)), TabChanges, "", paneTestWidth, theme, presentation.DefaultGlyphMode)
 	joined := strings.Join(raw, "\n")
 	for _, want := range []string{theme.Muted.Render("24"), theme.Muted.Render("10"), headingStyle(theme).Render("Changes")} {
 		if !strings.Contains(joined, want) {
@@ -267,7 +272,7 @@ func TestChangesListEveryChangeWithScopeColumn(t *testing.T) {
 func TestUnderTheHoodRowsAreMuted(t *testing.T) {
 	useTrueColor(t)
 	theme := testTheme()
-	joined := strings.Join(releasePane(updatedNotice(t, tabsRelease(t)), TabChanges, "", paneTestWidth, theme, presentation.DefaultGlyphMode), "\n")
+	joined := strings.Join(paneRows(updatedNotice(t, tabsRelease(t)), TabChanges, "", paneTestWidth, theme, presentation.DefaultGlyphMode), "\n")
 	for _, want := range []string{theme.Muted.Render("Cover the inbox in tests 01"), theme.Value.Render("Keep the bottom edge on screen 01"), theme.Value.Render("Show the release in tabs 01")} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("change row misses %q in its style", ansi.Strip(want))
@@ -457,7 +462,7 @@ func TestCompatibleReleasePaneIsASCII(t *testing.T) {
 	inIsraelTime(t)
 	for _, n := range []Notice{availableNotice(t, tabsRelease(t)), updatedNotice(t, tabsRelease(t))} {
 		for _, tab := range []Tab{TabOverview, TabChanges, TabThanks} {
-			for _, row := range releasePane(n, tab, "", paneTestWidth, testTheme(), presentation.GlyphModeBasic) {
+			for _, row := range paneRows(n, tab, "", paneTestWidth, testTheme(), presentation.GlyphModeBasic) {
 				for _, r := range ansi.Strip(row) {
 					if r > 0x7f && !strings.ContainsRune("─·…", r) {
 						t.Fatalf("%s tab %d: %q in %q", n.ID, tab, r, ansi.Strip(row))
@@ -637,5 +642,72 @@ func TestArrowsAndHLStepTheTabs(t *testing.T) {
 	p.Key(key("down"), notices, testFrame())
 	if p.Key(key("right"), notices, testFrame()); p.Cursor() != 1 {
 		t.Fatalf("→ on a feed message moved the cursor to %d", p.Cursor())
+	}
+}
+
+func TestClickOnTheUpdateBarUpdates(t *testing.T) {
+	notices := []Notice{availableNotice(t, tabsRelease(t)), {ID: "feed-tip", Kind: KindTip, Title: "A tip"}}
+	for _, width := range []int{100, 160} {
+		p := NewPanel(map[string]bool{}, map[string]bool{})
+		p.Open(notices, "")
+		f := inboxFrame(width)
+		line, label, link := -1, -1, -1
+		for row, plain := range plainRows(p.View(notices, f)) {
+			if at := strings.Index(plain, "Update to 0.46.0"); at >= 0 {
+				line, label = row-1, len([]rune(plain[:at]))-2
+				link = len([]rune(plain[:strings.Index(plain, "notes on GitHub")])) - 2
+			}
+		}
+		if line < 0 {
+			t.Fatalf("width %d: no update bar", width)
+		}
+		if out := p.Click(link+1, line, notices, f); out.Action == StartUpdate {
+			t.Fatalf("width %d: a click on the notes link started an update", width)
+		}
+		if out := p.Click(label+1, line, notices, f); out.Action != StartUpdate {
+			t.Fatalf("width %d: click on the update bar = %+v", width, out)
+		}
+	}
+}
+
+// clickAt is the click line and column of the first cell of want in view.
+func clickAt(t *testing.T, view []string, want string) (line, col int) {
+	t.Helper()
+	for row, plain := range plainRows(view) {
+		if at := strings.Index(plain, want); at >= 0 {
+			return row - 1, len([]rune(plain[:at])) - 1
+		}
+	}
+	t.Fatalf("%q is not on screen:\n%s", want, strings.Join(plainRows(view), "\n"))
+	return -1, -1
+}
+
+func TestClickOnALinkOpensIt(t *testing.T) {
+	release := updatedNotice(t, tabsRelease(t))
+	feedLink := Notice{ID: "feed-discord", Kind: KindNews, Subtitle: "banner", Title: "Join", URL: discordURL, Action: "Join on Discord"}
+	notices := []Notice{release, feedLink}
+	p := NewPanel(map[string]bool{}, map[string]bool{})
+	p.Open(notices, "")
+	f := inboxFrame(160)
+	line, col := clickAt(t, p.View(notices, f), "notes on GitHub")
+	if out := p.Click(col, line, notices, f); out.Action != OpenLink || out.URL != release.URL {
+		t.Fatalf("click on the notes link = %+v", out)
+	}
+	p.Key(key("down"), notices, f)
+	line, col = clickAt(t, p.View(notices, f), "discord.gg")
+	if out := p.Click(col, line, notices, f); out.Action != OpenLink || out.URL != discordURL {
+		t.Fatalf("click on the feed bar = %+v", out)
+	}
+}
+
+func TestTabsTakeClicksWhenTheHeaderScrolls(t *testing.T) {
+	notices := []Notice{availableNotice(t, tabsRelease(t)), {ID: "feed-tip", Kind: KindTip, Title: "A tip"}}
+	p := NewPanel(map[string]bool{}, map[string]bool{})
+	p.Open(notices, "")
+	f := testFrame()
+	f.Width, f.Height = 80, 16
+	line, col := clickAt(t, p.View(notices, f), "Thanks 10")
+	if out := p.Click(col, line, notices, f); out.Action != Stay || p.tab != TabThanks {
+		t.Fatalf("click on the Thanks tab of a short pane = %+v, tab %d", out, p.tab)
 	}
 }
