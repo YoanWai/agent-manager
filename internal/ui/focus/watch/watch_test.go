@@ -58,7 +58,9 @@ func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
 
 	waitFocusArrival(t, arrivals, "42ready")
 
-	// Use the fastest attempt to tolerate scheduler delays on busy hosts.
+	// A held echo comes at least a frame budget after the frame of the
+	// invisible update, however slow each capture is on the host, so the
+	// gap between those two frames is measured rather than the whole echo.
 	fastest := time.Hour
 	for attempt := range 5 {
 		time.Sleep(2 * frameBudget)
@@ -70,12 +72,32 @@ func TestFocusWatchEchoesAQuietPaneAtOnce(t *testing.T) {
 		if err := driver.SendRaw("send-keys -t " + tmux.PaneTarget(id) + " -l " + key); err != nil {
 			t.Fatalf("send-keys: %v", err)
 		}
-		sent := time.Now()
-		got := waitFocusArrival(t, arrivals, token)
-		fastest = min(fastest, got.at.Sub(sent))
+		fastest = min(fastest, echoAfterUpdate(t, arrivals, token))
 	}
-	if fastest >= frameBudget/2 {
-		t.Fatalf("fastest echo took %v, want under %v", fastest, frameBudget/2)
+	if fastest >= frameBudget {
+		t.Fatalf("echo came %v after the invisible update's frame, want under %v", fastest, frameBudget)
+	}
+}
+
+// echoAfterUpdate is how long after the previous frame the frame showing
+// token arrived, or zero when that was the first frame.
+func echoAfterUpdate(t *testing.T, arrivals <-chan focusArrival, token string) time.Duration {
+	t.Helper()
+	var previous time.Time
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case got := <-arrivals:
+			if strings.Contains(got.preview, token) {
+				if previous.IsZero() {
+					return 0
+				}
+				return got.at.Sub(previous)
+			}
+			previous = got.at
+		case <-deadline:
+			t.Fatalf("no preview containing %q", token)
+		}
 	}
 }
 
