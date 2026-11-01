@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"path"
 	"regexp"
 	"runtime"
 	"strings"
@@ -98,11 +98,11 @@ func OpenerCommand(goos, target string) (*exec.Cmd, error) {
 		return nil, err
 	}
 	if strings.EqualFold(link.Scheme, "file") {
-		path, ok := localPath(goos, link)
+		file, ok := localPath(goos, link)
 		if !ok {
 			return nil, errors.New("the file link does not name a file on this machine")
 		}
-		return revealCommand(goos, path)
+		return revealCommand(goos, file)
 	}
 	switch goos {
 	case "darwin":
@@ -131,21 +131,21 @@ func localPath(goos string, link *url.URL) (string, bool) {
 	if !strings.HasPrefix(link.Path, "/") {
 		return "", false
 	}
-	return filepath.Clean(link.Path), true
+	return path.Clean(link.Path), true
 }
 
-// revealCommand shows path in the file manager. explorer reads its switches
-// from commas in the one argument, which localPath keeps out of path. xdg-open
+// revealCommand shows file in the file manager. explorer reads its switches
+// from commas in its one argument, which localPath keeps out of file. xdg-open
 // has no reveal, so it opens the folder, and only one that is a folder here,
 // since xdg-open runs whatever else it is handed.
-func revealCommand(goos, path string) (*exec.Cmd, error) {
+func revealCommand(goos, file string) (*exec.Cmd, error) {
 	switch goos {
 	case "darwin":
-		return exec.Command("open", "-R", path), nil
+		return exec.Command("open", "-R", file), nil
 	case "windows":
-		return exec.Command("explorer", "/select,"+path), nil
+		return exec.Command("explorer", "/select,"+file), nil
 	default:
-		folder := filepath.Dir(path)
+		folder := path.Dir(file)
 		if info, err := os.Stat(folder); err != nil || !info.IsDir() {
 			return nil, errors.New("the file link does not sit in a folder on this machine")
 		}

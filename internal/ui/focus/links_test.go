@@ -68,3 +68,34 @@ func TestPaneLinksOpenOnlyShownAddresses(t *testing.T) {
 		t.Fatalf("a pane that painted nothing has link %q", got)
 	}
 }
+
+// A row after a full-width link that starts with any space rune is not the
+// link's tail, a lone no-break space included, which must not crash the frame.
+func TestWrapStopsAtAnySpace(t *testing.T) {
+	model := mouseModel(t, []string{
+		"https://example.com/",
+		" ",
+		"https://example.org/",
+		" tail",
+	}, 20, PaneUpdate{})
+	if got := clickURL(&model, testOriginX+2, testOriginY); got != "https://example.com/" {
+		t.Fatalf("link before a no-break space opened %q", got)
+	}
+	if got := clickURL(&model, testOriginX+2, testOriginY+2); got != "https://example.org/" {
+		t.Fatalf("link before an em space opened %q", got)
+	}
+}
+
+// An address an agent links to itself still reads as shown when the pane
+// wraps it, so the preview opens it from either row.
+func TestWrappedShownHyperlinkStaysShown(t *testing.T) {
+	links := ReadPaneLinks([]string{
+		"ab" + hyperlink("https://example.com/xyz", "https://exampl"),
+		"e.com/xyz more",
+	}, Box{Width: 16, Height: 2, Valid: true})
+	for row := range 2 {
+		if got := links.ShownAt(3, row); got != "https://example.com/xyz" {
+			t.Errorf("row %d reads %q", row, got)
+		}
+	}
+}

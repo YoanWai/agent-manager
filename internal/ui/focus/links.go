@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -12,11 +13,13 @@ import (
 var paneLinkPattern = regexp.MustCompile(`https?://\S+`)
 
 // paneLink is one row's cells, by column, that open url. A written link's
-// url is its own text, so a wrap carries the text on. A shown link's text is
-// its url, so a reader sees where it goes.
+// url is its own text, so a wrap carries the text on. A hyperlink's label is
+// the text it covers on its first row, and a shown link's text is its url,
+// so a reader sees where it goes.
 type paneLink struct {
 	start, end int
 	url        string
+	label      string
 	written    bool
 	shown      bool
 }
@@ -96,6 +99,8 @@ func frameLinks(raw, plain []string, width int) [][]paneLink {
 			pieces, text := wrapPieces(plain, row, width, link.end)
 			if link.written {
 				link.url = trimLinkPunctuation(link.url + text)
+			} else {
+				link.shown = strings.TrimSpace(link.label+text) == link.url
 			}
 			for _, piece := range pieces {
 				links[piece.row] = append(links[piece.row], paneLink{end: piece.end, url: link.url, shown: link.shown})
@@ -132,7 +137,7 @@ func rowHyperlinks(line, plain string) []paneLink {
 		if open.url != "" && col > open.start {
 			open.end = col
 			startByte, endByte := graphemeRangeAtColumns(plain, open.start, open.end)
-			open.shown = strings.TrimSpace(plain[startByte:endByte]) == open.url
+			open.label = plain[startByte:endByte]
 			links = append(links, open)
 		}
 	}
@@ -190,7 +195,7 @@ func wrapPieces(plain []string, row, width, end int) ([]wrapPiece, string) {
 			break
 		}
 		rest := plain[next]
-		if rest == "" || strings.HasPrefix(rest, " ") {
+		if first, _ := utf8.DecodeRuneInString(rest); rest == "" || unicode.IsSpace(first) {
 			break
 		}
 		fields := strings.Fields(rest)
