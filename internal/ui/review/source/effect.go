@@ -83,7 +83,7 @@ func runSend(request Request, st Store, writer Writer) (Result, error) {
 		return Result{Op: Send, Send: result}, nil
 	}
 	if !request.SendTarget.Same(current) {
-		result.Err = errors.New("review target changed its identity, tool, launch, or socket before the accepted round ran")
+		result.Err = errors.New("review target changed its identity, CLI, launch, or socket before the accepted round ran")
 		return Result{Op: Send, Send: result}, nil
 	}
 	exists, probeErr := writer.Exists(request.TargetID)

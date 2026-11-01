@@ -117,7 +117,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			*opt.target = re
 		}
 		if tr.dialogAsks != nil && tr.dialogAsks.NumSubexp() == 0 {
-			return nil, fmt.Errorf("tool %s: dialog_question needs a group for the question", name)
+			return nil, fmt.Errorf("CLI %s: dialog_question needs a group for the question", name)
 		}
 		engine.tools[name] = tr
 	}

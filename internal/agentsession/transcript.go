@@ -10,7 +10,7 @@ import (
 
 // ErrNoTranscript reports a tool whose own record of a conversation the
 // manager does not read.
-var ErrNoTranscript = errors.New("tool keeps no transcript the manager reads")
+var ErrNoTranscript = errors.New("CLI keeps no transcript the manager reads")
 
 // KeepsTranscript reports whether a tool, by its session_report style,
 // writes a conversation file the manager can read the last exchange from.

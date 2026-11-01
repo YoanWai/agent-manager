@@ -286,7 +286,7 @@ func (l *Lifecycle) revive(sess store.Session, pane PaneSize) (RelaunchResult, e
 	var err error
 	tool, ok := l.runtime.Config.Pane(sess.Tool)
 	if !ok {
-		return RelaunchResult{}, fmt.Errorf("tool %s is no longer configured", sess.Tool)
+		return RelaunchResult{}, fmt.Errorf("%s is no longer configured", sess.Tool)
 	}
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
@@ -333,7 +333,7 @@ func (l *Lifecycle) Restart(listed store.Session, pane PaneSize) (RelaunchResult
 	}
 	tool, ok := l.runtime.Config.Pane(sess.Tool)
 	if !ok {
-		return RelaunchResult{}, fmt.Errorf("tool %s is no longer configured", sess.Tool)
+		return RelaunchResult{}, fmt.Errorf("%s is no longer configured", sess.Tool)
 	}
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)

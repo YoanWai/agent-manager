@@ -64,11 +64,11 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		}
 	}
 	if runtime.cfg.IsTool(toolName) {
-		return Session{}, fmt.Errorf("tool %q opens a shell, not an agent; use %s for that", toolName, runtime.words.CreateTerminal)
+		return Session{}, fmt.Errorf("%q opens a shell, not an agent CLI; use %s for that", toolName, runtime.words.CreateTerminal)
 	}
 	tool, known := runtime.cfg.CLIs[toolName]
 	if !known {
-		return Session{}, fmt.Errorf("tool %q is not configured; configured tools are %s", toolName, strings.Join(runtime.cfg.CLINames(), ", "))
+		return Session{}, fmt.Errorf("CLI %q is not configured; configured CLIs are %s", toolName, strings.Join(runtime.cfg.CLINames(), ", "))
 	}
 	group, dir, err := runtime.createTarget(caller, opts.Group, opts.Directory)
 	if err != nil {
@@ -215,7 +215,7 @@ func (r *runtime) settingsTool() (string, error) {
 	if name := r.cfg.DefaultCLI(chosen, hidden); name != "" {
 		return name, nil
 	}
-	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured tools are %s)", r.words.SpawnTool, strings.Join(r.cfg.CLINames(), ", "))
+	return "", fmt.Errorf("every agent CLI is turned off for new sessions in settings; name one with %s (configured CLIs are %s)", r.words.SpawnTool, strings.Join(r.cfg.CLINames(), ", "))
 }
 
 // worktreeGit is the driver that opens the session's own checkout, or nil

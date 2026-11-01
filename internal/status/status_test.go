@@ -696,8 +696,8 @@ func TestNewEngineRejectsDialogQuestionWithoutAGroup(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for dialog_question without a capture group")
 	}
-	if !strings.Contains(err.Error(), "tool bad") || !strings.Contains(err.Error(), "group") {
-		t.Fatalf("error = %q, want the tool and the missing group named", err)
+	if !strings.Contains(err.Error(), "CLI bad") || !strings.Contains(err.Error(), "group") {
+		t.Fatalf("error = %q, want the CLI and the missing group named", err)
 	}
 }
 

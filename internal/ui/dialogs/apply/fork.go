@@ -203,7 +203,7 @@ func ForkSource(cfg config.Config, source store.Session) (config.CLI, error) {
 	}
 	tool, ok := cfg.CLIs[source.Tool]
 	if !ok {
-		return config.CLI{}, fmt.Errorf("tool %s is no longer configured", source.Tool)
+		return config.CLI{}, fmt.Errorf("CLI %s is no longer configured", source.Tool)
 	}
 	return tool, ValidateForkSource(source.Tool, tool, source)
 }
@@ -212,15 +212,15 @@ func ForkSource(cfg config.Config, source store.Session) (config.CLI, error) {
 // the configuration is missing.
 func ValidateForkSource(toolName string, tool config.CLI, source store.Session) error {
 	if tool.ForkCommand == "" {
-		return fmt.Errorf("tool %s has no fork_command", toolName)
+		return fmt.Errorf("CLI %s has no fork_command", toolName)
 	}
 	usesSessionFile := strings.Contains(tool.ForkCommand, "{session_file}")
 	mintsFork := strings.Contains(tool.ForkCommand, "{new_id}") && agentsession.MintsForkID(tool.SessionStore)
 	if !strings.Contains(tool.ForkCommand, "{id}") && !usesSessionFile && tool.ForkKeys == "" && !mintsFork {
-		return fmt.Errorf("tool %s fork_command must reference the source via {id} or {session_file}", toolName)
+		return fmt.Errorf("CLI %s fork_command must reference the source via {id} or {session_file}", toolName)
 	}
 	if usesSessionFile && !agentsession.SupportsSessionFile(tool.SessionStore) {
-		return fmt.Errorf("tool %s fork_command uses {session_file}, which needs session_store = \"gemini\"", toolName)
+		return fmt.Errorf("CLI %s fork_command uses {session_file}, which needs session_store = \"gemini\"", toolName)
 	}
 	if source.AgentSessionID == "" {
 		return fmt.Errorf("%s has no captured conversation id", source.Name)

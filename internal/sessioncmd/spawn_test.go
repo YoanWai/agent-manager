@@ -678,7 +678,7 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 		t.Fatalf("Create with every tool hidden = %v, want a request to name one", err)
 	}
 	shell, _ := runtime.cfg.Terminal()
-	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
+	_, listed, _ := strings.Cut(err.Error(), "(configured CLIs are ")
 	if slices.Contains(strings.Split(strings.TrimSuffix(listed, ")"), ", "), shell) {
 		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
 	}
