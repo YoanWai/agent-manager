@@ -108,6 +108,27 @@ func TestFocusClickOpensTheLink(t *testing.T) {
 	}
 }
 
+// Hovering a link names its target on the status line, since a label can
+// hide where it goes, until the mouse leaves it or a card covers the pane.
+func TestFocusHoverNamesTheLinkTarget(t *testing.T) {
+	m, _ := focusedShotPane(t, 80, 0, 0, "read \x1b]8;;https://example.com/real\x1b\\the docs\x1b]8;;\x1b\\ now")
+	hover := func(x int) string {
+		m.handleMouse(tea.MouseMsg{Action: tea.MouseActionMotion, Button: tea.MouseButtonNone, X: x, Y: 0})
+		return ansi.Strip(m.statusLine())
+	}
+	if got := hover(7); got != "link https://example.com/real" {
+		t.Fatalf("hovering the label shows %q", got)
+	}
+	if got := hover(1); got != "" {
+		t.Fatalf("off the link the status shows %q", got)
+	}
+	hover(7)
+	m.openFocusSaved()
+	if got := ansi.Strip(m.statusLine()); got != "" {
+		t.Fatalf("a list over the pane still shows %q", got)
+	}
+}
+
 // Hovering a link in a focused pane turns the pointer into a hand, named
 // for both kinds of terminal; leaving the link, or the pane, gives the
 // terminal its own pointer back.

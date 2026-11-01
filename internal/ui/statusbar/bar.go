@@ -91,6 +91,7 @@ type Message struct {
 	ScrollOffset    int
 	PagesScrollback bool
 	Copied          int
+	Link            string
 
 	ResizeMode bool
 	Dragging   bool
@@ -107,6 +108,8 @@ func Line(msg Message, glyphs presentation.GlyphSet, tones Tones) string {
 	// hide a failure report.
 	case msg.Focused && msg.Report != "":
 		return msg.Kind.Paint(msg.Report, marks, tones)
+	case msg.Link != "":
+		return tones.Key.Render("link ") + tones.Subtle.Render(presentation.EscapeControlsInline(msg.Link))
 	case msg.ScrolledBack:
 		catchUp := "wheel down or type"
 		if msg.PagesScrollback {

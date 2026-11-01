@@ -43,7 +43,7 @@ func (m *Model) prepareFrame() {
 }
 
 func (m *Model) renderFrame() string {
-	m.layout.keyHits, m.layout.card = nil, cardRect{}
+	m.layout.keyHits, m.layout.card, m.layout.previewLinks = nil, cardRect{}, uifocus.PaneLinks{}
 	if m.layout.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}

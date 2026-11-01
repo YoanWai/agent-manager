@@ -88,6 +88,7 @@ func (m *Model) statusLine() string {
 		ScrollOffset:    focusStatus.ScrollOffset,
 		PagesScrollback: pagesScrollback,
 		Copied:          focusStatus.CopiedChars,
+		Link:            m.hoveredLink(),
 		ResizeMode:      m.layout.split.ResizeMode,
 		Dragging:        m.layout.split.Dragging,
 		Notice:          m.review.Snapshot().Notice,

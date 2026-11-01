@@ -42,10 +42,7 @@ func (m *Model) PrepareFrame(ctx FrameContext) FrameContent {
 		return FrameContent{}
 	}
 	topPadding := ctx.Height - len(pane)
-	lines := make([]string, len(pane))
-	for i, raw := range pane {
-		lines[i] = plainPaneLine(raw)
-	}
+	safe, lines := paneText(pane)
 	m.frame = displayedFrame{
 		box: Box{
 			X:      ctx.OriginX,
@@ -55,6 +52,7 @@ func (m *Model) PrepareFrame(ctx FrameContext) FrameContent {
 			Valid:  true,
 		},
 		lines:     lines,
+		links:     frameLinks(safe, lines, ctx.Width),
 		rowOffset: rowOffset,
 	}
 
@@ -126,10 +124,6 @@ func graphemeAtCell(line string, column int) string {
 		}
 	}
 	return " "
-}
-
-func plainPaneLine(line string) string {
-	return ansi.Strip(safePaneLine(line))
 }
 
 func fitPaneLine(line string, width int) string {

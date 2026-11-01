@@ -236,6 +236,13 @@ func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...in
 		}
 	} else {
 		rows = uipreview.Rows(m.workspace.preview, height, width, m.paneCaretRow(), loaderRow)
+		if len(frameOrigin) > 0 && loader == nil {
+			lines := uipreview.Exact(m.workspace.preview, height, width, m.paneCaretRow())
+			m.layout.previewLinks = uifocus.ReadPaneLinks(lines, uifocus.Box{
+				X: m.focusPaneOriginX(), Y: frameOrigin[0] + height - len(lines),
+				Width: width, Height: len(lines), Valid: true,
+			})
+		}
 	}
 	if len(rows) == 0 {
 		return m.emptyPreview(width, gutter, loader)
