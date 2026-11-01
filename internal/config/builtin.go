@@ -620,4 +620,11 @@ default_status = "idle"
 # stock zsh and oh-my-zsh, and "PS <path>>" covers PowerShell, whose path
 # runs into its marker and may hold spaces.
 input_prefix = "(?m)^\\s*(?:(?:\\S+\\s+){0,3}[❯>$#›»→%➜]|PS [^\\n>]*>)\\s"
+
+# The browser tab "b" spawns: terminal-browser in the group's directory,
+# listed beside the agents. --no-merge keeps one browser per pane; a URL
+# may follow.
+[tools.browser]
+command = "terminal-browser open --no-merge"
+default_status = "idle"
 `

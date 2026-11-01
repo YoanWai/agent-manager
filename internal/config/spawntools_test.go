@@ -16,7 +16,7 @@ func TestCLINamesOrder(t *testing.T) {
 		"pi":       {Command: "pi"},
 		"zephyr":   {Command: "zephyr"},
 		"acme":     {Command: "acme"},
-	}, Tools: map[string]Tool{"terminal": {}}}
+	}, Tools: map[string]Tool{"terminal": {}, "browser": {Command: "terminal-browser open --no-merge"}}}
 	got := cfg.CLINames()
 	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "muse", "zephyr"}
 	if !reflect.DeepEqual(got, want) {

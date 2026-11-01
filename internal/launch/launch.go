@@ -192,6 +192,13 @@ func ReviveCommand(tool config.CLI, agentSessionID string) string {
 	return tool.Command
 }
 
+func BrowserCommand(command, url string) string {
+	if url == "" {
+		return command
+	}
+	return command + " " + tmux.ShellQuote(url)
+}
+
 // Variables is the profile with the tool's own variables over it.
 func Variables(profile map[string]string, tool config.CLI) map[string]string {
 	env := maps.Clone(profile)

@@ -217,8 +217,8 @@ func TestEveryShippedNameIsInExactlyOneRegistry(t *testing.T) {
 			t.Errorf("%q ships as both a CLI and a tool", name)
 		}
 	}
-	if !slices.Equal(cfg.ToolNames(), []string{"terminal"}) {
-		t.Fatalf("tools = %v, want only the terminal", cfg.ToolNames())
+	if !slices.Equal(cfg.ToolNames(), []string{"browser", "terminal"}) {
+		t.Fatalf("tools = %v, want the browser and the terminal", cfg.ToolNames())
 	}
 	if _, isCLI := cfg.CLIs["claude"]; !isCLI || cfg.IsTool("claude") {
 		t.Fatal("claude must ship as a CLI and not as a tool")
@@ -252,6 +252,23 @@ func TestAStoredTerminalRowStillResolves(t *testing.T) {
 	}
 	if _, known := cfg.Pane("removed-cli"); known {
 		t.Fatal("a name in neither registry must not resolve")
+	}
+}
+
+func TestTheBinaryShipsTheBrowserAsATool(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	name, tool := cfg.Browser()
+	if name != "browser" || tool.Command != "terminal-browser open --no-merge" || tool.DefaultStatus != "idle" {
+		t.Fatalf("Browser() = %q %+v", name, tool)
+	}
+	if !cfg.IsTool(BrowserTool) {
+		t.Fatal("a browser row must read as a tool")
+	}
+	if pane, known := cfg.Pane(BrowserTool); !known || pane.Command != tool.Command {
+		t.Fatalf("Pane(browser) = %+v %v, want the browser command", pane, known)
 	}
 }
 

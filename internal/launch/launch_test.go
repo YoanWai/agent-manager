@@ -164,6 +164,17 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 	}
 }
 
+func TestBrowserCommandAppendsTheQuotedURL(t *testing.T) {
+	const command = "terminal-browser open --no-merge"
+	if got := BrowserCommand(command, ""); got != command {
+		t.Fatalf("BrowserCommand with no url = %q, want %q", got, command)
+	}
+	want := command + " " + tmux.ShellQuote("https://example.com/?q=a;b")
+	if got := BrowserCommand(command, "https://example.com/?q=a;b"); got != want {
+		t.Fatalf("BrowserCommand = %q, want %q", got, want)
+	}
+}
+
 // A conversation id is read from the agent CLI's own store, so it is not
 // ours to trust. Spliced raw it would need no quote to break out of: a
 // semicolon ends the resume command and starts whatever follows.

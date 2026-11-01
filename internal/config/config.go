@@ -194,6 +194,9 @@ type Tool struct {
 // TerminalTool is the tool the terminal key opens.
 const TerminalTool = "terminal"
 
+// BrowserTool is the tool the browser key opens.
+const BrowserTool = "browser"
+
 // Launch is the definition the shared launch path starts the tool's pane
 // from: its command, with none of an agent's resume, fork or model lines.
 func (t Tool) Launch() CLI {
@@ -459,4 +462,8 @@ func (c Config) ToolNames() []string {
 
 func (c Config) Terminal() (string, Tool) {
 	return TerminalTool, c.Tools[TerminalTool]
+}
+
+func (c Config) Browser() (string, Tool) {
+	return BrowserTool, c.Tools[BrowserTool]
 }
