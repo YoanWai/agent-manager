@@ -163,6 +163,7 @@ func (s *State) Sources() notices.Sources {
 			Accent:  msg.Accent,
 			URL:     msg.URL,
 			Action:  msg.Action,
+			Pinned:  msg.Pinned,
 			Expires: msg.ExpiresAt,
 		}
 	}

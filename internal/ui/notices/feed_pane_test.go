@@ -128,6 +128,26 @@ func TestFeedFootHasNoSectionOrFilterKeys(t *testing.T) {
 	}
 }
 
+func TestPinnedMessageCannotBeDismissed(t *testing.T) {
+	src := inboxSources()
+	src.Feed[0].Pinned = true
+	p := NewPanel(map[string]bool{}, map[string]bool{})
+	notices := p.Active(src)
+	p.Open(notices, inboxNews)
+	for _, press := range []string{"x", "d"} {
+		if out := p.Key(key(press), notices, testFrame()); out.Action != Stay {
+			t.Fatalf("%s on a pinned message = %+v", press, out)
+		}
+	}
+	if foot := plainRows(p.View(notices, inboxFrame(160))); strings.Contains(foot[len(foot)-1], "dismiss") {
+		t.Fatalf("a pinned message offers dismiss: %q", foot[len(foot)-1])
+	}
+	p.Open(notices, inboxHeadsUp)
+	if foot := plainRows(p.View(notices, inboxFrame(160))); !strings.Contains(foot[len(foot)-1], "dismiss") {
+		t.Fatalf("an unpinned message lost dismiss: %q", foot[len(foot)-1])
+	}
+}
+
 func TestConfigImportWarningDrawsAsAHeadsUp(t *testing.T) {
 	p := NewPanel(map[string]bool{}, map[string]bool{})
 	src := inboxSources()

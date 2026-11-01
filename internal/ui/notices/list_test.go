@@ -70,6 +70,24 @@ func TestActiveKeepsFeedOrderWithinAKind(t *testing.T) {
 	}
 }
 
+func TestActivePutsPinnedFirstWithinItsKind(t *testing.T) {
+	src := Sources{
+		Store:  true,
+		Update: Update{Version: "v0.45.0", Latest: "v0.46.0"},
+		Feed: []Message{
+			{ID: "news-a", Kind: KindNews},
+			{ID: "tip-pinned", Kind: KindTip, Pinned: true},
+			{ID: "news-pinned", Kind: KindNews, Pinned: true},
+			{ID: "news-b", Kind: KindNews},
+		},
+	}
+	got := ids(NewPanel(map[string]bool{}, map[string]bool{}).Active(src))
+	want := []string{"update-v0.46.0", "news-pinned", "news-a", "news-b", "tip-pinned"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("ids = %v, want %v", got, want)
+	}
+}
+
 func TestActiveWhatsNewSubtitleIsTheNewestHeadline(t *testing.T) {
 	src := Sources{
 		Store:           true,
