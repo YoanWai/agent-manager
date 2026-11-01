@@ -165,6 +165,27 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			},
 		},
 		{
+			name: "move files a row under a group",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runMove(out, f, args, "cafe0001")
+			},
+			args: []string{"beef1234", "--group", "repos/api"},
+			want: "moved session api-worker (id beef1234) from api to repos/api",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.targetID != "beef1234" || f.groupPath != "repos/api" || f.callerID != "cafe0001" {
+					t.Fatalf("move got %q into %q as %q", f.targetID, f.groupPath, f.callerID)
+				}
+			},
+		},
+		{
+			name: "move with an empty group files at the root",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runMove(out, f, args, "")
+			},
+			args: []string{"beef1234", "--group="},
+			want: "moved session api-worker (id beef1234) from api to root",
+		},
+		{
 			name: "create-group takes a path and a directory",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runCreateGroup(out, f, args, "cafe0001")
@@ -193,6 +214,19 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 				testCase.inspect(t, fake)
 			}
 		})
+	}
+}
+
+// The root is a real destination, so it has to be asked for: a forgotten
+// --group would otherwise unfile the row.
+func TestMoveRequiresTheGroupFlag(t *testing.T) {
+	fake := &fakeSessions{}
+	err := runMove(&bytes.Buffer{}, fake, []string{"beef1234"}, "cafe0001")
+	if err == nil || !strings.Contains(err.Error(), usageMove) {
+		t.Fatalf("move without --group = %v, want the usage", err)
+	}
+	if fake.targetID != "" {
+		t.Fatalf("the layer was reached with %q", fake.targetID)
 	}
 }
 

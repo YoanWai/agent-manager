@@ -109,6 +109,7 @@ type fakeSessionCommands struct {
 	endCanceled   bool
 	groupPath     string
 	groupDir      string
+	movedID       string
 	err           error
 }
 
@@ -252,6 +253,11 @@ func (f *fakeSessionCommands) CreateGroup(_ string, path, directory string) (ses
 func (f *fakeSessionCommands) DeleteGroup(_ string, path string) (sessioncmd.GroupRemoval, error) {
 	f.groupPath = path
 	return sessioncmd.GroupRemoval{Removed: []string{path}, Moved: []string{"a1b2c3d4"}}, f.err
+}
+
+func (f *fakeSessionCommands) Move(_ string, targetID, group string) (sessioncmd.Placement, error) {
+	f.movedID, f.groupPath = targetID, group
+	return sessioncmd.Placement{ID: targetID, Name: "worker", Kind: "session", From: "backend", Group: group, Terminals: []string{"t1"}}, f.err
 }
 
 // fakeReporter records the drafts each call handed it, so a test can tell a
@@ -762,7 +768,7 @@ func TestListsFleetTools(t *testing.T) {
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
 		"revive_session", "kill_session", "archive_session", "archive_self", "kill_self",
-		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
+		"list_groups", "create_group", "delete_group", "move_session", "message_status", "wait_for_session",
 		"task",
 		"reserve_files", "release_files", "list_reservations",
 	} {
@@ -1082,6 +1088,7 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 		{"list_groups", map[string]any{}},
 		{"create_group", map[string]any{"path": "work"}},
 		{"delete_group", map[string]any{"path": "work"}},
+		{"move_session", map[string]any{"session_id": "a1", "group": "work"}},
 	} {
 		text, isError := callText(t, session, call.name, call.args)
 		if !isError || !strings.Contains(text, "not running") {

@@ -30,6 +30,7 @@ const (
 	usageGroups        = "groups [--json]"
 	usageCreateGroup   = "create-group <path> [--directory <path>] [--json]"
 	usageDeleteGroup   = "delete-group <path> [--json]"
+	usageMove          = "move <session-id> --group <path> [--json]"
 )
 
 type sessionCommands interface {
@@ -52,6 +53,7 @@ type sessionCommands interface {
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
+	Move(sessionID, targetID, group string) (sessioncmd.Placement, error)
 }
 
 func newSessions(configDir string) sessionCommands {
@@ -82,6 +84,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(open, runGroups)},
 			{name: "create-group", usage: usageCreateGroup, about: "create a group so a fleet you spawn stays together in the user's list", run: bind(open, runCreateGroup)},
 			{name: "delete-group", usage: usageDeleteGroup, about: "remove a group whose work is done; sessions still in it move to the root rather than stopping", run: bind(open, runDeleteGroup)},
+			{name: "move", usage: usageMove, about: "file a session or terminal under an existing group, the way the move key does; its nested terminals go with it, and only the filing changes", run: bind(open, runMove)},
 		},
 	}
 }
@@ -388,4 +391,25 @@ func runDeleteGroup(out io.Writer, sessions sessionCommands, args []string, sess
 		return err
 	}
 	return emit(out, *asJSON, removal, sessioncmd.FormatGroupRemoval(removal))
+}
+
+func runMove(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageMove)
+	group := set.String("group", "", "existing group path to file it under; pass an empty string for the root group")
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 1, 1)
+	if err != nil {
+		return err
+	}
+	// An omitted --group must not read as the root, so only a typed one counts.
+	given := false
+	set.Visit(func(flag *flag.Flag) { given = given || flag.Name == "group" })
+	if !given {
+		return usageError(usageMove)
+	}
+	placement, err := sessions.Move(sessionID, operands[0], *group)
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, placement, sessioncmd.FormatPlacement(placement))
 }

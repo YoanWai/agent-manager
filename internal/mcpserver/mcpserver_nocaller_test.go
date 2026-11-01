@@ -45,6 +45,8 @@ func TestServerWithNoCallerKeepsTheWorkspaceClosed(t *testing.T) {
 		{"create_group", map[string]any{"path": "work", "host": "box"}},
 		{"delete_group", map[string]any{"path": "work"}},
 		{"delete_group", map[string]any{"path": "work", "host": "box"}},
+		{"move_session", map[string]any{"session_id": "a1", "group": "work"}},
+		{"move_session", map[string]any{"session_id": "box::a1", "group": "work"}},
 		{"list_terminals", map[string]any{}},
 		{"create_terminal", map[string]any{}},
 		{"create_terminal", map[string]any{"host": "box"}},

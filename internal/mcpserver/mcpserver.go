@@ -111,19 +111,6 @@ type releaseFilesArgs struct {
 
 type listReservationsArgs struct{}
 
-type listGroupsArgs struct{}
-
-type createGroupArgs struct {
-	Path      string `json:"path" jsonschema:"full group path, slash separated for nesting (e.g. work/payments); every parent except the last segment must already exist"`
-	Directory string `json:"directory,omitempty" jsonschema:"default working directory sessions created in this group inherit"`
-	Host      string `json:"host,omitempty" jsonschema:"SSH connection to create the group on, the host list_groups reports; omit for this machine"`
-}
-
-type deleteGroupArgs struct {
-	Path string `json:"path" jsonschema:"full group path to delete, slash separated; groups nested under it go too"`
-	Host string `json:"host,omitempty" jsonschema:"SSH connection the group is on, the host list_groups reports; omit for this machine"`
-}
-
 type closeTerminalArgs struct {
 	TerminalID string `json:"terminal_id" jsonschema:"terminal id returned by list_terminals or create_terminal"`
 }
@@ -145,11 +132,6 @@ type taskOutput struct {
 
 type listReservationsOutput struct {
 	Reservations []sessioncmd.Reservation `json:"reservations"`
-}
-
-type listGroupsOutput struct {
-	Groups           []groupRow        `json:"groups"`
-	ConnectionErrors []connectionError `json:"connection_errors,omitempty" jsonschema:"SSH connections that could not be refreshed for this list; it is never refused for them"`
 }
 
 type releaseFilesOutput struct {
@@ -211,6 +193,7 @@ type sessionCommands interface {
 	Groups(sessionID string) ([]sessioncmd.Group, error)
 	CreateGroup(sessionID, path, directory string) (sessioncmd.Group, error)
 	DeleteGroup(sessionID, path string) (sessioncmd.GroupRemoval, error)
+	Move(sessionID, targetID, group string) (sessioncmd.Placement, error)
 }
 
 const instructionsIntro = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace.`
@@ -367,7 +350,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"These are separate CLI processes running on the user's machine, each with its own context and its own conversation, and any CLI the user configured: Claude Code, Codex, Gemini and others, not only Claude. " +
 			"They are not this conversation's subagents, they outlive this conversation, and the user watches them all in one list; nothing else this session can call reports them. " +
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session. " +
-			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session and archive_session take as they are.",
+			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session, archive_session and move_session take as they are.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
 		listed, err := sessions.List(sessionID)
@@ -693,65 +676,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		return textContent(sessioncmd.FormatReservations(listed)), listReservationsOutput{Reservations: listed}, nil
 	})
 
-	addTool(server, noCaller, &mcp.Tool{
-		Name: "list_groups",
-		Description: "List the groups sessions and terminals are filed under, with each group's default directory, worktree default and session count. " +
-			"Call before passing a group to create_session or create_terminal, since a group must already exist. " +
-			"Groups on the user's SSH connections follow this machine's with host set; pass that host beside the path.",
-		Annotations: toolAnnotations(true, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args listGroupsArgs) (*mcp.CallToolResult, listGroupsOutput, error) {
-		listed, err := sessions.Groups(sessionID)
-		if err != nil {
-			return nil, listGroupsOutput{}, err
-		}
-		text, output, err := remotes.listGroups(ctx, listed)
-		if err != nil {
-			return nil, listGroupsOutput{}, err
-		}
-		return textContent(text), output, nil
-	})
-
-	addTool(server, noCaller, &mcp.Tool{
-		Name: "create_group",
-		Description: "Create a group to file related sessions under, so a fleet you spawn stays together in the user's list. " +
-			"Call before create_session when the work deserves its own heading and list_groups shows no fitting group. " +
-			"Nest with a slash path such as work/payments, whose parent must already exist.",
-		Annotations: toolAnnotations(false, false, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args createGroupArgs) (*mcp.CallToolResult, sessioncmd.Group, error) {
-		if args.Host != "" {
-			created, err := remotes.createGroup(ctx, args.Host, args.Path, args.Directory)
-			if err != nil {
-				return nil, sessioncmd.Group{}, err
-			}
-			return textContent("created group " + created.Path + " on " + args.Host), created, nil
-		}
-		created, err := sessions.CreateGroup(sessionID, args.Path, args.Directory)
-		if err != nil {
-			return nil, sessioncmd.Group{}, err
-		}
-		return textContent("created group " + created.Path), created, nil
-	})
-
-	addTool(server, noCaller, &mcp.Tool{
-		Name: "delete_group",
-		Description: "Delete a group once the work filed under it is done, so a fleet does not leave a heading behind in the user's list. " +
-			"Groups nested under it go too. Any session still filed there moves to the root group rather than being stopped, " +
-			"so this never ends an agent: kill_session or archive_session those first if that is what you mean.",
-		Annotations: toolAnnotations(false, true, false),
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args deleteGroupArgs) (*mcp.CallToolResult, sessioncmd.GroupRemoval, error) {
-		if args.Host != "" {
-			removal, err := remotes.deleteGroup(ctx, args.Host, args.Path)
-			if err != nil {
-				return nil, sessioncmd.GroupRemoval{}, err
-			}
-			return textContent(sessioncmd.FormatGroupRemoval(removal) + " on " + args.Host), removal, nil
-		}
-		removal, err := sessions.DeleteGroup(sessionID, args.Path)
-		if err != nil {
-			return nil, sessioncmd.GroupRemoval{}, err
-		}
-		return textContent(sessioncmd.FormatGroupRemoval(removal)), removal, nil
-	})
+	addGroupTools(server, noCaller, sessionID, sessions, remotes)
 
 	addTool(server, noCaller, &mcp.Tool{
 		Name: "list_terminals",

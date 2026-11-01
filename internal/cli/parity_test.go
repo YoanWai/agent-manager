@@ -269,6 +269,53 @@ func TestEachFrontNamesTheCommandsItsCallerHas(t *testing.T) {
 	}
 }
 
+// A tidy run files every row it was handed, so the fronts must say the same
+// thing about a row already where it belongs, and refuse a missing group
+// each in the words its caller can run.
+func TestTheTwoFrontsMoveIdentically(t *testing.T) {
+	w := newParityWorkspace(t)
+	sessions := sessioncmd.NewSessions(w.configDir, sessioncmd.CLIVocabulary())
+
+	fromCLI := cliText(t, func(out *bytes.Buffer) error {
+		return runMove(out, sessions, []string{w.worker.ID, "--group="}, w.lead.ID)
+	})
+	fromMCP, isError := w.mcpText(t, w.lead.ID, "move_session", map[string]any{"session_id": w.worker.ID, "group": ""})
+	if isError {
+		t.Fatalf("move_session errored: %q", fromMCP)
+	}
+	if strings.TrimSpace(fromCLI) != fromMCP || !strings.Contains(fromMCP, "is already in root") {
+		t.Fatalf("the fronts describe one move differently:\ncli: %q\nmcp: %q", fromCLI, fromMCP)
+	}
+
+	cliRecord := cliText(t, func(out *bytes.Buffer) error {
+		return runMove(out, sessions, []string{w.worker.ID, "--group=", "--json"}, w.lead.ID)
+	})
+	var fromShell sessioncmd.Placement
+	if err := json.Unmarshal([]byte(cliRecord), &fromShell); err != nil {
+		t.Fatalf("move --json is not JSON: %v (%q)", err, cliRecord)
+	}
+	encoded, err := json.Marshal(w.mcpCall(t, w.lead.ID, "move_session", map[string]any{"session_id": w.worker.ID, "group": ""}).StructuredContent)
+	if err != nil {
+		t.Fatalf("marshal structured content: %v", err)
+	}
+	var fromTool sessioncmd.Placement
+	if err := json.Unmarshal(encoded, &fromTool); err != nil {
+		t.Fatalf("structured content is not a placement: %v (%s)", err, encoded)
+	}
+	if !reflect.DeepEqual(fromShell, fromTool) {
+		t.Fatalf("the fronts return different records:\ncli: %+v\nmcp: %+v", fromShell, fromTool)
+	}
+
+	refused := runMove(&bytes.Buffer{}, sessions, []string{w.worker.ID, "--group", "ghost"}, w.lead.ID)
+	if refused == nil || !strings.Contains(refused.Error(), "agent-manager create-group") {
+		t.Fatalf("the shell front refuses a missing group with %v", refused)
+	}
+	toolRefusal, isError := w.mcpText(t, w.lead.ID, "move_session", map[string]any{"session_id": w.worker.ID, "group": "ghost"})
+	if !isError || !strings.Contains(toolRefusal, "create_group") || strings.Contains(toolRefusal, "agent-manager") {
+		t.Fatalf("the MCP front refuses a missing group with %q", toolRefusal)
+	}
+}
+
 // Every spelling the shell front hands out has to be a command that
 // actually dispatches, since the whole point is an agent running it.
 func TestTheCLIVocabularyNamesRealSubcommands(t *testing.T) {

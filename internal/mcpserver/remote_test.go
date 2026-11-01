@@ -345,6 +345,8 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 			return mustJSON(t, sessioncmd.Group{Path: "work"}), nil, nil
 		case "delete-group --json":
 			return mustJSON(t, sessioncmd.GroupRemoval{Removed: []string{"work"}, Moved: []string{"r1"}}), nil, nil
+		case "move --json":
+			return mustJSON(t, sessioncmd.Placement{ID: "r1", Name: "remote-worker", Kind: "session", From: "work", Terminals: []string{"t1"}}), nil, nil
 		}
 		return mustJSON(t, remoteSession), nil, nil
 	})
@@ -377,6 +379,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 			[]string{"send", from, "--json", "--", "r1", "saved:reviewer\n\nrebase on main"}, "queued a message for session gpu::r1"},
 		{"create_group", map[string]any{"host": "gpu", "path": "work", "directory": "/srv"}, []string{"create-group", "--json", "--directory=/srv", "--", "work"}, "created group work on gpu"},
 		{"delete_group", map[string]any{"host": "gpu", "path": "work"}, []string{"delete-group", "--json", "--", "work"}, "deleted work; 1 session(s) moved to the root group: gpu::r1 on gpu"},
+		{"move_session", map[string]any{"session_id": "gpu::r1", "group": ""}, []string{"move", "--json", "--group=", "--", "r1"}, "moved session remote-worker (id gpu::r1) from work to root; 1 terminal(s) went with it: gpu::t1"},
 	} {
 		t.Run(tc.tool, func(t *testing.T) {
 			f.hosts.reset()
@@ -391,7 +394,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		})
 	}
 	if f.local.readID != "" || f.local.sentID != "" || f.local.killedID != "" || f.local.revivedID != "" || f.local.archivedID != "" ||
-		f.local.groupPath != "" || f.local.createdOpts.Name != "" ||
+		f.local.groupPath != "" || f.local.movedID != "" || f.local.createdOpts.Name != "" ||
 		f.terminals.readID != "" || f.terminals.sentID != "" || f.terminals.closedID != "" || f.terminals.createdOpts.Directory != "" {
 		t.Fatalf("a routed call also ran locally: sessions %+v terminals %+v", f.local, f.terminals)
 	}

@@ -77,6 +77,18 @@ func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Dri
 // agent resolves a target id to an agent session, refusing the ids that
 // belong to terminals so an agent never types a sentence at a shell.
 func (r *runtime) agent(id string) (store.Session, error) {
+	sess, err := r.row(id)
+	if err != nil {
+		return store.Session{}, err
+	}
+	if r.cfg.Tools[sess.Tool].Shell {
+		return store.Session{}, fmt.Errorf("session %s is a terminal, not an agent; use the terminal tools for it", sess.ID)
+	}
+	return sess, nil
+}
+
+// row resolves a target id to any row, agent or terminal.
+func (r *runtime) row(id string) (store.Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return store.Session{}, fmt.Errorf("session_id is empty; call %s to get one", r.words.ListSessions)
@@ -85,13 +97,7 @@ func (r *runtime) agent(id string) (store.Session, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.Session{}, fmt.Errorf("session %s does not exist; call %s for current ids", id, r.words.ListSessions)
 	}
-	if err != nil {
-		return store.Session{}, err
-	}
-	if r.cfg.Tools[sess.Tool].Shell {
-		return store.Session{}, fmt.Errorf("session %s is a terminal, not an agent; use the terminal tools for it", id)
-	}
-	return sess, nil
+	return sess, err
 }
 
 func (r *runtime) sessionInfo(sess store.Session, running, self bool) Session {

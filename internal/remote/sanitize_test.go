@@ -128,6 +128,16 @@ func TestResultsAreCleaned(t *testing.T) {
 		t.Errorf("DeleteGroup = %+v, %v", got, err)
 	}
 
+	c, _ = recorder(t, `{"id":"a1","name":"`+hostile+`","kind":"session","from":"`+hostile+`","group":"`+hostile+`","terminals":["t1","t1;x"]}`)
+	if got, err := c.Move(ctx, ref, "team"); err != nil ||
+		!reflect.DeepEqual(got, sessioncmd.Placement{ID: "a1", Name: "xy", Kind: "session", From: "xy", Group: "xy", Terminals: []string{"t1"}}) {
+		t.Errorf("Move = %+v, %v", got, err)
+	}
+	c, _ = recorder(t, `{"id":"a1","unnested_from":"b2;x"}`)
+	if got, err := c.Move(ctx, ref, "team"); err == nil {
+		t.Errorf("Move accepted an unsafe parent id: %+v", got)
+	}
+
 	c, _ = recorder(t, `{"terminal_id":"a1","sent":"`+hostile+`"}`)
 	if got, err := c.TerminalSend(ctx, ref, "ls", nil); err != nil || got != (sessioncmd.TerminalInput{TerminalID: "a1", Sent: "xy"}) {
 		t.Errorf("TerminalSend = %+v, %v", got, err)

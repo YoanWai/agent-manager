@@ -262,6 +262,19 @@ func (c *Client) DeleteGroup(ctx context.Context, host, path string) (sessioncmd
 	return cleanRemoval(removal), err
 }
 
+// Move files a session or terminal under one of the host's groups.
+func (c *Client) Move(ctx context.Context, ref Ref, group string) (sessioncmd.Placement, error) {
+	var placement sessioncmd.Placement
+	if err := validRef(ref); err != nil {
+		return placement, err
+	}
+	if err := c.decode(ctx, ref.Host, callTimeout, &placement, "move", "--json", "--group="+group, "--", ref.ID); err != nil {
+		return placement, err
+	}
+	placement, err := cleanPlacement(placement)
+	return placement, unreadable(ref.Host, "move", err)
+}
+
 func validRef(ref Ref) error {
 	if err := validID(ref.ID); err != nil {
 		return &Error{Host: ref.Host, Err: err}

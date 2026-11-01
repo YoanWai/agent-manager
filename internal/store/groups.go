@@ -189,6 +189,30 @@ func (s *Store) RemoveGroup(path string) (removedGroups, movedSessions []string,
 	return removedGroups, held, nil
 }
 
+// FileSession moves a session, un-nested, into an existing group, with its
+// nested terminals. The group is checked in the same transaction, since the
+// placement would otherwise recreate a group deleted a moment earlier.
+func (s *Store) FileSession(id, group string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if group != "" {
+		var exists int
+		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM groups WHERE name = ?)`, group).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			return fmt.Errorf("group %q: %w", group, ErrGroupNotFound)
+		}
+	}
+	if err := placeSession(tx, id, group, ""); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func txStrings(tx *sql.Tx, query string, args ...any) ([]string, error) {
 	rows, err := tx.Query(query, args...)
 	if err != nil {

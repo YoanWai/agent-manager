@@ -373,12 +373,12 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		group = strings.TrimSpace(*requestedGroup)
 		if group != "" {
 			if _, ok := byName[group]; !ok {
-				return "", "", fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, r.words.ListGroups, r.words.CreateGroup)
+				return "", "", r.missingGroup(group)
 			}
 		}
 	}
 	if group != "" && store.EffectivelyArchived(archived, group) {
-		return "", "", fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
+		return "", "", archivedGroup(group)
 	}
 	if strings.TrimSpace(directory) != "" {
 		dir, err := resolveTerminalDirectory(directory)
@@ -408,6 +408,14 @@ func (r *runtime) createTarget(caller store.Session, requestedGroup *string, dir
 		return "", "", fmt.Errorf("no usable directory for terminal: %w", err)
 	}
 	return group, resolved, nil
+}
+
+func (r *runtime) missingGroup(group string) error {
+	return fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, r.words.ListGroups, r.words.CreateGroup)
+}
+
+func archivedGroup(group string) error {
+	return fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
 }
 
 func resolveTerminalDirectory(raw string) (string, error) {

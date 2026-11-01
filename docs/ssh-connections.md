@@ -27,7 +27,7 @@ The protocol is the remote host's own CLI, run over SSH as `agent-manager <comma
 | Answer an agent from the quick bar | `type --json -- <id> <text>` |
 | Spawn | `spawn --json ...`, `terminal create --json ...` |
 | Lifecycle | `kill`, `revive`, `archive [--restore]`, `terminal close` |
-| Groups | `create-group`, `delete-group` |
+| Groups | `create-group`, `delete-group`, `move --group=<path> -- <id>` |
 | Attach | `ssh -t <dest>` running `tmux -L agentmgr attach-session -t <session>`, then taking back any review or editor request the host's keys left on its tmux server |
 
 The snapshot envelope carries `version`. A remote that does not know `snapshot`, or answers with an older version, says to update agent-manager on that host. One that answers with a newer version says to update it on this machine.
@@ -37,7 +37,7 @@ Flags are written as `--flag=value` and operands follow a bare `--`, so a messag
 Once a connection is saved, every agent on this machine can reach that host through MCP: any session can open a terminal there with `create_terminal` and run commands in it as the remote user. Add a connection only for a host you would let all of them use.
 
 An SSH call has no calling session on the remote host. The commands it uses run without one:
-- `kill`, `revive`, `archive`, `create-group` and `delete-group` act as the user would.
+- `kill`, `revive`, `archive`, `create-group`, `delete-group` and `move` act as the user would.
 - `terminal create` opens a terminal that belongs to no session. `terminal send`, `read` and `close` drive only such terminals. A terminal nested under a session stays that session's.
 - Every SSH call is the same caller there, so the local MCP server tells them apart: it records which session's `create_terminal` opened a remote terminal, and `send_terminal` and `close_terminal` on a `host::id` refuse any other session before calling ssh. A terminal opened with `T` on the connection row has no such record, so only the user drives it. The record goes when the terminal is closed through MCP or its session is deleted.
 - `send --from` names the sender, at most 64 bytes. The delivered message says it came from another of the user's machines and that a reply cannot reach it. Every `--from` sender shares one rate limit per target.

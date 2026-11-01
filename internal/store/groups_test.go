@@ -405,6 +405,92 @@ func TestRemoveGroupReportsAMissingGroup(t *testing.T) {
 	}
 }
 
+func TestFileSessionMovesTheRowWithItsTerminals(t *testing.T) {
+	st := newTestStore(t)
+	for _, group := range []string{"fleet", "repos"} {
+		if err := st.CreateGroup(group, ""); err != nil {
+			t.Fatalf("CreateGroup %s: %v", group, err)
+		}
+	}
+	if err := st.CreateSession(sample("aa", "fleet")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	nested := sample("bb", "fleet")
+	nested.ParentID = "aa"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("create nested: %v", err)
+	}
+
+	if err := st.FileSession("aa", "repos"); err != nil {
+		t.Fatalf("FileSession: %v", err)
+	}
+	for _, id := range []string{"aa", "bb"} {
+		after, err := st.Get(id)
+		if err != nil {
+			t.Fatalf("Get %s: %v", id, err)
+		}
+		if after.Group != "repos" {
+			t.Fatalf("%s sits in %q, want repos", id, after.Group)
+		}
+	}
+	terminal, err := st.Get("bb")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if terminal.ParentID != "aa" {
+		t.Fatalf("the terminal left its agent: parent %q", terminal.ParentID)
+	}
+}
+
+func TestFileSessionUnnestsATerminalMovedAlone(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateGroup("repos", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := st.CreateSession(sample("aa", "")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	nested := sample("bb", "")
+	nested.ParentID = "aa"
+	if err := st.CreateSession(nested); err != nil {
+		t.Fatalf("create nested: %v", err)
+	}
+
+	if err := st.FileSession("bb", "repos"); err != nil {
+		t.Fatalf("FileSession: %v", err)
+	}
+	after, err := st.Get("bb")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "repos" || after.ParentID != "" {
+		t.Fatalf("terminal sits in %q under %q, want repos un-nested", after.Group, after.ParentID)
+	}
+}
+
+func TestFileSessionRefusesAMissingGroupWithoutCreatingIt(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.CreateSession(sample("aa", "")); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.FileSession("aa", "ghost/child"); !errors.Is(err, ErrGroupNotFound) {
+		t.Fatalf("err = %v, want ErrGroupNotFound", err)
+	}
+	if paths := groupPaths(t, st); len(paths) != 0 {
+		t.Fatalf("groups = %v, want none created", paths)
+	}
+	after, err := st.Get("aa")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "" {
+		t.Fatalf("session moved to %q", after.Group)
+	}
+	if err := st.FileSession("gone", ""); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("missing session err = %v, want ErrSessionGone", err)
+	}
+}
+
 // A group name may carry LIKE wildcards; they must not pull a sibling
 // group's sessions into the move.
 func TestRemoveGroupMatchesWildcardNamesLiterally(t *testing.T) {

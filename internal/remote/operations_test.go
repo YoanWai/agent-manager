@@ -130,6 +130,14 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.DeleteGroup(ctx, "gpu", "--")
 			return err
 		}, []string{"delete-group", "--json", "--", "--"}},
+		{"move", func(ctx context.Context, c *Client) error {
+			_, err := c.Move(ctx, ref, "-team/a")
+			return err
+		}, []string{"move", "--json", "--group=-team/a", "--", "a1b2c3d4"}},
+		{"move to the root", func(ctx context.Context, c *Client) error {
+			_, err := c.Move(ctx, ref, "")
+			return err
+		}, []string{"move", "--json", "--group=", "--", "a1b2c3d4"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,6 +174,8 @@ func TestUnsafeIDsNeverReachSSH(t *testing.T) {
 	_, err = c.Revive(ctx, bad)
 	errs = append(errs, err)
 	_, err = c.Archive(ctx, bad, true)
+	errs = append(errs, err)
+	_, err = c.Move(ctx, bad, "team")
 	errs = append(errs, err)
 	for i, err := range errs {
 		if err == nil {

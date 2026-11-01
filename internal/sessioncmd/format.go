@@ -223,6 +223,20 @@ func FormatGroupRemoval(removal GroupRemoval) string {
 	return line
 }
 
+func FormatPlacement(placement Placement) string {
+	if placement.Unchanged {
+		return fmt.Sprintf("%s %s (id %s) is already in %s", placement.Kind, placement.Name, placement.ID, groupLabel(placement.Group))
+	}
+	line := fmt.Sprintf("moved %s %s (id %s) from %s to %s", placement.Kind, placement.Name, placement.ID, groupLabel(placement.From), groupLabel(placement.Group))
+	if placement.UnnestedFrom != "" {
+		line += "; it is no longer nested under session " + placement.UnnestedFrom
+	}
+	if len(placement.Terminals) > 0 {
+		line += fmt.Sprintf("; %d terminal(s) went with it: %s", len(placement.Terminals), strings.Join(placement.Terminals, ", "))
+	}
+	return line
+}
+
 func FormatGroupList(groups []Group) string {
 	if len(groups) == 0 {
 		return "no groups; sessions live in the root"

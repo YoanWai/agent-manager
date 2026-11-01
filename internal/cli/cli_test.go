@@ -162,6 +162,11 @@ func (f *fakeSessions) DeleteGroup(sessionID, path string) (sessioncmd.GroupRemo
 	return sessioncmd.GroupRemoval{Removed: []string{path}, Moved: []string{"beef1234"}}, f.failWith
 }
 
+func (f *fakeSessions) Move(sessionID, targetID, group string) (sessioncmd.Placement, error) {
+	f.callerID, f.targetID, f.groupPath = sessionID, targetID, group
+	return sessioncmd.Placement{ID: targetID, Name: "api-worker", Kind: "session", From: "api", Group: group}, f.failWith
+}
+
 func (f *fakeSessions) Tasks(sessionID string) ([]sessioncmd.Task, error) {
 	f.callerID = sessionID
 	return []sessioncmd.Task{f.task}, f.failWith
@@ -473,6 +478,9 @@ func TestJSONIsPromisedOnlyWhereTheCommandTakesIt(t *testing.T) {
 		{usageSessions, func(out *bytes.Buffer, args []string) error {
 			return runSessions(out, &fakeSessions{session: sampleSession()}, args, "cafe0001")
 		}},
+		{usageMove, func(out *bytes.Buffer, args []string) error {
+			return runMove(out, &fakeSessions{}, append([]string{"beef1234", "--group", "api"}, args...), "cafe0001")
+		}},
 		{usageTaskDelete, func(out *bytes.Buffer, args []string) error {
 			return runTaskDelete(out, &fakeSessions{}, append([]string{"t1"}, args...), "cafe0001")
 		}},
@@ -546,7 +554,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
 		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self", "prompts", "env",
-		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
+		"groups", "create-group", "delete-group", "move", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}
 	for _, name := range registered {

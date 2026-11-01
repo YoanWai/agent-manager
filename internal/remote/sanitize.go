@@ -126,3 +126,26 @@ func cleanRemoval(removal sessioncmd.GroupRemoval) sessioncmd.GroupRemoval {
 	removal.Moved = moved
 	return removal
 }
+
+func cleanPlacement(placement sessioncmd.Placement) (sessioncmd.Placement, error) {
+	if err := validID(placement.ID); err != nil {
+		return sessioncmd.Placement{}, err
+	}
+	if placement.UnnestedFrom != "" {
+		if err := validID(placement.UnnestedFrom); err != nil {
+			return sessioncmd.Placement{}, err
+		}
+	}
+	terminals := placement.Terminals[:0]
+	for _, id := range placement.Terminals {
+		if validID(id) == nil {
+			terminals = append(terminals, id)
+		}
+	}
+	placement.Terminals = terminals
+	placement.Name = cleanText(placement.Name)
+	placement.Kind = cleanText(placement.Kind)
+	placement.From = cleanText(placement.From)
+	placement.Group = cleanText(placement.Group)
+	return placement, nil
+}

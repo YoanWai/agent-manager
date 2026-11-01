@@ -388,6 +388,24 @@ func (h *remoteHosts) archive(ctx context.Context, ref remote.Ref, archived bool
 	return qualifySession(ref.Host, updated), err
 }
 
+func (h *remoteHosts) move(ctx context.Context, ref remote.Ref, group string) (sessioncmd.Placement, error) {
+	if _, err := h.ready(); err != nil {
+		return sessioncmd.Placement{}, err
+	}
+	placement, err := h.client.Move(ctx, ref, group)
+	if err != nil {
+		return sessioncmd.Placement{}, err
+	}
+	placement.ID = ref.String()
+	for i, id := range placement.Terminals {
+		placement.Terminals[i] = remote.Ref{Host: ref.Host, ID: id}.String()
+	}
+	if placement.UnnestedFrom != "" {
+		placement.UnnestedFrom = remote.Ref{Host: ref.Host, ID: placement.UnnestedFrom}.String()
+	}
+	return placement, nil
+}
+
 func (h *remoteHosts) spawn(ctx context.Context, host string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error) {
 	if _, err := h.ready(); err != nil {
 		return sessioncmd.Session{}, err
