@@ -248,6 +248,53 @@ func TestMoveRefusesAnUnknownTargetAndChangesNothing(t *testing.T) {
 	}
 }
 
+func TestMoveRelabelsTheStatusBarOfARunningSession(t *testing.T) {
+	h := newSessionHarness(t)
+	for _, path := range []string{"alpha", "repo-a"} {
+		if _, err := h.sessions.CreateGroup(h.caller.ID, path, ""); err != nil {
+			t.Fatalf("CreateGroup %s: %v", path, err)
+		}
+	}
+	group := "alpha"
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker", Group: &group})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := h.sessions.Move(h.caller.ID, worker.ID, "repo-a"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if label := statusLeft(t, h, worker.ID); label != "repo-a · worker" {
+		t.Fatalf("status bar after the move = %q", label)
+	}
+}
+
+func TestMoveIntoItsOwnGroupKeepsTheRowInPlace(t *testing.T) {
+	h := newStoreSessionHarness(t)
+	firstID := h.addSessionRow(t, "first")
+	secondID := h.addSessionRow(t, "second")
+	for _, id := range []string{firstID, secondID} {
+		if err := h.store.MoveSession(id, "backend"); err != nil {
+			t.Fatalf("move session row: %v", err)
+		}
+	}
+	if _, err := h.sessions.Move(h.caller.ID, firstID, "backend"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	sessions, err := h.store.ListSessions(false)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	var order []string
+	for _, sess := range sessions {
+		if sess.ID == firstID || sess.ID == secondID {
+			order = append(order, sess.ID)
+		}
+	}
+	if len(order) != 2 || order[0] != firstID {
+		t.Fatalf("backend order = %v, want %s still first", order, firstID)
+	}
+}
+
 func statusLeft(t *testing.T, h *sessionHarness, id string) string {
 	t.Helper()
 	out, err := exec.Command("tmux", "-L", h.driver.SocketName(), "show-options", "-v", "-t", "am_"+id, "status-left").CombinedOutput()

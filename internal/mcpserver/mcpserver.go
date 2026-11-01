@@ -575,7 +575,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 	addTool(server, noCaller, &mcp.Tool{
 		Name: "move_session",
 		Description: "File a session under another group, the way the user's move key does; terminals nested under it go with it. " +
-			"Use it to tidy sessions into the group their work belongs to. The group must already exist: call list_groups, or create_group first. " +
+			"Use it when the user asks to file or tidy sessions into the group their work belongs to. The group must already exist: call list_groups, or create_group first. " +
 			"Only where the row is filed changes; the agent keeps running.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args moveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {

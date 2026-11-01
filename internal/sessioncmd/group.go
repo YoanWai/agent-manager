@@ -179,12 +179,27 @@ func (s *Sessions) Move(sessionID, targetID, group string) (Session, error) {
 			return Session{}, fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
 		}
 	}
+	// The move key leaves a row already filed there in its place.
+	if target.Group == group && target.ParentID == "" {
+		return runtime.sessionInfo(target, runtime.driver.Exists(target.ID), target.ID == sessionID), nil
+	}
 	if err := runtime.store.MoveSession(target.ID, group); err != nil {
 		return Session{}, err
 	}
+	ids := []string{target.ID}
+	children, err := runtime.store.Children(target.ID)
+	if err != nil {
+		return Session{}, fmt.Errorf("moved %s, but could not read its terminals to update their status bars: %w", target.ID, err)
+	}
+	for _, child := range children {
+		ids = append(ids, child.ID)
+	}
+	if err := runtime.relabel(ids); err != nil {
+		return Session{}, fmt.Errorf("moved %s, but could not update its status bar: %w", target.ID, err)
+	}
 	moved, err := runtime.store.Get(target.ID)
 	if err != nil {
-		return Session{}, err
+		return Session{}, fmt.Errorf("moved %s, but could not read it back: %w", target.ID, err)
 	}
 	return runtime.sessionInfo(moved, runtime.driver.Exists(moved.ID), moved.ID == sessionID), nil
 }
