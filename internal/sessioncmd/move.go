@@ -21,10 +21,7 @@ type Placement struct {
 	Unchanged    bool     `json:"unchanged,omitempty" jsonschema:"true when it already sat un-nested in that group, so nothing changed"`
 }
 
-// Move files a session or terminal under an existing group, the way the
-// move key does: an agent takes its nested terminals along, and a nested
-// terminal moved on its own leaves its session. Only the filing changes,
-// so the pane keeps running.
+// Move files a row under an existing group as the move key does; only the filing changes.
 func (s *Sessions) Move(sessionID, targetID, group string) (Placement, error) {
 	group = strings.Trim(strings.TrimSpace(group), "/")
 	runtime, err := s.open()
@@ -57,7 +54,6 @@ func (s *Sessions) Move(sessionID, targetID, group string) (Placement, error) {
 	if err != nil {
 		return Placement{}, err
 	}
-	target.Group = group
 	children, err := runtime.store.Children(target.ID)
 	if err != nil {
 		return Placement{}, err
@@ -65,14 +61,13 @@ func (s *Sessions) Move(sessionID, targetID, group string) (Placement, error) {
 	for _, child := range children {
 		placement.Terminals = append(placement.Terminals, child.ID)
 	}
-	if err := runtime.relabel(append([]store.Session{target}, children...)); err != nil {
+	if err := runtime.relabel(append([]string{target.ID}, placement.Terminals...)); err != nil {
 		return Placement{}, fmt.Errorf("moved %s, but could not update its status bar: %w", target.Name, err)
 	}
 	return placement, nil
 }
 
-// fileable refuses a group a row cannot be filed under: one that does not
-// exist, or one archived out of the list the row would vanish into.
+// fileable refuses a missing group, and an archived one the row would vanish into.
 func (r *runtime) fileable(group string) error {
 	if group == "" {
 		return nil
@@ -90,15 +85,19 @@ func (r *runtime) fileable(group string) error {
 	return nil
 }
 
-// relabel rewrites the status bar of each running row whose group changed;
-// a dead pane takes its label when it is revived.
-func (r *runtime) relabel(sessions []store.Session) error {
+// relabel skips a dead pane, which takes its label when it is revived.
+func (r *runtime) relabel(ids []string) error {
 	var failed error
-	for _, sess := range sessions {
-		if !r.driver.Exists(sess.ID) {
+	for _, id := range ids {
+		if !r.driver.Exists(id) {
 			continue
 		}
-		failed = errors.Join(failed, r.driver.SetLabel(sess.ID, SessionLabel(sess.Group, sess.Name)))
+		sess, err := r.store.Get(id)
+		if err != nil {
+			failed = errors.Join(failed, err)
+			continue
+		}
+		failed = errors.Join(failed, r.driver.SetLabel(id, SessionLabel(sess.Group, sess.Name)))
 	}
 	return failed
 }

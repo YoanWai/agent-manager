@@ -189,9 +189,7 @@ func (s *Store) RemoveGroup(path string) (removedGroups, movedSessions []string,
 	return removedGroups, held, nil
 }
 
-// FileSession moves a session, un-nested, into an existing group, with its
-// nested terminals. The group is checked in the same transaction, since the
-// placement would otherwise recreate a group deleted a moment earlier.
+// FileSession checks the group inside the placement's transaction, or a group deleted meanwhile is recreated.
 func (s *Store) FileSession(id, group string) error {
 	tx, err := s.db.Begin()
 	if err != nil {

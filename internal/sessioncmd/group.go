@@ -140,15 +140,7 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 	if err != nil {
 		return GroupRemoval{}, err
 	}
-	rows := make([]store.Session, 0, len(moved))
-	for _, id := range moved {
-		sess, err := runtime.store.Get(id)
-		if err != nil {
-			return GroupRemoval{}, err
-		}
-		rows = append(rows, sess)
-	}
-	if err := runtime.relabel(rows); err != nil {
+	if err := runtime.relabel(moved); err != nil {
 		return GroupRemoval{}, fmt.Errorf("deleted %s, but could not update the status bar of the sessions moved to the root: %w", path, err)
 	}
 	return GroupRemoval{Removed: removed, Moved: moved}, nil
@@ -159,4 +151,12 @@ func parentGroup(group string) string {
 		return group[:index]
 	}
 	return ""
+}
+
+func (r *runtime) missingGroup(group string) error {
+	return fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, r.words.ListGroups, r.words.CreateGroup)
+}
+
+func archivedGroup(group string) error {
+	return fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
 }

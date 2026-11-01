@@ -2,6 +2,7 @@ package sessioncmd
 
 import (
 	"os/exec"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func statusLeft(t *testing.T, h *sessionHarness, id string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func groupOf(t *testing.T, h *sessionHarness, id string) store.Session {
+func storedRow(t *testing.T, h *sessionHarness, id string) store.Session {
 	t.Helper()
 	sess, err := h.store.Get(id)
 	if err != nil {
@@ -44,17 +45,16 @@ func TestMoveFilesAnAgentWithItsTerminals(t *testing.T) {
 		t.Fatalf("Move: %v", err)
 	}
 	want := Placement{ID: h.caller.ID, Name: h.caller.Name, Kind: "session", From: "backend", Group: "repos", Terminals: []string{terminal.ID}}
-	if placement.ID != want.ID || placement.Kind != want.Kind || placement.From != want.From || placement.Group != want.Group ||
-		placement.UnnestedFrom != "" || !slices.Equal(placement.Terminals, want.Terminals) {
+	if !reflect.DeepEqual(placement, want) {
 		t.Fatalf("placement = %+v, want %+v", placement, want)
 	}
 	if got := FormatPlacement(placement); got != "moved session calling-agent (id "+h.caller.ID+") from backend to repos; 1 terminal(s) went with it: "+terminal.ID {
 		t.Fatalf("text = %q", got)
 	}
-	if agent := groupOf(t, h, h.caller.ID); agent.Group != "repos" {
+	if agent := storedRow(t, h, h.caller.ID); agent.Group != "repos" {
 		t.Fatalf("agent sits in %q", agent.Group)
 	}
-	if moved := groupOf(t, h, terminal.ID); moved.Group != "repos" || moved.ParentID != h.caller.ID {
+	if moved := storedRow(t, h, terminal.ID); moved.Group != "repos" || moved.ParentID != h.caller.ID {
 		t.Fatalf("terminal sits in %q under %q", moved.Group, moved.ParentID)
 	}
 	if label := statusLeft(t, h, h.caller.ID); label != "repos · calling-agent" {
@@ -79,7 +79,7 @@ func TestMoveUnnestsATerminalMovedAlone(t *testing.T) {
 	if placement.Kind != "terminal" || placement.Group != "" || placement.UnnestedFrom != h.caller.ID {
 		t.Fatalf("placement = %+v", placement)
 	}
-	if moved := groupOf(t, h, terminal.ID); moved.Group != "" || moved.ParentID != "" {
+	if moved := storedRow(t, h, terminal.ID); moved.Group != "" || moved.ParentID != "" {
 		t.Fatalf("terminal sits in %q under %q, want the root un-nested", moved.Group, moved.ParentID)
 	}
 	if label := statusLeft(t, h, terminal.ID); label != terminal.Name {
@@ -139,7 +139,7 @@ func TestMoveRefusesWhatItCannotFile(t *testing.T) {
 			t.Fatalf("Move(%q, %q) = %v, want %q", tc.target, tc.group, err, tc.want)
 		}
 	}
-	if after := groupOf(t, h, h.caller.ID); after.Group != "backend" {
+	if after := storedRow(t, h, h.caller.ID); after.Group != "backend" {
 		t.Fatalf("a refused move still filed the session in %q", after.Group)
 	}
 }
@@ -155,7 +155,7 @@ func TestMoveKeepsAnArchivedSessionArchived(t *testing.T) {
 	if _, err := h.sessions.Move(h.caller.ID, id, "backend"); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
-	if after := groupOf(t, h, id); after.Group != "backend" || !after.Archived {
+	if after := storedRow(t, h, id); after.Group != "backend" || !after.Archived {
 		t.Fatalf("archived session = group %q archived %t", after.Group, after.Archived)
 	}
 }

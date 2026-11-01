@@ -3,6 +3,8 @@ package mcpserver
 import (
 	"strings"
 	"testing"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func TestMoveSessionForwardsTheTargetAndGroup(t *testing.T) {
@@ -20,8 +22,7 @@ func TestMoveSessionForwardsTheTargetAndGroup(t *testing.T) {
 	if !ok || structured["group"] != "repos/api" || structured["from"] != "backend" {
 		t.Fatalf("structured = %#v", result.StructuredContent)
 	}
-	text, _ := callText(t, session, "move_session", map[string]any{"session_id": "a1b2c3d4", "group": "repos/api"})
-	if text != "moved session worker (id a1b2c3d4) from backend to repos/api; 1 terminal(s) went with it: t1" {
+	if text := result.Content[0].(*mcp.TextContent).Text; text != "moved session worker (id a1b2c3d4) from backend to repos/api; 1 terminal(s) went with it: t1" {
 		t.Fatalf("text = %q", text)
 	}
 }

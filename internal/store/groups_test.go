@@ -424,21 +424,16 @@ func TestFileSessionMovesTheRowWithItsTerminals(t *testing.T) {
 	if err := st.FileSession("aa", "repos"); err != nil {
 		t.Fatalf("FileSession: %v", err)
 	}
-	for _, id := range []string{"aa", "bb"} {
-		after, err := st.Get(id)
-		if err != nil {
-			t.Fatalf("Get %s: %v", id, err)
-		}
-		if after.Group != "repos" {
-			t.Fatalf("%s sits in %q, want repos", id, after.Group)
-		}
+	agent, err := st.Get("aa")
+	if err != nil {
+		t.Fatalf("Get agent: %v", err)
 	}
 	terminal, err := st.Get("bb")
 	if err != nil {
-		t.Fatalf("Get: %v", err)
+		t.Fatalf("Get terminal: %v", err)
 	}
-	if terminal.ParentID != "aa" {
-		t.Fatalf("the terminal left its agent: parent %q", terminal.ParentID)
+	if agent.Group != "repos" || terminal.Group != "repos" || terminal.ParentID != "aa" {
+		t.Fatalf("agent in %q, terminal in %q under %q; want both in repos, the terminal under aa", agent.Group, terminal.Group, terminal.ParentID)
 	}
 }
 
