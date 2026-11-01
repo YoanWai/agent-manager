@@ -116,16 +116,11 @@ func Refresh(ctx context.Context, configDir, version string) ([]Message, error) 
 	return fetchMessages(ctx, configDir, version, true)
 }
 
-// loadCache reports parsedHere false for a feed it must neither trust as fresh nor revalidate by ETag.
-func loadCache(configDir string) (cached cache, found, parsedHere bool) {
-	cached, found = atomicfile.ReadJSON[cache](filepath.Join(configDir, cacheFile))
-	return cached, found, found && cached.Parser == feedParser
-}
-
 func fetchMessages(ctx context.Context, configDir, version string, force bool) ([]Message, error) {
 	now := time.Now()
 	cachePath := filepath.Join(configDir, cacheFile)
-	cached, haveCache, parsedHere := loadCache(configDir)
+	cached, haveCache := atomicfile.ReadJSON[cache](cachePath)
+	parsedHere := cached.Parser == feedParser
 	age := now.Sub(cached.CheckedAt)
 	if !force && parsedHere && age >= 0 && age < checkInterval {
 		return sanitize(cached.Messages, version, now), nil
