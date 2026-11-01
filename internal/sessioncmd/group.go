@@ -140,7 +140,27 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 	if err != nil {
 		return GroupRemoval{}, err
 	}
+	if err := runtime.relabel(moved); err != nil {
+		return GroupRemoval{}, fmt.Errorf("deleted %s, but could not update the status bar of the sessions moved to the root: %w", path, err)
+	}
 	return GroupRemoval{Removed: removed, Moved: moved}, nil
+}
+
+// relabel skips a dead pane, which takes its label when it is revived.
+func (r *runtime) relabel(ids []string) error {
+	var failed error
+	for _, id := range ids {
+		if !r.driver.Exists(id) {
+			continue
+		}
+		sess, err := r.store.Get(id)
+		if err != nil {
+			failed = errors.Join(failed, err)
+			continue
+		}
+		failed = errors.Join(failed, r.driver.SetLabel(id, SessionLabel(sess.Group, sess.Name)))
+	}
+	return failed
 }
 
 func parentGroup(group string) string {
