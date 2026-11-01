@@ -207,7 +207,7 @@ func (r renderer) entryHeight(row treeRow) int {
 	if row.kind != SessionRow || !r.ctx.ComfortableRows {
 		return 1
 	}
-	if !row.sess.Agent() {
+	if row.sess.IsTool {
 		return 2
 	}
 	return 3
@@ -538,7 +538,7 @@ func (r renderer) tallRow(session Session, head, meta, indent string, selected b
 	top := rowColumns(head, meta, width-railGutter)
 	room := width - railGutter - ansi.StringWidth(indent) - 2
 	lines := []string{paint(top, width, background)}
-	if session.Agent() {
+	if !session.IsTool {
 		promptLine := indent + quiet.Render("-")
 		if prompt := oneLine(session.Prompt); prompt != "" && room >= 8 {
 			promptLine = indent + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render(r.glyphs().PromptGlyph+" ") +
@@ -594,7 +594,7 @@ func (r renderer) renderGroup(row treeRow, selected bool, width int, pad, guides
 func (r renderer) groupStatusGlyphs(host, group string, whole bool) string {
 	counts := map[string]int{}
 	for _, session := range r.model.listed(host, r.model.sessionsOf(host)) {
-		if session.Agent() && (whole || InGroupSubtree(session.Group, group)) {
+		if !session.IsTool && (whole || InGroupSubtree(session.Group, group)) {
 			counts[session.Status]++
 		}
 	}

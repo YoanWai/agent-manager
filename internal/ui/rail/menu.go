@@ -89,7 +89,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		return menuSections(manage, keep, []menuItem{revive, m.archiveMenuItem(), remove})
 	}
 	var agent []menuItem
-	if row.sess.Agent() {
+	if !row.sess.IsTool {
 		agent = []menuItem{
 			{label: "Quick prompt mode", action: Prompt},
 			{label: "Copy last reply", action: CopyReply},

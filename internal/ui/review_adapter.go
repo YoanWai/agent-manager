@@ -292,7 +292,6 @@ func (m *Model) handleReviewPreferences(msg uireviewsource.PreferencesMsg) (tea.
 func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := uireview.KeyContext{CodeHeight: m.diffCodeHeight(), PersistenceAvailable: m.services.store != nil, HelpKey: m.services.listKeys.Binding(keybind.Help)}
 	if sess, ok := m.diffSession(); ok && m.isTool(sess.Tool) {
-		ctx.IsShell = true
 		ctx.SendError = uisession.NonAgentPromptHint(sess.Name, m.isBrowser(sess.Tool))
 	}
 	scope := m.review.Scope()

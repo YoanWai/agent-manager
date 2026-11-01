@@ -22,7 +22,7 @@ func TestRowLegendReadsTheRowRootPasses(t *testing.T) {
 	}
 
 	ctx.Row = rail.Selection{Kind: rail.SessionRow, SessionID: "sh"}
-	ctx.Session = rail.Session{ID: "sh", Status: "finished", IsShell: true}
+	ctx.Session = rail.Session{ID: "sh", Status: "finished", IsTool: true, IsShell: true}
 	shell := model.RowLegend(ctx)
 	if shell.Title != "Shell" || shell.Leads != nil || shell.Hint != "" {
 		t.Fatalf("a shell row should drop the conversation leads, got %+v", shell)

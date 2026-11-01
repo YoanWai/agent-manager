@@ -93,7 +93,7 @@ func (m Model) RowLegend(ctx LegendContext) Legend {
 		hint = ReviewModeHint
 	}
 	conversation := [][2]string{{k(keybind.CopyReply), "copy"}, {k(keybind.Fork), "fork"}}
-	if !session.Agent() {
+	if session.IsTool {
 		// A shell or a browser has no conversation, so the keys that would
 		// prompt, review or fork one are left off rather than offered and
 		// refused.

@@ -34,18 +34,16 @@ type Session struct {
 	PaneLine       string
 	PanePrompt     string
 	Queued         int
-	IsShell        bool
-	IsBrowser      bool
-	Elsewhere      bool
+	// IsTool marks a tool pane, which has no conversation to prompt, review or fork.
+	IsTool    bool
+	IsShell   bool
+	IsBrowser bool
+	Elsewhere bool
 	// AfterTurn is the archive or kill the agent asked for once its turn
 	// ends; AfterTurnGlyph is root's mark for it.
 	AfterTurn      string
 	AfterTurnGlyph string
 }
-
-// Agent reports whether the row runs an agent rather than a shell or a
-// browser, which have no conversation to prompt, review or fork.
-func (s Session) Agent() bool { return !s.IsShell && !s.IsBrowser }
 
 // Snapshot is an immutable-by-convention inventory copied at the root
 // observation boundary. Reconcile copies every slice and map it retains.

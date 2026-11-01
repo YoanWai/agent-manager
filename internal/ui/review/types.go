@@ -343,7 +343,6 @@ type KeyContext struct {
 	CodeHeight           int
 	Now                  time.Time
 	Target               Target
-	IsShell              bool
 	PersistenceAvailable bool
 	SendError            string
 }

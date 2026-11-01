@@ -199,7 +199,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, _ int, _ stri
 			Acked: session.Acked, CreatedAt: session.CreatedAt, LastStatusAt: session.LastStatusAt,
 			LaunchAt: session.LaunchTime(), AgentSessionID: session.AgentSessionID, ParentID: session.ParentID,
 			Prompt: prompt, PaneLine: m.workspace.paneLines[session.ID], PanePrompt: m.workspace.panePrompts[session.ID],
-			Queued: m.workspace.queuedMessages[session.ID], IsShell: m.isShell(session.Tool), IsBrowser: m.isBrowser(session.Tool),
+			Queued: m.workspace.queuedMessages[session.ID], IsTool: m.isTool(session.Tool), IsShell: m.isShell(session.Tool), IsBrowser: m.isBrowser(session.Tool),
 			Elsewhere: m.elsewhereNote(session) != "",
 		}}
 		if session.Group != "" {

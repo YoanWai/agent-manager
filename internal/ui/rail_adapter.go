@@ -81,6 +81,7 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 			PaneLine:       m.workspace.paneLines[session.ID],
 			PanePrompt:     m.workspace.panePrompts[session.ID],
 			Queued:         m.workspace.queuedMessages[session.ID],
+			IsTool:         m.isTool(session.Tool),
 			IsShell:        m.isShell(session.Tool),
 			IsBrowser:      m.isBrowser(session.Tool),
 			Elsewhere:      m.elsewhereNote(session) != "",
@@ -276,8 +277,8 @@ func (m *Model) rowLegend() legendSection {
 			ctx.Row = uirail.Selection{Kind: uirail.SessionRow, SessionID: row.sess.ID, Group: row.sess.Group}
 			ctx.Session = uirail.Session{
 				ID: row.sess.ID, Group: row.sess.Group, Tool: row.sess.Tool, Status: row.sess.Status,
-				Archived: row.sess.Archived, AfterTurn: row.sess.AfterTurn, IsShell: m.isShell(row.sess.Tool),
-				IsBrowser: m.isBrowser(row.sess.Tool),
+				Archived: row.sess.Archived, AfterTurn: row.sess.AfterTurn, IsTool: m.isTool(row.sess.Tool),
+				IsShell: m.isShell(row.sess.Tool), IsBrowser: m.isBrowser(row.sess.Tool),
 			}
 		}
 	}

@@ -30,7 +30,7 @@ func TestContentMarksPreserveQuotedTextForEveryTool(t *testing.T) {
 			panes[name] = true
 		}
 		for toolName, isShell := range panes {
-			sess := Session{ID: "quoted", Tool: toolName, Status: "idle", IsShell: isShell, Prompt: text, PaneLine: text}
+			sess := Session{ID: "quoted", Tool: toolName, Status: "idle", IsTool: isShell, IsShell: isShell, Prompt: text, PaneLine: text}
 
 			got := ansi.Strip(r.replyCell(sess, r.palette.subtle, 200))
 			if got != reply+text {

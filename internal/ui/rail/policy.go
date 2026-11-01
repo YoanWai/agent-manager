@@ -124,7 +124,7 @@ func (m Model) ListedSessionIDs() []string {
 func (m Model) ListedAgentIDs() []string {
 	var ids []string
 	for _, session := range m.listed("", m.snapshot.Sessions) {
-		if session.Agent() {
+		if !session.IsTool {
 			ids = append(ids, session.ID)
 		}
 	}
