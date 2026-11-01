@@ -458,8 +458,12 @@ func (m *Model) spawnBaseLabel(dir, group string) string {
 func (s effectServices) launchServices() uilaunch.Services {
 	return uilaunch.Services{
 		Lifecycle: s.lifecycle, Store: s.store, Config: s.cfg, Git: s.gitDrv,
-		BrowserReady: func() error { return sessioncmd.CheckBrowserPrerequisites(s.driver, termbrowser.Installed) },
+		BrowserReady: s.browserReady,
 	}
+}
+
+func (s effectServices) browserReady() error {
+	return sessioncmd.CheckBrowserPrerequisites(s.driver, termbrowser.Installed)
 }
 
 // applySpawn applies a finished spawn: a committed row joins the workspace,

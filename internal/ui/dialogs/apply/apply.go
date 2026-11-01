@@ -18,14 +18,16 @@ import (
 
 // Sources is what a worker reaches off the update path: the store it writes,
 // the repository the worktree branch lives in, the loaded configuration, the
-// panes it relabels, and the launch runway a fork needs.
+// panes it relabels, the launch runway a fork needs, and the check a row
+// retyped into the browser must pass.
 type Sources struct {
-	Store     *store.Store
-	Git       *git.Driver
-	Config    config.Config
-	Panes     Labels
-	Lifecycle Launcher
-	Runner    KeyTyper
+	Store        *store.Store
+	Git          *git.Driver
+	Config       config.Config
+	Panes        Labels
+	Lifecycle    Launcher
+	Runner       KeyTyper
+	BrowserReady func() error
 }
 
 // Preflight is the read-only filesystem probe the workers run: a rename

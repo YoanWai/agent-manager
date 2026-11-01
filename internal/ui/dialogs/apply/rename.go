@@ -22,22 +22,23 @@ const (
 // running model: the target, the requested values and a copy of the session
 // row that pins which creation, launch and socket the rename was meant for.
 type Request struct {
-	Kind            Kind
-	OldGroup        string
-	NewGroup        string
-	Dir             string
-	RawDir          string
-	DirFallbacks    []string
-	DraftDir        string
-	Worktree        string
-	Base            string
-	Env             string
-	SessID          string
-	Sess            store.Session
-	Name            string
-	Tool            string
-	CheckNoChildren bool
-	Gen             uint64
+	Kind              Kind
+	OldGroup          string
+	NewGroup          string
+	Dir               string
+	RawDir            string
+	DirFallbacks      []string
+	DraftDir          string
+	Worktree          string
+	Base              string
+	Env               string
+	SessID            string
+	Sess              store.Session
+	Name              string
+	Tool              string
+	CheckNoChildren   bool
+	CheckBrowserReady bool
+	Gen               uint64
 }
 
 func (r Request) Copy() Request {
@@ -112,6 +113,11 @@ func Rename(s Sources, preflight Preflight, request Request) (Outcome, error) {
 		}
 		if len(children) > 0 {
 			return result, errors.New("move its terminals first")
+		}
+	}
+	if request.CheckBrowserReady {
+		if err := s.BrowserReady(); err != nil {
+			return result, err
 		}
 	}
 	// A rename queued behind another on the same row must start from the

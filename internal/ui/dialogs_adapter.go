@@ -331,6 +331,7 @@ func (m *Model) queueRename(request uiapply.RenameEffect) tea.Cmd {
 	toolChanged := request.Tool != "" && request.Tool != prevTool
 	m.gens.dialog++
 	request.CheckNoChildren = toolChanged && m.isTool(request.Tool)
+	request.CheckBrowserReady = toolChanged && m.isBrowser(request.Tool)
 	request.Gen = m.gens.dialog
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
@@ -479,12 +480,13 @@ func (m *Model) handleGroupBaseAsk(msg uidialogs.GroupBaseAskMsg) tea.Cmd {
 // path, captured when their request was queued.
 func (s effectServices) dialogSources() uiapply.Sources {
 	return uiapply.Sources{
-		Store:     s.store,
-		Git:       s.gitDrv,
-		Config:    s.cfg,
-		Panes:     s.driver,
-		Lifecycle: s.lifecycle,
-		Runner:    s.runner,
+		Store:        s.store,
+		Git:          s.gitDrv,
+		Config:       s.cfg,
+		Panes:        s.driver,
+		Lifecycle:    s.lifecycle,
+		Runner:       s.runner,
+		BrowserReady: s.browserReady,
 	}
 }
 
