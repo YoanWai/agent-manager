@@ -1,0 +1,14 @@
+{
+  "self": {"tab": "am_8d460135:@259", "pane": "%259"},
+  "browsers": [
+    {"key": "96030-1", "pid": 96030, "cdpPort": 65320, "socket": "/tmp/h/.local/state/terminal-browser-47bf641d/instances/96030-1.sock", "tty": "/dev/ttys056",
+     "pane": {"tab": "am_b1b2b3b4:@1", "pane": "%1"}, "splitDir": null, "parentTty": null, "inCurrentTab": false,
+     "viewport": {"width": 3200, "height": 1600},
+     "tabs": [{"id": 1, "url": "https://example.org/", "title": "", "active": true, "targetId": "94EA33CC686ECABD56B4A68E922E5F5B", "timeOrigin": 1793442132845.4, "agentControlled": false}]},
+    {"key": "96030-2", "pid": 96030, "cdpPort": 65320, "socket": "/tmp/h/.local/state/terminal-browser-47bf641d/instances/96030-2.sock", "tty": "/dev/ttys057",
+     "pane": {"tab": "am_a1a2a3a4:@0", "pane": "%0"}, "splitDir": null, "parentTty": null, "inCurrentTab": false,
+     "viewport": {"width": 3200, "height": 1600},
+     "tabs": [{"id": 1, "url": "https://example.com/", "title": "Example Domain", "active": false, "targetId": "AAA", "timeOrigin": 1, "agentControlled": false},
+              {"id": 2, "url": "https://news.ycombinator.com/", "title": "Hacker News", "active": true, "targetId": "BBB", "timeOrigin": 2, "agentControlled": true}]}
+  ]
+}
