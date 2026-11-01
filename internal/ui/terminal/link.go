@@ -135,7 +135,8 @@ func localPath(goos string, link *url.URL) (string, bool) {
 }
 
 // revealCommand shows file in the file manager. explorer reads its switches
-// from commas in its one argument, which localPath keeps out of file. xdg-open
+// from commas, which localPath keeps out of file, and takes the path as its
+// own argument so Go quotes a path with spaces the way explorer expects. xdg-open
 // has no reveal, so it opens the folder, and only one that is a folder here,
 // since xdg-open runs whatever else it is handed.
 func revealCommand(goos, file string) (*exec.Cmd, error) {
@@ -143,7 +144,7 @@ func revealCommand(goos, file string) (*exec.Cmd, error) {
 	case "darwin":
 		return exec.Command("open", "-R", file), nil
 	case "windows":
-		return exec.Command("explorer", "/select,"+file), nil
+		return exec.Command("explorer", "/select,", file), nil
 	default:
 		folder := path.Dir(file)
 		if info, err := os.Stat(folder); err != nil || !info.IsDir() {

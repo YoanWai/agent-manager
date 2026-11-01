@@ -154,7 +154,8 @@ func TestOpenerCommandRevealsFiles(t *testing.T) {
 	cases := []run{
 		{"darwin", "file:///tmp/notes.md", []string{"open", "-R", "/tmp/notes.md"}},
 		{"darwin", "file:///Applications/Tool.app", []string{"open", "-R", "/Applications/Tool.app"}},
-		{"windows", "file:///C:/Temp/notes.md", []string{"explorer", `/select,C:\Temp\notes.md`}},
+		{"windows", "file:///C:/Temp/notes.md", []string{"explorer", "/select,", `C:\Temp\notes.md`}},
+		{"windows", "file:///C:/My%20Docs/notes.md", []string{"explorer", "/select,", `C:\My Docs\notes.md`}},
 		{"darwin", "https://example.com/a", []string{"open", "https://example.com/a"}},
 		{"linux", "https://example.com/a", []string{"xdg-open", "https://example.com/a"}},
 		{"windows", "https://example.com/a", []string{"rundll32", "url.dll,FileProtocolHandler", "https://example.com/a"}},
