@@ -44,6 +44,7 @@ type paneState struct {
 type displayedFrame struct {
 	box       Box
 	lines     []string
+	links     [][]paneLink
 	rowOffset int
 }
 

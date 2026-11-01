@@ -217,17 +217,17 @@ func TestLinkClicksUseDisplayedText(t *testing.T) {
 
 // The pointer rests on a link only while the cell under it still holds one,
 // so new pane output under a still mouse is read again.
-func TestOverLinkFollowsThePointer(t *testing.T) {
+func TestHoveredLinkFollowsThePointer(t *testing.T) {
 	model := mouseModel(t, []string{"read https://example.com/docs now"}, 80, PaneUpdate{})
-	if model.OverLink() {
+	if model.HoveredLink() != "" {
 		t.Fatal("over a link before the mouse ever moved")
 	}
 	model.TrackPointer(testOriginX+8, testOriginY)
-	if !model.OverLink() {
+	if model.HoveredLink() == "" {
 		t.Fatal("hovering the URL is not over a link")
 	}
 	model.TrackPointer(testOriginX+1, testOriginY)
-	if model.OverLink() {
+	if model.HoveredLink() != "" {
 		t.Fatal("hovering plain text is over a link")
 	}
 
@@ -236,14 +236,14 @@ func TestOverLinkFollowsThePointer(t *testing.T) {
 		Preview: "no links left here\n", Width: 80, Height: 1,
 		OriginX: testOriginX, OriginY: testOriginY, CaretRow: -1,
 	})
-	if model.OverLink() {
+	if model.HoveredLink() != "" {
 		t.Fatal("still over a link after the pane redrew without one")
 	}
 
 	model = mouseModel(t, []string{"read https://example.com/docs now"}, 80, PaneUpdate{})
 	model.TrackPointer(testOriginX+8, testOriginY)
 	model.Enter(EnterContext{SessionID: "s1"})
-	if model.OverLink() {
+	if model.HoveredLink() != "" {
 		t.Fatal("entering focus kept a pointer position from before")
 	}
 }

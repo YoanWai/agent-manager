@@ -83,6 +83,9 @@ type layoutState struct {
 	card cardRect
 	// keyHits are the key pairs this frame painted, for clicks.
 	keyHits keyHits
+	// previewLinks are the links of the pane preview this frame painted
+	// beside the list, for clicks.
+	previewLinks uifocus.PaneLinks
 	// reviewFilesTop is the frame row Review's file list first painted on,
 	// under the commit rail when the commit scope shows one, for clicks.
 	reviewFilesTop int
