@@ -15,6 +15,7 @@
               │   shift+↓ / J      reorder the row down among its siblings                               │
               │   n                new session                                                           │
               │   t                new terminal tab: a shell under the selected agent, or in the group   │
+              │   b                new browser tab: a browser under the selected agent or in the group   │
               │   g                new group (name, parent, default path, worktree)                      │
               │   C                new SSH connection: another machine's sessions in this list           │
               │   /                search the list by name                                               │
@@ -22,7 +23,6 @@
               │   T                archived view                                                         │
               │   e                hide / show empty groups                                              │
               │   F                fold / unfold every group (active view)                               │
-              │   |                resize the split (←→ or hl, or drag; ↵ commits, esc cancels)          │
               │   ↓ more below…                                                                          │
               │                                                                                          │
               ├──────────────────────────────────────────────────────────────────────────────────────────┤

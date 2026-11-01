@@ -207,7 +207,7 @@ func (r renderer) entryHeight(row treeRow) int {
 	if row.kind != SessionRow || !r.ctx.ComfortableRows {
 		return 1
 	}
-	if row.sess.IsShell {
+	if !row.sess.Agent() {
 		return 2
 	}
 	return 3
@@ -431,8 +431,13 @@ func (p palette) sessionGlyph(g presentation.GlyphSet, session Session, startupP
 		return lipgloss.NewStyle().Foreground(p.statusColor(session.Status)).
 			Render(g.StartupFrame(startupPhase))
 	}
-	if session.IsShell && session.Status != "dead" && session.Status != "errored" {
-		return p.subtle.Render(g.ShellGlyph)
+	if session.Status != "dead" && session.Status != "errored" {
+		switch {
+		case session.IsShell:
+			return p.subtle.Render(g.ShellGlyph)
+		case session.IsBrowser:
+			return p.subtle.Render(g.BrowserGlyph)
+		}
 	}
 	return lipgloss.NewStyle().Foreground(p.statusColor(session.Status)).Render(g.StatusGlyph(session.Status))
 }
@@ -533,7 +538,7 @@ func (r renderer) tallRow(session Session, head, meta, indent string, selected b
 	top := rowColumns(head, meta, width-railGutter)
 	room := width - railGutter - ansi.StringWidth(indent) - 2
 	lines := []string{paint(top, width, background)}
-	if !session.IsShell {
+	if session.Agent() {
 		promptLine := indent + quiet.Render("-")
 		if prompt := oneLine(session.Prompt); prompt != "" && room >= 8 {
 			promptLine = indent + lipgloss.NewStyle().Foreground(lipgloss.Color(r.ctx.Theme.Accent)).Render(r.glyphs().PromptGlyph+" ") +
@@ -589,7 +594,7 @@ func (r renderer) renderGroup(row treeRow, selected bool, width int, pad, guides
 func (r renderer) groupStatusGlyphs(host, group string, whole bool) string {
 	counts := map[string]int{}
 	for _, session := range r.model.listed(host, r.model.sessionsOf(host)) {
-		if !session.IsShell && (whole || InGroupSubtree(session.Group, group)) {
+		if session.Agent() && (whole || InGroupSubtree(session.Group, group)) {
 			counts[session.Status]++
 		}
 	}

@@ -75,9 +75,9 @@ func (m *Model) openMove() {
 	} else {
 		move = uidialogs.MoveSession(row.sess.ID)
 		picker = m.groupPickerIncluding(row.sess.Group, m.rail.ShowArchived())
-		if m.isShell(row.sess.Tool) {
-			// An archived shell keeps the archived agent it ran under as a
-			// target, so enter leaves it where it is.
+		if m.isTool(row.sess.Tool) {
+			// An archived shell or browser keeps the archived agent it ran
+			// under as a target, so enter leaves it where it is.
 			parentID := ""
 			if row.sess.Archived {
 				parentID = row.sess.ParentID
@@ -90,12 +90,12 @@ func (m *Model) openMove() {
 	m.clearErr()
 }
 
-// agentMoveTargets are the running agents a shell may be nested under, plus
-// the archived parent an archived shell keeps.
+// agentMoveTargets are the running agents a shell or a browser may be nested
+// under, plus the archived parent an archived one keeps.
 func (m *Model) agentMoveTargets(parentID string) []uidialogs.Agent {
 	var agents []uidialogs.Agent
 	for _, sess := range m.workspace.sessions {
-		if sess.Archived && sess.ID != parentID || m.isShell(sess.Tool) {
+		if sess.Archived && sess.ID != parentID || m.isTool(sess.Tool) {
 			continue
 		}
 		agents = append(agents, uidialogs.Agent{ID: sess.ID, Group: sess.Group, Name: sess.Name})
@@ -330,7 +330,7 @@ func (m *Model) queueRename(request uiapply.RenameEffect) tea.Cmd {
 	}
 	toolChanged := request.Tool != "" && request.Tool != prevTool
 	m.gens.dialog++
-	request.CheckNoChildren = toolChanged && m.isShell(request.Tool)
+	request.CheckNoChildren = toolChanged && m.isTool(request.Tool)
 	request.Gen = m.gens.dialog
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()

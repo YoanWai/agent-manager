@@ -17,7 +17,7 @@ import (
 )
 
 // Kind says which surface asked for the spawn: the form, the quick bar, or
-// the terminal key, which opens a shell with no prompt of its own.
+// the terminal and browser keys, which open a tab with no prompt of its own.
 type Kind uint8
 
 const (
@@ -25,7 +25,12 @@ const (
 	Quick
 	Shell
 	Import
+	Browser
 )
+
+// OpensATab reports whether the terminal or browser key asked for the spawn:
+// no prompt, the selected row's directory, and the tool's own command.
+func (k Kind) OpensATab() bool { return k == Shell || k == Browser }
 
 // Request captures everything a spawn needs at dispatch time, so the worker
 // never reads the model: the tool, the captured launch inputs, the pane size
@@ -78,10 +83,11 @@ type Result struct {
 // creates the row and the pane, and the store that keeps the group and the
 // coordination setting.
 type Services struct {
-	Lifecycle *sessioncmd.Lifecycle
-	Store     *store.Store
-	Config    config.Config
-	Git       *git.Driver
+	Lifecycle    *sessioncmd.Lifecycle
+	Store        *store.Store
+	Config       config.Config
+	Git          *git.Driver
+	BrowserReady func() error
 }
 
 func Run(services Services, request Request) (Result, error) {
@@ -89,11 +95,16 @@ func Run(services Services, request Request) (Result, error) {
 	if services.Lifecycle == nil {
 		return result, errors.New("spawn requires the lifecycle service")
 	}
+	if request.Kind == Browser {
+		if err := services.BrowserReady(); err != nil {
+			return result, err
+		}
+	}
 	tool, _ := services.Config.Pane(request.ToolName)
 	tool = tool.WithChoice(request.Choice)
 	dir := request.Dir
 	if dir == "" {
-		if request.Kind == Shell {
+		if request.Kind.OpensATab() {
 			reader := request.TerminalRead
 			if reader == nil {
 				reader = SystemTerminalDirectoryReader{Dirs: SystemDirectoryPreflight{Git: services.Git}}
@@ -127,7 +138,7 @@ func Run(services Services, request Request) (Result, error) {
 	result.Dir = dir
 	result.Worktree = request.Worktree
 	plan := launch.Plan{}
-	if request.Kind == Shell {
+	if request.Kind.OpensATab() {
 		plan.Command = tool.Command
 	} else if request.Plan != nil {
 		plan = *request.Plan

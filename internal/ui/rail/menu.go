@@ -1,6 +1,8 @@
 package rail
 
 import (
+	"slices"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
@@ -35,6 +37,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		{label: "New session", action: NewSession},
 		{label: "New terminal", action: NewTerminal},
 	}
+	browser := menuItem{label: "New browser", action: NewBrowser}
 	editor := menuItem{label: "Open in editor", action: OpenEditor}
 	manage := []menuItem{editor, {label: "Rename", action: RenameAction}, {label: "Move to group", action: MoveToGroup}}
 	revive := menuItem{label: "Revive", action: Revive}
@@ -42,7 +45,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 	remove := menuItem{label: "Delete", action: Delete, danger: true}
 	connection := menuItem{label: "New connection", action: NewConnection}
 	if row.isRoot() {
-		rootCreate := create
+		rootCreate := append(slices.Clone(create), browser)
 		var end []menuItem
 		if m.showArchived {
 			rootCreate = []menuItem{{label: "New session", action: NewSession}}
@@ -76,7 +79,7 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		if live {
 			end = append(end, kill)
 		}
-		return menuSections(create, manage, append(end, remove))
+		return menuSections(append(create, browser), manage, append(end, remove))
 	}
 	var keep []menuItem
 	if row.sess.AfterTurn != "" {
@@ -86,13 +89,14 @@ func (m Model) rowMenuItems(row treeRow) []menuItem {
 		return menuSections(manage, keep, []menuItem{revive, m.archiveMenuItem(), remove})
 	}
 	var agent []menuItem
-	if !row.sess.IsShell {
+	if row.sess.Agent() {
 		agent = []menuItem{
 			{label: "Quick prompt mode", action: Prompt},
 			{label: "Copy last reply", action: CopyReply},
 			{label: "Review changes", action: OpenReview},
 			{label: "Fork", action: Fork},
 			{label: "New terminal", action: NewTerminal},
+			browser,
 		}
 	}
 	return menuSections(
@@ -259,6 +263,8 @@ func actionKind(action string) ActionKind {
 		return CopyReply
 	case keybind.Terminal:
 		return NewTerminal
+	case keybind.Browser:
+		return NewBrowser
 	case keybind.Editor:
 		return OpenEditor
 	case keybind.Rename:

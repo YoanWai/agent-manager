@@ -341,6 +341,9 @@ func (m *Model) focusFooter() uiframe.Focus {
 	}
 	if sess, selected := m.selected(); selected {
 		focus.PagesScrollback = m.focus.pane.PagesScrollback(sess.ID)
+		if m.isBrowser(sess.Tool) {
+			focus.PagesScrollback, focus.Mouse, focus.Keys.SavedPrompt = false, false, ""
+		}
 	}
 	// A bare surface keeps its own keys and never names the saved prompts key
 	// the pane below answers.

@@ -396,6 +396,22 @@ func TestCopyReplyIsBoundToY(t *testing.T) {
 	}
 }
 
+func TestBOpensABrowserAndNothingElse(t *testing.T) {
+	list := DefaultList()
+	action, ok := list.ActionFor("b")
+	if !ok || action != Browser {
+		t.Fatalf("b = %q ok=%v, want %q", action, ok, Browser)
+	}
+	for _, other := range list.Actions() {
+		if other.Name != Browser && list.Binding(other.Name).Has("b") {
+			t.Errorf("%s also claims b", other.Name)
+		}
+	}
+	if got, _ := list.ActionFor("t"); got != Terminal {
+		t.Errorf("t = %q, want it to keep opening terminals", got)
+	}
+}
+
 // tmux_prefix starts off and takes at most the two keys tmux has a prefix for.
 func TestTmuxPrefixIsOffUntilWrittenAndTakesTwoKeysAtMost(t *testing.T) {
 	if got := DefaultSession().Binding(TmuxPrefix).Label(); got != "" {

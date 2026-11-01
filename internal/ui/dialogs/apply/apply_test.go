@@ -65,13 +65,14 @@ func TestValidateForkSourceRefusesWhatTheToolCannotDo(t *testing.T) {
 func TestForkSourceRefusesAToolPaneAndAnUnknownName(t *testing.T) {
 	cfg := config.Config{
 		CLIs:  map[string]config.CLI{"agent": {ForkCommand: "agent {id}"}},
-		Tools: map[string]config.Tool{"terminal": {}},
+		Tools: map[string]config.Tool{"terminal": {}, "browser": {}},
 	}
 	for name, tc := range map[string]struct {
 		tool string
 		want string
 	}{
-		"a tool pane":    {"terminal", "is a shell"},
+		"a terminal":     {"terminal", "is a shell"},
+		"a browser":      {"browser", "is a browser"},
 		"unknown name":   {"removed", "no longer configured"},
 		"a forkable CLI": {"agent", ""},
 	} {

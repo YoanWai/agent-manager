@@ -45,7 +45,7 @@ func (r previewCaptures) Accepts(gen uint64) bool { return r.focus.pane.AcceptPr
 // session with a control client already pushes every frame, and review and
 // the modal screens have no preview to feed.
 func (r previewCaptures) CaptureWanted(sess store.Session) bool {
-	if !r.previewFeeds() {
+	if !r.previewFeeds() || r.isBrowser(sess.Tool) {
 		return false
 	}
 	return !r.focus.runtime.Serving(sess.ID)
@@ -198,6 +198,9 @@ func (m *Model) startupLoader(width, height int) []string {
 // background it drew itself, and insetting its output would put a margin
 // around a terminal that has its own.
 func (m *Model) previewLines(width, height int, gutter string, frameOrigin ...int) []contentLine {
+	if sess, ok := m.selected(); ok && m.isBrowser(sess.Tool) {
+		return m.browserCardLines(sess, width, height, gutter)
+	}
 	loader := m.startupLoader(width, height)
 	loaderRow := func(row int) string {
 		if row < len(loader) {

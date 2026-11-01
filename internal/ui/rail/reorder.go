@@ -312,10 +312,10 @@ func (m Model) resolveSessionDrop(session Session, target treeRow) (dropTarget, 
 	if other.ID == session.ParentID || other.ParentID == session.ID {
 		return dropTarget{}, false
 	}
-	if session.IsShell && !other.IsShell && other.ParentID == "" {
+	if !session.Agent() && other.Agent() && other.ParentID == "" {
 		return dropTarget{kind: dropUnder, key: target.key(), group: other.Group, id: other.ID, label: "under " + sessionName(other)}, true
 	}
-	if !session.IsShell && other.ParentID != "" {
+	if session.Agent() && other.ParentID != "" {
 		parent, ok := m.session(other.ParentID)
 		if !ok {
 			return dropTarget{}, false

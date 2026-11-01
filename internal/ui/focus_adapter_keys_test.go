@@ -594,6 +594,16 @@ func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
 				}
 				m.focus.pane.Enter(uifocus.EnterContext{SessionID: sessID, KeepPaneFacts: true})
 				hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn scroll")
+				if tool == config.BrowserTool {
+					// A browser pane is a page under the card, so it neither
+					// pages nor takes the key.
+					_, cmd := m.handleKey(tc.key)
+					if hint || cmd != nil || m.focus.pane.Status().ScrollOffset > 0 || focusInputQueued(m) {
+						t.Fatalf("%s: footer hint=%v, PgUp capture=%v, offset=%d, forwarded=%v; want none",
+							tool, hint, cmd != nil, m.focus.pane.Status().ScrollOffset, focusInputQueued(m))
+					}
+					continue
+				}
 				if hint != tc.wantHint {
 					t.Fatalf("%s: paging footer visible=%v, want %v", tool, hint, tc.wantHint)
 				}

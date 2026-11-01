@@ -34,6 +34,12 @@ func narrowShellTier() legendSection {
 	}}
 }
 
+func narrowBrowserTier() legendSection {
+	tier := narrowShellTier()
+	tier.Title = "Browser"
+	return tier
+}
+
 func narrowGroupTier() legendSection {
 	return legendSection{
 		Title: "Group",
@@ -61,7 +67,7 @@ func narrowRemoteShellTier() legendSection {
 
 func narrowViewTier(alert string) legendSection {
 	view := legendSection{Title: "View", Quiet: true, Pairs: [][2]string{
-		{"↑/k ↓/j", "navigate"}, {"n", "new"}, {"t", "terminal"}, {"g", "group"}, {"/", "search"}, {"T", "archived"},
+		{"↑/k ↓/j", "navigate"}, {"n", "new"}, {"t", "terminal"}, {"b", "browser"}, {"g", "group"}, {"/", "search"}, {"T", "archived"},
 		{"w", "attention"}, {"e", "hide empty"}, {"?", "keys"}, {"q", "quit"}, {"C", "connection"},
 		{"⇧↑/K/⇧↓/J", "reorder"}, {"F", "fold all"}, {"|", "resize"}, {"s", "settings"},
 	}}
@@ -75,7 +81,7 @@ func narrowViewTier(alert string) legendSection {
 // over the View tier with no alert, the unread alert and the pending one.
 func narrowFooters() [][]legendSection {
 	var footers [][]legendSection
-	for _, row := range []legendSection{narrowSessionTier(), narrowShellTier(), narrowGroupTier(), narrowConnectionTier(), narrowRemoteShellTier(), {}} {
+	for _, row := range []legendSection{narrowSessionTier(), narrowShellTier(), narrowBrowserTier(), narrowGroupTier(), narrowConnectionTier(), narrowRemoteShellTier(), {}} {
 		for _, alert := range []string{"", "unread", "checking messages…"} {
 			footers = append(footers, []legendSection{row, narrowViewTier(alert)})
 		}
@@ -395,7 +401,7 @@ func TestNarrowQuickAndReviewFootersKeepThreeRows(t *testing.T) {
 
 // A bare key presses what its worded part pressed.
 func TestBareKeysPressTheirPartsKey(t *testing.T) {
-	sections := append(narrowTransientTiers(), narrowSessionTier(), narrowShellTier(), narrowGroupTier(), narrowConnectionTier(), narrowRemoteShellTier(), narrowViewTier("unread"))
+	sections := append(narrowTransientTiers(), narrowSessionTier(), narrowShellTier(), narrowBrowserTier(), narrowGroupTier(), narrowConnectionTier(), narrowRemoteShellTier(), narrowViewTier("unread"))
 	for _, glyph := range narrowGlyphModes {
 		for _, section := range sections {
 			for _, part := range section.Parts(LiveCap(glyph)) {

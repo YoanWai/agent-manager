@@ -5,7 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/termbrowser"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
@@ -454,7 +456,10 @@ func (m *Model) spawnBaseLabel(dir, group string) string {
 
 // launchServices is the effect services as a spawn reaches them.
 func (s effectServices) launchServices() uilaunch.Services {
-	return uilaunch.Services{Lifecycle: s.lifecycle, Store: s.store, Config: s.cfg, Git: s.gitDrv}
+	return uilaunch.Services{
+		Lifecycle: s.lifecycle, Store: s.store, Config: s.cfg, Git: s.gitDrv,
+		BrowserReady: func() error { return sessioncmd.CheckBrowserPrerequisites(s.driver, termbrowser.Installed) },
+	}
 }
 
 // applySpawn applies a finished spawn: a committed row joins the workspace,
@@ -473,10 +478,12 @@ func (m *Model) applySpawn(request uilaunch.Request, result uilaunch.Result, err
 	request.Plan = result.Plan
 	request.Dir = result.Dir
 	request.Worktree = result.Worktree
-	if request.Kind == uilaunch.Shell {
+	if request.Kind.OpensATab() {
 		m.ledger.lifecycle.TerminalKeyAt = time.Now()
-		m.reportErr(err.Error())
-		return nil
+		if _, missing := uiinstall.FixFor(err); !missing {
+			m.reportErr(err.Error())
+			return nil
+		}
 	}
 	// Nothing was committed. A spawn the hint dialog refuses takes the
 	// dialog's place, the same way the synchronous submit did; a dialog the
@@ -511,7 +518,7 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 	if request.AutoNamed {
 		m.ledger.lifecycle.AwaitRename(sess.ID, sess.Name, request.Prompt)
 	}
-	if request.Kind != uilaunch.Shell && request.Kind != uilaunch.Import {
+	if !request.Kind.OpensATab() && request.Kind != uilaunch.Import {
 		m.ledger.spawner.RememberSpawn(request.ToolName, request.PickWorktree)
 		spawn.RememberModel(m.spawnHost(), request.ToolName, spawn.Pick(request.Choice))
 	}
@@ -538,10 +545,10 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 	if reveal {
 		m.queueRail(m.rail.RevealGroup(sess.Group).Mutations, 0, true)
 	}
-	if reveal || request.Kind == uilaunch.Shell {
+	if reveal || request.Kind.OpensATab() {
 		m.focusSession(sess.ID)
 	}
-	if request.Kind == uilaunch.Shell {
+	if request.Kind.OpensATab() {
 		m.ledger.lifecycle.TerminalKeyAt = time.Now()
 	}
 }

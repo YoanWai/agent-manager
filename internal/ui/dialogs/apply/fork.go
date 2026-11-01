@@ -199,7 +199,11 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 // conversation to fork, so it is refused before any CLI field is named.
 func ForkSource(cfg config.Config, source store.Session) (config.CLI, error) {
 	if cfg.IsTool(source.Tool) {
-		return config.CLI{}, fmt.Errorf("%s is a shell, not an agent - there is no conversation to fork", source.Name)
+		kind := "shell"
+		if source.Tool == config.BrowserTool {
+			kind = "browser"
+		}
+		return config.CLI{}, fmt.Errorf("%s is a %s, not an agent - there is no conversation to fork", source.Name, kind)
 	}
 	tool, ok := cfg.CLIs[source.Tool]
 	if !ok {

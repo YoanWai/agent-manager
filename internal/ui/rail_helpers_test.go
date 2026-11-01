@@ -199,7 +199,7 @@ func (m *Model) renderTreeRow(entry treeRow, selected bool, width, _ int, _ stri
 			Acked: session.Acked, CreatedAt: session.CreatedAt, LastStatusAt: session.LastStatusAt,
 			LaunchAt: session.LaunchTime(), AgentSessionID: session.AgentSessionID, ParentID: session.ParentID,
 			Prompt: prompt, PaneLine: m.workspace.paneLines[session.ID], PanePrompt: m.workspace.panePrompts[session.ID],
-			Queued: m.workspace.queuedMessages[session.ID], IsShell: m.isShell(session.Tool),
+			Queued: m.workspace.queuedMessages[session.ID], IsShell: m.isShell(session.Tool), IsBrowser: m.isBrowser(session.Tool),
 			Elsewhere: m.elsewhereNote(session) != "",
 		}}
 		if session.Group != "" {
@@ -239,7 +239,7 @@ func (m *Model) entryHeight(entry treeRow) int {
 	if entry.isGroup || !m.prefs.comfortableRows {
 		return 1
 	}
-	if m.isShell(entry.sess.Tool) {
+	if m.isTool(entry.sess.Tool) {
 		return 2
 	}
 	return 3

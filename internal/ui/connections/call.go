@@ -56,6 +56,7 @@ var Refusals = map[uirail.ActionKind]string{
 	uirail.Revive:       "revive",
 	uirail.Archive:      "archive",
 	uirail.Restore:      "restore",
+	uirail.NewBrowser:   "browser",
 }
 
 var confirm = map[Op]struct {

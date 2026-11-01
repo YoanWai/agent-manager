@@ -53,6 +53,7 @@ func listHelpRows(list keybind.Table, arrowStep bool, glyphs Glyphs) [][2]string
 	h.action("reorder the row down among its siblings", keybind.ReorderDown)
 	h.action("new session", keybind.NewSession)
 	h.action("new terminal tab: a shell under the selected agent, or in the group", keybind.Terminal)
+	h.action("new browser tab: a browser under the selected agent or in the group", keybind.Browser)
 	h.action("new group (name, parent, default path, worktree)", keybind.NewGroup)
 	h.action("new SSH connection: another machine's sessions in this list", keybind.NewConnection)
 	h.action("search the list by name", keybind.Search)

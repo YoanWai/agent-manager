@@ -209,6 +209,10 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 				DefaultStatus: status.Idle,
 				InputPrefix:   `(?m)^\s*(?:(?:\S+\s+){0,3}[❯>$#›»→%➜]|PS [^\n>]*>)\s`,
 			},
+			"browser": {
+				Command:       "terminal-browser open --no-merge",
+				DefaultStatus: status.Idle,
+			},
 		},
 	}
 	// Windows has no cat or sh: the tools run the test binary's stand-ins.

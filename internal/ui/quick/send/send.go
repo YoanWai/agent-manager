@@ -76,7 +76,7 @@ func RunSend(services Services, request SendRequest) (SendResult, error) {
 		return result, errors.New("quick-send target changed its identity, CLI, launch, or socket before the accepted prompt ran")
 	}
 	if services.Config.IsTool(current.Tool) {
-		return result, errors.New(uisession.ShellPromptHint(current.Name))
+		return result, errors.New(uisession.NonAgentPromptHint(current.Name, current.Tool == config.BrowserTool))
 	}
 	exists, err := services.SessionExists(services.Driver, current.ID)
 	if err != nil {

@@ -243,6 +243,7 @@ const (
 	StepOut     = "step_out"
 	NewSession  = "new_session"
 	Terminal    = "terminal"
+	Browser     = "browser"
 	NewGroup    = "new_group"
 	Fork        = "fork"
 	Prompt      = "prompt"
@@ -296,6 +297,7 @@ var listActions = []Action{
 	{ReorderDown, "move the row down among its siblings", keys("shift+down", "J")},
 	{NewSession, "new session", keys("n")},
 	{Terminal, "new terminal tab", keys("t")},
+	{Browser, "new browser tab", keys("b")},
 	{NewGroup, "new group", keys("g")},
 	{NewConnection, "new SSH connection", keys("C")},
 	{Fork, "fork the session", keys("f")},

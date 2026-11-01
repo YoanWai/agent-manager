@@ -210,8 +210,10 @@ func TestGlyphModesCoverEveryBuiltinTool(t *testing.T) {
 						want := g.StatusGlyph(state)
 						if state == status.Starting {
 							want = g.StartupFrames[phase%len(g.StartupFrames)]
-						} else if cfg.IsTool(toolName) && state != status.Errored && state != status.Dead {
+						} else if toolName == config.TerminalTool && state != status.Errored && state != status.Dead {
 							want = g.ShellGlyph
+						} else if toolName == config.BrowserTool && state != status.Errored && state != status.Dead {
+							want = g.BrowserGlyph
 						}
 						if got := ansi.Strip(m.sessionGlyph(sess)); got != want {
 							t.Errorf("%s %s phase %d: got %q, want %q", toolName, state, phase, got, want)
