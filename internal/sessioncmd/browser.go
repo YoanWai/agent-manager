@@ -152,7 +152,7 @@ func validBrowserURL(raw string) error {
 		return fmt.Errorf("url %q does not parse: %w", raw, err)
 	}
 	switch {
-	case (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "":
+	case (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Hostname() != "":
 		return nil
 	case parsed.Scheme == "file" && strings.HasPrefix(parsed.Path, "/"):
 		return nil

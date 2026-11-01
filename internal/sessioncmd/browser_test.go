@@ -154,6 +154,8 @@ func TestValidBrowserURL(t *testing.T) {
 		{"http://x", true},
 		{"https://x/y", true},
 		{"file:///tmp/a.html", true},
+		{"http://localhost:8080", true},
+		{"http://:8080", false},
 		{"javascript:alert(1)", false},
 		{"not a url", false},
 		{"ftp://x", false},
