@@ -164,7 +164,7 @@ def settings_blocked(sandbox, binary):
     seed_store(sandbox)
     key(sandbox, 's')
     frame(sandbox, 'settings-initial-open', 'Settings')
-    # default tool, theme, theme follows OS, background and symbols sit above density.
+    # default CLI, theme, theme follows OS, background and symbols sit above density.
     for _ in range(5):
         key(sandbox, 'Down')
     key(sandbox, 'Right')

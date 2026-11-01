@@ -33,7 +33,7 @@ func clearNotice() Notice            { return Notice{Changed: true} }
 func errorNotice(text string) Notice { return Notice{Changed: true, Text: text} }
 
 // Context is what a key reads from the root: the tools, the cached
-// hidden CLIs and default tool, and the live key tables.
+// hidden CLIs and default CLI, and the live key tables.
 type Context struct {
 	Tools       Tools
 	Hidden      map[string]bool

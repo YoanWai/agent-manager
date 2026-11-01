@@ -29,7 +29,7 @@ func (s State) KnownHidden(cfg config.Config) map[string]bool {
 }
 
 // ToolSelection is the enabled agent CLIs and where the preferred one sits;
-// an unset preference falls back to the cached default tool.
+// an unset preference falls back to the cached default CLI.
 func (s State) ToolSelection(cfg config.Config, hidden map[string]bool, preferred string) ([]string, int) {
 	names := cfg.EnabledCLIs(hidden)
 	if preferred == "" {

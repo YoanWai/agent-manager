@@ -46,7 +46,7 @@ func reviewScopeLabel(name string) string {
 
 // table is every key Settings keeps, in the order settings list prints them.
 var table = []Setting{
-	{Spec: Spec{Key: DefaultToolSetting, Row: "default tool"}, Field: FieldTool},
+	{Spec: Spec{Key: DefaultToolSetting, Row: "default CLI"}, Field: FieldTool},
 	{Spec: Spec{Key: ThemeSetting, Values: paletteNames(), Default: uitheme.Palettes[0].Name, Row: "theme"}, Field: FieldTheme},
 	{Spec: Spec{Key: ThemeAutoSetting, Values: onOff, Default: "off", Row: "theme follows OS"}, Field: FieldThemeAuto,
 		Flag: func(s *State) *bool { return &s.ThemeAuto }, True: "on", False: "off"},

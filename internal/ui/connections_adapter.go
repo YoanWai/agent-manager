@@ -249,7 +249,7 @@ func (m *Model) remoteQuickSpawn(spawned spawn.Request) (tea.Cmd, bool) {
 		return nil, taken
 	}
 	if strings.HasPrefix(spawned.Prompt, "-") {
-		m.reportErr(`prompt cannot start with "-": the tool would read it as a flag`)
+		m.reportErr(`prompt cannot start with "-": the CLI would read it as a flag`)
 		return nil, true
 	}
 	group := row.Group

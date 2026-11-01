@@ -891,20 +891,20 @@ func TestQuickPromptFooterKeys(t *testing.T) {
 	m.quick().SetTools([]string{"claude"}, 0)
 
 	footerOne := m.viewFooter()
-	if strings.Contains(footerOne, "shift+tab") || strings.Contains(footerOne, "previous tool") {
-		t.Errorf("one tool enabled, footer shouldn't have shift+tab: %q", footerOne)
+	if strings.Contains(footerOne, "shift+tab") || strings.Contains(footerOne, "previous CLI") {
+		t.Errorf("one CLI enabled, footer shouldn't have shift+tab: %q", footerOne)
 	}
-	if !strings.Contains(footerOne, "tab tool") {
-		t.Errorf("one tool enabled, missing tab pair: %q", footerOne)
+	if !strings.Contains(footerOne, "tab CLI") {
+		t.Errorf("one CLI enabled, missing tab pair: %q", footerOne)
 	}
 
 	m.quick().SetTools([]string{"claude", "codex"}, 0)
 	footerTwo := m.viewFooter()
-	if !strings.Contains(footerTwo, "shift+tab") || !strings.Contains(footerTwo, "previous tool") {
-		t.Errorf("two tools enabled, missing shift+tab pair: %q", footerTwo)
+	if !strings.Contains(footerTwo, "shift+tab") || !strings.Contains(footerTwo, "previous CLI") {
+		t.Errorf("two CLIs enabled, missing shift+tab pair: %q", footerTwo)
 	}
-	if !strings.Contains(footerTwo, "tab tool") {
-		t.Errorf("two tools enabled, missing tab pair: %q", footerTwo)
+	if !strings.Contains(footerTwo, "tab CLI") {
+		t.Errorf("two CLIs enabled, missing tab pair: %q", footerTwo)
 	}
 	if !strings.Contains(footerTwo, "ctrl+t worktree") {
 		t.Errorf("missing ctrl+t worktree pair: %q", footerTwo)
