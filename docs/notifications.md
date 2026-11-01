@@ -239,6 +239,5 @@ editorial feed both check every 10 minutes with an HTTP ETag, independent of
 the installed version. Each is cached in a file of its own format,
 `release-catalog.json` and `feed-messages.json`, stamped with the parser that
 wrote it. A build that finds another parser's stamp downloads the whole list
-once. `update-check.json` and `message-feed.json` belong to versions before
-v0.40.0 and are read only to fill the panel on the first start after an
-upgrade.
+once. `update-check.json` belongs to versions before v0.40.0 and is read only
+to fill the panel on the first start after an upgrade.
