@@ -57,6 +57,20 @@ func TestLineOutranksFocusNotices(t *testing.T) {
 	}
 }
 
+// A hovered link shows where a click goes, since a label can hide its target,
+// with the agent's control bytes escaped, and an error still outranks it.
+func TestLineNamesTheHoveredLink(t *testing.T) {
+	tones := testTones()
+	plain := ansi.Strip(Line(Message{Focused: true, ScrolledBack: true, Link: "https://example.com/\x1b[2Jx"}, testGlyphs(), tones))
+	if plain != "link https://example.com/^[[2Jx" {
+		t.Fatalf("hovered link line = %q", plain)
+	}
+	failed := ansi.Strip(Line(Message{Focused: true, Report: "open link: no opener", Link: "https://example.com/"}, testGlyphs(), tones))
+	if strings.Contains(failed, "example.com") {
+		t.Fatalf("the hovered link hid an error: %q", failed)
+	}
+}
+
 // The scroll notice names the catch-up keys the session actually has: a
 // session whose scrollback tmux holds also answers a page key.
 func TestLineNamesTheCatchUpKeys(t *testing.T) {

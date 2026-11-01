@@ -187,13 +187,16 @@ func (m *Model) TrackPointer(x, y int) { m.pointer = pointerAt{known: true, x: x
 // another program holds the terminal.
 func (m *Model) ForgetPointer() { m.pointer = pointerAt{} }
 
-// OverLink reports whether the mouse rests on a link a click would open.
-func (m Model) OverLink() bool {
+// HoveredLink is the link the mouse rests on, the one a click would open.
+func (m Model) HoveredLink() string {
 	if !m.pointer.known {
-		return false
+		return ""
 	}
 	row, col, inside := m.paneCell(m.pointer.x, m.pointer.y)
-	return inside && m.linkAt(row, col) != ""
+	if !inside {
+		return ""
+	}
+	return m.linkAt(row, col)
 }
 
 func (m *Model) wheel(up bool, x, y int, ctx MouseContext) MouseResult {

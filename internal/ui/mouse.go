@@ -364,6 +364,9 @@ func (m *Model) listPress(msg tea.MouseMsg, ctx uirail.MouseContext) (tea.Model,
 		return m, m.handleQuickClick(hit)
 	}
 	if msg.Button == tea.MouseButtonLeft && m.onContentColumn(msg.X, msg.Y) {
+		if url := m.layout.previewLinks.At(msg.X, msg.Y); url != "" {
+			return m, openLinkCmd(url)
+		}
 		return m.focusFromPreview()
 	}
 	return m.applyRailDecision(m.rail.Mouse(msg, m.layout.displayedRail, ctx))

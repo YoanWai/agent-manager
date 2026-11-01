@@ -3,7 +3,6 @@ package focus
 import (
 	"net/url"
 	"regexp"
-	"slices"
 	"strings"
 	"unicode"
 
@@ -11,8 +10,6 @@ import (
 )
 
 var paneLinkPattern = regexp.MustCompile(`https?://\S+`)
-
-var hyperlinkSchemes = []string{"http", "https"}
 
 // paneLink is one row's cells, by column, that open url. A written link's
 // url is its own text, so a wrap carries the text on.
@@ -26,16 +23,53 @@ type wrapPiece struct {
 	row, end int
 }
 
+// PaneLinks is where the links of a pane painted on screen sit.
+type PaneLinks struct {
+	box   Box
+	links [][]paneLink
+}
+
+// ReadPaneLinks finds the links in the captured rows a pane painted at box.
+func ReadPaneLinks(rows []string, box Box) PaneLinks {
+	safe, plain := paneText(rows)
+	return PaneLinks{box: box, links: frameLinks(safe, plain, box.Width)}
+}
+
+// At is the link a click on screen cell x, y opens.
+func (p PaneLinks) At(x, y int) string {
+	row, col := y-p.box.Y, x-p.box.X
+	if !p.box.Valid || row < 0 || row >= len(p.links) || col < 0 || col >= p.box.Width {
+		return ""
+	}
+	return linkIn(p.links[row], col)
+}
+
 func (m Model) linkAt(row, col int) string {
 	if row < 0 || row >= len(m.frame.links) {
 		return ""
 	}
-	for _, link := range m.frame.links[row] {
+	return linkIn(m.frame.links[row], col)
+}
+
+func linkIn(links []paneLink, col int) string {
+	for _, link := range links {
 		if col >= link.start && col < link.end {
 			return link.url
 		}
 	}
 	return ""
+}
+
+// paneText is each captured row with the escapes that move the cursor
+// removed, and the same row as plain text.
+func paneText(rows []string) (safe, plain []string) {
+	safe = make([]string, len(rows))
+	plain = make([]string, len(rows))
+	for i, row := range rows {
+		safe[i] = safePaneLine(row)
+		plain[i] = ansi.Strip(safe[i])
+	}
+	return safe, plain
 }
 
 // frameLinks finds what a click on each row opens: the targets of the
@@ -106,8 +140,9 @@ func rowHyperlinks(line string) []paneLink {
 }
 
 // openableTarget is the URI of an OSC 8 payload ("8;params;uri") when it
-// is a web address a click may open. The payload is the agent's output, so a
-// control or space rune in it is refused before it reaches the opener.
+// is a web address or a file on this machine. The payload is the agent's
+// output, so a control or space rune in it is refused before it reaches
+// the opener.
 func openableTarget(payload string) string {
 	parts := strings.SplitN(payload, ";", 3)
 	if len(parts) < 3 || strings.IndexFunc(parts[2], func(r rune) bool {
@@ -116,7 +151,19 @@ func openableTarget(payload string) string {
 		return ""
 	}
 	target, err := url.Parse(parts[2])
-	if err != nil || target.Host == "" || !slices.Contains(hyperlinkSchemes, strings.ToLower(target.Scheme)) {
+	if err != nil {
+		return ""
+	}
+	switch strings.ToLower(target.Scheme) {
+	case "http", "https":
+		if target.Host == "" {
+			return ""
+		}
+	case "file":
+		if (target.Host != "" && target.Host != "localhost") || !strings.HasPrefix(target.Path, "/") || strings.HasPrefix(target.Path, "//") {
+			return ""
+		}
+	default:
 		return ""
 	}
 	return parts[2]

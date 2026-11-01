@@ -152,10 +152,15 @@ func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 // syncPointerShape shows the hand while the mouse rests on a link a click in
 // the focused pane would open.
-func (m *Model) syncPointerShape() {
+func (m *Model) syncPointerShape() { uiterminal.ShowHand(m.hoveredLink() != "") }
+
+// hoveredLink is the link under the mouse while the focused pane is on top.
+func (m *Model) hoveredLink() string {
 	top, _ := m.top()
-	_, focusOnTop := top.(*uifocus.Surface)
-	uiterminal.ShowHand(focusOnTop && m.focus.pane.OverLink())
+	if _, focusOnTop := top.(*uifocus.Surface); !focusOnTop {
+		return ""
+	}
+	return m.focus.pane.HoveredLink()
 }
 
 // handOffTerminal readies the terminal for a program that takes the screen.

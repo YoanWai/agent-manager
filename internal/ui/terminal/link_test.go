@@ -141,3 +141,45 @@ func TestOpenLinkCmdFailureDropsTheURL(t *testing.T) {
 		t.Fatalf("the error repeats the URL: %v", failure.Err)
 	}
 }
+
+// A file link is revealed, never opened, so a click cannot run what an agent
+// linked to; a web link still goes to the platform's URL handler.
+func TestOpenerCommandRevealsFiles(t *testing.T) {
+	cases := []struct {
+		goos, target string
+		want         []string
+	}{
+		{"darwin", "file:///tmp/notes.md", []string{"open", "-R", "/tmp/notes.md"}},
+		{"darwin", "file:///Applications/Tool.app", []string{"open", "-R", "/Applications/Tool.app"}},
+		{"linux", "file:///home/me/run.sh", []string{"xdg-open", "/home/me"}},
+		{"linux", "file:///home/me/run.sh/", []string{"xdg-open", "/home/me"}},
+		{"linux", "file:///home/me/run.sh/.", []string{"xdg-open", "/home/me"}},
+		{"windows", "file:///C:/Temp/notes.md", []string{"explorer", `/select,C:\Temp\notes.md`}},
+		{"darwin", "https://example.com/a", []string{"open", "https://example.com/a"}},
+		{"linux", "https://example.com/a", []string{"xdg-open", "https://example.com/a"}},
+		{"windows", "https://example.com/a", []string{"rundll32", "url.dll,FileProtocolHandler", "https://example.com/a"}},
+	}
+	for _, c := range cases {
+		cmd, err := OpenerCommand(c.goos, c.target)
+		if err != nil {
+			t.Errorf("%s %s: %v", c.goos, c.target, err)
+			continue
+		}
+		if !slices.Equal(cmd.Args, c.want) {
+			t.Errorf("%s %s runs %q, want %q", c.goos, c.target, cmd.Args, c.want)
+		}
+	}
+
+	refused := []struct{ goos, target string }{
+		{"windows", "file://///attacker/share/x"},
+		{"windows", "file:////attacker/share/x"},
+		{"windows", "file:///relative"},
+		{"darwin", "file://attacker/share/x"},
+		{"linux", "file:////attacker/x"},
+	}
+	for _, c := range refused {
+		if cmd, err := OpenerCommand(c.goos, c.target); err == nil {
+			t.Errorf("%s %s runs %q, want it refused", c.goos, c.target, cmd.Args)
+		}
+	}
+}

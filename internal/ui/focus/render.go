@@ -42,12 +42,7 @@ func (m *Model) PrepareFrame(ctx FrameContext) FrameContent {
 		return FrameContent{}
 	}
 	topPadding := ctx.Height - len(pane)
-	lines := make([]string, len(pane))
-	safe := make([]string, len(pane))
-	for i, raw := range pane {
-		safe[i] = safePaneLine(raw)
-		lines[i] = ansi.Strip(safe[i])
-	}
+	safe, lines := paneText(pane)
 	m.frame = displayedFrame{
 		box: Box{
 			X:      ctx.OriginX,

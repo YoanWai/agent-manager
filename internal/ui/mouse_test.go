@@ -2683,3 +2683,44 @@ func TestPreviewPressFocusesOnlyALiveSession(t *testing.T) {
 		}
 	}
 }
+
+// A press on a link in the preview beside the list opens it instead of
+// focusing the session, and a press beside the link still focuses.
+func TestPreviewPressOnALinkOpensIt(t *testing.T) {
+	opened := ""
+	prev := openURL
+	openURL = func(url string) error { opened = url; return nil }
+	t.Cleanup(func() { openURL = prev })
+
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	waitForPreview(t, m)
+	m.workspace.preview = "read \x1b]8;;https://example.com/docs\x1b\\the docs\x1b]8;;\x1b\\ now\n"
+	view := strings.Split(ansi.Strip(preparedView(m)), "\n")
+	x, y := -1, -1
+	for row, line := range view {
+		if col := strings.Index(line, "the docs"); col >= 0 {
+			x, y = ansi.StringWidth(line[:col]), row
+		}
+	}
+	if y < 0 {
+		t.Fatalf("test setup: the preview does not show the link:\n%s", strings.Join(view, "\n"))
+	}
+
+	updated, cmd := m.handleMouse(tea.MouseMsg{X: x + 2, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m = updated.(*Model)
+	if m.focused() || cmd == nil {
+		t.Fatalf("a press on the link focused=%v cmd=%v", m.focused(), cmd != nil)
+	}
+	cmd()
+	if opened != "https://example.com/docs" {
+		t.Fatalf("opened %q", opened)
+	}
+
+	m = leftPress(m, x-3, y)
+	m.drainEffects(t)
+	if !m.focused() {
+		t.Fatalf("a press beside the link should focus, screen = %v", m.screenID())
+	}
+}
