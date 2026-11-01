@@ -382,8 +382,6 @@ func majorAbove(t *testing.T, version string) string {
 	return strconv.Itoa(major+1) + "." + fields[1] + "." + fields[2]
 }
 
-const legacyFeedJSON = `{"checked_at":"2099-01-01T00:00:00Z","etag":"\"legacy-feed\"","messages":[{"id":"one","banner":"x","title":"Seeded","body":["from the older build"]}]}`
-
 func TestFeedIsCachedInItsOwnFile(t *testing.T) {
 	serve(t, `[{"id":"one","banner":"x","title":"x"}]`)
 	dir := t.TempDir()
@@ -391,9 +389,6 @@ func TestFeedIsCachedInItsOwnFile(t *testing.T) {
 	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, "feed-messages.json"))
 	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
 		t.Fatalf("feed not cached with its parser: %+v", written)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "message-feed.json")); !os.IsNotExist(err) {
-		t.Fatalf("the file older builds own must be left alone: %v", err)
 	}
 }
 
@@ -421,87 +416,6 @@ func TestFeedFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
 	messages := fetch(t, dir, "v0.40.0")
 	if hits.Load() != 1 || messages[0].Title != "fresh" || len(messages[0].Accent) != 1 {
 		t.Fatalf("hits=%d messages=%+v, want one full fetch despite the fresh timestamp", hits.Load(), messages)
-	}
-}
-
-func TestLegacyFeedSeedsUntilTheFirstFetch(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "message-feed.json"), []byte(legacyFeedJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "down", http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	old := feedURL
-	feedURL = server.URL
-	t.Cleanup(func() { feedURL = old })
-
-	messages := fetch(t, dir, "v0.40.0")
-	if len(messages) != 1 || messages[0].Title != "Seeded" {
-		t.Fatalf("the older build's feed should show while the fetch fails: %+v", messages)
-	}
-	kept, err := os.ReadFile(filepath.Join(dir, "message-feed.json"))
-	if err != nil || string(kept) != legacyFeedJSON {
-		t.Fatalf("the legacy file must stay byte for byte: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, cacheFile)); !os.IsNotExist(err) {
-		t.Fatalf("a failed fetch must not write a cache: %v", err)
-	}
-}
-
-func TestFeedFileWinsOverTheLegacyFile(t *testing.T) {
-	dir := t.TempDir()
-	_ = atomicfile.WriteJSON(filepath.Join(dir, cacheFile), cache{
-		CheckedAt: time.Now(),
-		Parser:    feedParser,
-		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "From the new file"}},
-	}, 0o644)
-	if err := os.WriteFile(filepath.Join(dir, legacyCacheFile), []byte(legacyFeedJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
-	t.Cleanup(server.Close)
-	old := feedURL
-	feedURL = server.URL
-	t.Cleanup(func() { feedURL = old })
-
-	messages := fetch(t, dir, "v0.40.0")
-	if hits.Load() != 0 || len(messages) != 1 || messages[0].Title != "From the new file" {
-		t.Fatalf("hits=%d messages=%+v, want the fresh new file with no fetch", hits.Load(), messages)
-	}
-	if kept, err := os.ReadFile(filepath.Join(dir, legacyCacheFile)); err != nil || string(kept) != legacyFeedJSON {
-		t.Fatalf("the legacy file must stay byte for byte: %v", err)
-	}
-}
-
-func TestLegacyFeedSeedIsFetchedAtOnceWithoutItsETag(t *testing.T) {
-	dir := t.TempDir()
-	seed := `{"checked_at":"` + time.Now().Format(time.RFC3339) + `","etag":"\"legacy-feed\"","messages":[{"id":"one","banner":"x","title":"Seeded"}]}`
-	if err := os.WriteFile(filepath.Join(dir, legacyCacheFile), []byte(seed), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		if got := r.Header.Get("If-None-Match"); got != "" {
-			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the older build's parse", got)
-		}
-		w.Write([]byte(`[{"id":"one","banner":"x","title":"Fetched"}]`))
-	}))
-	t.Cleanup(server.Close)
-	old := feedURL
-	feedURL = server.URL
-	t.Cleanup(func() { feedURL = old })
-
-	messages := fetch(t, dir, "v0.40.0")
-	if hits.Load() != 1 || len(messages) != 1 || messages[0].Title != "Fetched" {
-		t.Fatalf("hits=%d messages=%+v, want one fetch at once: a seed is never fresh", hits.Load(), messages)
-	}
-	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, cacheFile))
-	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
-		t.Fatalf("feed not cached with its parser: %+v", written)
 	}
 }
 

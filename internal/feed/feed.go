@@ -23,8 +23,7 @@ import (
 )
 
 const (
-	cacheFile       = "feed-messages.json"
-	legacyCacheFile = "message-feed.json"
+	cacheFile = "feed-messages.json"
 	// feedParser names the fields this build keeps of an entry. Raise it whenever rawMessage changes.
 	feedParser = 3
 	// checkInterval matches the release check. The feed exists to reach
@@ -119,11 +118,8 @@ func Refresh(ctx context.Context, configDir, version string) ([]Message, error) 
 
 // loadCache reports parsedHere false for a feed it must neither trust as fresh nor revalidate by ETag.
 func loadCache(configDir string) (cached cache, found, parsedHere bool) {
-	if stored, ok := atomicfile.ReadJSON[cache](filepath.Join(configDir, cacheFile)); ok {
-		return stored, true, stored.Parser == feedParser
-	}
-	cached, found = atomicfile.ReadJSON[cache](filepath.Join(configDir, legacyCacheFile))
-	return cached, found, false
+	cached, found = atomicfile.ReadJSON[cache](filepath.Join(configDir, cacheFile))
+	return cached, found, found && cached.Parser == feedParser
 }
 
 func fetchMessages(ctx context.Context, configDir, version string, force bool) ([]Message, error) {
