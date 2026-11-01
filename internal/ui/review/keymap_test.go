@@ -7,6 +7,7 @@ import (
 
 	git "github.com/YoanWai/agent-manager/internal/git/value"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -26,7 +27,7 @@ func TestLegendReadsTheKeymap(t *testing.T) {
 			{"esc/q", "close"}, {"ctrl+c", "quit"},
 		}},
 	}
-	if got := m.Legend(defaultHelpKey()); !reflect.DeepEqual(got, want) {
+	if got := m.Legend(defaultHelpKey(), presentation.DefaultGlyphMode); !reflect.DeepEqual(got, want) {
 		t.Fatalf("legend =\n%v\nwant\n%v", got, want)
 	}
 }
@@ -35,7 +36,7 @@ func TestLegendReadsTheKeymap(t *testing.T) {
 func TestLegendNamesTheCommitKeysInTheCommitScope(t *testing.T) {
 	m := New(false)
 	m.scope = git.ScopeCommit
-	review := m.Legend(defaultHelpKey())[0].Pairs
+	review := m.Legend(defaultHelpKey(), presentation.DefaultGlyphMode)[0].Pairs
 	want := [][2]string{{"L", "commit"}, {"[/]", "older/newer"}, {"{/}", "oldest/newest"}}
 	if got := review[len(review)-len(want):]; !reflect.DeepEqual(got, want) {
 		t.Fatalf("commit scope legend ends %v, want %v", got, want)
@@ -50,7 +51,7 @@ func TestEveryNamedKeyIsHandled(t *testing.T) {
 	for _, scope := range []git.Scope{git.ScopeUncommitted, git.ScopeCommit} {
 		m := New(false)
 		m.scope = scope
-		for _, section := range m.Legend(defaultHelpKey()) {
+		for _, section := range m.Legend(defaultHelpKey(), presentation.DefaultGlyphMode) {
 			for _, pair := range section.Pairs {
 				if pair == quitPair {
 					continue
@@ -118,7 +119,7 @@ func TestHelpRowsReadTheKeymap(t *testing.T) {
 		{"?", "this key map"},
 		{"esc / q", "close the review"},
 	}
-	if got := HelpRows(defaultHelpKey()); !reflect.DeepEqual(got, want) {
+	if got := HelpRows(defaultHelpKey(), presentation.DefaultGlyphMode); !reflect.DeepEqual(got, want) {
 		t.Fatalf("help rows =\n%v\nwant\n%v", got, want)
 	}
 }
@@ -141,7 +142,7 @@ func TestHelpRowNamesTheConfiguredKey(t *testing.T) {
 		{keybind.Binding{}, ""},
 	} {
 		got := ""
-		for _, row := range HelpRows(tc.binding) {
+		for _, row := range HelpRows(tc.binding, presentation.DefaultGlyphMode) {
 			if row[1] == "this key map" {
 				got = row[0]
 			}
@@ -150,7 +151,7 @@ func TestHelpRowNamesTheConfiguredKey(t *testing.T) {
 			t.Fatalf("help row key = %q, want %q", got, tc.want)
 		}
 		got = ""
-		for _, section := range m.Legend(tc.binding) {
+		for _, section := range m.Legend(tc.binding, presentation.DefaultGlyphMode) {
 			for _, pair := range section.Pairs {
 				if pair[1] == "keys" {
 					got = pair[0]

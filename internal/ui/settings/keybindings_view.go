@@ -1,7 +1,6 @@
 package settings
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
@@ -20,7 +19,7 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 			Answer:      "reset",
 		}
 	}
-	hint := [][2]string{{"↑↓", "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
+	hint := [][2]string{{presentation.NavigationLabel(ctx.GlyphMode, "↑↓"), "move"}, {"↵", "set a key"}, {"a", "add one"}, {"d", "off"}, {"r", "defaults"}, {"esc", "back"}}
 	if s.KeyCapture {
 		hint = [][2]string{{"any key", "bind it"}, {"esc", "cancel"}}
 	}
@@ -30,7 +29,7 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 	var b strings.Builder
 	s.lines.Reset()
 	if first > 0 {
-		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↑ %d more", first)) + "\n")
+		b.WriteString(st.Subtle.Render("  "+presentation.OverflowLabel(ctx.GlyphMode, first, true)) + "\n")
 		s.lines.Show(first-1, 1)
 	}
 	for i := first; i < last; i++ {
@@ -71,7 +70,7 @@ func (s *State) viewKeyPicker(ctx ViewContext) Frame {
 		s.lines.Show(i, 1)
 	}
 	if last < len(rows) {
-		b.WriteString(st.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-last)) + "\n")
+		b.WriteString(st.Subtle.Render("  "+presentation.OverflowLabel(ctx.GlyphMode, len(rows)-last, false)) + "\n")
 		s.lines.Show(last, 1)
 	}
 	return Frame{Card: Flex, Title: presentation.GlyphsFor(ctx.GlyphMode).SettingsGlyph + " Keybindings", Body: strings.TrimRight(b.String(), "\n"), Hints: hint}

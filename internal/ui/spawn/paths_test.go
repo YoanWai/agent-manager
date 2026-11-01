@@ -1,6 +1,7 @@
 package spawn
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
@@ -23,8 +24,8 @@ func TestPathFieldSuggestHonoursOff(t *testing.T) {
 // The hint names the create key only while nothing is highlighted.
 func TestPathHintFollowsTheHighlight(t *testing.T) {
 	t.Parallel()
-	plain := PathHint(false)
-	chosen := PathHint(true)
+	plain := PathHint(false, presentation.DefaultGlyphMode)
+	chosen := PathHint(true, presentation.DefaultGlyphMode)
 	if plain[2] != [2]string{"↵", "create"} {
 		t.Fatalf("unhighlighted hint = %v, want enter to create", plain)
 	}

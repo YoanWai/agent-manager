@@ -7,6 +7,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	uionboarding "github.com/YoanWai/agent-manager/internal/ui/onboarding"
 	onboardingruntime "github.com/YoanWai/agent-manager/internal/ui/onboarding/runtime"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -173,7 +174,7 @@ func (m *Model) setupKeys() uionboarding.Keys {
 		if len(keys) == 0 {
 			return ""
 		}
-		return keys[0].Glyph()
+		return keybind.Keys(keys[0]).Text("", m.prefs.glyphMode.Effective() == presentation.GlyphModeAdvanced)
 	}
 	list := m.services.listKeys
 	enter, detach := first(list, keybind.Open), first(m.services.keys, keybind.Detach)
@@ -211,7 +212,7 @@ func (m *Model) viewSetup(setup *uionboarding.Surface) string {
 			"What you set so far stays. The first-run setup row in Settings brings it back.", false, "leave")
 	}
 	width, height := m.layout.width, m.layout.height
-	foot := uiframe.PaintInline(setup.Hints(), max(width-2*setupMargin, 1), uiframe.LiveCap(m.prefs.glyphMode))
+	foot := uiframe.PaintInline(setup.Hints(m.prefs.glyphMode), max(width-2*setupMargin, 1), uiframe.LiveCap(m.prefs.glyphMode))
 	footRows := uitheme.SplitLines(foot.Text)
 	frame := setup.Model.View(uionboarding.ViewContext{
 		Width:     width,

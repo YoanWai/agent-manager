@@ -538,7 +538,7 @@ func (m *Model) CommitRail(ctx RenderContext, width, height int) string {
 	start, end := scrollWindow(len(commits), cursor, max(min(height, maxRailCommits), 3))
 	var b strings.Builder
 	if start > 0 {
-		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+		b.WriteString(s.Subtle.Render("  "+presentation.OverflowLabel(ctx.GlyphMode, start, true)) + "\n")
 		m.commitRows.Show(len(commits)-start, 1)
 		m.commitMarks.Skip(1)
 	}
@@ -569,7 +569,7 @@ func (m *Model) CommitRail(ctx RenderContext, width, height int) string {
 		b.WriteString(row + "\n")
 	}
 	if end < len(commits) {
-		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(commits)-end)))
+		b.WriteString(s.Subtle.Render("  " + presentation.OverflowLabel(ctx.GlyphMode, len(commits)-end, false)))
 		m.commitRows.Show(len(commits)-1-end, 1)
 	}
 	return strings.TrimRight(b.String(), "\n")

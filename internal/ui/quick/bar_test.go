@@ -74,8 +74,8 @@ func TestQuickBarThroughAFakeHost(t *testing.T) {
 	if _, request = q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEnter}); !request.Spawn.WorktreeSet || !request.Spawn.Worktree {
 		t.Fatalf("a toggled worktree was not asked for: %+v", request.Spawn)
 	}
-	if q.Legend(h)[0] != [2]string{"↵", "send"} {
-		t.Fatalf("legend = %v", q.Legend(h))
+	if q.Legend(h, presentation.DefaultGlyphMode)[0] != [2]string{"↵", "send"} {
+		t.Fatalf("legend = %v", q.Legend(h, presentation.DefaultGlyphMode))
 	}
 	h.target = Target{Group: "backend"}
 	_, request = q.HandleKey(h, tea.KeyMsg{Type: tea.KeyEnter})
@@ -171,7 +171,7 @@ func TestQuickBarStepsTheEnvironmentFromTheTargetsDefault(t *testing.T) {
 	if request.Spawn == nil || request.Spawn.EnvSet {
 		t.Fatalf("an untouched env was decided for the root: %+v", request.Spawn)
 	}
-	if legend := q.Legend(h); !strings.Contains(strings.Join(legendKeys(legend), " "), EnvKey) {
+	if legend := q.Legend(h, presentation.DefaultGlyphMode); !strings.Contains(strings.Join(legendKeys(legend), " "), EnvKey) {
 		t.Fatalf("legend %v does not name %s", legend, EnvKey)
 	}
 	q.HandleKey(h, tea.KeyMsg{Type: tea.KeyCtrlG})
@@ -204,7 +204,7 @@ func TestQuickBarOffersNoEnvironmentOnAConnection(t *testing.T) {
 	if len(h.errs) != 1 || !strings.Contains(h.errs[0], "this machine") {
 		t.Fatalf("ctrl+g on a connection reported %v", h.errs)
 	}
-	if q.Env().Touched() || slices.Contains(legendKeys(q.Legend(h)), EnvKey) {
+	if q.Env().Touched() || slices.Contains(legendKeys(q.Legend(h, presentation.DefaultGlyphMode)), EnvKey) {
 		t.Fatal("a connection's bar stepped or offered the environment")
 	}
 }

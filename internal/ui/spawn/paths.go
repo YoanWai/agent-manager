@@ -2,6 +2,7 @@ package spawn
 
 import (
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -34,13 +35,13 @@ func (p PathField) Suggest(typed string) tea.Cmd {
 
 func (p PathField) View() string { return p.State.View(p.Styles) }
 
-func (p PathField) Hint() [][2]string { return PathHint(p.State.Chosen) }
+func (p PathField) Hint() [][2]string { return PathHint(p.State.Chosen, p.Styles.GlyphMode) }
 
 // PathHint names the keys that act on the open list: the complete key only
 // creates once nothing is highlighted.
-func PathHint(chosen bool) [][2]string {
+func PathHint(chosen bool, mode presentation.GlyphMode) [][2]string {
 	if chosen {
-		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
+		return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
 	}
-	return [][2]string{{"↑↓", "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
+	return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
 }

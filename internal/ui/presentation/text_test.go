@@ -1,6 +1,7 @@
 package presentation
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -39,17 +40,17 @@ func TestWindowClampsAndMarksHiddenContent(t *testing.T) {
 	lines := []string{"zero", "one", "two", "three", "four"}
 	style := lipgloss.NewStyle().Bold(true)
 
-	top := Window(lines, 3, -10, style)
+	top := Window(lines, 3, -10, style, DefaultGlyphMode)
 	if got := ansi.Strip(strings.Join(top, "\n")); got != "zero\none\n↓ more below…" {
 		t.Fatalf("top window:\n%s", got)
 	}
 
-	bottom := Window(lines, 3, 99, style)
+	bottom := Window(lines, 3, 99, style, DefaultGlyphMode)
 	if got := ansi.Strip(strings.Join(bottom, "\n")); got != "↑ more above…\nthree\nfour" {
 		t.Fatalf("bottom window:\n%s", got)
 	}
 
-	middle := Window(lines, 1, 2, style)
+	middle := Window(lines, 1, 2, style, DefaultGlyphMode)
 	if got := ansi.Strip(strings.Join(middle, "\n")); got != "↕ more…" {
 		t.Fatalf("one-row window = %q", got)
 	}
@@ -126,5 +127,45 @@ func TestFillSetsTheBackgroundAgainAfterEveryReset(t *testing.T) {
 	lipgloss.SetColorProfile(termenv.Ascii)
 	if got := Fill(line, "#232830"); got != line {
 		t.Fatalf("a profile with no colors changed the line to %q", got)
+	}
+}
+
+func TestWindowDirectionsKeepBoundsAndInput(t *testing.T) {
+	input := []string{"literal ↑↓←→", "one", "two", "three", "four"}
+	for _, mode := range []GlyphMode{GlyphModeBasic, GlyphModeAdvanced, ""} {
+		for _, tc := range []struct {
+			rows, offset int
+			want         string
+		}{
+			{3, -10, "literal ↑↓←→\none\n%s more below…"},
+			{3, 99, "%s more above…\nthree\nfour"}, {1, 2, "%s more…"},
+		} {
+			g := NavigationFor(mode)
+			mark := g.DownGlyph
+			if tc.offset == 99 {
+				mark = g.UpGlyph
+			}
+			if tc.rows == 1 {
+				mark = g.UpDownGlyph
+			}
+			got := ansi.Strip(strings.Join(Window(input, tc.rows, tc.offset, lipgloss.NewStyle(), mode), "\n"))
+			if want := fmt.Sprintf(tc.want, mark); got != want {
+				t.Fatalf("%s: %q != %q", mode, got, want)
+			}
+		}
+	}
+	if input[0] != "literal ↑↓←→" || input[2] != "two" {
+		t.Fatal("window mutated input")
+	}
+	for _, tc := range []struct {
+		above           bool
+		basic, advanced string
+	}{{true, "3 more above", "↑ 3 more"}, {false, "3 more below", "↓ 3 more"}} {
+		if got := OverflowLabel(GlyphModeBasic, 3, tc.above); got != tc.basic {
+			t.Fatal(got)
+		}
+		if got := OverflowLabel(GlyphModeAdvanced, 3, tc.above); got != tc.advanced {
+			t.Fatal(got)
+		}
 	}
 }

@@ -256,6 +256,7 @@ func (m *Model) railLines(width, height int) []contentLine {
 
 func (m *Model) railLegendContext() uirail.LegendContext {
 	return uirail.LegendContext{
+		GlyphMode:     m.prefs.glyphMode,
 		ListKeys:      m.services.listKeys,
 		EnterFocuses:  m.enterFocuses(),
 		MouseDisabled: m.prefs.mouseDisabled,

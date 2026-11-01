@@ -87,7 +87,7 @@ func (m *Model) openMove() {
 		}
 	}
 	m.gens.dialog++
-	m.push(uidialogs.NewMoveSurface(moveRoot{m}, move, picker))
+	m.push(uidialogs.NewMoveSurface(moveRoot{m}, move, picker, m.prefs.glyphMode))
 	m.clearErr()
 }
 

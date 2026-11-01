@@ -42,6 +42,7 @@ type Card struct {
 	Rows     int
 	subtle   lipgloss.Style
 	closeKey keybind.Binding
+	mode     presentation.GlyphMode
 }
 
 func NewSurface(root Root, scope Scope) *Surface {
@@ -60,7 +61,7 @@ func (s *Surface) Card(h surface.Host) Card {
 	if s.root.StatusShown() {
 		room -= 2
 	}
-	return Card{Content: content, Width: width, Rows: max(room, 1), subtle: ctx.Styles.Subtle, closeKey: ctx.ListKeys.Binding(keybind.Help)}
+	return Card{Content: content, Width: width, Rows: max(room, 1), subtle: ctx.Styles.Subtle, closeKey: ctx.ListKeys.Binding(keybind.Help), mode: ctx.Glyphs.Mode}
 }
 
 func (s *Surface) Key(h surface.Host, msg tea.KeyMsg) (bool, tea.Cmd) {
@@ -91,7 +92,7 @@ func (s *Surface) Wheel(h surface.Host, arrow tea.KeyMsg) tea.Cmd {
 func (s *Surface) View(h surface.Host, _ string) string {
 	card := s.Card(h)
 	lines := append([]string(nil), card.Content.Head...)
-	lines = append(lines, presentation.Window(card.Content.Lines, card.Rows, card.Content.Offset, card.subtle)...)
+	lines = append(lines, presentation.Window(card.Content.Lines, card.Rows, card.Content.Offset, card.subtle, card.mode)...)
 	return h.CardSized(card.Width, card.Content.Title, strings.Join(lines, "\n"), card.Content.Hints)
 }
 

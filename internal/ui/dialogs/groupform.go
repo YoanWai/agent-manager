@@ -357,15 +357,15 @@ func (d *GroupForm) View(view GroupFormView) Card {
 			}
 		}
 	}
-	hints := [][2]string{{"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
+	hints := [][2]string{{presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	switch {
 	case suggesting:
 		hints = view.SuggestHints
 	case d.remote != "":
 	case d.focus == GroupFormParentField:
-		hints = [][2]string{{"←→", "pick parent"}, {"tab/↑↓", "move"}, {"↵", "create"}, {"esc", "cancel"}}
+		hints = [][2]string{{presentation.NavigationLabel(view.GlyphMode, "←→"), "pick parent"}, {presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {"↵", "create"}, {"esc", "cancel"}}
 	case d.focus == GroupFormWorktreeField || d.focus == GroupFormBaseField || d.focus == GroupFormEnvField:
-		hints = [][2]string{{"tab/↑↓", "move"}, {"←→", "change"}, {"↵", "create"}, {"esc", "cancel"}}
+		hints = [][2]string{{presentation.NavigationLabel(view.GlyphMode, "tab/↑↓"), "move"}, {presentation.NavigationLabel(view.GlyphMode, "←→"), "change"}, {"↵", "create"}, {"esc", "cancel"}}
 	}
 	return Card{Title: presentation.GlyphsFor(view.GlyphMode).NewGlyph + " New Group", Body: strings.TrimRight(body.String(), "\n"), Hints: hints}
 }

@@ -8,6 +8,7 @@ package quick
 import (
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -499,7 +500,8 @@ func (q *Bar) Click(h Host, hit Hit) Request {
 	return Request{}
 }
 
-func (q *Bar) Legend(h Host) [][2]string {
+// Legend is the bar's key hint.
+func (q *Bar) Legend(h Host, mode presentation.GlyphMode) [][2]string {
 	toolName, ch := q.Tool(), &q.choice
 	target, _ := h.Target()
 	envShown := q.envShown(target)
@@ -507,7 +509,7 @@ func (q *Bar) Legend(h Host) [][2]string {
 	hasProfiles := spawn.HasProfiles(h, toolName)
 	switch q.picking {
 	case PickModel:
-		pairs := [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵/tab", "choose"}}
+		pairs := [][2]string{{"type", "filter"}, {presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵/tab", "choose"}}
 		if effortActive {
 			pairs = append(pairs, [2]string{EffortKey, "effort"})
 		}
@@ -522,9 +524,9 @@ func (q *Bar) Legend(h Host) [][2]string {
 		return [][2]string{{"type", "effort"}, {"↵", "done"}, {"esc", "back to the prompt"}}
 	}
 	if q.savedList.Open() {
-		return q.savedList.Hint("insert", "back to the prompt")
+		return q.savedList.Hint("insert", "back to the prompt", mode)
 	}
-	pairs := [][2]string{{"↵", "send"}, {"↑↓", "target or caret"}, {"tab", "tool"}}
+	pairs := [][2]string{{"↵", "send"}, {presentation.NavigationLabel(mode, "↑↓"), "target or caret"}, {"tab", "tool"}}
 	if len(q.toolNames) > 1 {
 		pairs = append(pairs, [2]string{"shift+tab", "previous tool"})
 	}
