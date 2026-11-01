@@ -697,7 +697,7 @@ func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseComma
 	m.recordLaunch(sess.ID)
 	m.workspace.sessions = append(m.workspace.sessions, sess)
 	m.rebuildRows()
-	return launched.LabelError
+	return launched.Caveat()
 }
 
 // recordLaunch marks a row this run launched, so a poll that listed the store

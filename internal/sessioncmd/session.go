@@ -27,6 +27,7 @@ type Session struct {
 	Environment    string `json:"environment,omitempty" jsonschema:"environment profile the session launches under, when it has one"`
 	AgentSessionID string `json:"agent_session_id,omitempty" jsonschema:"the agent CLI's own id for the conversation this session holds, once known"`
 	Self           bool   `json:"self" jsonschema:"whether this row is the calling session itself"`
+	Warning        string `json:"warning,omitempty" jsonschema:"set when the session started without the agent-manager tools because registering them timed out; it registers again on the next launch"`
 }
 
 type SessionScreen struct {

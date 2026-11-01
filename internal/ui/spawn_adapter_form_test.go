@@ -374,7 +374,7 @@ func TestFormPromptComposesWithSettings(t *testing.T) {
 	tool := m.services.cfg.Tools["claude-hooked"]
 	tool.Command = "cat"
 
-	command, _, err := launch.Environment(m.services.hooks, "claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01", t.TempDir(), time.Time{}, nil)
+	command, _, _, err := launch.Environment(m.services.hooks, "claude", tool, launch.WithPrompt(tool, tool.Command, "fix the bug"), "prompt01", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("launch.Environment: %v", err)
 	}
@@ -872,7 +872,7 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	plain := m.services.cfg.Tools["claude"]
-	_, env, err := launch.Environment(m.services.hooks, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
+	_, env, _, err := launch.Environment(m.services.hooks, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("launch.Environment: %v", err)
 	}
@@ -881,7 +881,7 @@ func TestBuildLaunchCarriesSessionID(t *testing.T) {
 	}
 
 	hooked := m.services.cfg.Tools["claude-hooked"]
-	_, env, err = launch.Environment(m.services.hooks, "hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
+	_, env, _, err = launch.Environment(m.services.hooks, "hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("launch.Environment hooked: %v", err)
 	}

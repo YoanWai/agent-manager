@@ -201,7 +201,7 @@ func TestRelaunchInPaneResumesTheStoredConversationUnderItsStampedLaunch(t *test
 		t.Fatalf("report: %v %v", result, err)
 	}
 	tool := testConfigTool(t, "reporter")
-	relaunched, err := RelaunchInPane(h.driver, h.store, hooks.NewManager(t.TempDir()), created.ID, tool)
+	relaunched, _, err := RelaunchInPane(h.driver, h.store, hooks.NewManager(t.TempDir()), created.ID, tool)
 	if err != nil {
 		t.Fatalf("RelaunchInPane: %v", err)
 	}

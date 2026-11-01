@@ -499,6 +499,16 @@ func TestRelaunchKillsTheNewPaneWhenItsLaunchCannotPersist(t *testing.T) {
 	}
 }
 
+// The status bar is one row; a caveat that broke onto a second row would
+// push the layout out of shape.
+func TestALabelErrorAndAnMCPWarningShareOneLine(t *testing.T) {
+	labelErr := errors.New("rename failed")
+	got := LaunchResult{LabelError: labelErr, Warning: "MCP registration timed out"}.Caveat()
+	if got.Error() != "rename failed; MCP registration timed out" || !errors.Is(got, labelErr) {
+		t.Fatalf("caveat = %q, want both on one line, still wrapping the label error", got)
+	}
+}
+
 func TestLifecycleRefusesArchivedRelaunchFromStaleRow(t *testing.T) {
 	for _, operation := range []string{"revive", "restart"} {
 		for _, live := range []bool{false, true} {
