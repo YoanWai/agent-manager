@@ -1,6 +1,7 @@
 package sessioncmd
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 
@@ -108,6 +109,9 @@ func TestDeleteGroupMovesItsSessionsToTheRoot(t *testing.T) {
 	if !h.driver.Exists(worker.ID) {
 		t.Fatal("deleting a group stopped the agent running in it")
 	}
+	if label := statusLeft(t, h, worker.ID); label != "worker" {
+		t.Fatalf("status bar still names the deleted group: %q", label)
+	}
 	groups, err := h.sessions.Groups(h.caller.ID)
 	if err != nil {
 		t.Fatalf("Groups: %v", err)
@@ -163,4 +167,13 @@ func TestDeleteGroupTakesItsSubtreeAndKeepsNesting(t *testing.T) {
 	if after.ParentID != workerID {
 		t.Fatalf("moving the subtree unhooked the terminal from its agent: parent %q", after.ParentID)
 	}
+}
+
+func statusLeft(t *testing.T, h *sessionHarness, id string) string {
+	t.Helper()
+	out, err := exec.Command("tmux", "-L", h.driver.SocketName(), "show-options", "-v", "-t", "am_"+id, "status-left").CombinedOutput()
+	if err != nil {
+		t.Fatalf("read status-left of %s: %v: %s", id, err, out)
+	}
+	return strings.TrimSpace(string(out))
 }
