@@ -2,7 +2,6 @@ package focus
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -28,8 +27,6 @@ const (
 	motionBit       = 32
 	x10Limit        = 223
 )
-
-var paneLinkPattern = regexp.MustCompile(`https?://\S+`)
 
 type selection struct {
 	active     bool
@@ -382,47 +379,6 @@ func (m Model) copyRequest() *CopyRequest {
 		return nil
 	}
 	return &CopyRequest{Text: text, Generation: m.copyGen}
-}
-
-func (m Model) linkAt(row, col int) string {
-	if row < 0 || row >= len(m.frame.lines) {
-		return ""
-	}
-	line := m.frame.lines[row]
-	clicked, _ := graphemeRangeAtColumns(line, col, col+1)
-	for _, span := range paneLinkPattern.FindAllStringIndex(line, -1) {
-		if clicked < span[0] || clicked >= span[1] {
-			continue
-		}
-		url := line[span[0]:span[1]]
-		current, end := line, span[1]
-		for next := row + 1; end == len(current) &&
-			ansi.StringWidth(current) >= m.frame.box.Width && next < len(m.frame.lines); next++ {
-			rest := m.frame.lines[next]
-			if rest == "" || strings.HasPrefix(rest, " ") {
-				break
-			}
-			fields := strings.Fields(rest)
-			url += fields[0]
-			if len(fields) > 1 || ansi.StringWidth(rest) < m.frame.box.Width {
-				break
-			}
-			current, end = rest, len(rest)
-		}
-		return trimLinkPunctuation(url)
-	}
-	return ""
-}
-
-func trimLinkPunctuation(url string) string {
-	url = strings.TrimRight(url, `.,;:!?'"`)
-	for _, pair := range [][2]string{{"(", ")"}, {"[", "]"}, {"<", ">"}} {
-		for strings.HasSuffix(url, pair[1]) && strings.Count(url, pair[1]) > strings.Count(url, pair[0]) {
-			url = strings.TrimSuffix(url, pair[1])
-			url = strings.TrimRight(url, `.,;:!?'"`)
-		}
-	}
-	return url
 }
 
 func (m Model) clickReport(button, row, col int) string {
