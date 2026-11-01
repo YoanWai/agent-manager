@@ -340,7 +340,7 @@ func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 			t.Errorf("%s: needs max_version or expires_at, or it keeps showing after it stops being true", entry.ID)
 		}
 		if entry.Pinned && entry.ExpiresAt == "" {
-			t.Errorf("%s: a pinned entry needs expires_at, or nobody can ever clear it", entry.ID)
+			t.Errorf("%s: a pinned entry needs expires_at, or it stays undismissable until the feed changes", entry.ID)
 		}
 		if entry.MaxVersion != "" {
 			versionEntry := entry
