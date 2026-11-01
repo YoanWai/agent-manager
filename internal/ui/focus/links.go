@@ -88,7 +88,7 @@ func frameLinks(raw, plain []string, width int) [][]paneLink {
 	links := make([][]paneLink, len(raw))
 	own := make([]int, len(raw))
 	for row := range raw {
-		if strings.Contains(raw[row], "://") {
+		if strings.Contains(raw[row], "://") || strings.Contains(plain[row], "://") {
 			links[row] = append(rowHyperlinks(raw[row], plain[row]), writtenLinks(plain[row])...)
 			own[row] = len(links[row])
 		}

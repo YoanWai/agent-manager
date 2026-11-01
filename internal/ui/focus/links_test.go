@@ -99,3 +99,12 @@ func TestWrappedShownHyperlinkStaysShown(t *testing.T) {
 		}
 	}
 }
+
+// The gate that skips rows without links reads the plain text too, since a
+// color change inside a written address splits it in the captured row.
+func TestColoredURLStillOpens(t *testing.T) {
+	model := mouseModel(t, []string{"see https:\x1b[31m//example.com/x\x1b[0m now"}, 40, PaneUpdate{})
+	if got := clickURL(&model, testOriginX+8, testOriginY); got != "https://example.com/x" {
+		t.Fatalf("colored URL opened %q", got)
+	}
+}
