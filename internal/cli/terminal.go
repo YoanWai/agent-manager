@@ -70,22 +70,29 @@ func runTerminalCreate(out io.Writer, terminals terminalCommands, args []string,
 		return err
 	}
 	opts := sessioncmd.CreateTerminalOptions{Directory: *directory}
-	// An omitted group inherits this session's, and an omitted nest depends
-	// on whether there is a session to nest under, so only a flag the
-	// caller actually typed is passed on.
-	set.Visit(func(given *flag.Flag) {
-		switch given.Name {
-		case "group":
-			opts.Group = group
-		case "nest":
-			opts.Nest = nest
-		}
-	})
+	opts.Group, opts.Nest = typedPlacement(set, group, nest)
 	created, err := terminals.Create(sessionID, opts)
 	if err != nil {
 		return err
 	}
 	return emit(out, *asJSON, created, "created "+sessioncmd.FormatTerminal(created))
+}
+
+// An omitted group inherits this session's, and an omitted nest depends on
+// whether there is a session to nest under, so only a flag the caller
+// actually typed is passed on.
+func typedPlacement(set *flag.FlagSet, group *string, nest *bool) (*string, *bool) {
+	var typedGroup *string
+	var typedNest *bool
+	set.Visit(func(given *flag.Flag) {
+		switch given.Name {
+		case "group":
+			typedGroup = group
+		case "nest":
+			typedNest = nest
+		}
+	})
+	return typedGroup, typedNest
 }
 
 func runTerminalSend(out io.Writer, terminals terminalCommands, args []string, sessionID string) error {

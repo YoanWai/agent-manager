@@ -267,6 +267,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 	failure := errors.New("session is not running")
 	sessions := &fakeSessions{session: sampleSession(), failWith: failure}
 	terminals := &fakeTerminals{failWith: failure}
+	browsers := &fakeBrowsers{failWith: failure}
 	cases := []struct {
 		name string
 		args []string
@@ -303,6 +304,10 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"terminal send", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalSend(out, terminals, args, "cafe0001") }},
 		{"terminal read", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalRead(out, terminals, args, "cafe0001") }},
 		{"terminal close", []string{"t1"}, func(out io.Writer, args []string) error { return runTerminalClose(out, terminals, args, "cafe0001") }},
+		{"browser list", nil, func(out io.Writer, args []string) error { return runBrowserList(out, browsers, args, "cafe0001") }},
+		{"browser create", nil, func(out io.Writer, args []string) error { return runBrowserCreate(out, browsers, args, "cafe0001") }},
+		{"browser command", []string{"b1", "snapshot -i"}, func(out io.Writer, args []string) error { return runBrowserCommand(out, browsers, args, "cafe0001") }},
+		{"browser close", []string{"b1"}, func(out io.Writer, args []string) error { return runBrowserClose(out, browsers, args, "cafe0001") }},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -546,7 +551,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
 		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self", "prompts", "env",
-		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
+		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal", "browser",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}
 	for _, name := range registered {
@@ -559,7 +564,7 @@ func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	}
 
 	help := Help("dev", false)
-	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, usageSettingsSet, usagePromptsAdd, usageEnvSet, "task <list|create|claim|finish|release|delete>", "settings <list|get|set>", "prompts <list|add|rm>", "env <list|show|set|unset|rm>"} {
+	for _, line := range []string{usageSessions, usageReserve, usageTerminalSend, usageBrowserCommand, usageRename, usageReviewComment, usageIssue, usageFeature, usageUpdate, usageSettingsSet, usagePromptsAdd, usageEnvSet, "task <list|create|claim|finish|release|delete>", "settings <list|get|set>", "prompts <list|add|rm>", "env <list|show|set|unset|rm>"} {
 		if !strings.Contains(help, line) {
 			t.Fatalf("help is missing %q:\n%s", line, help)
 		}
