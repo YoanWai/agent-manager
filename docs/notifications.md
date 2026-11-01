@@ -76,7 +76,7 @@ into Settings is a HEADS UP message.
 | `pgup` `pgdn` `home` `end` | Scroll the message |
 | `↵` | Open the release notes or the feed link |
 | `u` | Update, on an available release |
-| `x` | Dismiss the message for good |
+| `x` | Dismiss the message for good, except a pinned one |
 | `r` | Refresh the release catalog and the feed |
 | `esc` or `q` | Close |
 
@@ -221,6 +221,11 @@ Rules:
   `Open link`. New entries put the button text here and leave a "Press Enter to
   ..." line out of `body`. Entries shipped before v0.46.0 keep that line because
   older builds still show it.
+- `pinned` is optional. A pinned entry sits first in its list group, and `x`
+  does not dismiss it, so it stays until `expires_at`. Opening it still marks
+  it read. A pinned entry needs an `expires_at`. Builds before v0.47.0 ignore
+  it and let the entry be dismissed. An entry someone already dismissed stays
+  dismissed.
 - `min_version` and `max_version` are inclusive and optional. Time-sensitive or
   version-specific messages should have narrow version bounds.
 - `expires_at` is an optional RFC 3339 timestamp. The message shows

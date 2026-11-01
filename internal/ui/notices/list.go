@@ -116,6 +116,7 @@ func (p Panel) Active(src Sources) []Notice {
 			Body:     msg.Body,
 			URL:      msg.URL,
 			Action:   msg.Action,
+			Pinned:   msg.Pinned,
 			Expires:  msg.Expires,
 		})
 	}
@@ -146,6 +147,17 @@ func (p Panel) Active(src Sources) []Notice {
 			kept = append(kept, n)
 		}
 	}
-	slices.SortStableFunc(kept, func(a, b Notice) int { return cmp.Compare(a.Kind, b.Kind) })
+	slices.SortStableFunc(kept, func(a, b Notice) int {
+		if a.Kind != b.Kind {
+			return cmp.Compare(a.Kind, b.Kind)
+		}
+		switch {
+		case a.Pinned && !b.Pinned:
+			return -1
+		case b.Pinned && !a.Pinned:
+			return 1
+		}
+		return 0
+	})
 	return kept
 }

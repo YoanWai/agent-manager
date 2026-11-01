@@ -339,6 +339,9 @@ func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 		if entry.MaxVersion == "" && entry.ExpiresAt == "" {
 			t.Errorf("%s: needs max_version or expires_at, or it keeps showing after it stops being true", entry.ID)
 		}
+		if entry.Pinned && entry.ExpiresAt == "" {
+			t.Errorf("%s: a pinned entry needs expires_at, or nobody can ever clear it", entry.ID)
+		}
 		if entry.MaxVersion != "" {
 			versionEntry := entry
 			versionEntry.ExpiresAt = ""
@@ -506,6 +509,7 @@ func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	shapes := map[int][]string{
 		1: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at"},
 		2: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at", "kind", "action"},
+		3: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at", "kind", "action", "pinned"},
 	}
 	want, ok := shapes[feedParser]
 	if !ok {
@@ -521,9 +525,9 @@ func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	}
 }
 
-func TestSanitizeKeepsKindActionAndExpiry(t *testing.T) {
+func TestSanitizeKeepsKindActionPinAndExpiry(t *testing.T) {
 	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
-	raw := []rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: "heads-up", Action: "Join on Discord", ExpiresAt: "2026-11-22T12:00:00Z"}}
+	raw := []rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: "heads-up", Action: "Join on Discord", Pinned: true, ExpiresAt: "2026-11-22T12:00:00Z"}}
 	got := sanitize(raw, "0.46.0", now)
 	if len(got) != 1 {
 		t.Fatalf("want 1 message, got %+v", got)
@@ -533,6 +537,9 @@ func TestSanitizeKeepsKindActionAndExpiry(t *testing.T) {
 	}
 	if got[0].Action != "Join on Discord" {
 		t.Errorf("action = %q", got[0].Action)
+	}
+	if !got[0].Pinned {
+		t.Error("pinned entry came back unpinned")
 	}
 	if want := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC); !got[0].ExpiresAt.Equal(want) {
 		t.Errorf("expires at = %v, want %v", got[0].ExpiresAt, want)
