@@ -75,7 +75,8 @@ func newSessions(configDir string, words Vocabulary, newDriver func() (*tmux.Dri
 }
 
 // agent resolves a target id to an agent session, refusing the ids that
-// belong to terminals so an agent never types a sentence at a shell.
+// belong to terminals and browsers so an agent never types a sentence at
+// a shell or a page.
 func (r *runtime) agent(id string) (store.Session, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -89,7 +90,7 @@ func (r *runtime) agent(id string) (store.Session, error) {
 		return store.Session{}, err
 	}
 	if r.cfg.IsTool(sess.Tool) {
-		return store.Session{}, fmt.Errorf("session %s is a terminal, not an agent; use the terminal tools for it", id)
+		return store.Session{}, fmt.Errorf("session %s is not an agent; use the terminal or browser tools for it", id)
 	}
 	return sess, nil
 }

@@ -1,7 +1,6 @@
 package sessioncmd
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -165,7 +164,7 @@ func (r *runtime) agentCaller(sessionID string) (store.Session, error) {
 		return store.Session{}, err
 	}
 	if r.cfg.IsTool(caller.Tool) {
-		return store.Session{}, errors.New("this session is a terminal, which has no turns to end")
+		return store.Session{}, fmt.Errorf("this session is a %s, which has no turns to end", caller.Tool)
 	}
 	return caller, nil
 }

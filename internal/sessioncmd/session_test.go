@@ -30,7 +30,7 @@ type sessionHarness struct {
 
 // sessionConfig gives the harness one agent CLI whose command echoes the
 // prompt it launched with, so a spawn's own pane proves the prompt reached
-// it, plus a terminal tool the agent tools must refuse.
+// it, plus a terminal and a browser the agent tools must refuse.
 const sessionConfig = `[clis.echoer]
 command = "echo"
 revive_command = "echo resumed"
@@ -107,6 +107,10 @@ default_status = "idle"
 
 [tools.terminal]
 command = ""
+default_status = "idle"
+
+[tools.browser]
+command = "terminal-browser open --no-merge"
 default_status = "idle"
 `
 

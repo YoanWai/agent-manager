@@ -11,6 +11,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/launch"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/termbrowser"
 	"github.com/google/uuid"
 )
 
@@ -74,6 +75,9 @@ type Lifecycle struct {
 	runtime  Runtime
 	setLabel func(string, string) error
 	killPane func(string) error
+	// browserEngine stands in for terminal-browser in tests. Nil runs the
+	// real one on the runtime's tmux server.
+	browserEngine browserEngine
 }
 
 func NewLifecycle(runtime Runtime) (*Lifecycle, error) {
@@ -238,6 +242,19 @@ func (l *Lifecycle) Launch(request LaunchRequest) (LaunchResult, error) {
 	}, nil
 }
 
+// releaseBrowser frees a live browser row's agent-browser session before its
+// pane is killed. Other rows have none.
+func (l *Lifecycle) releaseBrowser(sess store.Session) {
+	if sess.Tool != config.BrowserTool || !l.runtime.Driver.Exists(sess.ID) {
+		return
+	}
+	engine := l.browserEngine
+	if engine == nil {
+		engine = termbrowser.NewOnServer(l.runtime.Driver.SocketPath())
+	}
+	releaseBrowserAgent(engine, sess.ID)
+}
+
 // Kill leaves the row and conversation intact for revive. Pane capture is
 // best effort, but a captured frame must be persisted before the pane dies.
 func (l *Lifecycle) Kill(sess store.Session) (store.Session, error) {
@@ -250,6 +267,7 @@ func (l *Lifecycle) Kill(sess store.Session) (store.Session, error) {
 				return store.Session{}, err
 			}
 		}
+		l.releaseBrowser(sess)
 		if err := l.runtime.Driver.Kill(sess.ID); err != nil {
 			return store.Session{}, err
 		}
@@ -291,7 +309,7 @@ func (l *Lifecycle) revive(sess store.Session, pane PaneSize) (RelaunchResult, e
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	if l.runtime.Config.IsTool(sess.Tool) && l.runtime.Driver.Exists(sess.ID) {
+	if sess.Tool == config.TerminalTool && l.runtime.Driver.Exists(sess.ID) {
 		return RelaunchResult{}, fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
 	}
 	degraded := func(sess store.Session) bool {
@@ -315,7 +333,7 @@ func (l *Lifecycle) revive(sess store.Session, pane PaneSize) (RelaunchResult, e
 	if err := SnapshotRelaunch(l.runtime.Store, sess, tool, sess.AgentSessionID); err != nil {
 		return RelaunchResult{}, err
 	}
-	return l.launchExisting(sess, tool, launch.ReviveCommand(tool, sess.AgentSessionID), pane, degraded(sess), true, func(at time.Time) error {
+	return l.launchExisting(sess, tool, relaunchCommand(tool, sess), pane, degraded(sess), true, func(at time.Time) error {
 		return l.runtime.Store.SetAgentLaunchedAt(sess.ID, at)
 	})
 }
@@ -337,6 +355,9 @@ func (l *Lifecycle) Restart(listed store.Session, pane PaneSize) (RelaunchResult
 	}
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
+	}
+	if sess.Tool == config.BrowserTool {
+		return l.restartBrowser(sess, pane)
 	}
 	if l.runtime.Driver.Exists(sess.ID) {
 		if _, err := l.Kill(sess); err != nil {
@@ -363,6 +384,24 @@ func (l *Lifecycle) Restart(listed store.Session, pane PaneSize) (RelaunchResult
 	}
 	result.Conversation = agentSessionID
 	return result, err
+}
+
+// restartBrowser ends a browser that is still running and revives it, so
+// the page it last showed opens again. A browser holds no conversation to
+// retire.
+func (l *Lifecycle) restartBrowser(sess store.Session, pane PaneSize) (RelaunchResult, error) {
+	if l.runtime.Driver.Exists(sess.ID) {
+		running, err := AgentRunning(l.runtime.Driver, sess.ID)
+		if err != nil {
+			return RelaunchResult{}, err
+		}
+		if running {
+			if _, err := l.Kill(sess); err != nil {
+				return RelaunchResult{}, err
+			}
+		}
+	}
+	return l.revive(sess, pane)
 }
 
 func (l *Lifecycle) launchExisting(sess store.Session, tool config.CLI, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (result RelaunchResult, launchErr error) {
@@ -562,6 +601,7 @@ func (l *Lifecycle) DeleteForHuman(selection DeleteSelection) (DeleteResult, err
 	}
 	result := DeleteResult{Deleted: make([]store.Session, 0, len(selection.Sessions))}
 	for _, sess := range deleteChildrenFirst(selection.Sessions) {
+		l.releaseBrowser(sess)
 		if err := l.runtime.Driver.Kill(sess.ID); err != nil {
 			return result, err
 		}

@@ -16,6 +16,7 @@ import (
 )
 
 type terminalHarness struct {
+	configDir string
 	driver    *tmux.Driver
 	store     *store.Store
 	terminals *Terminals
@@ -56,9 +57,10 @@ func newTerminalHarness(t *testing.T) *terminalHarness {
 		t.Fatalf("create caller row: %v", err)
 	}
 	h := &terminalHarness{
-		driver: driver,
-		store:  st,
-		caller: caller,
+		configDir: configDir,
+		driver:    driver,
+		store:     st,
+		caller:    caller,
 	}
 	h.terminals = newTerminals(configDir, MCPVocabulary(), func() (*tmux.Driver, error) { return driver, nil })
 	t.Cleanup(func() { tearDownHarness(t, driver, st) })

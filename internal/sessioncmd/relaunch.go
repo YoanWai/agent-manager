@@ -123,7 +123,7 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 		return store.Session{}, err
 	}
 	tool = tool.WithChoice(sess.Choice)
-	base := launch.ReviveCommand(tool, sess.AgentSessionID)
+	base := relaunchCommand(tool, sess)
 	launchedAt := time.Now()
 	profile, err := st.LaunchEnv(sess.Environment)
 	if err != nil {
@@ -150,6 +150,15 @@ func RelaunchInPane(driver *tmux.Driver, st *store.Store, hookManager *hooks.Man
 	sess.AgentLaunchedAt = launchedAt
 	sess.Status = status.Starting
 	return sess, nil
+}
+
+// relaunchCommand is what a row comes back on. A browser reopens the page it
+// last showed, and an agent resumes its conversation.
+func relaunchCommand(tool config.CLI, sess store.Session) string {
+	if sess.Tool == config.BrowserTool {
+		return launch.BrowserCommand(tool.Command, sess.BrowserURL)
+	}
+	return launch.ReviveCommand(tool, sess.AgentSessionID)
 }
 
 // paneSettle is how long a busy pane is given to come back empty. A shell

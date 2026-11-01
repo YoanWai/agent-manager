@@ -1,6 +1,9 @@
 package sessioncmd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func assertFormatted(t *testing.T, got, want string) {
 	t.Helper()
@@ -21,6 +24,41 @@ func TestFormatTerminals(t *testing.T) {
 	assertFormatted(t, FormatTerminalInput(TerminalInput{TerminalID: "term1", Sent: "keys"}), "sent keys to terminal term1")
 	assertFormatted(t, FormatTerminalScreen(TerminalScreen{}), "terminal screen is empty")
 	assertFormatted(t, FormatTerminalScreen(TerminalScreen{Output: "$ pwd\n/workspace"}), "$ pwd\n/workspace")
+}
+
+func TestFormatBrowsers(t *testing.T) {
+	showing := Browser{Name: "browser-lead", ID: "brow1", Directory: "/repo", Status: "idle", Running: true, ParentID: "lead1", ParentName: "lead", URL: "https://example.com/", Title: "Example"}
+	blank := Browser{Name: "browser-9f3a", ID: "brow2", Group: "backend", Directory: "/logs", Status: "dead"}
+
+	assertFormatted(t, FormatBrowser(showing), "browser-lead (id brow1) in root at /repo showing https://example.com/")
+	assertFormatted(t, FormatBrowser(blank), "browser-9f3a (id brow2) in backend at /logs")
+	assertFormatted(t, FormatBrowserList(nil), "no managed browsers")
+	assertFormatted(t, FormatBrowserList([]Browser{showing, blank}),
+		"- browser-lead (id brow1) in root at /repo under lead; status=idle; running=true; url=https://example.com/; title=Example\n"+
+			"- browser-9f3a (id brow2) in backend at /logs; status=dead; running=false; url=")
+	assertFormatted(t, FormatBrowserOutput(BrowserOutput{BrowserID: "brow1", Command: "get url", Output: "https://example.com/\n"}), "https://example.com/\n")
+	assertFormatted(t, FormatBrowserOutput(BrowserOutput{BrowserID: "brow1", Command: "click @e1"}), "browser command printed nothing")
+}
+
+func TestFormatBrowsersCleansPageText(t *testing.T) {
+	hostile := Browser{
+		Name: "browser-lead", ID: "brow1", Directory: "/repo", Status: "idle", Running: true,
+		URL:   "https://example.com/\r\n\U0010EEEE",
+		Title: "\x1b]0;x\x07Docs\U0010EEEE",
+	}
+	assertFormatted(t, FormatBrowser(hostile), "browser-lead (id brow1) in root at /repo showing https://example.com/")
+	assertFormatted(t, FormatBrowserList([]Browser{hostile}),
+		"- browser-lead (id brow1) in root at /repo; status=idle; running=true; url=https://example.com/; title=]0;xDocs")
+
+	long := Browser{Name: "browser-lead", ID: "brow1", Directory: "/repo", URL: "https://example.com/" + strings.Repeat("a", 300)}
+	shown := strings.TrimPrefix(FormatBrowser(long), "browser-lead (id brow1) in root at /repo showing ")
+	if runes := []rune(shown); len(runes) != 200 || runes[199] != '…' || !strings.HasPrefix(shown, "https://example.com/aaa") {
+		t.Fatalf("a long url printed as %d runes: %q", len(runes), shown)
+	}
+	controlOnly := Browser{Name: "browser-lead", ID: "brow1", Directory: "/repo", Title: "\x1b\x07"}
+	if line := FormatBrowserList([]Browser{controlOnly}); strings.Contains(line, "title=") {
+		t.Fatalf("a title of control characters alone still printed: %q", line)
+	}
 }
 
 func TestFormatSessions(t *testing.T) {

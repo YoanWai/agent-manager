@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/termbrowser"
 )
 
 // The CLI subcommands and the MCP tools describe the same workspace to the
@@ -41,6 +42,54 @@ func FormatTerminalScreen(screen TerminalScreen) string {
 		return "terminal screen is empty"
 	}
 	return screen.Output
+}
+
+func browserPlace(browser Browser) string {
+	return fmt.Sprintf("%s (id %s) in %s at %s", browser.Name, browser.ID, groupLabel(browser.Group), browser.Directory)
+}
+
+const pageTextLimit = 200
+
+func listingPageText(text string) string {
+	runes := []rune(termbrowser.PageText(text))
+	if len(runes) <= pageTextLimit {
+		return string(runes)
+	}
+	return string(runes[:pageTextLimit-1]) + "…"
+}
+
+func FormatBrowser(browser Browser) string {
+	url := listingPageText(browser.URL)
+	if url == "" {
+		return browserPlace(browser)
+	}
+	return browserPlace(browser) + " showing " + url
+}
+
+func FormatBrowserList(browsers []Browser) string {
+	if len(browsers) == 0 {
+		return "no managed browsers"
+	}
+	lines := make([]string, 0, len(browsers))
+	for _, browser := range browsers {
+		place := browserPlace(browser)
+		if browser.ParentName != "" {
+			place += " under " + browser.ParentName
+		}
+		line := fmt.Sprintf("- %s; status=%s; running=%t; url=%s", place, browser.Status, browser.Running, listingPageText(browser.URL))
+		if title := listingPageText(browser.Title); title != "" {
+			line += "; title=" + title
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func FormatBrowserOutput(output BrowserOutput) string {
+	if output.Output == "" {
+		return "browser command printed nothing"
+	}
+	return output.Output
 }
 
 func FormatSession(session Session) string {

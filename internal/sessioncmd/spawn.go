@@ -64,7 +64,7 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 		}
 	}
 	if runtime.cfg.IsTool(toolName) {
-		return Session{}, fmt.Errorf("%q opens a shell, not an agent CLI; use %s for that", toolName, runtime.words.CreateTerminal)
+		return Session{}, fmt.Errorf("%q is a tool, not an agent CLI; use %s or %s for it", toolName, runtime.words.CreateTerminal, runtime.words.CreateBrowser)
 	}
 	tool, known := runtime.cfg.CLIs[toolName]
 	if !known {
@@ -194,8 +194,8 @@ func (r *runtime) resumable(req resumeRequest) (string, error) {
 	return resume, nil
 }
 
-// toolFor is the CLI a spawn runs when it names none. A terminal or a script
-// runs no agent to copy, so it takes the one picked in Settings.
+// toolFor is the CLI a spawn runs when it names none. A terminal, a browser
+// or a script runs no agent to copy, so it takes the one picked in Settings.
 func (r *runtime) toolFor(caller store.Session) (string, error) {
 	if caller.ID == "" || r.cfg.IsTool(caller.Tool) {
 		return r.settingsTool()
