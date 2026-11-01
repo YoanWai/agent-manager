@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -45,6 +46,7 @@ type Driver struct {
 	socket string
 
 	attachSizeLargest atomic.Bool
+	binaryVersion     atomic.Pointer[tmuxVersion]
 	paneTheme         atomic.Pointer[PaneTheme]
 	paneThemePush     sync.Mutex
 	socketPath        atomic.Pointer[string]
@@ -96,6 +98,66 @@ func Version() (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+type tmuxVersion struct {
+	major int
+	minor int
+}
+
+// ServerVersion asks the driver's binary rather than the running server,
+// since that client is the one that will create the pane.
+func (d *Driver) ServerVersion() (major, minor int, err error) {
+	if cached := d.binaryVersion.Load(); cached != nil {
+		return cached.major, cached.minor, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), CommandTimeout)
+	defer cancel()
+	cmd := d.commandContext(ctx, "-V")
+	configureBoundedCommand(cmd)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, 0, fmt.Errorf("%s -V: %w: %s", d.bin, err, strings.TrimSpace(stderr.String()))
+	}
+	major, minor, ok := ParseVersion(string(out))
+	if !ok {
+		return 0, 0, fmt.Errorf("%s -V printed %q, not a tmux version", d.bin, strings.TrimSpace(string(out)))
+	}
+	d.binaryVersion.Store(&tmuxVersion{major: major, minor: minor})
+	return major, minor, nil
+}
+
+// ParseVersion reads major.minor from tmux -V output such as "tmux 3.3a".
+// A development build prints "tmux next-3.4", which counts as 3.4.
+func ParseVersion(out string) (major, minor int, ok bool) {
+	fields := strings.Fields(out)
+	if len(fields) < 2 || fields[0] != "tmux" {
+		return 0, 0, false
+	}
+	majorText, minorText, found := strings.Cut(strings.TrimPrefix(fields[1], "next-"), ".")
+	if !found {
+		return 0, 0, false
+	}
+	major, err := strconv.Atoi(majorText)
+	if err != nil {
+		return 0, 0, false
+	}
+	if end := strings.IndexFunc(minorText, func(character rune) bool {
+		return character < '0' || character > '9'
+	}); end >= 0 {
+		minorText = minorText[:end]
+	}
+	minor, err = strconv.Atoi(minorText)
+	if err != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
+}
+
+func VersionAtLeast(major, minor, wantMajor, wantMinor int) bool {
+	return major > wantMajor || (major == wantMajor && minor >= wantMinor)
 }
 
 func (d *Driver) SocketName() string {

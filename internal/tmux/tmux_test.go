@@ -330,3 +330,74 @@ func bindingServer(t *testing.T, driver *Driver) func(args ...string) *exec.Cmd 
 		return tmuxCmd(append(sessionRoute(id), args...)...)
 	}
 }
+
+func TestParseVersion(t *testing.T) {
+	cases := map[string][2]int{"tmux 3.8": {3, 8}, "tmux 3.3a": {3, 3}, "tmux next-3.4": {3, 4}, "tmux 3.1c": {3, 1}}
+	for in, want := range cases {
+		major, minor, ok := ParseVersion(in)
+		if !ok || major != want[0] || minor != want[1] {
+			t.Errorf("%q = %d.%d %v", in, major, minor, ok)
+		}
+	}
+	if _, _, ok := ParseVersion("garbage"); ok {
+		t.Error("garbage parsed")
+	}
+	if !VersionAtLeast(3, 3, 3, 3) || VersionAtLeast(3, 2, 3, 3) || !VersionAtLeast(4, 0, 3, 3) {
+		t.Error("VersionAtLeast wrong")
+	}
+}
+
+// ServerVersion asks the driver's binary with -V on the driver's socket,
+// keeps the first answer it can parse, and asks again after one it cannot.
+func TestServerVersionCachesFirstSuccess(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	dir := t.TempDir()
+	callLog := dir + "/calls"
+	answer := dir + "/answer"
+	stub := dir + "/tmux"
+	script := "#!/bin/sh\necho \"$@\" >> " + callLog + "\ncat " + answer + "\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	setAnswer := func(text string) {
+		t.Helper()
+		if err := os.WriteFile(answer, []byte(text), 0o600); err != nil {
+			t.Fatalf("answer: %v", err)
+		}
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+
+	setAnswer("garbage\n")
+	if _, _, err := driver.ServerVersion(); err == nil {
+		t.Fatal("unparseable answer returned no error")
+	}
+	setAnswer("tmux 3.3a\n")
+	if major, minor, err := driver.ServerVersion(); err != nil || major != 3 || minor != 3 {
+		t.Fatalf("ServerVersion = %d.%d %v, want 3.3", major, minor, err)
+	}
+	setAnswer("tmux 2.9\n")
+	if major, minor, err := driver.ServerVersion(); err != nil || major != 3 || minor != 3 {
+		t.Fatalf("cached ServerVersion = %d.%d %v, want 3.3", major, minor, err)
+	}
+	logged, err := os.ReadFile(callLog)
+	if err != nil {
+		t.Fatalf("read call log: %v", err)
+	}
+	calls := strings.Split(strings.TrimSpace(string(logged)), "\n")
+	want := "-L " + testSocket + " -V"
+	if !slices.Equal(calls, []string{want, want}) {
+		t.Fatalf("calls = %q, want two %q calls", calls, want)
+	}
+}
+
+func TestServerVersionReportsStderr(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	stub := t.TempDir() + "/tmux"
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\necho 'no server here' >&2\nexit 1\n"), 0o700); err != nil {
+		t.Fatalf("stub: %v", err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+	if _, _, err := driver.ServerVersion(); err == nil || !strings.Contains(err.Error(), "no server here") {
+		t.Fatalf("failing -V error = %v, want its stderr", err)
+	}
+}
