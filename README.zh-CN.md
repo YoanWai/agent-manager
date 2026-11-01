@@ -43,9 +43,9 @@
 
 > 本文是英文 [README](README.md) 的翻译。两者不一致时，以英文版为准。
 
-Claude Code、Codex、OpenCode、Grok、Gemini CLI、Antigravity CLI、Pi、Command Code、Hermes Agent、Muse Code、Oh My Pi 和 Cursor CLI 可以并排运行。每个工具都运行在自己的持久 tmux 会话中。
+Claude Code、Codex、OpenCode、Grok、Gemini CLI、Antigravity CLI、Pi、Command Code、Hermes Agent、Muse Code、Oh My Pi 和 Cursor CLI 可以并排运行。每个 CLI 都运行在自己的持久 tmux 会话中。
 
-agent-manager 是你已有 CLI 之上的一层薄壳。每个会话启动的都是你本机安装的原版工具：你的登录、订阅、配置文件、MCP 服务器，以及工具自带的所有功能都原样保留，和在普通终端里运行完全一样。
+agent-manager 是你已有 CLI 之上的一层薄壳。每个会话启动的都是你本机安装的原版 CLI：你的登录、订阅、配置文件、MCP 服务器，以及 CLI 自带的所有功能都原样保留，和在普通终端里运行完全一样。
 
 不用再在一堆终端标签页里找哪个智能体做完了、哪个卡住了。所有会话都显示在同一个列表里，带实时状态，并按项目树分组，可以折叠和排序。无需进入会话就能回复任何一个：`space` 把提示词直接发到会话的面板，或在选中的分组里启动一个新智能体。已退出的会话按 `v` 就能在原来的对话上恢复。`ctrl+r` 打开智能体改动的完整文件 diff，带语法高亮。你在代码行上留下的评论，按 `C` 后会合成一条审查提示发回智能体的面板。
 
@@ -63,7 +63,7 @@ agent-manager 是你已有 CLI 之上的一层薄壳。每个会话启动的都�
 
 **跳转到：** [安装](#安装) · [使用](#使用) · [按键](docs/usage.md#keys) · [Diff 审查](docs/usage.md#diff-review) · [配置](docs/configuration.md) · [文档站](https://agent-manager.dev/docs/)
 
-## 支持的工具
+## 支持的 CLI
 
 状态检测支持 **Claude Code**、**OpenCode**、**Codex**、**Grok Build**、**Gemini CLI**、**Antigravity CLI**、**Pi**、**Command Code**、**Hermes Agent**、**Muse Code**、**Oh My Pi** 和 **Cursor CLI**。每个工具的启动、恢复、分叉和状态规则都内置在二进制文件中（Hermes、Antigravity、Oh My Pi 和 Cursor CLI 不支持分叉），所以升级一次就能拿到所有工具的最新规则（见 [Configuration](docs/configuration.md#agent-clis)）。想支持列表外的 CLI，请提交 [功能请求](https://github.com/YoanWai/agent-manager/issues/new/choose)。
 
@@ -177,7 +177,7 @@ agent-manager
 
 | 按键 | 作用 |
 |-----|--------|
-| `n` | 新建会话（名称、工具、该工具提供的模型、推理强度和 profile、环境配置、目录、可选的初始提示词、分组） |
+| `n` | 新建会话（名称、CLI、该 CLI 提供的模型、推理强度和 profile、环境配置、目录、可选的初始提示词、分组） |
 | `space` | 快速提示模式：回复选中的会话，或在选中的分组里启动智能体 |
 | `enter` | 原地聚焦会话；按键发给智能体，列表保持可见 |
 | 单击 / 双击 | 从行或预览聚焦会话 / 折叠或展开分组。全屏布局中单击选中，双击聚焦 |
@@ -187,8 +187,8 @@ agent-manager
 | `→` / `←` | 进入和退出：`→` 聚焦会话或展开分组，`←` 折叠分组，或在聚焦智能体的提示词开头处返回列表。可以在设置里关闭这对按键 |
 | `ctrl+r` | 以完整文件 diff 审查会话的改动；`c` 评论一行，`C` 发送一轮编号的审查，已发送的评论会保留并显示为未处理或已处理 |
 | `x` / `v` | 结束会话以释放内存 / 在原对话上恢复 |
-| `R` | 以空上下文重启会话：名称、分组、目录和工具不变，对话重新开始 |
-| `s` | 设置（默认工具、主题或跟随系统明暗模式、列表密度、鼠标、审查布局、桌面通知、编辑器、按键绑定） |
+| `R` | 以空上下文重启会话：名称、分组、目录和 CLI 不变，对话重新开始 |
+| `s` | 设置（默认 CLI、主题或跟随系统明暗模式、列表密度、鼠标、审查布局、桌面通知、编辑器、按键绑定） |
 | `?` | 当前界面的按键表；审查界面只显示审查相关的绑定 |
 
 会话可以在独立的 git worktree 中启动（`<repo>-worktrees/<name>`，分支 `am/<name>`）。在 `n` 表单中切换，快速提示模式中按 `ctrl+t`，或在设置里设为默认。

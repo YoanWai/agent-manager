@@ -55,7 +55,7 @@ coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
   default in code.
 - **Every tool.** New shared behavior covers every applicable tool in the
   same PR. A field, status rule, or command added to one `[clis.*]` block
-  is added to every CLI it applies to. A fix to one tool's adapter or support
+  is added to every CLI it applies to. A fix to one CLI's adapter or support
   for a new CLI can stay narrow. Any other partial feature needs evidence
   and an explicit maintainer decision before merge. Reuse shared paths first.
   A working first adapter or an unchanged fallback for other tools is not
@@ -124,7 +124,7 @@ substitution stays in the test process.
 
 Before finishing: `gofmt -l .` prints nothing, `go vet ./...` is clean.
 
-A change to the UI, the poller, or a tool's status rules is verified against
+A change to the UI, the poller, or a CLI's status rules is verified against
 real sessions before the PR says so: build the binary, run it under a
 throwaway `HOME` on its own socket (see Capturing a TUI frame in
 [CONTRIBUTING.md](.github/CONTRIBUTING.md)), drive a real CLI in it, and read
