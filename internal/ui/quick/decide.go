@@ -6,12 +6,13 @@ import (
 )
 
 // Effects is what a bar key or click asks of the root once the bar has
-// taken its own share: the rail cursor, the worktree probe, the saved
-// prompts read, the send, the spawn, and the way off screen.
+// taken its own share: the rail cursor, the worktree probe, a CLI's models,
+// the saved prompts read, the send, the spawn, and the way off screen.
 type Effects interface {
 	Host
 	MoveCursor(delta int) tea.Cmd
 	ToggleWorktree() tea.Cmd
+	LoadCatalog(toolName string) tea.Cmd
 	Close()
 	LoadSaved() tea.Cmd
 	Send(text string) tea.Cmd
@@ -30,6 +31,8 @@ func Execute(h Effects, q *Surface, request Request, cmd tea.Cmd) tea.Cmd {
 		follow = h.MoveCursor(request.Move)
 	case request.Toggle:
 		follow = h.ToggleWorktree()
+	case request.Catalog != "":
+		follow = h.LoadCatalog(request.Catalog)
 	case request.Close:
 		h.Close()
 	case request.Send:

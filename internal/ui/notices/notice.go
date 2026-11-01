@@ -44,6 +44,7 @@ type Notice struct {
 	RangeComplete bool
 	URL           string
 	Action        string
+	Pinned        bool
 	Expires       time.Time
 	Unread        bool
 }
@@ -114,5 +115,6 @@ type Message struct {
 	Accent  []string
 	URL     string
 	Action  string
+	Pinned  bool
 	Expires time.Time
 }

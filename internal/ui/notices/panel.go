@@ -205,6 +205,9 @@ func (p *Panel) Key(msg tea.KeyMsg, notices []Notice, f Frame) Outcome {
 			return Outcome{Action: OpenLink, URL: notices[p.cursor].URL}
 		}
 	case "x", "d":
+		if p.cursor < len(notices) && notices[p.cursor].Pinned {
+			return Outcome{}
+		}
 		out := Outcome{Action: Dismiss, ID: p.Selected(notices)}
 		if len(notices) <= 1 {
 			out.Close = true
@@ -519,7 +522,11 @@ func (p Panel) footActions(notices []Notice, f Frame) [][2]string {
 	if notices[p.cursor].IsUpdate() {
 		update = [][2]string{{"u", "update"}}
 	}
-	rest := append(append([][2]string{{"r", "refresh"}}, update...), [][2]string{{"↵", "open"}, {"x", "dismiss"}, {closeKeys, ""}}...)
+	rest := append(append([][2]string{{"r", "refresh"}}, update...), [2]string{"↵", "open"})
+	if !notices[p.cursor].Pinned {
+		rest = append(rest, [2]string{"x", "dismiss"})
+	}
+	rest = append(rest, [2]string{closeKeys, ""})
 	return append(sections, rest...)
 }
 func (p Panel) footPairs(notices []Notice, inner int, f Frame) [][2]string {
