@@ -140,6 +140,17 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 	if err != nil {
 		return GroupRemoval{}, err
 	}
+	rows := make([]store.Session, 0, len(moved))
+	for _, id := range moved {
+		sess, err := runtime.store.Get(id)
+		if err != nil {
+			return GroupRemoval{}, err
+		}
+		rows = append(rows, sess)
+	}
+	if err := runtime.relabel(rows); err != nil {
+		return GroupRemoval{}, fmt.Errorf("deleted %s, but could not update the status bar of the sessions moved to the root: %w", path, err)
+	}
 	return GroupRemoval{Removed: removed, Moved: moved}, nil
 }
 

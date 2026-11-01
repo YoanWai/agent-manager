@@ -108,6 +108,9 @@ func TestDeleteGroupMovesItsSessionsToTheRoot(t *testing.T) {
 	if !h.driver.Exists(worker.ID) {
 		t.Fatal("deleting a group stopped the agent running in it")
 	}
+	if label := statusLeft(t, h, worker.ID); label != "worker" {
+		t.Fatalf("status bar still names the deleted group: %q", label)
+	}
 	groups, err := h.sessions.Groups(h.caller.ID)
 	if err != nil {
 		t.Fatalf("Groups: %v", err)
