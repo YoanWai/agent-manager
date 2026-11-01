@@ -169,6 +169,132 @@ func TestDeleteGroupTakesItsSubtreeAndKeepsNesting(t *testing.T) {
 	}
 }
 
+func TestMoveFilesASessionAndItsTerminalsUnderAnExistingGroup(t *testing.T) {
+	h := newStoreSessionHarness(t)
+	if _, err := h.sessions.CreateGroup(h.caller.ID, "backend/plugin", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	workerID := h.addSessionRow(t, "worker")
+	if err := h.store.MoveSession(workerID, "backend"); err != nil {
+		t.Fatalf("move session row: %v", err)
+	}
+	shell := store.Session{
+		ID: "aaaa2222", Name: "sh-worker", Tool: "resting",
+		Group: "backend", Status: status.Idle, ParentID: workerID,
+	}
+	if err := h.store.CreateSession(shell); err != nil {
+		t.Fatalf("nest shell: %v", err)
+	}
+
+	moved, err := h.sessions.Move(h.caller.ID, workerID, "/backend/plugin/")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if moved.ID != workerID || moved.Group != "backend/plugin" {
+		t.Fatalf("moved = %+v", moved)
+	}
+	after, err := h.store.Get(shell.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "backend/plugin" || after.ParentID != workerID {
+		t.Fatalf("nested terminal sits in %q under %q", after.Group, after.ParentID)
+	}
+
+	if moved, err = h.sessions.Move("", workerID, ""); err != nil || moved.Group != "" {
+		t.Fatalf("a move to the root with no caller = %+v, %v", moved, err)
+	}
+}
+
+func TestMoveRefusesAnUnknownTargetAndChangesNothing(t *testing.T) {
+	h := newStoreSessionHarness(t)
+	workerID := h.addSessionRow(t, "worker")
+	if err := h.store.MoveSession(workerID, "backend"); err != nil {
+		t.Fatalf("move session row: %v", err)
+	}
+	if err := h.store.CreateGroup("backend/old", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := h.store.SetGroupArchived("backend/old", true); err != nil {
+		t.Fatalf("SetGroupArchived: %v", err)
+	}
+	for _, tc := range []struct {
+		target, group, want string
+	}{
+		{workerID, "nowhere", `group "nowhere" does not exist`},
+		{workerID, "backend/old", `group "backend/old" is archived`},
+		{"deadbeef", "backend", "session deadbeef does not exist"},
+		{" ", "backend", "session_id is empty"},
+	} {
+		if _, err := h.sessions.Move(h.caller.ID, tc.target, tc.group); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("Move(%q, %q) = %v, want %q", tc.target, tc.group, err, tc.want)
+		}
+	}
+	after, err := h.store.Get(workerID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "backend" {
+		t.Fatalf("a refused move left the session in %q", after.Group)
+	}
+	groups, err := h.store.Groups()
+	if err != nil {
+		t.Fatalf("Groups: %v", err)
+	}
+	for _, g := range groups {
+		if g.Name == "nowhere" {
+			t.Fatal("a refused move created the group it named")
+		}
+	}
+}
+
+func TestMoveRelabelsTheStatusBarOfARunningSession(t *testing.T) {
+	h := newSessionHarness(t)
+	for _, path := range []string{"alpha", "repo-a"} {
+		if _, err := h.sessions.CreateGroup(h.caller.ID, path, ""); err != nil {
+			t.Fatalf("CreateGroup %s: %v", path, err)
+		}
+	}
+	group := "alpha"
+	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Tool: "resting", Name: "worker", Group: &group})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := h.sessions.Move(h.caller.ID, worker.ID, "repo-a"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if label := statusLeft(t, h, worker.ID); label != "repo-a · worker" {
+		t.Fatalf("status bar after the move = %q", label)
+	}
+}
+
+func TestMoveIntoItsOwnGroupKeepsTheRowInPlace(t *testing.T) {
+	h := newStoreSessionHarness(t)
+	firstID := h.addSessionRow(t, "first")
+	secondID := h.addSessionRow(t, "second")
+	for _, id := range []string{firstID, secondID} {
+		if err := h.store.MoveSession(id, "backend"); err != nil {
+			t.Fatalf("move session row: %v", err)
+		}
+	}
+	if _, err := h.sessions.Move(h.caller.ID, firstID, "backend"); err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	sessions, err := h.store.ListSessions(false)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	var order []string
+	for _, sess := range sessions {
+		if sess.ID == firstID || sess.ID == secondID {
+			order = append(order, sess.ID)
+		}
+	}
+	if len(order) != 2 || order[0] != firstID {
+		t.Fatalf("backend order = %v, want %s still first", order, firstID)
+	}
+}
+
 func statusLeft(t *testing.T, h *sessionHarness, id string) string {
 	t.Helper()
 	out, err := exec.Command("tmux", "-L", h.driver.SocketName(), "show-options", "-v", "-t", "am_"+id, "status-left").CombinedOutput()

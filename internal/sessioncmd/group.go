@@ -146,6 +146,64 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 	return GroupRemoval{Removed: removed, Moved: moved}, nil
 }
 
+// Move files an agent session under another existing group, the way the
+// manager's move key does; its nested terminals go with it. An empty group
+// is the root.
+func (s *Sessions) Move(sessionID, targetID, group string) (Session, error) {
+	group = strings.Trim(strings.TrimSpace(group), "/")
+	runtime, err := s.open()
+	if err != nil {
+		return Session{}, err
+	}
+	defer runtime.Close()
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
+		return Session{}, err
+	}
+	target, err := runtime.agent(targetID)
+	if err != nil {
+		return Session{}, err
+	}
+	if group != "" {
+		groups, err := runtime.store.Groups()
+		if err != nil {
+			return Session{}, err
+		}
+		known := false
+		for _, candidate := range groups {
+			known = known || candidate.Name == group
+		}
+		if !known {
+			return Session{}, fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, runtime.words.ListGroups, runtime.words.CreateGroup)
+		}
+		if store.EffectivelyArchived(store.ArchivedGroups(groups), group) {
+			return Session{}, fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
+		}
+	}
+	// The move key leaves a row already filed there in its place.
+	if target.Group == group && target.ParentID == "" {
+		return runtime.sessionInfo(target, runtime.driver.Exists(target.ID), target.ID == sessionID), nil
+	}
+	if err := runtime.store.MoveSession(target.ID, group); err != nil {
+		return Session{}, err
+	}
+	ids := []string{target.ID}
+	children, err := runtime.store.Children(target.ID)
+	if err != nil {
+		return Session{}, fmt.Errorf("moved %s, but could not read its terminals to update their status bars: %w", target.ID, err)
+	}
+	for _, child := range children {
+		ids = append(ids, child.ID)
+	}
+	if err := runtime.relabel(ids); err != nil {
+		return Session{}, fmt.Errorf("moved %s, but could not update its status bar: %w", target.ID, err)
+	}
+	moved, err := runtime.store.Get(target.ID)
+	if err != nil {
+		return Session{}, fmt.Errorf("moved %s, but could not read it back: %w", target.ID, err)
+	}
+	return runtime.sessionInfo(moved, runtime.driver.Exists(moved.ID), moved.ID == sessionID), nil
+}
+
 // relabel skips a dead pane, which takes its label when it is revived.
 func (r *runtime) relabel(ids []string) error {
 	var failed error

@@ -69,6 +69,19 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 			want: "revived api-worker (id beef1234)",
 		},
 		{
+			name: "move files the session under the group",
+			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+				return runMove(out, f, args, "cafe0001")
+			},
+			args: []string{"beef1234", "api/web"},
+			want: "moved api-worker (id beef1234) running claude in api/web",
+			inspect: func(t *testing.T, f *fakeSessions) {
+				if f.targetID != "beef1234" || f.groupPath != "api/web" {
+					t.Fatalf("move got target %q group %q", f.targetID, f.groupPath)
+				}
+			},
+		},
+		{
 			name: "archive files a session away by default",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 				return runArchive(out, f, args, "cafe0001")

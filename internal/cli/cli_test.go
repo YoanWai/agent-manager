@@ -137,6 +137,13 @@ func (f *fakeSessions) Archive(sessionID, targetID string, archived bool) (sessi
 	return updated, f.failWith
 }
 
+func (f *fakeSessions) Move(sessionID, targetID, group string) (sessioncmd.Session, error) {
+	f.callerID, f.targetID, f.groupPath = sessionID, targetID, group
+	moved := f.session
+	moved.Group = group
+	return moved, f.failWith
+}
+
 func (f *fakeSessions) EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error) {
 	f.callerID, f.action = sessionID, action
 	return sessioncmd.AfterTurn{Pending: action, ManagerAwake: true}, f.failWith
@@ -284,6 +291,7 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
 		{"revive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRevive(out, sessions, args, "cafe0001") }},
 		{"archive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runArchive(out, sessions, args, "cafe0001") }},
+		{"move", []string{"beef1234", "api/web"}, func(out io.Writer, args []string) error { return runMove(out, sessions, args, "cafe0001") }},
 		{"archive-self", nil, func(out io.Writer, args []string) error { return runArchiveSelf(out, sessions, args, "cafe0001") }},
 		{"kill-self", []string{"--cancel"}, func(out io.Writer, args []string) error { return runKillSelf(out, sessions, args, "cafe0001") }},
 		{"groups", nil, func(out io.Writer, args []string) error { return runGroups(out, sessions, args, "cafe0001") }},
@@ -361,6 +369,9 @@ func TestMissingSessionIDIsAUsageError(t *testing.T) {
 		},
 		"wait": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runWait(out, f, args, "cafe0001")
+		},
+		"move": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
+			return runMove(out, f, args, "cafe0001")
 		},
 		"send": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runSend(out, f, args, "cafe0001")
@@ -545,7 +556,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "archive-self", "kill-self", "prompts", "env",
+		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}

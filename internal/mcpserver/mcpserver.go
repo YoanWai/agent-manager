@@ -86,6 +86,11 @@ type archiveSessionArgs struct {
 	Archived  *bool  `json:"archived,omitempty" jsonschema:"true archives the session out of the active list, false restores it; defaults to true"`
 }
 
+type moveSessionArgs struct {
+	SessionID string `json:"session_id" jsonschema:"session id returned by list_sessions"`
+	Group     string `json:"group" jsonschema:"existing group path to file it under, from list_groups; empty for the root group"`
+}
+
 type endSelfArgs struct {
 	Cancel bool `json:"cancel,omitempty" jsonschema:"true withdraws the archive or kill this session has pending instead of asking for one"`
 }
@@ -197,6 +202,7 @@ type sessionCommands interface {
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
+	Move(sessionID, targetID, group string) (sessioncmd.Session, error)
 	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
 	CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error)
 	Tasks(sessionID string) ([]sessioncmd.Task, error)
@@ -564,6 +570,23 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			return nil, sessioncmd.Session{}, err
 		}
 		return textContent(sessioncmd.FormatArchiveState(updated)), updated, nil
+	})
+
+	addTool(server, noCaller, &mcp.Tool{
+		Name: "move_session",
+		Description: "File a session under another group, the way the user's move key does; terminals nested under it go with it. " +
+			"Use it when the user asks to file or tidy sessions into the group their work belongs to. The group must already exist: call list_groups, or create_group first. " +
+			"Only where the row is filed changes; the agent keeps running.",
+		Annotations: toolAnnotations(false, false, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args moveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
+		if err := localOnly("move_session", args.SessionID); err != nil {
+			return nil, sessioncmd.Session{}, err
+		}
+		moved, err := sessions.Move(sessionID, args.SessionID, args.Group)
+		if err != nil {
+			return nil, sessioncmd.Session{}, err
+		}
+		return textContent("moved " + sessioncmd.FormatSession(moved)), moved, nil
 	})
 
 	endSelf := func(action string) func(context.Context, *mcp.CallToolRequest, endSelfArgs) (*mcp.CallToolResult, sessioncmd.AfterTurn, error) {
