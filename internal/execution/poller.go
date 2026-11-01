@@ -43,6 +43,8 @@ type Runner struct {
 	mcpStyles     map[string]string
 	reportStyles  map[string]string
 	shellTools    map[string]bool
+	browserTools  map[string]bool
+	browsers      BrowserLister
 	binaries      ToolBinaries
 	interval      time.Duration
 	poke          chan struct{}
@@ -107,6 +109,8 @@ type Runner struct {
 	// recaptureSeen holds the last single candidate for each launch, so a
 	// transient store update cannot bind on its first appearance.
 	recaptureSeen map[string]recaptureSighting
+	// browserFailure is the last failed engine read, reported once.
+	browserFailure string
 }
 
 type recaptureSighting struct {
@@ -370,6 +374,7 @@ func (p *Runner) step(ctx context.Context) Result {
 	panePrompts := make(map[string]string, len(sessions))
 	followFailures := make(map[string]error, len(sessions))
 	var turnsEnded []string
+	var browserRows []int
 	for i, sess := range sessions {
 		if sess.Archived {
 			continue
@@ -399,6 +404,9 @@ func (p *Runner) step(ctx context.Context) Result {
 				sessions[i].TmuxSocket = socket
 				claimed = true
 			}
+		}
+		if live && p.browserTools[sess.Tool] {
+			browserRows = append(browserRows, i)
 		}
 		if err := p.applyPendingRename(&sessions[i]); err != nil {
 			return Result{Err: err}
@@ -460,7 +468,11 @@ func (p *Runner) step(ctx context.Context) Result {
 			// and the quote read next is that conversation's.
 			sess = sessions[i]
 			if pane, err := p.tmux.CapturePane(sess.ID); err == nil {
-				paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(ctx, sess, pane, panes[sess.ID].Path)
+				// A browser pane captures as image placeholder cells, which a
+				// row must never quote.
+				if !p.browserTools[sess.Tool] {
+					paneLastLines[sess.ID], panePrompts[sess.ID] = p.rowLines(ctx, sess, pane, panes[sess.ID].Path)
+				}
 				derived, err := p.derivePaneStatus(sess, pane, agentAlive, paneHashes)
 				if err != nil {
 					return Result{Err: err}
@@ -547,6 +559,10 @@ func (p *Runner) step(ctx context.Context) Result {
 				turnsEnded = append(turnsEnded, sess.ID)
 			}
 		}
+	}
+	browsers, err := p.readBrowserEngines(ctx, sessions, browserRows)
+	if err != nil {
+		return Result{Err: err}
 	}
 	if preview == "" && selectedID != "" {
 		for _, sess := range sessions {
@@ -641,6 +657,9 @@ func (p *Runner) step(ctx context.Context) Result {
 		Panes:          panes,
 		TurnsEnded:     turnsEnded,
 		FollowWarning:  followWarning,
+		Browsers:       browsers.engines,
+		BrowsersRead:   browsers.ok,
+		BrowserWarning: browsers.warning,
 	}
 	if p.takeFocus != nil {
 		if id, ok := p.takeFocus(); ok {

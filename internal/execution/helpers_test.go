@@ -233,6 +233,12 @@ func buildModel(t *testing.T) *harness {
 				DefaultStatus: status.Idle,
 				InputPrefix:   `(?m)^\s*(?:(?:\S+\s+){0,3}[❯>$#›»→%➜]|PS [^\n>]*>)\s`,
 			},
+			// Paints a row of terminal-browser's image placeholder cells and
+			// idles, the way a browser pane captures.
+			"browser": {
+				Command:       `sh -c 'printf "\364\216\273\256\364\216\273\256 page\n"; exec cat'`,
+				DefaultStatus: status.Idle,
+			},
 		},
 	}
 	// Windows has no cat or sh: the tools run the test binary's stand-ins.
@@ -298,7 +304,7 @@ func (h *harness) applyCmd(t *testing.T, cmd func() any) {
 }
 func (h *harness) sessionRows() []store.Session { return h.sessions }
 func (h *harness) spawnSession(toolName, name, dir, group, prompt string, autoNamed, worktree bool) error {
-	tool := h.cfg.CLIs[toolName]
+	tool, _ := h.cfg.Pane(toolName)
 	id := uuid.NewString()[:8]
 	repo, branch := "", ""
 	if worktree {

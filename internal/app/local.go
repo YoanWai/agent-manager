@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/termbrowser"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
@@ -69,6 +70,7 @@ func OpenLocal(profileDir string, driver *tmux.Driver) (*Local, error) {
 		Store: st, TMux: driver, Engine: engine, Hooks: runtime.Hooks, Git: optionalGitDriver,
 		Inbox: sessioncmd.NewInboxOwner(st), Notify: notify.Notify, ShowCommand: notify.ShowCommand,
 		TakeFocus: func() (string, bool) { return notify.TakeFocus(profileDir) },
+		Browsers:  termbrowser.NewOnServer(driver.SocketPath()),
 	}, execution.OptionsFromConfig(cfg))
 	return &Local{ProfileDir: profileDir, Runtime: runtime, Engine: engine, Backend: backend, Lifecycle: lifecycle, Execution: runner}, nil
 }
