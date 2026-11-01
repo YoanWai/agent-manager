@@ -143,6 +143,49 @@ func (s *Sessions) DeleteGroup(sessionID, path string) (GroupRemoval, error) {
 	return GroupRemoval{Removed: removed, Moved: moved}, nil
 }
 
+// Move files an agent session under another existing group, the way the
+// manager's move key does; its nested terminals go with it. An empty group
+// is the root.
+func (s *Sessions) Move(sessionID, targetID, group string) (Session, error) {
+	group = strings.Trim(strings.TrimSpace(group), "/")
+	runtime, err := s.open()
+	if err != nil {
+		return Session{}, err
+	}
+	defer runtime.Close()
+	if _, err := runtime.optionalCaller(sessionID); err != nil {
+		return Session{}, err
+	}
+	target, err := runtime.agent(targetID)
+	if err != nil {
+		return Session{}, err
+	}
+	if group != "" {
+		groups, err := runtime.store.Groups()
+		if err != nil {
+			return Session{}, err
+		}
+		known := false
+		for _, candidate := range groups {
+			known = known || candidate.Name == group
+		}
+		if !known {
+			return Session{}, fmt.Errorf("group %q does not exist; call %s for the existing ones or %s to add it", group, runtime.words.ListGroups, runtime.words.CreateGroup)
+		}
+		if store.EffectivelyArchived(store.ArchivedGroups(groups), group) {
+			return Session{}, fmt.Errorf("group %q is archived; restore it in Agent Manager first", group)
+		}
+	}
+	if err := runtime.store.MoveSession(target.ID, group); err != nil {
+		return Session{}, err
+	}
+	moved, err := runtime.store.Get(target.ID)
+	if err != nil {
+		return Session{}, err
+	}
+	return runtime.sessionInfo(moved, runtime.driver.Exists(moved.ID), moved.ID == sessionID), nil
+}
+
 func parentGroup(group string) string {
 	if index := strings.LastIndex(group, "/"); index >= 0 {
 		return group[:index]

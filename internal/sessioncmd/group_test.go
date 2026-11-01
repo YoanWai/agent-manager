@@ -164,3 +164,82 @@ func TestDeleteGroupTakesItsSubtreeAndKeepsNesting(t *testing.T) {
 		t.Fatalf("moving the subtree unhooked the terminal from its agent: parent %q", after.ParentID)
 	}
 }
+
+func TestMoveFilesASessionAndItsTerminalsUnderAnExistingGroup(t *testing.T) {
+	h := newStoreSessionHarness(t)
+	if _, err := h.sessions.CreateGroup(h.caller.ID, "backend/plugin", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	workerID := h.addSessionRow(t, "worker")
+	if err := h.store.MoveSession(workerID, "backend"); err != nil {
+		t.Fatalf("move session row: %v", err)
+	}
+	shell := store.Session{
+		ID: "aaaa2222", Name: "sh-worker", Tool: "resting",
+		Group: "backend", Status: status.Idle, ParentID: workerID,
+	}
+	if err := h.store.CreateSession(shell); err != nil {
+		t.Fatalf("nest shell: %v", err)
+	}
+
+	moved, err := h.sessions.Move(h.caller.ID, workerID, "/backend/plugin/")
+	if err != nil {
+		t.Fatalf("Move: %v", err)
+	}
+	if moved.ID != workerID || moved.Group != "backend/plugin" {
+		t.Fatalf("moved = %+v", moved)
+	}
+	after, err := h.store.Get(shell.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "backend/plugin" || after.ParentID != workerID {
+		t.Fatalf("nested terminal sits in %q under %q", after.Group, after.ParentID)
+	}
+
+	if moved, err = h.sessions.Move("", workerID, ""); err != nil || moved.Group != "" {
+		t.Fatalf("a move to the root with no caller = %+v, %v", moved, err)
+	}
+}
+
+func TestMoveRefusesAnUnknownTargetAndChangesNothing(t *testing.T) {
+	h := newStoreSessionHarness(t)
+	workerID := h.addSessionRow(t, "worker")
+	if err := h.store.MoveSession(workerID, "backend"); err != nil {
+		t.Fatalf("move session row: %v", err)
+	}
+	if err := h.store.CreateGroup("backend/old", ""); err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	if err := h.store.SetGroupArchived("backend/old", true); err != nil {
+		t.Fatalf("SetGroupArchived: %v", err)
+	}
+	for _, tc := range []struct {
+		target, group, want string
+	}{
+		{workerID, "nowhere", `group "nowhere" does not exist`},
+		{workerID, "backend/old", `group "backend/old" is archived`},
+		{"deadbeef", "backend", "session deadbeef does not exist"},
+		{" ", "backend", "session_id is empty"},
+	} {
+		if _, err := h.sessions.Move(h.caller.ID, tc.target, tc.group); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("Move(%q, %q) = %v, want %q", tc.target, tc.group, err, tc.want)
+		}
+	}
+	after, err := h.store.Get(workerID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if after.Group != "backend" {
+		t.Fatalf("a refused move left the session in %q", after.Group)
+	}
+	groups, err := h.store.Groups()
+	if err != nil {
+		t.Fatalf("Groups: %v", err)
+	}
+	for _, g := range groups {
+		if g.Name == "nowhere" {
+			t.Fatal("a refused move created the group it named")
+		}
+	}
+}

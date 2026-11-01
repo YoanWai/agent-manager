@@ -510,6 +510,7 @@ func TestLocalOnlyToolsRefuseQualifiedIDsWithoutIO(t *testing.T) {
 		args map[string]any
 	}{
 		{"wait_for_session", map[string]any{"session_id": "gpu::r1"}},
+		{"move_session", map[string]any{"session_id": "gpu::r1", "group": "work"}},
 		{"task", map[string]any{"action": "claim", "task_id": "gpu::7"}},
 		{"task", map[string]any{"action": "create", "title": "t", "body": "b", "depends_on": []string{"gpu::7"}}},
 		{"review_comment", map[string]any{"comment_id": "gpu::0123456789abcdef"}},
@@ -519,7 +520,7 @@ func TestLocalOnlyToolsRefuseQualifiedIDsWithoutIO(t *testing.T) {
 			t.Errorf("%s = %q, error %v", tc.tool, text, isError)
 		}
 	}
-	if f.local.waitedID != "" || f.local.claimedTaskID != "" || f.local.taskTitle != "" || f.reads != 0 {
+	if f.local.waitedID != "" || f.local.movedID != "" || f.local.claimedTaskID != "" || f.local.taskTitle != "" || f.reads != 0 {
 		t.Fatalf("a refused call did work: sessions %+v, connection reads %d", f.local, f.reads)
 	}
 }
