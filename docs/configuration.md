@@ -104,7 +104,9 @@ A CLI that is not on the list above is a feature request; the `CLIs` row in Sett
 
 ## Tools
 
-Tools are the panes Agent Manager provides itself, listed beside the agents. The terminal is the one tool today. `t` opens a shell tab under the selected agent or in the selected group (see [Terminal tabs](usage.md#terminal-tabs)). A tool is built into the binary the way a CLI is, but it runs no agent. It stays out of the session pickers and the Settings `CLIs` row, and the keys that write a prompt into a pane refuse it. A session stores the name of its CLI or its tool, and no name is both.
+Tools are the panes Agent Manager provides itself, listed beside the agents: the terminal and the browser. `t` opens a shell tab under the selected agent or in the selected group (see [Terminal tabs](usage.md#terminal-tabs)), and `b` opens a browser tab the same way (see [Browser tabs](usage.md#browser-tabs)). A tool is built into the binary the way a CLI is, but it runs no agent. It stays out of the session pickers and the Settings `CLIs` row, and the keys that write a prompt into a pane refuse it. A session stores the name of its CLI or its tool, and no name is both.
+
+The browser is the built-in `[tools.browser]` block. It runs `terminal-browser open --no-merge` in the group's directory, with the URL after it when one is given, so each pane holds a browser of its own. Its status rests at idle. It needs terminal-browser on PATH and tmux 3.3 or newer. Seeing the page needs the manager to run outside another tmux. Agents drive a browser either way. On Windows the browser runs only inside WSL, so run agent-manager inside your WSL distro.
 
 ## Key bindings
 
@@ -128,7 +130,7 @@ A session key is `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or 
 
 ### In the list
 
-Every key the list answers to is an action in the picker: `up`, `down`, `open`, `attach`, `step_in`, `step_out`, `reorder_up`, `reorder_down`, `new_session`, `terminal`, `new_group`, `fork`, `prompt`, `copy_reply`, `review`, `mark_idle`, `rename`, `move`, `editor`, `restart`, `kill`, `kill_all`, `revive`, `revive_all`, `archive`, `cancel_end`, `restore`, `delete`, `search`, `filter`, `archived`, `empty_groups`, `fold_all`, `resize`, `settings`, `messages`, `help` and `quit`.
+Every key the list answers to is an action in the picker: `up`, `down`, `open`, `attach`, `step_in`, `step_out`, `reorder_up`, `reorder_down`, `new_session`, `terminal`, `browser`, `new_group`, `fork`, `prompt`, `copy_reply`, `review`, `mark_idle`, `rename`, `move`, `editor`, `restart`, `kill`, `kill_all`, `revive`, `revive_all`, `archive`, `cancel_end`, `restore`, `delete`, `search`, `filter`, `archived`, `empty_groups`, `fold_all`, `resize`, `settings`, `messages`, `help` and `quit`.
 
 A list key is a plain character (`n`, `N`, `?`, `|`), a key name (`space`, `enter`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pgup`, `pgdn`), `shift+` an arrow or tab, or the `ctrl+`, `alt+` and `f1` to `f12` forms above. `esc` and `ctrl+c` stay as they are. `esc` cancels everywhere. `ctrl+c` quits the manager even with `quit` turned off, and a focused session sends it to the agent. With saved prompts open over that session, `ctrl+c` closes the list. `settings` keeps at least one key, so the picker stays reachable. The footer, the `?` key map and the empty-list hints all read the table, so a moved key is named where it moved to.
 

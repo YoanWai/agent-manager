@@ -24,6 +24,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 |-----|--------|
 | `n` | New session (name, CLI, the model, effort and profile the CLI offers, environment profile, directory, worktree toggle and the base it starts from, optional saved prompts and starting prompt, group picker) |
 | `t` | New terminal tab: a shell under the selected agent, or in the selected group |
+| `b` | New browser tab: a real browser under the selected agent, or in the selected group (see [Browser tabs](#browser-tabs)) |
 | `o` | Open the selected row's directory in your editor |
 | `f` | Fork the selected conversation into a named session in the same group and directory |
 | `g` | New group (name, parent, default path, worktree default, worktree base) |
@@ -181,6 +182,18 @@ Shells live in the tree with the agents they belong to, marked with `❯` where 
 
 `agent-manager rename` run in a `t` terminal renames that terminal's own row: the manager finds the row from the tmux pane the command runs in. `r` in the list is how you rename any other row.
 
+### Browser tabs
+
+`b` opens a browser tab. It is a session like any other, with a real Chromium in the pane instead of an agent. It runs terminal-browser, which draws the page with the kitty graphics protocol, so the page shows when you attach (`A`) from Ghostty, kitty, WezTerm or iTerm2. The preview shows the page title and URL. On an agent, the new browser nests under that session. On a group, it lands in the group.
+
+Agents open and drive browsers themselves through `create_browser` and `browser_command`, and you see the same page they work on. A CLI without MCP does the same with `agent-manager browser list`, `create`, `command` and `close` (see [Browsers](#browsers)).
+
+Install terminal-browser with `curl -fsSL https://terminal-browser.sh/install | bash`, or with `brew install terminal-browser` on macOS. When it is missing, `b` opens the install dialog with that line. There `i` runs it, and the browser tab opens once terminal-browser is on PATH. `create_browser` names the same line. The browser needs tmux 3.3 or newer. Seeing the page needs the manager to run outside another tmux. Agents drive a browser either way. On Windows the browser runs only inside WSL, so run agent-manager inside your WSL distro.
+
+A browser the manager starts has no terminal attached yet to tell terminal-browser how to send frames, so it would fall back to sending each frame as text through tmux, which lags. When the manager runs in Ghostty on the same machine, it sets `TERMINAL_BROWSER_FRAMES=shm` for the panes it starts, and frames go through shared memory instead. Elsewhere terminal-browser keeps its own choice.
+
+terminal-browser 0.15 has two limits right after its daemon starts. The first browser keeps showing agents about:blank until a `reload` runs through `browser_command`, and later browsers load on their own. A browser opened while an agent is already driving another one can come up with no tab, and its commands time out, so open the browsers you need first and drive them after.
+
 ## Opening the editor
 
 `o` opens the row under the cursor in your editor: a session's live working directory (wherever its shell or agent has moved to, not only where it started), the directory it was created in when the live one cannot be read, or a group's default path. It works on a [terminal tab](#terminal-tabs) too — the shell you ran the build in is usually sitting in the directory you want open.
@@ -263,7 +276,7 @@ Agents usually work in git worktrees, one branch per worktree, and those worktre
 
 ## MCP: how agents discover these commands
 
-Every session of an MCP-capable CLI carries the agent-manager MCP server on spawn and revive, so its agent sees the whole workspace as native tools with descriptions telling it when to call each: its own session, the other agent sessions running beside it, the groups they are filed under, and the managed terminals. No per-project setup. Pi is the shipped CLI whose agent has no MCP client, so those sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
+Every session of an MCP-capable CLI carries the agent-manager MCP server on spawn and revive, so its agent sees the whole workspace as native tools with descriptions telling it when to call each: its own session, the other agent sessions running beside it, the groups they are filed under, and the managed terminals and browsers. No per-project setup. Pi is the shipped CLI whose agent has no MCP client, so those sessions rely on the subcommands alone. The server lives in the same binary (`agent-manager mcp`, stdio) and identifies the calling session through its environment.
 
 | Tool | Action |
 |------|--------|
@@ -294,6 +307,10 @@ Every session of an MCP-capable CLI carries the agent-manager MCP server on spaw
 | `send_terminal` | Submit a command or send exact keys to a running terminal |
 | `read_terminal` | Read the plain-text content currently visible in a terminal |
 | `close_terminal` | Close a finished terminal nested under the caller: kill the pane and delete the row |
+| `list_browsers` | List the managed browsers with the session each one hangs under and the active tab's URL and title |
+| `create_browser` | Open a real browser the user can watch, nested under the calling session, at `url` when given |
+| `browser_command` | Run one agent-browser command, such as `snapshot -i` or `click @e14`, in a browser nested under the caller and return its output |
+| `close_browser` | Close a finished browser nested under the caller: kill the pane and delete the row |
 
 ### SSH connections in MCP
 
@@ -369,6 +386,12 @@ The commands that run with no caller are a convenience for a manager reaching th
 Queued messages, status and after-turn archives and kills move only while a manager runs. `agent-manager serve` runs one with no screen, on a machine where nobody keeps the TUI open, until it is interrupted or sent SIGTERM. `serve --background` starts that manager detached, with its output appended to `serve.log` in the profile directory, unless one is already running, and prints `{"started":true,"pid":N}` or `{"started":false}`. A serve holds a lock on `serve.lock` in the profile directory while it runs, so a second `serve` exits at once with a note that one is already running, and `serve --background` answers `{"started":false}` even before the first one has polled. It runs on macOS and Linux.
 
 The MCP tools always act as the session that runs them, and refuse every call, `host::id` targets included, from a server with no session, since several CLIs keep the server registered for their runs outside Agent Manager too. `report_issue` is the exception: it touches no session, so it stays open there.
+
+### Browsers
+
+`create_browser` opens a [browser tab](#browser-tabs) under the calling session, at `url` when the call names one, and returns the id the other browser tools take. `browser_command` runs one agent-browser command in it and returns the output. An agent starts with `snapshot -i`, which labels the page's interactive elements `@e1`, `@e2` and so on, then acts on those labels with commands such as `click @e14` or `fill @e3 "text"`. When a snapshot comes back empty on a fresh browser, run `reload` once and snapshot again. A command gets 60 seconds, and one still running then is stopped and reported as timed out. `list_browsers` lists every browser, so an agent reuses one it already opened. `browser_command` and `close_browser` reach only the browsers nested under the calling session, the same rule terminals follow.
+
+The same four run from a shell as `agent-manager browser list`, `browser create [--url <url>]`, `browser command <browser-id> "<command>"` and `browser close <browser-id>`, for CLIs without MCP.
 
 ### Bugs and ideas
 
