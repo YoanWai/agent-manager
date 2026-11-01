@@ -32,6 +32,14 @@ const (
 // no prompt, the selected row's directory, and the tool's own command.
 func (k Kind) OpensATab() bool { return k == Shell || k == Browser }
 
+// NoTabDirectory is the refusal when a tab finds no directory to open in.
+func (k Kind) NoTabDirectory() error {
+	if k == Browser {
+		return errors.New("no directory to open a browser in")
+	}
+	return errors.New("no directory to open a terminal in")
+}
+
 // Request captures everything a spawn needs at dispatch time, so the worker
 // never reads the model: the tool, the captured launch inputs, the pane size
 // the manager draws, and the images the prompt names, moved out of the
@@ -112,7 +120,7 @@ func Run(services Services, request Request) (Result, error) {
 			var ok bool
 			dir, ok = reader.Resolve(request.TerminalDir)
 			if !ok {
-				return result, errors.New("no directory to open a terminal in")
+				return result, request.Kind.NoTabDirectory()
 			}
 		} else {
 			reader := request.DirReader

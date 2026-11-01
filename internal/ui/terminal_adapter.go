@@ -142,7 +142,7 @@ func (m *Model) openTab(kind uilaunch.Kind, toolName string, reader terminalDire
 	}
 	request, ok := m.captureTerminalDirectory(terminalDirectorySpawn)
 	if !ok {
-		m.reportErr("no directory to open a terminal in")
+		m.reportErr(kind.NoTabDirectory().Error())
 		return m, nil
 	}
 	w, h := m.paneTargetSize()

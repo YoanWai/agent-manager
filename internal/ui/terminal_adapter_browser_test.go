@@ -8,12 +8,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/termbrowser"
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
+	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 )
@@ -32,6 +35,26 @@ func fakeTerminalBrowser(t *testing.T) string {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	return argsFile
+}
+
+// pathWithoutTerminalBrowser leaves tmux and the system directories on PATH
+// and nothing else, and returns the directory a test can install into.
+func pathWithoutTerminalBrowser(t *testing.T) string {
+	t.Helper()
+	testenv.SkipPOSIXShell(t)
+	realTmux, err := exec.LookPath(tmux.Binary)
+	if err != nil {
+		t.Skip(tmux.Binary + " not installed")
+	}
+	dir := t.TempDir()
+	if err := os.Symlink(realTmux, filepath.Join(dir, tmux.Binary)); err != nil {
+		t.Fatalf("link tmux: %v", err)
+	}
+	t.Setenv("PATH", strings.Join([]string{dir, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
+	if _, err := exec.LookPath("terminal-browser"); err == nil {
+		t.Skip("terminal-browser sits in a system directory")
+	}
+	return dir
 }
 
 func pressBrowserKey(t *testing.T, m *Model) {
@@ -110,19 +133,7 @@ func TestBKeyOpensABrowserUnderTheSelectedAgent(t *testing.T) {
 // leaving a row whose pane exits at once, and the card holds the tab to
 // open again once the installer puts the binary on PATH.
 func TestBKeyOffersTheInstallerWithoutTerminalBrowser(t *testing.T) {
-	testenv.SkipPOSIXShell(t)
-	realTmux, err := exec.LookPath(tmux.Binary)
-	if err != nil {
-		t.Skip(tmux.Binary + " not installed")
-	}
-	dir := t.TempDir()
-	if err := os.Symlink(realTmux, filepath.Join(dir, tmux.Binary)); err != nil {
-		t.Fatalf("link tmux: %v", err)
-	}
-	t.Setenv("PATH", strings.Join([]string{dir, "/usr/bin", "/bin"}, string(os.PathListSeparator)))
-	if _, err := exec.LookPath("terminal-browser"); err == nil {
-		t.Skip("terminal-browser sits in a system directory")
-	}
+	dir := pathWithoutTerminalBrowser(t)
 	m := buildModel(t)
 	m.applyCmd(t, m.refreshCmd())
 
@@ -265,5 +276,29 @@ func TestSyncBrowserFramesFollowsTheManagersTerminal(t *testing.T) {
 	}
 	if _, set := os.LookupEnv(termbrowser.FramesEnv); set {
 		t.Fatal("in iTerm2 the manager's own environment still sets the frames")
+	}
+}
+
+type missingTerminalDirectoryReader struct{}
+
+func (missingTerminalDirectoryReader) Resolve(uiterminal.Directory) (string, bool) { return "", false }
+
+func TestBrowserTabWithNoDirectoryNamesTheBrowser(t *testing.T) {
+	fakeTerminalBrowser(t)
+	m := buildModel(t)
+	createSession(t, m, "coder", t.TempDir(), "")
+	m.selectSessionRow(t, "coder")
+
+	_, cmd := m.openTab(uilaunch.Browser, config.BrowserTool, missingTerminalDirectoryReader{})
+	if cmd != nil {
+		m.applyCmd(t, cmd)
+	}
+	if want := "no directory to open a browser in"; !strings.Contains(m.errBar.text, want) {
+		t.Fatalf("error bar = %q, want %q", m.errBar.text, want)
+	}
+	for _, sess := range m.workspace.sessions {
+		if m.isBrowser(sess.Tool) {
+			t.Fatalf("a browser with no directory still made %+v", sess)
+		}
 	}
 }
