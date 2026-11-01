@@ -56,7 +56,7 @@ func (s *Sessions) Move(sessionID, targetID, group string) (Placement, error) {
 	}
 	children, err := runtime.store.Children(target.ID)
 	if err != nil {
-		return Placement{}, err
+		return Placement{}, fmt.Errorf("moved %s, but could not list its terminals: %w", target.Name, err)
 	}
 	for _, child := range children {
 		placement.Terminals = append(placement.Terminals, child.ID)
