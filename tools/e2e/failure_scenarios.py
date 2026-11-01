@@ -102,7 +102,7 @@ def settings_partial_save(sandbox, binary):
         conn.execute("CREATE TRIGGER fail_layout BEFORE INSERT ON settings WHEN NEW.key='layout' BEGIN SELECT RAISE(ABORT, 'fixture layout failure'); END")
     key(sandbox, 's')
     frame(sandbox, 'settings-open', 'compact')
-    # default tool, theme, theme follows OS, background and symbols sit above density.
+    # default CLI, theme, theme follows OS, background and symbols sit above density.
     for _ in range(5):
         key(sandbox, 'Down')
     key(sandbox, 'Right')

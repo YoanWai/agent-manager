@@ -305,7 +305,7 @@ func (d Rename) Hints() [][2]string {
 		return [][2]string{{"tab", "name / path"}, {"↵", "save"}, {"esc", "cancel"}}
 	}
 	if tool := d.Tool(); tool != "" {
-		return [][2]string{{"tab", "tool: " + tool}, {"↵", "save"}, {"esc", "cancel"}}
+		return [][2]string{{"tab", "runs " + tool}, {"↵", "save"}, {"esc", "cancel"}}
 	}
 	return [][2]string{{"↵", "save"}, {"esc", "cancel"}}
 }

@@ -15,7 +15,7 @@ func TestLegacyProtocolClientsKeepTextResultsAndMutationRefusals(t *testing.T) {
 		t.Run(version, func(t *testing.T) {
 			ctx := context.Background()
 			commands := &fakeSessionCommands{listed: []sessioncmd.Session{{ID: "beef", Name: "worker", Tool: "codex", Status: "finished"}}}
-			server := newServer(t.TempDir(), "cafe", "test", true, &fakeTerminalCommands{}, commands, &fakeReporter{})
+			server := newServer(t.TempDir(), "cafe", "test", true, &fakeTerminalCommands{}, &fakeBrowserCommands{}, commands, &fakeReporter{})
 			serverTransport, clientTransport := mcp.NewInMemoryTransports()
 			serverSession, err := server.Connect(ctx, serverTransport, nil)
 			if err != nil {

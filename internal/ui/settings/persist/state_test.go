@@ -70,7 +70,7 @@ func TestFreshFencesOnGenerationAndPending(t *testing.T) {
 // FromCache builds the dialog the cached values describe, including the
 // hidden set narrowed to the configured tools.
 func TestFromCacheBuildsTheDialog(t *testing.T) {
-	cfg := config.Config{Tools: map[string]config.Tool{
+	cfg := config.Config{CLIs: map[string]config.CLI{
 		"claude": {Command: "claude"},
 		"codex":  {Command: "codex"},
 	}}
@@ -91,7 +91,7 @@ func TestFromCacheBuildsTheDialog(t *testing.T) {
 // The tool selection falls back to the cached default when the caller
 // prefers nothing.
 func TestToolSelectionFallsBackToTheCachedDefault(t *testing.T) {
-	cfg := config.Config{Tools: map[string]config.Tool{
+	cfg := config.Config{CLIs: map[string]config.CLI{
 		"claude": {Command: "claude"},
 		"codex":  {Command: "codex"},
 	}}

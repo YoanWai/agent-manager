@@ -93,10 +93,14 @@ func (m Model) RowLegend(ctx LegendContext) Legend {
 		hint = ReviewModeHint
 	}
 	conversation := [][2]string{{k(keybind.CopyReply), "copy"}, {k(keybind.Fork), "fork"}}
-	if session.IsShell {
-		// A shell has no conversation, so the keys that would prompt,
-		// review or fork one are left off rather than offered and refused.
+	if session.IsTool {
+		// A shell or a browser has no conversation, so the keys that would
+		// prompt, review or fork one are left off rather than offered and
+		// refused.
 		title, leads, hint, conversation = "Shell", nil, "", nil
+		if session.IsBrowser {
+			title = "Browser"
+		}
 	}
 	pairs := [][2]string{{k(keybind.Open), enterHint}, {k(keybind.Attach), attachHint}}
 	if !ctx.MouseDisabled {
@@ -156,10 +160,12 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 	k := ctx.glyph
 	emptyGroupsKey := k(keybind.EmptyGroups)
 	terminalKey := k(keybind.Terminal)
+	browserKey := k(keybind.Browser)
 	foldAllKey := k(keybind.FoldAll)
 	if m.ShowArchived() && !ctx.Widest {
 		emptyGroupsKey = ""
 		terminalKey = ""
+		browserKey = ""
 		foldAllKey = ""
 	}
 	var alerts [][2]string
@@ -180,7 +186,7 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 	add(true, ctx.Messages)
 	add(false, [2]string{strings.TrimSpace(k(keybind.Up) + " " + k(keybind.Down)), "navigate"})
 	add(true, [][2]string{
-		{k(keybind.NewSession), "new"}, {terminalKey, "terminal"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
+		{k(keybind.NewSession), "new"}, {terminalKey, "terminal"}, {browserKey, "browser"}, {k(keybind.NewGroup), "group"}, {k(keybind.Search), "search"},
 		{k(keybind.Archived), archivedAction}, {k(keybind.Filter), statusFilterAction}, {emptyGroupsKey, emptyGroupsAction},
 		{k(keybind.Help), "keys"}, {k(keybind.Quit), "quit"}, {k(keybind.NewConnection), "connection"},
 	}...)

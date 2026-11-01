@@ -1,8 +1,10 @@
 package ui
 
 import (
+	"maps"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -199,7 +201,7 @@ func TestGlyphModesCoverEveryBuiltinTool(t *testing.T) {
 					t.Errorf("basic mark %q must be printable ASCII", mark)
 				}
 			}
-			for toolName, tool := range cfg.Tools {
+			for _, toolName := range append(slices.Sorted(maps.Keys(cfg.CLIs)), cfg.ToolNames()...) {
 				m := &Model{services: services{cfg: cfg}, prefs: preferences{glyphMode: mode}}
 				for _, state := range append(states, status.Dead) {
 					sess := store.Session{Tool: toolName, Status: state}
@@ -208,8 +210,10 @@ func TestGlyphModesCoverEveryBuiltinTool(t *testing.T) {
 						want := g.StatusGlyph(state)
 						if state == status.Starting {
 							want = g.StartupFrames[phase%len(g.StartupFrames)]
-						} else if tool.Shell && state != status.Errored && state != status.Dead {
+						} else if toolName == config.TerminalTool && state != status.Errored && state != status.Dead {
 							want = g.ShellGlyph
+						} else if toolName == config.BrowserTool && state != status.Errored && state != status.Dead {
+							want = g.BrowserGlyph
 						}
 						if got := ansi.Strip(m.sessionGlyph(sess)); got != want {
 							t.Errorf("%s %s phase %d: got %q, want %q", toolName, state, phase, got, want)

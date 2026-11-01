@@ -55,7 +55,7 @@ var versionProbeMu sync.Mutex
 // CheckVersion refuses a tool whose installed CLI is older than its
 // MinimumVersion. A CLI this machine cannot run is the install error, so
 // the probe never reads a Windows copy on WSL as an old Linux build.
-func CheckVersion(tool Tool) error {
+func CheckVersion(tool CLI) error {
 	fields := strings.Fields(tool.Command)
 	if tool.MinimumVersion == "" || len(fields) == 0 {
 		return nil

@@ -70,6 +70,11 @@ func (m *Model) focusSelected() (tea.Model, tea.Cmd) {
 	// Cleared on the press, as attach does, so a notice the lane posts before
 	// entry, such as a dropped detach request, stays up.
 	m.clearErr()
+	// A browser row shows its card for a live or a dead pane alike, so it
+	// needs no probe of the pane.
+	if m.isBrowser(sess.Tool) {
+		return m, m.enterFocus(sess)
+	}
 	m.enqueueEffect(focusruntime.ProbeRequest{SessionID: sess.ID, Generation: m.gens.foreground}, 0, false)
 	return m, m.nextEffectCmd()
 }
@@ -137,11 +142,40 @@ func (m *Model) leaveFocusMode() tea.Cmd {
 // and paging a normal-screen pane's history. Every plain character, q
 // included, still reaches the agent.
 func (m *Model) handleFocusKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if sess, ok := m.selected(); ok && m.isBrowser(sess.Tool) {
+		return m.browserFocusKey(sess, msg)
+	}
 	return m.focus.pane.KeyPress(focusHost{m}, msg)
+}
+
+// browserFocusKey runs only the manager's own keys on a focused browser row.
+// The pane under the card is a page nobody can see, so typing would act on it
+// blind.
+func (m *Model) browserFocusKey(sess store.Session, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	pressed := msg.String()
+	keys := m.services.keys
+	switch {
+	case keys.Binding(keybind.Detach).Has(pressed):
+		return m, m.leaveFocus()
+	case m.services.listKeys.Binding(keybind.Attach).Has(pressed):
+		left := m.leaveFocus()
+		_, attach := m.attachSelected()
+		return m, tea.Batch(left, attach)
+	case m.services.listKeys.Binding(keybind.Revive).Has(pressed):
+		return m.reviveSelected()
+	case keys.Binding(keybind.Review).Has(pressed):
+		return focusHost{m}.Review(sess.ID)
+	case keys.Binding(keybind.Editor).Has(pressed):
+		return m.openEditor()
+	}
+	return m, nil
 }
 
 // handleFocusMouse runs the mouse over a focused pane.
 func (m *Model) handleFocusMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	if sess, ok := m.selected(); ok && m.isBrowser(sess.Tool) {
+		return m, nil
+	}
 	// The package cannot name the root, so a nil model is this one.
 	model, cmd := m.focus.pane.MouseUnder(focusHost{m}, msg)
 	if model == nil {
@@ -328,10 +362,12 @@ func (m *Model) loadFocusSaved(msg uipersist.SavedMsg) {
 func (m *Model) enterFocus(sess store.Session) tea.Cmd {
 	m.clearSurfaces()
 	m.push(newFocusSurface(m))
-	if m.prefs.fullLayout {
-		m.layout.panes.PinFullFocus(paneSizing{m}, sess.ID, m.layout.width, m.listBodyHeight())
+	if !m.isBrowser(sess.Tool) {
+		if m.prefs.fullLayout {
+			m.layout.panes.PinFullFocus(paneSizing{m}, sess.ID, m.layout.width, m.listBodyHeight())
+		}
+		m.focus.runtime.Retry()
 	}
-	m.focus.runtime.Retry()
 	m.watchSelection()
 	keepPaneFacts := m.focus.runtime.KeepsPaneFacts(&m.focus.pane, sess.ID)
 	m.focus.pane.Enter(uifocus.EnterContext{SessionID: sess.ID, KeepPaneFacts: keepPaneFacts})

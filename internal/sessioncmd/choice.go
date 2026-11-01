@@ -14,14 +14,14 @@ import (
 )
 
 // loadCatalog stops asking on ctrl+c, so the CLI never outlives the command.
-func loadCatalog(configDir, toolName string, tool config.Tool) (catalog.Catalog, error) {
+func loadCatalog(configDir, toolName string, tool config.CLI) (catalog.Catalog, error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 	return catalog.Load(ctx, configDir, toolName, tool)
 }
 
 // choose refuses what the CLI does not list, as the form does.
-func (s *Sessions) choose(words Vocabulary, toolName string, tool config.Tool, opts CreateSessionOptions) (config.Choice, error) {
+func (s *Sessions) choose(words Vocabulary, toolName string, tool config.CLI, opts CreateSessionOptions) (config.Choice, error) {
 	model, effort, profile := strings.TrimSpace(opts.Model), strings.TrimSpace(opts.Effort), strings.TrimSpace(opts.Profile)
 	if model == "" && effort == "" && profile == "" {
 		return config.Choice{}, nil

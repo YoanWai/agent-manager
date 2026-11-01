@@ -585,6 +585,42 @@ func TestSessionSizesToPreviewPane(t *testing.T) {
 	}
 }
 
+// A browser row previews as a card, so the manager never sizes its window: a
+// pin would squeeze the page an attached terminal shows into a corner and
+// shrink the viewport agents read.
+func TestBrowserWindowIsNeverPinned(t *testing.T) {
+	fakeTerminalBrowser(t)
+	m := buildModel(t)
+	createSession(t, m, "coder", t.TempDir(), "")
+	m.selectSessionRow(t, "coder")
+	browser := openBrowserRow(t, m)
+	m.applyCmd(t, m.refreshCmd())
+	m.drainEffects(t)
+	if _, err := tmuxCmd(t, "resize-window", "-t", "am_"+browser.ID, "-x", "201", "-y", "57").CombinedOutput(); err != nil {
+		t.Fatalf("resize-window: %v", err)
+	}
+
+	m.layout.panes.LastSizes = nil
+	m.applyCmd(t, m.refreshCmd())
+	m.drainEffects(t)
+	m.Update(tea.WindowSizeMsg{Width: 150, Height: 45})
+	m.drainEffects(t)
+	m.adoptPaneGeom(browser.ID)
+	m.drainEffects(t)
+	coder := m.sessionRows()[0].ID
+	if w, _ := windowSize(t, coder); w != m.previewPaneWidth() {
+		t.Fatalf("agent window width = %d, want the preview's %d", w, m.previewPaneWidth())
+	}
+	m.prefs.fullLayout = true
+	m.enterFocus(browser)
+	m.Update(tea.WindowSizeMsg{Width: 160, Height: 48})
+	m.drainEffects(t)
+
+	if w, h := windowSize(t, browser.ID); w != 201 || h != 57 {
+		t.Fatalf("browser window = %dx%d, want it left at 201x57", w, h)
+	}
+}
+
 // A row whose window is gone has nothing to size. Queuing a resize for it
 // anyway fails every pass, and a failed effect asks for another poll, so one
 // dead row left the manager polling tmux in a tight loop (#880).

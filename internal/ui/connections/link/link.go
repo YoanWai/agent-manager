@@ -109,7 +109,7 @@ func (s *State) RailHosts() []uirail.Host {
 			host.Sessions = append(host.Sessions, uirail.Session{
 				ID: term.ID, Name: term.Name, Tool: remoteTerminalTool, Cwd: term.Directory,
 				Group: term.Group, Status: term.Status, Archived: term.Archived,
-				ParentID: term.ParentID, IsShell: true,
+				ParentID: term.ParentID, IsTool: true, IsShell: true,
 			})
 		}
 		hosts = append(hosts, host)

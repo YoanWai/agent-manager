@@ -10,7 +10,7 @@ import (
 // exactly as a brand new session gets it, plus a fresh conversation id for the
 // tools that take one. Tools that mint their own id instead get nothing to
 // carry, and the poller captures what they wrote.
-func RestartLaunch(tool config.Tool) (baseCommand, agentSessionID string) {
+func RestartLaunch(tool config.CLI) (baseCommand, agentSessionID string) {
 	if tool.SessionIDFlag == "" {
 		return tool.Command, ""
 	}
@@ -22,7 +22,7 @@ func RestartLaunch(tool config.Tool) (baseCommand, agentSessionID string) {
 // conversation id was never captured falls back to the working directory's
 // most recent conversation, which resumes the wrong one whenever sessions
 // share a directory. Tools that resume by id or offer a picker never fall back.
-func DegradedResume(tool config.Tool, agentSessionID, name string) string {
+func DegradedResume(tool config.CLI, agentSessionID, name string) string {
 	if agentSessionID != "" || tool.ResumeByIDCommand == "" || tool.ResumePickerCommand != "" {
 		return ""
 	}

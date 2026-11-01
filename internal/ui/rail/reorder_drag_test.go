@@ -12,7 +12,7 @@ func TestResolveDropKindsStayInsideRailPolicy(t *testing.T) {
 	model.Reconcile(Snapshot{Groups: []string{"alpha", "beta"}, Sessions: []Session{
 		{ID: "mover", Name: "mover", Group: "alpha"},
 		{ID: "agent", Name: "agent", Group: "beta"},
-		{ID: "shell", Name: "shell", Group: "alpha", IsShell: true},
+		{ID: "shell", Name: "shell", Group: "alpha", IsTool: true, IsShell: true},
 	}})
 
 	model.Focus(Selection{Kind: SessionRow, SessionID: "mover", Group: "alpha"})

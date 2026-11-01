@@ -215,11 +215,11 @@ type sessionCommands interface {
 
 const instructionsIntro = `Agent Manager runs this conversation in one of the user's managed tmux sessions. The others are separate CLI processes with contexts of their own, running any CLI the user chose (Claude Code, Codex, Gemini), never subagents of this conversation. These tools operate that workspace.`
 
-const instructionsTail = `Shell work the user should see. Open a terminal when the user should watch, attach or take over, as with SSH into a host. Keep one-shot local commands in your normal tools. Call list_terminals first and reuse a running terminal when possible. create_terminal nests under this session unless nest is false, which another group needs. Use send_terminal and read_terminal, and close_terminal when that job is done unless it is left for the user.
+const instructionsTail = `Work the user should see. Open a terminal (create_terminal) for shell work the user should watch or take over, like SSH. Keep one-shot local commands in your normal tools. Open a browser (create_browser) for a web page and drive it with browser_command: snapshot -i, then act on the @eN refs. The user sees the pane and can attach. Reuse one you already opened (list_terminals, list_browsers) and close it when done unless it is left for the user.
 
-Bugs and ideas. When the user hits a bug in the manager itself or asks for something it lacks, offer report_issue: it previews first and files only once the user approves.
+Bugs and ideas. When the user hits a bug in the manager itself or asks for something it lacks, offer report_issue: it previews first and files once the user approves.
 
-Everything here acts on the user's machine: create_session and create_terminal start real processes, send_terminal runs commands, and kill_session ends a running agent. Treat them with the care and approval normal shell execution needs.`
+Everything here acts on the user's machine: create_session, create_terminal and create_browser start processes, send_terminal and browser_command run things, kill_session ends an agent. Treat them with the care shell execution needs.`
 
 const proactiveInstructions = instructionsIntro + ` Use them whenever the conditions below apply, without waiting to be asked.
 
@@ -244,7 +244,7 @@ func serverInstructions(proactive bool) string {
 // Split from Run so tests can connect an in-process client.
 func NewServer(configDir, sessionID, version string, proactive bool) *mcp.Server {
 	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
+	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewBrowsers(configDir, words), sessioncmd.NewSessions(configDir, words), report.New(configDir, version))
 }
 
 func NewServerWithBackend(configDir, sessionID, version string, proactive bool, backend *sessioncmd.Backend) *mcp.Server {
@@ -253,12 +253,12 @@ func NewServerWithBackend(configDir, sessionID, version string, proactive bool, 
 	}
 	words := sessioncmd.MCPVocabulary()
 	hosts := remoteSource{client: remote.New(configDir), connections: backend.Connections, withStore: backend.WithStore}
-	return newServerWithMailbox(sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version), backend, hosts)
+	return newServerWithMailbox(sessionID, version, proactive, sessioncmd.NewTerminalsWithBackend(backend, words), sessioncmd.NewBrowsersWithBackend(backend, words), sessioncmd.NewSessionsWithBackend(backend, words), report.New(configDir, version), backend, hosts)
 }
 
 func NewServerWithArchiveOwner(configDir, sessionID, version string, proactive bool, owner sessioncmd.ArchiveOwner) *mcp.Server {
 	words := sessioncmd.MCPVocabulary()
-	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
+	return newServer(configDir, sessionID, version, proactive, sessioncmd.NewTerminals(configDir, words), sessioncmd.NewBrowsers(configDir, words), sessioncmd.NewSessionsWithArchiveOwner(configDir, words, owner), report.New(configDir, version))
 }
 
 type mailboxCommands interface {
@@ -269,13 +269,13 @@ type mailboxCommands interface {
 	ReviewComment(string, string, bool) (string, error)
 }
 
-func newServer(configDir, sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
+func newServer(configDir, sessionID, version string, proactive bool, terminals terminalCommands, browsers browserCommands, sessions sessionCommands, reporter issueReporter) *mcp.Server {
 	withStore := storeAt(configDir)
 	hosts := remoteSource{client: remote.New(configDir), connections: storeConnections(withStore), withStore: withStore}
-	return newServerWithMailbox(sessionID, version, proactive, terminals, sessions, reporter, sessioncmd.NewMailbox(configDir), hosts)
+	return newServerWithMailbox(sessionID, version, proactive, terminals, browsers, sessions, reporter, sessioncmd.NewMailbox(configDir), hosts)
 }
 
-func newServerWithMailbox(sessionID, version string, proactive bool, terminals terminalCommands, sessions sessionCommands, reporter issueReporter, mailbox mailboxCommands, hosts remoteSource) *mcp.Server {
+func newServerWithMailbox(sessionID, version string, proactive bool, terminals terminalCommands, browsers browserCommands, sessions sessionCommands, reporter issueReporter, mailbox mailboxCommands, hosts remoteSource) *mcp.Server {
 	server := mcp.NewServer(
 		&mcp.Implementation{Name: "agent-manager", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions(proactive)},
@@ -850,6 +850,8 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		}
 		return textContent("closed terminal " + args.TerminalID), nil, nil
 	})
+
+	registerBrowserTools(server, noCaller, sessionID, browsers)
 
 	// Filing an issue touches no session, so a CLI outside Agent Manager may
 	// still report a bug in the manager itself.

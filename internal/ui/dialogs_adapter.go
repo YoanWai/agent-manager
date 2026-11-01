@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"sort"
 	"strings"
 	"time"
 
@@ -76,9 +75,9 @@ func (m *Model) openMove() {
 	} else {
 		move = uidialogs.MoveSession(row.sess.ID)
 		picker = m.groupPickerIncluding(row.sess.Group, m.rail.ShowArchived())
-		if m.isShell(row.sess.Tool) {
-			// An archived shell keeps the archived agent it ran under as a
-			// target, so enter leaves it where it is.
+		if m.isTool(row.sess.Tool) {
+			// An archived shell or browser keeps the archived agent it ran
+			// under as a target, so enter leaves it where it is.
 			parentID := ""
 			if row.sess.Archived {
 				parentID = row.sess.ParentID
@@ -91,12 +90,12 @@ func (m *Model) openMove() {
 	m.clearErr()
 }
 
-// agentMoveTargets are the running agents a shell may be nested under, plus
-// the archived parent an archived shell keeps.
+// agentMoveTargets are the running agents a shell or a browser may be nested
+// under, plus the archived parent an archived one keeps.
 func (m *Model) agentMoveTargets(parentID string) []uidialogs.Agent {
 	var agents []uidialogs.Agent
 	for _, sess := range m.workspace.sessions {
-		if sess.Archived && sess.ID != parentID || m.isShell(sess.Tool) {
+		if sess.Archived && sess.ID != parentID || m.isTool(sess.Tool) {
 			continue
 		}
 		agents = append(agents, uidialogs.Agent{ID: sess.ID, Group: sess.Group, Name: sess.Name})
@@ -197,12 +196,7 @@ func (m *Model) openFork() {
 		m.reportErr("select a session to fork")
 		return
 	}
-	tool, ok := m.services.cfg.Tools[entry.sess.Tool]
-	if !ok {
-		m.reportErr("tool " + entry.sess.Tool + " is no longer configured")
-		return
-	}
-	if err := uiapply.ValidateForkSource(entry.sess.Tool, tool, entry.sess); err != nil {
+	if _, err := uiapply.ForkSource(m.services.cfg, entry.sess); err != nil {
 		m.reportErr(err.Error())
 		return
 	}
@@ -303,15 +297,7 @@ func (m *Model) openRename() {
 		}
 		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameGroup(entry.group, dir, uidialogs.WorktreeIndex(m.workspace.groupWorktrees[entry.group])), m.workspace.groupBases[entry.group], m.workspace.groupEnvs[entry.group])
 	} else {
-		tools := m.services.cfg.AgentToolNames()
-		shells := []string{}
-		for _, name := range m.services.cfg.ToolNames() {
-			if m.services.cfg.Tools[name].Shell {
-				shells = append(shells, name)
-			}
-		}
-		sort.Strings(shells)
-		tools = append(tools, shells...)
+		tools := append(m.services.cfg.CLINames(), m.services.cfg.ToolNames()...)
 		surface = uidialogs.NewRenameSurface(renameRoot{m}, uidialogs.RenameSession(entry.sess.ID, entry.sess.Name, entry.sess.Tool, tools), "", "")
 	}
 	// Each opening's reads outrank the last one's, so a scan a cancelled
@@ -344,7 +330,8 @@ func (m *Model) queueRename(request uiapply.RenameEffect) tea.Cmd {
 	}
 	toolChanged := request.Tool != "" && request.Tool != prevTool
 	m.gens.dialog++
-	request.CheckNoChildren = toolChanged && m.isShell(request.Tool)
+	request.CheckNoChildren = toolChanged && m.isTool(request.Tool)
+	request.CheckBrowserReady = toolChanged && m.isBrowser(request.Tool)
 	request.Gen = m.gens.dialog
 	m.enqueueEffect(request, 0, false)
 	return m.nextEffectCmd()
@@ -493,12 +480,13 @@ func (m *Model) handleGroupBaseAsk(msg uidialogs.GroupBaseAskMsg) tea.Cmd {
 // path, captured when their request was queued.
 func (s effectServices) dialogSources() uiapply.Sources {
 	return uiapply.Sources{
-		Store:     s.store,
-		Git:       s.gitDrv,
-		Config:    s.cfg,
-		Panes:     s.driver,
-		Lifecycle: s.lifecycle,
-		Runner:    s.runner,
+		Store:        s.store,
+		Git:          s.gitDrv,
+		Config:       s.cfg,
+		Panes:        s.driver,
+		Lifecycle:    s.lifecycle,
+		Runner:       s.runner,
+		BrowserReady: s.browserReady,
 	}
 }
 

@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-func TestAgentToolNamesOrder(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
+func TestCLINamesOrder(t *testing.T) {
+	cfg := Config{CLIs: map[string]CLI{
 		"grok":     {Command: "grok"},
 		"muse":     {Command: "muse"},
 		"gemini":   {Command: "gemini"},
@@ -16,21 +16,19 @@ func TestAgentToolNamesOrder(t *testing.T) {
 		"pi":       {Command: "pi"},
 		"zephyr":   {Command: "zephyr"},
 		"acme":     {Command: "acme"},
-		"terminal": {Shell: true},
-	}}
-	got := cfg.AgentToolNames()
+	}, Tools: map[string]Tool{"terminal": {}, "browser": {Command: "terminal-browser open --no-merge"}}}
+	got := cfg.CLINames()
 	want := []string{"claude", "opencode", "codex", "grok", "gemini", "pi", "acme", "muse", "zephyr"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("AgentToolNames = %v want %v", got, want)
+		t.Fatalf("CLINames = %v want %v", got, want)
 	}
 }
 
-func TestDefaultAgentToolKeepsAnEnabledChoiceElseTakesTheFirstEnabled(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"claude":   {Command: "claude"},
-		"codex":    {Command: "codex"},
-		"terminal": {Shell: true},
-	}}
+func TestDefaultCLIKeepsAnEnabledChoiceElseTakesTheFirstEnabled(t *testing.T) {
+	cfg := Config{CLIs: map[string]CLI{
+		"claude": {Command: "claude"},
+		"codex":  {Command: "codex"},
+	}, Tools: map[string]Tool{"terminal": {}}}
 	for _, tc := range []struct {
 		name   string
 		chosen string
@@ -45,8 +43,8 @@ func TestDefaultAgentToolKeepsAnEnabledChoiceElseTakesTheFirstEnabled(t *testing
 		{name: "the shell", chosen: "terminal", want: "claude"},
 		{name: "every CLI hidden", chosen: "codex", hidden: map[string]bool{"claude": true, "codex": true}, want: ""},
 	} {
-		if got := cfg.DefaultAgentTool(tc.chosen, tc.hidden); got != tc.want {
-			t.Errorf("%s: DefaultAgentTool = %q want %q", tc.name, got, tc.want)
+		if got := cfg.DefaultCLI(tc.chosen, tc.hidden); got != tc.want {
+			t.Errorf("%s: DefaultCLI = %q want %q", tc.name, got, tc.want)
 		}
 	}
 }

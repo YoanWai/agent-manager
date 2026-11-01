@@ -95,7 +95,7 @@ func TestSetupWritesWhatSettingsWrites(t *testing.T) {
 		}
 	}
 	hidden := uisettings.ParseHidden(storedSetting(t, m, uisettings.HiddenToolsSetting))
-	for _, name := range m.services.cfg.AgentToolNames() {
+	for _, name := range m.services.cfg.CLINames() {
 		if want := name != "claude" && name != "codex"; hidden[name] != want {
 			t.Errorf("%s hidden = %v, want %v", name, hidden[name], want)
 		}

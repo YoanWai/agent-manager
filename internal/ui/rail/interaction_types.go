@@ -93,6 +93,7 @@ const (
 	OpenReview
 	CancelEnd
 	NewConnection
+	NewBrowser
 )
 
 type Intent struct {

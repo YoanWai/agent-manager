@@ -115,6 +115,8 @@ func (r renderer) menuGlyph(action ActionKind) string {
 		binding = keybind.CopyReply
 	case NewTerminal:
 		binding = keybind.Terminal
+	case NewBrowser:
+		binding = keybind.Browser
 	case OpenEditor:
 		binding = keybind.Editor
 	case RenameAction:

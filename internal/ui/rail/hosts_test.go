@@ -26,7 +26,7 @@ func hostsSnapshot(state HostState) Snapshot {
 			Sessions: []Session{
 				{ID: "far", Name: "far", Tool: "claude", Status: "working"},
 				{ID: "deep", Name: "deep", Tool: "codex", Group: "ops", Status: "waiting"},
-				{ID: "shell", Name: "shell", Tool: "terminal", Group: "ops", ParentID: "deep", IsShell: true, Status: "idle"},
+				{ID: "shell", Name: "shell", Tool: "terminal", Group: "ops", ParentID: "deep", IsTool: true, IsShell: true, Status: "idle"},
 			},
 		}},
 	}

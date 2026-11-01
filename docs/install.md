@@ -180,7 +180,7 @@ Differences from macOS and Linux:
 
 - Each session runs on its own psmux server. The manager does not use psmux's control mode, so previews poll the pane rather than streaming it, and a focused session is captured again as each typed key lands. psmux does not report whether a program hides its cursor, so the focused view draws the caret wherever the pane's cursor sits.
 - Inside an attached session, the review and editor keys detach through a short PowerShell `run-shell`, so they take a moment longer than on tmux.
-- Command Code (`cmd`) shares its name with `cmd.exe`, so it is not supported natively: it is left out of the tool pickers, and a session asking for it is refused.
+- Command Code (`cmd`) shares its name with `cmd.exe`, so it is not supported natively: it is left out of the CLI pickers, and a session asking for it is refused.
 - An agent CLI installed only as a `.cmd` or `.bat` file is refused, since cmd.exe would run a prompt holding `"` as commands. CLIs installed with npm work, because npm adds a `.ps1` beside each `.cmd`.
 - A CLI the setup dialog installs with npm lands in `%APPDATA%\npm`. When that directory was not on `Path` before the manager started, the manager keeps its old `Path`, so start it again before spawning that CLI.
 

@@ -25,15 +25,15 @@ var fiveLevels = []string{"low", "medium", "high", "xhigh", "max"}
 
 // answered gives the test's claude the flags a catalog CLI has and the
 // answer it would give, as if the manager had already asked.
-func answered(m *Model, tool config.Tool, cat catalog.Catalog) {
-	base := m.services.cfg.Tools["claude"]
+func answered(m *Model, tool config.CLI, cat catalog.Catalog) {
+	base := m.services.cfg.CLIs["claude"]
 	base.Catalog, base.CatalogCommand = tool.Catalog, tool.CatalogCommand
 	base.ModelArgs, base.EffortArgs, base.ProfileArgs = tool.ModelArgs, tool.EffortArgs, tool.ProfileArgs
-	m.services.cfg.Tools["claude"] = base
+	m.services.cfg.CLIs["claude"] = base
 	m.ledger.spawner.Catalogs = map[string]*uilaunch.CatalogState{"claude": {Cat: cat, Loaded: true}}
 }
 
-var claudeLike = config.Tool{Catalog: "claude", CatalogCommand: "claude", ModelArgs: "--model {model}", EffortArgs: "--effort {effort}"}
+var claudeLike = config.CLI{Catalog: "claude", CatalogCommand: "claude", ModelArgs: "--model {model}", EffortArgs: "--effort {effort}"}
 
 var claudeAnswer = catalog.Catalog{Models: []catalog.Model{
 	{ID: "default", Label: "Default (recommended)", Efforts: fiveLevels, Default: true},
@@ -147,7 +147,7 @@ func TestFormSaysWhatACLIDoesNotSupport(t *testing.T) {
 func TestFormProfileScopesModelsAndTypedEffort(t *testing.T) {
 	m := buildModel(t)
 	work := []catalog.Model{{ID: "grok-4.6", Provider: "xai-oauth", Label: "xAI", EffortTyped: true}}
-	answered(m, config.Tool{Catalog: "hermes", CatalogCommand: "hermes", ModelArgs: "--provider {provider} -m {model}", EffortArgs: "--reasoning {effort}", ProfileArgs: "-p {profile}"},
+	answered(m, config.CLI{Catalog: "hermes", CatalogCommand: "hermes", ModelArgs: "--provider {provider} -m {model}", EffortArgs: "--reasoning {effort}", ProfileArgs: "-p {profile}"},
 		catalog.Catalog{
 			Models:   []catalog.Model{{ID: "claude-opus-5", Provider: "anthropic", Label: "Anthropic", Default: true}},
 			Profiles: []catalog.Profile{{Name: "work", Detail: "grok-4.6 · xai-oauth", Models: work}},
@@ -344,7 +344,7 @@ func TestModelListShrinkingUnderTheHighlight(t *testing.T) {
 	})
 	t.Run("quick prompt, another profile", func(t *testing.T) {
 		m := buildModel(t)
-		answered(m, config.Tool{Catalog: "hermes", CatalogCommand: "hermes", ModelArgs: "-m {model}", ProfileArgs: "-p {profile}"},
+		answered(m, config.CLI{Catalog: "hermes", CatalogCommand: "hermes", ModelArgs: "-m {model}", ProfileArgs: "-p {profile}"},
 			catalog.Catalog{
 				Models:   claudeAnswer.Models,
 				Profiles: []catalog.Profile{{Name: "work", Models: []catalog.Model{{ID: "grok-4.6", Default: true}}}},

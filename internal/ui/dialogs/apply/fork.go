@@ -96,11 +96,8 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 		source.WorktreeBranch != request.Source.WorktreeBranch {
 		return result, fmt.Errorf("%s changed while the fork was in the queue; reopen the fork dialog", source.Name)
 	}
-	tool, ok := s.Config.Tools[request.Source.Tool]
-	if !ok {
-		return result, fmt.Errorf("tool %s is no longer configured", request.Source.Tool)
-	}
-	if err := ValidateForkSource(request.Source.Tool, tool, request.Source); err != nil {
+	tool, err := ForkSource(s.Config, request.Source)
+	if err != nil {
 		return result, err
 	}
 	if !preflight.ResolveDir(request.Source.Cwd) {
@@ -198,24 +195,36 @@ func Fork(s Sources, preflight Preflight, request ForkRequest) (ForkOutcome, err
 	return result, launched.LabelError
 }
 
-// ValidateForkSource refuses a source its tool cannot fork, naming the piece
-// the configuration is missing.
-func ValidateForkSource(toolName string, tool config.Tool, source store.Session) error {
-	// A shell has no fork_command either, but saying so names a config
-	// field for a row that was never going to have a conversation.
-	if tool.Shell {
-		return fmt.Errorf("%s is a shell, not an agent - there is no conversation to fork", source.Name)
+// ForkSource is the CLI a source forks with. A tool pane has no
+// conversation to fork, so it is refused before any CLI field is named.
+func ForkSource(cfg config.Config, source store.Session) (config.CLI, error) {
+	if cfg.IsTool(source.Tool) {
+		kind := "shell"
+		if source.Tool == config.BrowserTool {
+			kind = "browser"
+		}
+		return config.CLI{}, fmt.Errorf("%s is a %s, not an agent - there is no conversation to fork", source.Name, kind)
 	}
+	tool, ok := cfg.CLIs[source.Tool]
+	if !ok {
+		return config.CLI{}, fmt.Errorf("CLI %s is no longer configured", source.Tool)
+	}
+	return tool, ValidateForkSource(source.Tool, tool, source)
+}
+
+// ValidateForkSource refuses a source its CLI cannot fork, naming the piece
+// the configuration is missing.
+func ValidateForkSource(toolName string, tool config.CLI, source store.Session) error {
 	if tool.ForkCommand == "" {
-		return fmt.Errorf("tool %s has no fork_command", toolName)
+		return fmt.Errorf("CLI %s has no fork_command", toolName)
 	}
 	usesSessionFile := strings.Contains(tool.ForkCommand, "{session_file}")
 	mintsFork := strings.Contains(tool.ForkCommand, "{new_id}") && agentsession.MintsForkID(tool.SessionStore)
 	if !strings.Contains(tool.ForkCommand, "{id}") && !usesSessionFile && tool.ForkKeys == "" && !mintsFork {
-		return fmt.Errorf("tool %s fork_command must reference the source via {id} or {session_file}", toolName)
+		return fmt.Errorf("CLI %s fork_command must reference the source via {id} or {session_file}", toolName)
 	}
 	if usesSessionFile && !agentsession.SupportsSessionFile(tool.SessionStore) {
-		return fmt.Errorf("tool %s fork_command uses {session_file}, which needs session_store = \"gemini\"", toolName)
+		return fmt.Errorf("CLI %s fork_command uses {session_file}, which needs session_store = \"gemini\"", toolName)
 	}
 	if source.AgentSessionID == "" {
 		return fmt.Errorf("%s has no captured conversation id", source.Name)

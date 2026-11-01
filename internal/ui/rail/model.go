@@ -34,8 +34,11 @@ type Session struct {
 	PaneLine       string
 	PanePrompt     string
 	Queued         int
-	IsShell        bool
-	Elsewhere      bool
+	// IsTool marks a tool pane, which has no conversation to prompt, review or fork.
+	IsTool    bool
+	IsShell   bool
+	IsBrowser bool
+	Elsewhere bool
 	// AfterTurn is the archive or kill the agent asked for once its turn
 	// ends; AfterTurnGlyph is root's mark for it.
 	AfterTurn      string

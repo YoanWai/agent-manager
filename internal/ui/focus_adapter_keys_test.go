@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -418,7 +420,7 @@ func TestFocusPageKeysReachOtherAgents(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)
-			m.services.cfg.Tools["page-echo"] = config.Tool{Command: tc.command, DefaultStatus: status.Idle}
+			m.services.cfg.CLIs["page-echo"] = config.CLI{Command: tc.command, DefaultStatus: status.Idle}
 			createSessionOn(t, m, "page-key-pass-through", "page-echo", t.TempDir())
 			m.selectSessionRow(t, "page-key-pass-through")
 			sess := railSelectedSession(m)
@@ -579,8 +581,12 @@ func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m, sessID := focusedWithHistory(t, tc.name)
 			tc.prepare(m, sessID)
-			for _, tool := range shipped.ToolNames() {
-				m.services.cfg.Tools[tool] = shipped.Tools[tool]
+			for _, tool := range append(slices.Sorted(maps.Keys(shipped.CLIs)), shipped.ToolNames()...) {
+				if shipped.IsTool(tool) {
+					m.services.cfg.Tools[tool] = shipped.Tools[tool]
+				} else {
+					m.services.cfg.CLIs[tool] = shipped.CLIs[tool]
+				}
 				for i := range m.workspace.sessions {
 					if m.workspace.sessions[i].ID == sessID {
 						m.workspace.sessions[i].Tool = tool
@@ -588,6 +594,16 @@ func TestFocusPagingAndFooterFollowTheSamePolicy(t *testing.T) {
 				}
 				m.focus.pane.Enter(uifocus.EnterContext{SessionID: sessID, KeepPaneFacts: true})
 				hint := strings.Contains(ansi.Strip(m.viewFooter()), "pgup/pgdn scroll")
+				if tool == config.BrowserTool {
+					// A browser pane is a page under the card, so it neither
+					// pages nor takes the key.
+					_, cmd := m.handleKey(tc.key)
+					if hint || cmd != nil || m.focus.pane.Status().ScrollOffset > 0 || focusInputQueued(m) {
+						t.Fatalf("%s: footer hint=%v, PgUp capture=%v, offset=%d, forwarded=%v; want none",
+							tool, hint, cmd != nil, m.focus.pane.Status().ScrollOffset, focusInputQueued(m))
+					}
+					continue
+				}
 				if hint != tc.wantHint {
 					t.Fatalf("%s: paging footer visible=%v, want %v", tool, hint, tc.wantHint)
 				}
@@ -886,7 +902,7 @@ func TestFocusModeCtrlBackslashUnfocuses(t *testing.T) {
 // captured rows, and the caret cell tmux reported over them.
 func caretModel(t *testing.T, cursor paneCursor, rows ...string) *Model {
 	t.Helper()
-	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := status.NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"claude":    {ActivityCutoff: `(?m)^❯`},
 		"gemini":    {ActivityCutoff: `(?m)^\s*[>!*] `},
 		"unmarked":  {},
@@ -1016,7 +1032,7 @@ func TestCaretOnGrokComposer(t *testing.T) {
 // text before it, or a wrapped line continuing from above, keeps Left with
 // the agent.
 func TestCaretOnPisBareComposerRow(t *testing.T) {
-	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := status.NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"pi": {
 			ActivityCutoff: `(?ms)\A.*^─{8,}[ \t]*$`,
 			InputPrefix:    "^",
@@ -1366,7 +1382,7 @@ func TestFocusLeftUnfocusesOnPiBlankComposerRow(t *testing.T) {
 // The gutter-bar prefix reads that as the prompt head; a multi-line
 // draft's blank continuation row is rejected by the drafted row above it.
 func TestCaretOnOpencodesGutterComposer(t *testing.T) {
-	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := status.NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"opencode": {
 			ActivityCutoff: `(?m)^\s*╹`,
 			InputPrefix:    `(?m)^\s*┃`,
@@ -1433,7 +1449,7 @@ func TestCaretOnOpencodesGutterComposer(t *testing.T) {
 // placeholder on screen proves the composer empty and Left free to leave,
 // while a draft replaces the placeholder and keeps Left with the agent.
 func TestCaretParkedBelowCommandCodesComposer(t *testing.T) {
-	engine, err := status.NewEngine(config.Config{Tools: map[string]config.Tool{
+	engine, err := status.NewEngine(config.Config{CLIs: map[string]config.CLI{
 		"command-code": {
 			ActivityCutoff:      `(?m)^❯`,
 			ComposerPlaceholder: "Ask your question...",

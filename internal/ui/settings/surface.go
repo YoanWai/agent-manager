@@ -20,7 +20,7 @@ type Surface struct {
 // key asks for, what closing saves and the card chrome.
 type Root interface {
 	// Context is what a key reads live: the tools, the cached hidden CLIs
-	// and default tool, and the key tables.
+	// and default CLI, and the key tables.
 	Context() Context
 	// Apply runs what a key asked beyond the dialog's own state and says
 	// whether the card closes.

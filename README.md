@@ -41,9 +41,9 @@
 
 ![three agents spawned from the quick prompt bar, one each on Claude Code, Codex and Gemini CLI, tab picking the CLI each time, each new agent landing in the list](docs/demo.gif)
 
-Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side. Each tool runs in its own persistent tmux session.
+Claude Code, Codex, OpenCode, Grok, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side. Each CLI runs in its own persistent tmux session.
 
-agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed tool as-is: your login, your subscription, your config files, your MCP servers, and every feature the tool ships all carry over, exactly as they behave in a plain terminal.
+agent-manager is a thin layer over the CLIs you already have. Each session launches your own installed CLI as-is: your login, your subscription, your config files, your MCP servers, and every feature the CLI ships all carry over, exactly as they behave in a plain terminal.
 
 Instead of hunting through terminal tabs to see which agent is done and which is stuck, every session shows up in one list with live status, grouped into a project tree you can fold and reorder. You answer any of them without attaching: `space` sends a prompt straight into a session's pane, or spawns a new agent in the selected group. A dead session revives on its own conversation with `v`. And `ctrl+r` opens a full-file diff of what an agent changed, syntax-highlighted, where the comments you leave on lines go back to the agent's pane as one review prompt when you press `C`.
 
@@ -53,7 +53,7 @@ The mouse works across the whole manager. The wheel moves the cursor, a click on
 
 ![Mouse demo with the geometric marks used by Advanced mode: the wheel moves the cursor, clicks focus and leave sessions, the ⠿ handle drags rows, and […] opens row actions](docs/demo-mouse.gif)
 
-The tools you use alongside agents live in the same list: `T` opens a shell under the selected agent, or in the selected group, for builds, Git, and one-off commands. An agent can spawn another, send it a message, and wait until it is done: every MCP-capable session carries those tools on launch.
+The tools you use alongside agents live in the same list: `t` opens a shell under the selected agent, or in the selected group, for builds, Git, and one-off commands. `b` opens a real browser tab beside your agents, and agents can open and drive one themselves while you watch the same page. An agent can spawn another, send it a message, and wait until it is done: every MCP-capable session carries those tools on launch.
 
 Save named instructions in Settings and reuse them from the New Session form, the quick prompt, a focused session, `spawn --saved`, `send --saved`, or `create_session`. See [Saved prompts](docs/usage.md#saved-prompts).
 
@@ -61,7 +61,7 @@ Not here yet: cost tracking.
 
 **Jump to:** [Install](#install) · [Usage](#usage) · [Keys](docs/usage.md#keys) · [Diff review](docs/usage.md#diff-review) · [Configuration](docs/configuration.md) · [Docs site](https://agent-manager.dev/docs/)
 
-## Supported tools
+## Supported CLIs
 
 Status detection supports **Claude Code**, **OpenCode**, **Codex**, **Grok Build**, **Gemini CLI**, **Antigravity CLI**, **Pi**, **Command Code**, **Hermes Agent**, **Muse Code**, **Oh My Pi**, and **Cursor CLI**. Each one's launch, revive, fork, and status rules ship in the binary (Hermes, Antigravity, Oh My Pi, and Cursor CLI have no fork), so an upgrade brings the current version of all of them (see [Configuration](docs/configuration.md#agent-clis)). A CLI that is not on the list is a [feature request](https://github.com/YoanWai/agent-manager/issues/new/choose).
 
@@ -175,7 +175,7 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 
 | Key | Action |
 |-----|--------|
-| `n` | New session (name, tool, the model, effort and profile the tool reports, environment profile, directory, optional starting prompt, group) |
+| `n` | New session (name, CLI, the model, effort and profile the CLI reports, environment profile, directory, optional starting prompt, group) |
 | `space` | Quick prompt mode: answer the selected session, or spawn an agent in the selected group |
 | `enter` | Focus the session in place; keys go to the agent while the list stays |
 | click / double click | Focus a session from its row or its preview / fold or unfold a group. The full-screen layout selects on a click and focuses on a double click |
@@ -185,8 +185,8 @@ The full reference, every key, quick prompt mode, killing and reviving, diff rev
 | `→` / `←` | Step in and out: `→` focuses the session or opens the group, `←` closes the group and, at the start of a focused agent's prompt, comes back to the list. Settings can turn the pair off |
 | `ctrl+r` | Review the session's changes as full-file diffs; `c` comments a line, `C` sends a numbered review round, and sent comments stay visible as open or handled |
 | `x` / `v` | Kill a session to free its RAM / revive it on its own conversation |
-| `R` | Restart a session on an empty context: same name, group, directory and tool, fresh conversation |
-| `s` | Settings (default tool, theme or follow the OS light/dark mode, list density, mouse, review layout, desktop notifications, editor, keybindings) |
+| `R` | Restart a session on an empty context: same name, group, directory and CLI, fresh conversation |
+| `s` | Settings (default CLI, theme or follow the OS light/dark mode, list density, mouse, review layout, desktop notifications, editor, keybindings) |
 | `?` | The key map for the current screen; review shows only review bindings |
 
 A session can spawn into its own git worktree (`<repo>-worktrees/<name>`, branch `am/<name>`), toggled on the `n` form, with `ctrl+t` in quick prompt mode, or by default in Settings.

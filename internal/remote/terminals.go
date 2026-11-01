@@ -10,7 +10,7 @@ import (
 // Openers records which local session opened each terminal on a
 // connection. Every SSH call reaches the host as one caller with no
 // session, so only this side can tell one session's terminal from
-// another's, or an agent's from the user's own T on the connection row.
+// another's, or an agent's from the user's own t on the connection row.
 type Openers interface {
 	SetRemoteTerminalOpener(host, terminalID, sessionID string) error
 	// RemoteTerminalOpener is empty for a terminal no local session opened.

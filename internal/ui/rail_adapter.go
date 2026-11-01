@@ -81,7 +81,9 @@ func (m *Model) railSnapshot() uirail.Snapshot {
 			PaneLine:       m.workspace.paneLines[session.ID],
 			PanePrompt:     m.workspace.panePrompts[session.ID],
 			Queued:         m.workspace.queuedMessages[session.ID],
+			IsTool:         m.isTool(session.Tool),
 			IsShell:        m.isShell(session.Tool),
+			IsBrowser:      m.isBrowser(session.Tool),
 			Elsewhere:      m.elsewhereNote(session) != "",
 			AfterTurn:      session.AfterTurn,
 			AfterTurnGlyph: m.afterTurnGlyph(session.AfterTurn),
@@ -196,7 +198,7 @@ func promptPreview(prompt string) string {
 }
 
 func (m *Model) sessionGlyph(session store.Session) string {
-	return uirail.SessionGlyph(m.railTheme(), m.prefs.glyphMode, uirail.Session{Status: session.Status, IsShell: m.isShell(session.Tool)}, m.startup.LoadPhase)
+	return uirail.SessionGlyph(m.railTheme(), m.prefs.glyphMode, uirail.Session{Status: session.Status, IsShell: m.isShell(session.Tool), IsBrowser: m.isBrowser(session.Tool)}, m.startup.LoadPhase)
 }
 
 func (m *Model) prepareRailFrame(width, height int) {
@@ -275,7 +277,8 @@ func (m *Model) rowLegend() legendSection {
 			ctx.Row = uirail.Selection{Kind: uirail.SessionRow, SessionID: row.sess.ID, Group: row.sess.Group}
 			ctx.Session = uirail.Session{
 				ID: row.sess.ID, Group: row.sess.Group, Tool: row.sess.Tool, Status: row.sess.Status,
-				Archived: row.sess.Archived, AfterTurn: row.sess.AfterTurn, IsShell: m.isShell(row.sess.Tool),
+				Archived: row.sess.Archived, AfterTurn: row.sess.AfterTurn, IsTool: m.isTool(row.sess.Tool),
+				IsShell: m.isShell(row.sess.Tool), IsBrowser: m.isBrowser(row.sess.Tool),
 			}
 		}
 	}
@@ -508,6 +511,8 @@ func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 		return m.enterResizeMode()
 	case uirail.NewTerminal:
 		return m.terminalKey()
+	case uirail.NewBrowser:
+		return m.browserKey()
 	case uirail.OpenEditor:
 		return m.openEditor()
 	case uirail.RenameAction:

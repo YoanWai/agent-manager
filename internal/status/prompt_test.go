@@ -31,7 +31,7 @@ func TestRuneAtColumn(t *testing.T) {
 }
 
 func TestHasTextBeforeCaretProtectsDraftAndIgnoresPlaceholder(t *testing.T) {
-	engine, err := NewEngine(config.Config{Tools: map[string]config.Tool{"agent": {InputPrefix: "^❯\\s"}}})
+	engine, err := NewEngine(config.Config{CLIs: map[string]config.CLI{"agent": {InputPrefix: "^❯\\s"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

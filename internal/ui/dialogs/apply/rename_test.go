@@ -1,6 +1,11 @@
 package apply
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/store"
+)
 
 // realDirs is the probe a rename needs: a pass-through default path and the
 // plain directory test, without the manager's git-backed preflight.
@@ -48,5 +53,38 @@ func TestRenameWorkerCommitsStagesInOrder(t *testing.T) {
 	}
 	if !seen["fresh"] || !seen["fresh/inner"] {
 		t.Fatalf("store not renamed: %v", groups)
+	}
+}
+
+// Retyping a row into the browser checks what a browser tab needs before
+// anything is stored, so a row never carries a tool it cannot run.
+func TestRenameIntoTheBrowserChecksItsPrerequisitesFirst(t *testing.T) {
+	t.Parallel()
+	st := openStore(t)
+	if err := st.CreateSession(store.Session{ID: "agent", Name: "before", Tool: "claude", Cwd: t.TempDir()}); err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	captured, err := st.Get("agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := errors.New("terminal-browser is not installed")
+	request := Request{Kind: Session, SessID: "agent", Sess: captured, Name: "after", Tool: "browser", CheckBrowserReady: true}
+
+	result, err := Rename(Sources{Store: st, Panes: noPanes{}, BrowserReady: func() error { return missing }}, fixedProbe{}, request)
+	if !errors.Is(err, missing) {
+		t.Fatalf("rename into the browser without it = %v, want %v", err, missing)
+	}
+	if result.NameRenamed || result.ToolChanged {
+		t.Fatalf("a refused retype committed stages: %+v", result)
+	}
+	stored, err := st.Get("agent")
+	if err != nil || stored.Name != "before" || stored.Tool != "claude" {
+		t.Fatalf("refused retype stored %q / %q, %v", stored.Name, stored.Tool, err)
+	}
+
+	result, err = Rename(Sources{Store: st, Panes: noPanes{}, BrowserReady: func() error { return nil }}, fixedProbe{}, request)
+	if err != nil || !result.ToolChanged {
+		t.Fatalf("rename into a ready browser = %+v, %v", result, err)
 	}
 }

@@ -2,12 +2,14 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/termbrowser"
 	"github.com/YoanWai/agent-manager/internal/termseq"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
@@ -16,40 +18,79 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// terminalKeyWindow is how long after handling a T another one reads as
-// autorepeat rather than a second request: longer than the pause before a
+// terminalKeyWindow is how long after handling a t or a b another one reads
+// as autorepeat rather than a second request: longer than the pause before a
 // held key starts repeating and than the interval it repeats at. It runs
 // from the end of the spawn, so the quiet gap between two deliberate
-// shells is this window plus the spawn.
+// tabs is this window plus the spawn.
 const terminalKeyWindow = 250 * time.Millisecond
 
 func (m *Model) shellTool() (string, config.Tool) {
-	return m.services.cfg.ShellTool()
+	return m.services.cfg.Terminal()
 }
 
-// isShell reports whether a session's tool opens a shell rather than an
-// agent. A tool the binary no longer ships answers false: a name we cannot
-// resolve is not something we can claim runs a shell.
+// isShell reports whether a session's row runs the terminal.
 func (m *Model) isShell(toolName string) bool {
-	return m.services.cfg.Tools[toolName].Shell
+	return toolName == config.TerminalTool
 }
 
-// terminalKey spawns a shell unless T arrived inside the burst a held key
+func (m *Model) isBrowser(toolName string) bool {
+	return toolName == config.BrowserTool
+}
+
+// syncBrowserFrames tells the browsers started on the manager's server how
+// to reach the terminal this manager runs in. The variable goes on the
+// running server and into this process, which a server it starts inherits.
+func (m *Model) syncBrowserFrames() tea.Msg {
+	frames := termbrowser.FramesFor(os.Getenv("TERM_PROGRAM"), termseq.Remote())
+	var err error
+	if frames == "" {
+		err = os.Unsetenv(termbrowser.FramesEnv)
+	} else {
+		err = os.Setenv(termbrowser.FramesEnv, frames)
+	}
+	if err == nil {
+		err = m.services.tmux.SetServerEnvironment(termbrowser.FramesEnv, frames)
+	}
+	if err != nil {
+		return errMsg{err}
+	}
+	return nil
+}
+
+// isTool reports whether a session's row runs a tool pane rather than
+// an agent. A name the binary no longer ships answers false: a name we
+// cannot resolve is not something we can claim runs a tool.
+func (m *Model) isTool(toolName string) bool {
+	return m.services.cfg.IsTool(toolName)
+}
+
+func (m *Model) terminalKey() (tea.Model, tea.Cmd) { return m.tabKey(m.openTerminal) }
+
+func (m *Model) browserKey() (tea.Model, tea.Cmd) { return m.tabKey(m.openTerminalBrowser) }
+
+// tabKey opens a tab unless the key arrived inside the burst a held key
 // sends. Each keystroke pushes the window out, and the async spawn completion
 // starts it again, so a burst queued while tmux creates the pane still makes
-// one shell.
-func (m *Model) terminalKey() (tea.Model, tea.Cmd) {
+// one tab.
+func (m *Model) tabKey(open func() (tea.Model, tea.Cmd)) (tea.Model, tea.Cmd) {
 	if time.Since(m.ledger.lifecycle.TerminalKeyAt) < terminalKeyWindow {
 		m.ledger.lifecycle.TerminalKeyAt = time.Now()
 		return m, nil
 	}
-	model, cmd := m.openTerminal()
+	model, cmd := open()
 	m.ledger.lifecycle.TerminalKeyAt = time.Now()
 	return model, cmd
 }
 
 func (m *Model) openTerminal() (tea.Model, tea.Cmd) {
 	return m.openTerminalWithReader(newSystemTerminalDirectoryReader(m))
+}
+
+// openTerminalBrowser is named apart from the openBrowser seam, which opens
+// a link in the desktop browser.
+func (m *Model) openTerminalBrowser() (tea.Model, tea.Cmd) {
+	return m.openTab(uilaunch.Browser, config.BrowserTool, newSystemTerminalDirectoryReader(m))
 }
 
 // terminalDirectoryRequest is where a shell row or the editor opens. The
@@ -89,18 +130,24 @@ func terminalDirectoryCmd(request terminalDirectoryRequest, reader terminalDirec
 }
 
 func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Model, tea.Cmd) {
+	toolName, _ := m.shellTool()
+	return m.openTab(uilaunch.Shell, toolName, reader)
+}
+
+// openTab spawns a shell or a browser under the selected agent, beside a
+// selected shell or browser, or into the selected group.
+func (m *Model) openTab(kind uilaunch.Kind, toolName string, reader terminalDirectoryReader) (tea.Model, tea.Cmd) {
 	if m.rail.ShowArchived() {
 		return m, nil
 	}
 	request, ok := m.captureTerminalDirectory(terminalDirectorySpawn)
 	if !ok {
-		m.reportErr("no directory to open a terminal in")
+		m.reportErr(kind.NoTabDirectory().Error())
 		return m, nil
 	}
-	toolName, _ := m.shellTool()
 	w, h := m.paneTargetSize()
 	spawn := uilaunch.Request{
-		Kind: uilaunch.Shell, ToolName: toolName,
+		Kind: kind, ToolName: toolName,
 		Pane:         sessioncmd.PaneSize{Width: w, Height: h},
 		TerminalDir:  uilaunch.TerminalDirectoryRequest{PaneID: request.directory.PaneID, RawDir: request.directory.RawDir, Fallbacks: request.directory.Fallbacks},
 		TerminalRead: terminalReader{reader: reader},
@@ -109,7 +156,7 @@ func (m *Model) openTerminalWithReader(reader terminalDirectoryReader) (tea.Mode
 	spawn.Group = entry.group
 	if !entry.isGroup {
 		spawn.Group = entry.sess.Group
-		if m.isShell(entry.sess.Tool) {
+		if m.isTool(entry.sess.Tool) {
 			spawn.ParentID = entry.sess.ParentID
 		} else {
 			spawn.ParentID = entry.sess.ID

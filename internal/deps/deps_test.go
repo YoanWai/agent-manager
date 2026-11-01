@@ -243,6 +243,23 @@ func TestUnixRecipes(t *testing.T) {
 	}
 }
 
+func TestTerminalBrowserHint(t *testing.T) {
+	const installer = "curl -fsSL https://terminal-browser.sh/install | bash"
+	stubPath(t, "brew", "apt-get", "sudo")
+	stubUID(t, 1)
+	if got, want := hint("darwin", "terminal-browser"), "install it with: "+installer+", or brew install terminal-browser"; got != want {
+		t.Fatalf("darwin hint = %q, want %q", got, want)
+	}
+	if got, want := hint("linux", "terminal-browser"), "install it with: "+installer; got != want {
+		t.Fatalf("linux hint = %q, want %q", got, want)
+	}
+	for _, goos := range []string{"darwin", "linux"} {
+		if got := installers(goos)["terminal-browser"]; got != installer {
+			t.Fatalf("%s install command = %q, want %q", goos, got, installer)
+		}
+	}
+}
+
 func TestHaveTTYWithoutATerminalDoesNotAbort(t *testing.T) {
 	script := "set -eu\n" + installFuncs(t, "have_tty") + `
 if have_tty; then

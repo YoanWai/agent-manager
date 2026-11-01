@@ -7,7 +7,6 @@ import (
 	"regexp"
 	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"testing"
 
@@ -19,76 +18,76 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	if _, ok := cfg.Tools["claude"]; !ok {
+	if _, ok := cfg.CLIs["claude"]; !ok {
 		t.Fatal("expected claude tool in default config")
 	}
-	if _, ok := cfg.Tools["opencode"]; !ok {
+	if _, ok := cfg.CLIs["opencode"]; !ok {
 		t.Fatal("expected opencode tool in default config")
 	}
-	if _, ok := cfg.Tools["codex"]; !ok {
+	if _, ok := cfg.CLIs["codex"]; !ok {
 		t.Fatal("expected codex tool in default config")
 	}
-	if cfg.Tools["codex"].Command != "codex" {
-		t.Fatalf("codex command = %q", cfg.Tools["codex"].Command)
+	if cfg.CLIs["codex"].Command != "codex" {
+		t.Fatalf("codex command = %q", cfg.CLIs["codex"].Command)
 	}
-	if got := cfg.Tools["codex"].ReviveCommand; got != "codex resume --last" {
+	if got := cfg.CLIs["codex"].ReviveCommand; got != "codex resume --last" {
 		t.Fatalf("codex revive_command = %q want \"codex resume --last\"", got)
 	}
-	if got := cfg.Tools["codex"].PromptFlag; got != "" {
+	if got := cfg.CLIs["codex"].PromptFlag; got != "" {
 		t.Fatalf("codex prompt_flag = %q want empty (positional prompt)", got)
 	}
-	if _, ok := cfg.Tools["grok"]; !ok {
+	if _, ok := cfg.CLIs["grok"]; !ok {
 		t.Fatal("expected grok tool in default config")
 	}
-	if cfg.Tools["grok"].Command != "grok" {
-		t.Fatalf("grok command = %q", cfg.Tools["grok"].Command)
+	if cfg.CLIs["grok"].Command != "grok" {
+		t.Fatalf("grok command = %q", cfg.CLIs["grok"].Command)
 	}
-	if got := cfg.Tools["grok"].ReviveCommand; got != "grok --continue" {
+	if got := cfg.CLIs["grok"].ReviveCommand; got != "grok --continue" {
 		t.Fatalf("grok revive_command = %q want \"grok --continue\"", got)
 	}
-	if got := cfg.Tools["grok"].PromptFlag; got != "" {
+	if got := cfg.CLIs["grok"].PromptFlag; got != "" {
 		t.Fatalf("grok prompt_flag = %q want empty (positional prompt)", got)
 	}
-	if got := cfg.Tools["grok"].ActivityCutoff; got != `(?m)^(?:\s*│ )?❯` {
+	if got := cfg.CLIs["grok"].ActivityCutoff; got != `(?m)^(?:\s*│ )?❯` {
 		t.Fatalf("grok activity_cutoff = %q want boxed-or-minimal composer", got)
 	}
-	if !strings.Contains(cfg.Tools["grok"].ChromeLine, "Help improve Grok") {
-		t.Fatalf("grok chrome_line missing the opt-in card: %q", cfg.Tools["grok"].ChromeLine)
+	if !strings.Contains(cfg.CLIs["grok"].ChromeLine, "Help improve Grok") {
+		t.Fatalf("grok chrome_line missing the opt-in card: %q", cfg.CLIs["grok"].ChromeLine)
 	}
-	if got := cfg.Tools["grok"].TrailingNote; got != "^Worked for " {
+	if got := cfg.CLIs["grok"].TrailingNote; got != "^Worked for " {
 		t.Fatalf("grok trailing_note = %q want the duration line", got)
 	}
-	if !cfg.Tools["grok"].FitsHeight {
+	if !cfg.CLIs["grok"].FitsHeight {
 		t.Fatal("grok fits_height = false want true")
 	}
-	if _, ok := cfg.Tools["gemini"]; !ok {
+	if _, ok := cfg.CLIs["gemini"]; !ok {
 		t.Fatal("expected gemini tool in default config")
 	}
-	if cfg.Tools["gemini"].Command != "gemini" {
-		t.Fatalf("gemini command = %q", cfg.Tools["gemini"].Command)
+	if cfg.CLIs["gemini"].Command != "gemini" {
+		t.Fatalf("gemini command = %q", cfg.CLIs["gemini"].Command)
 	}
-	if got := cfg.Tools["gemini"].ReviveCommand; got != "gemini --resume latest" {
+	if got := cfg.CLIs["gemini"].ReviveCommand; got != "gemini --resume latest" {
 		t.Fatalf("gemini revive_command = %q want \"gemini --resume latest\"", got)
 	}
-	if got := cfg.Tools["gemini"].PromptFlag; got != "" {
+	if got := cfg.CLIs["gemini"].PromptFlag; got != "" {
 		t.Fatalf("gemini prompt_flag = %q want empty (positional prompt)", got)
 	}
-	if got := cfg.Tools["pi"].Command; got != "pi" {
+	if got := cfg.CLIs["pi"].Command; got != "pi" {
 		t.Fatalf("pi command = %q want pi", got)
 	}
-	if got := cfg.Tools["pi"].ReviveCommand; got != "pi --continue" {
+	if got := cfg.CLIs["pi"].ReviveCommand; got != "pi --continue" {
 		t.Fatalf("pi revive_command = %q want \"pi --continue\"", got)
 	}
-	if got := cfg.Tools["pi"].PromptFlag; got != "" {
+	if got := cfg.CLIs["pi"].PromptFlag; got != "" {
 		t.Fatalf("pi prompt_flag = %q want empty (positional prompt)", got)
 	}
-	if got := cfg.Tools["pi"].InputPrefix; got != "^" {
+	if got := cfg.CLIs["pi"].InputPrefix; got != "^" {
 		t.Fatalf("pi input_prefix = %q want ^ (blank composer row)", got)
 	}
-	if got := cfg.Tools["opencode"].InputPrefix; got != `(?m)^\s*┃` {
+	if got := cfg.CLIs["opencode"].InputPrefix; got != `(?m)^\s*┃` {
 		t.Fatalf("opencode input_prefix = %q want the gutter bar", got)
 	}
-	commandCode := cfg.Tools["command-code"]
+	commandCode := cfg.CLIs["command-code"]
 	if commandCode.Command != "cmd" {
 		t.Fatalf("command-code command = %q want cmd", commandCode.Command)
 	}
@@ -116,37 +115,37 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 	if got := commandCode.MCP; got != "" {
 		t.Fatalf("command-code mcp = %q want empty (style inferred from the tool key)", got)
 	}
-	if cfg.Tools["claude"].Command != "claude" {
-		t.Fatalf("claude command = %q", cfg.Tools["claude"].Command)
+	if cfg.CLIs["claude"].Command != "claude" {
+		t.Fatalf("claude command = %q", cfg.CLIs["claude"].Command)
 	}
-	if got := cfg.Tools["opencode"].PromptFlag; got != "--prompt" {
+	if got := cfg.CLIs["opencode"].PromptFlag; got != "--prompt" {
 		t.Fatalf("opencode prompt_flag = %q want --prompt", got)
 	}
-	if got := cfg.Tools["claude"].PromptFlag; got != "" {
+	if got := cfg.CLIs["claude"].PromptFlag; got != "" {
 		t.Fatalf("claude prompt_flag = %q want empty (positional prompt)", got)
 	}
-	if got := cfg.Tools["claude"].ForkCommand; got != "claude --resume {id} --fork-session --session-id {new_id} --name {name}" {
+	if got := cfg.CLIs["claude"].ForkCommand; got != "claude --resume {id} --fork-session --session-id {new_id} --name {name}" {
 		t.Fatalf("claude fork_command = %q", got)
 	}
-	if got := cfg.Tools["codex"].ForkCommand; got != "codex fork {id}" {
+	if got := cfg.CLIs["codex"].ForkCommand; got != "codex fork {id}" {
 		t.Fatalf("codex fork_command = %q want \"codex fork {id}\"", got)
 	}
-	if got := cfg.Tools["opencode"].ForkCommand; got != "opencode --standalone --session {new_id}" {
+	if got := cfg.CLIs["opencode"].ForkCommand; got != "opencode --standalone --session {new_id}" {
 		t.Fatalf("opencode fork_command = %q want \"opencode --standalone --session {new_id}\"", got)
 	}
-	if got := cfg.Tools["grok"].ForkCommand; got != "grok --resume {id} --fork-session --session-id {new_id}" {
+	if got := cfg.CLIs["grok"].ForkCommand; got != "grok --resume {id} --fork-session --session-id {new_id}" {
 		t.Fatalf("grok fork_command = %q want \"grok --resume {id} --fork-session --session-id {new_id}\"", got)
 	}
-	if got := cfg.Tools["pi"].ForkCommand; got != "pi --fork {id} --session-id {new_id}" {
+	if got := cfg.CLIs["pi"].ForkCommand; got != "pi --fork {id} --session-id {new_id}" {
 		t.Fatalf("pi fork_command = %q want \"pi --fork {id} --session-id {new_id}\"", got)
 	}
-	if got := cfg.Tools["gemini"].ForkCommand; got != "gemini --session-file {session_file}" {
+	if got := cfg.CLIs["gemini"].ForkCommand; got != "gemini --session-file {session_file}" {
 		t.Fatalf("gemini fork_command = %q want \"gemini --session-file {session_file}\"", got)
 	}
-	if got := cfg.Tools["gemini"].SessionStore; got != "gemini" {
+	if got := cfg.CLIs["gemini"].SessionStore; got != "gemini" {
 		t.Fatalf("gemini session_store = %q want \"gemini\" (captures the fork's minted id)", got)
 	}
-	hermes := cfg.Tools["hermes"]
+	hermes := cfg.CLIs["hermes"]
 	if hermes.Command != "hermes --cli" {
 		t.Fatalf("hermes command = %q", hermes.Command)
 	}
@@ -162,16 +161,13 @@ func TestDefaultDefinesEveryShippedTool(t *testing.T) {
 }
 
 // Nothing types into a pane it cannot read, so every agent CLI has to mark
-// where its input box is. The shell is exempt: nothing types into it.
+// where its input box is.
 func TestEveryAgentToolMarksItsInputBox(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	for name, tool := range cfg.Tools {
-		if tool.Shell {
-			continue
-		}
+	for name, tool := range cfg.CLIs {
 		if tool.ActivityCutoff == "" {
 			t.Errorf("tool %q declares no activity_cutoff", name)
 		}
@@ -185,11 +181,8 @@ func TestEveryAgentToolDeclaresHowItReportsItsConversation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		switch {
-		case tool.Shell && tool.SessionReport != "":
-			t.Errorf("shell tool %q declares session_report %q", name, tool.SessionReport)
-		case tool.Shell:
 		case !slices.Contains(sessionreport.Styles, tool.SessionReport):
 			t.Errorf("tool %q declares session_report %q, not one of %v", name, tool.SessionReport, sessionreport.Styles)
 		case tool.SessionReport != sessionreport.StyleNone && tool.SessionReport != name:
@@ -205,7 +198,7 @@ func TestEveryLaunchLineIsOneCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		for _, line := range []string{tool.Command, tool.ReviveCommand, tool.ResumeByIDCommand, tool.ResumePickerCommand, tool.ForkCommand} {
 			if strings.ContainsAny(line, ";&|\n`$()<>") {
 				t.Errorf("tool %q launches with %q, which is not one command", name, line)
@@ -214,47 +207,77 @@ func TestEveryLaunchLineIsOneCommand(t *testing.T) {
 	}
 }
 
-func TestTheBinaryShipsOneShell(t *testing.T) {
+func TestEveryShippedNameIsInExactlyOneRegistry(t *testing.T) {
 	cfg, err := Default()
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	shells := 0
-	for _, tool := range cfg.Tools {
-		if tool.Shell {
-			shells++
+	for name := range cfg.Tools {
+		if _, both := cfg.CLIs[name]; both {
+			t.Errorf("%q ships as both a CLI and a tool", name)
 		}
 	}
-	if shells != 1 {
-		t.Fatalf("shell tools = %d, want exactly one", shells)
+	if !slices.Equal(cfg.ToolNames(), []string{"browser", "terminal"}) {
+		t.Fatalf("tools = %v, want the browser and the terminal", cfg.ToolNames())
 	}
-	name, tool := cfg.ShellTool()
-	if name != "terminal" || tool.Command != "" {
-		t.Fatalf("ShellTool = %q %+v, want the terminal block on $SHELL", name, tool)
+	if _, isCLI := cfg.CLIs["claude"]; !isCLI || cfg.IsTool("claude") {
+		t.Fatal("claude must ship as a CLI and not as a tool")
+	}
+}
+
+func TestANameDefinedAsBothACLIAndAToolFailsToLoad(t *testing.T) {
+	_, err := parse("[clis.terminal]\ncommand = \"zsh\"\n", "[tools.terminal]\ncommand = \"\"\n")
+	if err == nil || !strings.Contains(err.Error(), `"terminal"`) {
+		t.Fatalf("parse = %v, want a duplicate-name error naming terminal", err)
+	}
+}
+
+// Rows store the tool name, so a terminal row written before the split
+// must still launch and read as the terminal.
+func TestAStoredTerminalRowStillResolves(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	if !cfg.IsTool("terminal") {
+		t.Fatal("a terminal row must read as a tool")
+	}
+	pane, known := cfg.Pane("terminal")
+	if !known || pane.Command != "" || pane.DefaultStatus != "idle" || pane.InputPrefix == "" {
+		t.Fatalf("Pane(terminal) = %+v %v, want the terminal on $SHELL with its prompt row", pane, known)
+	}
+	name, terminal := cfg.Terminal()
+	if name != "terminal" || terminal.Command != "" {
+		t.Fatalf("Terminal() = %q %+v, want the terminal block on $SHELL", name, terminal)
+	}
+	if _, known := cfg.Pane("removed-cli"); known {
+		t.Fatal("a name in neither registry must not resolve")
+	}
+}
+
+func TestTheBinaryShipsTheBrowserAsATool(t *testing.T) {
+	cfg, err := Default()
+	if err != nil {
+		t.Fatalf("Default: %v", err)
+	}
+	name, tool := cfg.Browser()
+	if name != "browser" || tool.Command != "terminal-browser open --no-merge" || tool.DefaultStatus != "idle" {
+		t.Fatalf("Browser() = %q %+v", name, tool)
+	}
+	if !cfg.IsTool(BrowserTool) {
+		t.Fatal("a browser row must read as a tool")
+	}
+	if pane, known := cfg.Pane(BrowserTool); !known || pane.Command != tool.Command {
+		t.Fatalf("Pane(browser) = %+v %v, want the browser command", pane, known)
 	}
 }
 
 func TestToolNamesAreSorted(t *testing.T) {
-	cfg, err := Default()
-	if err != nil {
-		t.Fatalf("Default: %v", err)
-	}
+	cfg := Config{Tools: map[string]Tool{"zeta": {}, "terminal": {}, "alpha": {}}}
 	for range 5 {
-		if names := cfg.ToolNames(); !sort.StringsAreSorted(names) || len(names) != len(cfg.Tools) {
+		if names := cfg.ToolNames(); !slices.Equal(names, []string{"alpha", "terminal", "zeta"}) {
 			t.Fatalf("ToolNames = %v", names)
 		}
-	}
-}
-
-func TestShellToolUsesFlagAndStableName(t *testing.T) {
-	cfg := Config{Tools: map[string]Tool{
-		"terminal": {Command: "agent", Shell: false},
-		"zsh":      {Command: "zsh", Shell: true},
-		"bash":     {Command: "bash", Shell: true},
-	}}
-	name, tool := cfg.ShellTool()
-	if name != "bash" || tool.Command != "bash" {
-		t.Fatalf("ShellTool = %q %+v, want bash", name, tool)
 	}
 }
 
@@ -264,7 +287,7 @@ func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
 		t.Fatalf("Default: %v", err)
 	}
 
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		firstWorking := -1
 		lastWaiting := -1
 		for i, rule := range tool.Rules {
@@ -289,8 +312,8 @@ func TestDefaultWaitingRulesPrecedeWorking(t *testing.T) {
 func TestApplyDefaults(t *testing.T) {
 	var cfg Config
 	cfg.applyDefaults()
-	if cfg.Tools == nil {
-		t.Fatal("tools should be non-nil after defaults")
+	if cfg.CLIs == nil || cfg.Tools == nil {
+		t.Fatal("both registries should be non-nil after defaults")
 	}
 }
 
@@ -301,7 +324,7 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 	}
 	// Tools that accept a chosen id launch with it and resume by it.
 	for _, name := range []string{"claude", "grok", "gemini", "pi"} {
-		tool := cfg.Tools[name]
+		tool := cfg.CLIs[name]
 		if tool.SessionIDFlag != "--session-id" {
 			t.Fatalf("%s session_id_flag = %q want --session-id", name, tool.SessionIDFlag)
 		}
@@ -309,12 +332,12 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 			t.Fatalf("%s resume_by_id_command = %q want an {id} template", name, tool.ResumeByIDCommand)
 		}
 	}
-	if got := cfg.Tools["pi"].ResumeByIDCommand; got != "pi --session {id}" {
+	if got := cfg.CLIs["pi"].ResumeByIDCommand; got != "pi --session {id}" {
 		t.Fatalf("pi resume_by_id_command = %q want \"pi --session {id}\"", got)
 	}
 	// Tools that mint their own id declare a store to capture it from.
 	for _, name := range []string{"codex", "opencode", "hermes", "command-code", "antigravity", "omp", "cursor"} {
-		tool := cfg.Tools[name]
+		tool := cfg.CLIs[name]
 		if tool.SessionStore != name {
 			t.Fatalf("%s session_store = %q want %q", name, tool.SessionStore, name)
 		}
@@ -338,28 +361,28 @@ func TestDefaultResumeByIDFields(t *testing.T) {
 		{"omp", "omp --resume"},
 		{"cursor", "cursor-agent ls"},
 	} {
-		if got := cfg.Tools[tc.name].ResumePickerCommand; got != tc.want {
+		if got := cfg.CLIs[tc.name].ResumePickerCommand; got != tc.want {
 			t.Fatalf("%s resume_picker_command = %q want %q", tc.name, got, tc.want)
 		}
 	}
 	// opencode's picker only exists inside the running TUI, so its default
 	// pairs the plain launch with the shortcut the manager types at the
 	// composer instead of a command-line picker.
-	if got := cfg.Tools["opencode"].ResumePickerCommand; got != cfg.Tools["opencode"].Command {
+	if got := cfg.CLIs["opencode"].ResumePickerCommand; got != cfg.CLIs["opencode"].Command {
 		t.Fatalf("opencode resume_picker_command = %q want its launch command", got)
 	}
-	if got := cfg.Tools["opencode"].ResumePickerKeys; got != "/sessions" {
+	if got := cfg.CLIs["opencode"].ResumePickerKeys; got != "/sessions" {
 		t.Fatalf("opencode resume_picker_keys = %q want \"/sessions\"", got)
 	}
 	// agy -i /resume would hand "/resume" to the model as a prompt.
-	if got := cfg.Tools["antigravity"].ResumePickerCommand; got != "agy" {
+	if got := cfg.CLIs["antigravity"].ResumePickerCommand; got != "agy" {
 		t.Fatalf("antigravity resume_picker_command = %q want \"agy\"", got)
 	}
-	if got := cfg.Tools["antigravity"].ResumePickerKeys; got != "/resume" {
+	if got := cfg.CLIs["antigravity"].ResumePickerKeys; got != "/resume" {
 		t.Fatalf("antigravity resume_picker_keys = %q want \"/resume\"", got)
 	}
 	for _, name := range []string{"claude", "codex", "command-code", "grok", "gemini", "hermes", "pi", "omp", "cursor"} {
-		if got := cfg.Tools[name].ResumePickerKeys; got != "" {
+		if got := cfg.CLIs[name].ResumePickerKeys; got != "" {
 			t.Fatalf("%s resume_picker_keys = %q want empty", name, got)
 		}
 	}
@@ -370,7 +393,7 @@ func TestPiActivityCutoffReadsTheSpinnerBorder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("default: %v", err)
 	}
-	cutoff := regexp.MustCompile(def.Tools["pi"].ActivityCutoff)
+	cutoff := regexp.MustCompile(def.CLIs["pi"].ActivityCutoff)
 	for row, want := range map[string]bool{
 		"──────────────────────────────────────────────────": true,
 		"── ⠧ Working ─────────────────────────────────────": true,
@@ -395,7 +418,7 @@ func TestMuseDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, ok := cfg.Tools["muse"]
+	tool, ok := cfg.CLIs["muse"]
 	if !ok || tool.Command != "muse" || tool.SessionStore != "muse" || tool.ResumeByIDCommand != "muse resume {id}" || tool.ResumePickerCommand != "muse resume" || tool.MCP != "" {
 		t.Fatalf("Muse defaults = %+v", tool)
 	}
@@ -414,7 +437,7 @@ func TestWithChoiceFlagsEveryLaunchLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	base := cfg.Tools["pi"]
+	base := cfg.CLIs["pi"]
 	chosen := base.WithChoice(Choice{Model: "openai-codex/gpt-6-sol", Effort: "it's high"})
 	// The pane shell is PowerShell on Windows, which doubles a quote inside
 	// a single-quoted string.
@@ -449,7 +472,7 @@ func TestWithChoicePlacesFlagsAtTheChoiceMark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	chosen := cfg.Tools["hermes"].WithChoice(Choice{Provider: "xai-oauth", Model: "grok-4.6", Effort: "high", Profile: "work"})
+	chosen := cfg.CLIs["hermes"].WithChoice(Choice{Provider: "xai-oauth", Model: "grok-4.6", Effort: "high", Profile: "work"})
 	flags := ` -p 'work' --provider 'xai-oauth' -m 'grok-4.6' --reasoning 'high'`
 	if want := "hermes --cli" + flags; chosen.Command != want {
 		t.Errorf("command = %q, want %q", chosen.Command, want)
@@ -478,7 +501,7 @@ func TestWithChoicePutsOpencodesModelInTheEnvironment(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	base := cfg.Tools["opencode"]
+	base := cfg.CLIs["opencode"]
 	chosen := base.WithChoice(Choice{Model: `opencode/big-pickle"x`})
 	want := map[string]string{"OPENCODE_CONFIG_CONTENT": `{"model":"opencode/big-pickle\"x"}`}
 	if !reflect.DeepEqual(chosen.Env, want) {
@@ -499,7 +522,7 @@ func TestWithAnEmptyChoiceLaunchesAsShipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		plain := tool.WithChoice(Choice{})
 		for _, line := range []string{plain.Command, plain.ReviveCommand, plain.ResumeByIDCommand, plain.ResumePickerCommand, plain.ForkCommand} {
 			if strings.Contains(line, "{choice}") || strings.Contains(line, "  ") {
@@ -507,7 +530,7 @@ func TestWithAnEmptyChoiceLaunchesAsShipped(t *testing.T) {
 			}
 		}
 	}
-	if got := cfg.Tools["hermes"].WithChoice(Choice{}).ResumePickerCommand; got != "hermes --cli sessions browse" {
+	if got := cfg.CLIs["hermes"].WithChoice(Choice{}).ResumePickerCommand; got != "hermes --cli sessions browse" {
 		t.Errorf("hermes resume_picker_command = %q", got)
 	}
 }
@@ -519,7 +542,7 @@ func TestEveryCatalogToolTakesWhatItLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Default: %v", err)
 	}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		if tool.Catalog == "" {
 			if tool.ModelArgs != "" || tool.ModelEnv != "" || tool.EffortArgs != "" || tool.ProfileArgs != "" {
 				t.Errorf("%s takes a choice nothing can list", name)
@@ -543,7 +566,7 @@ func TestOmpDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, ok := cfg.Tools["omp"]
+	tool, ok := cfg.CLIs["omp"]
 	if !ok || tool.Command != "omp" || tool.SessionStore != "omp" || tool.ResumeByIDCommand != "omp --resume {id}" || tool.ReviveCommand != "omp --continue" {
 		t.Fatalf("omp defaults = %+v", tool)
 	}
@@ -562,7 +585,7 @@ func TestAntigravityTakesTheModelAndEffort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := cfg.Tools["antigravity"]
+	tool := cfg.CLIs["antigravity"]
 	if tool.Catalog != "antigravity" || tool.CatalogCommand != "agy models" || tool.MinimumVersion != "1.3.4" {
 		t.Fatalf("antigravity catalog = %+v", tool)
 	}
@@ -578,7 +601,7 @@ func TestCursorDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool, ok := cfg.Tools["cursor"]
+	tool, ok := cfg.CLIs["cursor"]
 	if !ok || tool.Command != "cursor-agent" || tool.SessionStore != "cursor" || tool.SessionReport != "none" {
 		t.Fatalf("cursor defaults = %+v", tool)
 	}

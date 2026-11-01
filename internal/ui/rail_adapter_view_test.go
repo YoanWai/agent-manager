@@ -314,7 +314,7 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 		}
 	}
 	want := [][2]string{
-		{"ARCHIVED", "t back to active"},
+		{"ARCHIVED", "T back to active"},
 		{"ATTENTION", "w show all"},
 	}
 	if len(painted) < len(want) {
@@ -341,13 +341,13 @@ func TestFilterBadgesNameTheBoundKeys(t *testing.T) {
 	m := shotModel()
 	m.layout.width, m.layout.height = 120, 40
 	m.services.listKeys = m.services.listKeys.
-		With(keybind.Archived, bindingOf(t, "T")).
+		With(keybind.Archived, bindingOf(t, "Z")).
 		With(keybind.Filter, bindingOf(t, "W")).
 		With(keybind.EmptyGroups, bindingOf(t, "E"))
 	m.rail.SetArchived(true)
 	m.rail.SetFilteringAttention(true)
 	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
-	for _, want := range []string{"ARCHIVED   T back to active", "ATTENTION   W show all"} {
+	for _, want := range []string{"ARCHIVED   Z back to active", "ATTENTION   W show all"} {
 		if !strings.Contains(rail, want) {
 			t.Errorf("rail should name the bound key %q:\n%s", want, rail)
 		}
@@ -1215,7 +1215,7 @@ func TestArchivedRowReadsDead(t *testing.T) {
 
 func TestShellRowSkipsThePromptLine(t *testing.T) {
 	m := shotModel()
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"terminal": {Shell: true}, "claude": {}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {}}, Tools: map[string]config.Tool{"terminal": {}}}
 	m.prefs.comfortableRows = true
 	shell := sessionRow(t, m, "add-rate-limiting")
 	shell.sess.Tool = "terminal"

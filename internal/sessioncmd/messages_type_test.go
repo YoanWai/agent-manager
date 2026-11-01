@@ -48,7 +48,7 @@ func TestTypeRefusesACallingSessionAndAnUnreachableTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create terminal: %v", err)
 	}
-	if _, err := h.sessions.Type("", terminal.ID, "ls"); err == nil || !strings.Contains(err.Error(), "is a terminal, not an agent") {
+	if _, err := h.sessions.Type("", terminal.ID, "ls"); err == nil || !strings.Contains(err.Error(), "is not an agent; use the terminal or browser tools for it") {
 		t.Fatalf("Type at a terminal = %v", err)
 	}
 }

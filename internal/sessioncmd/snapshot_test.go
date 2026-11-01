@@ -104,3 +104,32 @@ func TestSnapshotWithNoCallerReportsAnAwakeManager(t *testing.T) {
 		}
 	}
 }
+
+func TestSnapshotLeavesBrowserRowsOut(t *testing.T) {
+	h := newSessionHarness(t)
+	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	browser := store.Session{ID: uuid.NewString()[:8], Name: "browser-calling-agent", Tool: "browser", Cwd: h.caller.Cwd, Group: h.caller.Group, Status: status.Idle, ParentID: h.caller.ID}
+	if err := h.store.CreateSession(browser); err != nil {
+		t.Fatalf("create browser row: %v", err)
+	}
+
+	snapshot, err := h.sessions.Snapshot(h.caller.ID)
+	if err != nil {
+		t.Fatalf("Snapshot: %v", err)
+	}
+	if !slices.ContainsFunc(snapshot.Sessions, func(s Session) bool { return s.ID == h.caller.ID }) {
+		t.Fatalf("agent missing from sessions %+v", snapshot.Sessions)
+	}
+	if slices.ContainsFunc(snapshot.Sessions, func(s Session) bool { return s.ID == browser.ID }) {
+		t.Fatalf("browser listed as a session: %+v", snapshot.Sessions)
+	}
+	if !slices.ContainsFunc(snapshot.Terminals, func(s Terminal) bool { return s.ID == terminal.ID }) {
+		t.Fatalf("terminal missing from terminals %+v", snapshot.Terminals)
+	}
+	if slices.ContainsFunc(snapshot.Terminals, func(s Terminal) bool { return s.ID == browser.ID }) {
+		t.Fatalf("browser listed as a terminal: %+v", snapshot.Terminals)
+	}
+}

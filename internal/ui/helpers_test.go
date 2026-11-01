@@ -101,7 +101,7 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 		t.Skip(tmux.Binary + " not installed")
 	}
 	cfg := config.Config{
-		Tools: map[string]config.Tool{
+		CLIs: map[string]config.CLI{
 			"claude": {Command: "cat", DefaultStatus: status.Idle},
 			// Parks the terminal cursor below its footer and paints the
 			// composer's caret itself, so the arrow step reads the
@@ -124,13 +124,6 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 					{State: status.Waiting, Pattern: "Enter to confirm"},
 					{State: status.Errored, Pattern: `(?im)^\s*error:`},
 				},
-			},
-			// The terminal tab, carrying no command and the shell flag, the
-			// way the generated config ships it.
-			"terminal": {
-				Shell:         true,
-				DefaultStatus: status.Idle,
-				InputPrefix:   `(?m)^\s*(?:(?:\S+\s+){0,3}[❯>$#›»→%➜]|PS [^\n>]*>)\s`,
 			},
 			// Shows every control character it is sent as ^X, with the tty
 			// flow and line-editing keys turned off so ctrl+q and ctrl+r
@@ -210,16 +203,27 @@ func buildModelWithStorePath(t *testing.T, dbPath string) *Model {
 				DefaultStatus: status.Idle,
 			},
 		},
+		// The terminal tab, carrying no command, the way the binary ships it.
+		Tools: map[string]config.Tool{
+			"terminal": {
+				DefaultStatus: status.Idle,
+				InputPrefix:   `(?m)^\s*(?:(?:\S+\s+){0,3}[❯>$#›»→%➜]|PS [^\n>]*>)\s`,
+			},
+			"browser": {
+				Command:       "terminal-browser open --no-merge",
+				DefaultStatus: status.Idle,
+			},
+		},
 	}
 	// Windows has no cat or sh: the tools run the test binary's stand-ins.
 	if runtime.GOOS == "windows" {
 		for _, name := range testfixture.Tools() {
-			tool, ok := cfg.Tools[name]
+			tool, ok := cfg.CLIs[name]
 			if !ok {
 				continue
 			}
 			tool.Command = testfixture.Command(name)
-			cfg.Tools[name] = tool
+			cfg.CLIs[name] = tool
 		}
 	}
 	st := openTestStore(t, dbPath)
@@ -607,7 +611,7 @@ func createSessionOn(t *testing.T, m *Model, name, tool, dir string) {
 	m.form().SetName(name)
 	m.form().SetDir(dir)
 	picked := false
-	for i, candidate := range m.services.cfg.AgentToolNames() {
+	for i, candidate := range m.services.cfg.CLINames() {
 		if candidate == tool {
 			setFormTool(m, i)
 			picked = true

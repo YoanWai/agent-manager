@@ -625,7 +625,7 @@ func (d *Form) cycleTool(h ChoiceHost, delta int) FormRequest {
 // group and its launch inputs, and checks the directory on the effect lane.
 func (d *Form) Submit(h FormHost) FormRequest {
 	if len(d.toolNames) == 0 {
-		h.ReportErr("no tools configured")
+		h.ReportErr("no CLIs configured")
 		return FormRequest{Close: true}
 	}
 	toolName := d.toolNames[d.toolIndex]

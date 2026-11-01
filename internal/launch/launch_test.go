@@ -45,25 +45,25 @@ func TestPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
 }
 
 func TestWithPromptComposesPerToolStyle(t *testing.T) {
-	flagged := config.Tool{Command: "opencode", PromptFlag: "--prompt"}
+	flagged := config.CLI{Command: "opencode", PromptFlag: "--prompt"}
 	if got := WithPrompt(flagged, flagged.Command, "do it"); got != "opencode --prompt 'do it'" {
 		t.Fatalf("flagged compose = %q", got)
 	}
-	bare := config.Tool{Command: "cat"}
+	bare := config.CLI{Command: "cat"}
 	if got := WithPrompt(bare, bare.Command, "do it"); got != "cat 'do it'" {
 		t.Fatalf("bare compose = %q", got)
 	}
 	if got := WithPrompt(bare, bare.Command, ""); got != "cat" {
 		t.Fatalf("empty prompt should leave the command untouched, got %q", got)
 	}
-	sent := config.Tool{Command: "hermes --cli", PromptMode: "send"}
+	sent := config.CLI{Command: "hermes --cli", PromptMode: "send"}
 	if got := WithPrompt(sent, sent.Command, "do it"); got != sent.Command {
 		t.Fatalf("send-mode prompt changed launch command to %q", got)
 	}
 }
 
 func TestAssembleRoutesPromptAndDirective(t *testing.T) {
-	flagged := config.Tool{Command: "claude", PromptFlag: "-p", SessionIDFlag: "--session-id"}
+	flagged := config.CLI{Command: "claude", PromptFlag: "-p", SessionIDFlag: "--session-id"}
 	plan := Assemble("claude", flagged, "build the api", true, true)
 	if !strings.HasPrefix(plan.Command, "claude -p '"+RenameDirective) {
 		t.Fatalf("auto-named flagged command = %q", plan.Command)
@@ -80,7 +80,7 @@ func TestAssembleRoutesPromptAndDirective(t *testing.T) {
 		t.Fatalf("slash-command launch should defer the directive, got %v", deferred.PendingInputs)
 	}
 
-	sent := config.Tool{Command: "hermes", PromptMode: "send"}
+	sent := config.CLI{Command: "hermes", PromptMode: "send"}
 	typed := Assemble("hermes", sent, "build the api", false, true)
 	if typed.Command != "hermes" {
 		t.Fatalf("send-mode command = %q", typed.Command)
@@ -101,7 +101,7 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 		{proactive: true, note: ProactiveCoordinationNote},
 		{proactive: false, note: OnRequestCoordinationNote},
 	} {
-		noClient := config.Tool{Command: "pi", PromptFlag: "-p"}
+		noClient := config.CLI{Command: "pi", PromptFlag: "-p"}
 		carried := Assemble("pi", noClient, "build the api", false, mode.proactive)
 		if !strings.Contains(carried.Command, mode.note) {
 			t.Fatalf("a tool with no MCP client should be pointed at the subcommands, got %q", carried.Command)
@@ -110,12 +110,12 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 			t.Fatalf("a note the prompt carried needs no pending input, got %v", carried.PendingInputs)
 		}
 
-		withClient := config.Tool{Command: "claude", PromptFlag: "-p"}
+		withClient := config.CLI{Command: "claude", PromptFlag: "-p"}
 		if plan := Assemble("claude", withClient, "build the api", false, mode.proactive); strings.Contains(plan.Command, mode.note) {
 			t.Fatalf("a tool whose MCP tool descriptions say this already must not repeat it, got %q", plan.Command)
 		}
 
-		commandCode := Assemble("command-code", config.Tool{Command: "cmd"}, "build the api", false, mode.proactive)
+		commandCode := Assemble("command-code", config.CLI{Command: "cmd"}, "build the api", false, mode.proactive)
 		if strings.Contains(commandCode.Command, mode.note) {
 			t.Fatalf("command-code registers MCP on spawn, so it must not get the subcommand note, got %q", commandCode.Command)
 		}
@@ -137,7 +137,7 @@ func TestAssembleNotesCoordinationOnlyForToolsWithoutMCP(t *testing.T) {
 }
 
 func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
-	full := config.Tool{
+	full := config.CLI{
 		Command:           "claude",
 		ReviveCommand:     "claude --continue",
 		ResumeByIDCommand: "claude --resume {id}",
@@ -146,7 +146,7 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 	picker.ResumePickerCommand = "claude --resume"
 	for _, tc := range []struct {
 		name           string
-		tool           config.Tool
+		tool           config.CLI
 		agentSessionID string
 		want           string
 	}{
@@ -154,7 +154,7 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 		{"no captured id falls back to the newest one", full, "", "claude --continue"},
 		{"no captured id with a picker opens it", picker, "", "claude --resume"},
 		{"a captured id wins over the picker", picker, "abc-123", "claude --resume 'abc-123'"},
-		{"a tool with no revive of its own starts fresh", config.Tool{Command: "pi"}, "abc-123", "pi"},
+		{"a tool with no revive of its own starts fresh", config.CLI{Command: "pi"}, "abc-123", "pi"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := ReviveCommand(tc.tool, tc.agentSessionID); got != tc.want {
@@ -164,11 +164,22 @@ func TestReviveCommandResumesTheConversationItHeld(t *testing.T) {
 	}
 }
 
+func TestBrowserCommandAppendsTheQuotedURL(t *testing.T) {
+	const command = "terminal-browser open --no-merge"
+	if got := BrowserCommand(command, ""); got != command {
+		t.Fatalf("BrowserCommand with no url = %q, want %q", got, command)
+	}
+	want := command + " " + tmux.ShellQuote("https://example.com/?q=a;b")
+	if got := BrowserCommand(command, "https://example.com/?q=a;b"); got != want {
+		t.Fatalf("BrowserCommand = %q, want %q", got, want)
+	}
+}
+
 // A conversation id is read from the agent CLI's own store, so it is not
 // ours to trust. Spliced raw it would need no quote to break out of: a
 // semicolon ends the resume command and starts whatever follows.
 func TestReviveCommandQuotesAnIDThatSpellsAnotherCommand(t *testing.T) {
-	tool := config.Tool{ResumeByIDCommand: "codex resume {id}"}
+	tool := config.CLI{ResumeByIDCommand: "codex resume {id}"}
 	// A POSIX single-quoted string escapes a quote by closing, escaping and
 	// reopening; a PowerShell one escapes it by doubling.
 	closingQuote := `codex resume 'abc'\''; touch pwned; echo '\'''`
@@ -200,7 +211,7 @@ func TestReviveCommandKeepsACapturedIDOutOfTheShell(t *testing.T) {
 	marker := filepath.Join(dir, "pwned")
 	id := `abc; touch ` + marker
 
-	command := ReviveCommand(config.Tool{ResumeByIDCommand: "echo resume {id}"}, id)
+	command := ReviveCommand(config.CLI{ResumeByIDCommand: "echo resume {id}"}, id)
 	driver, err := tmux.NewWithSocket("amrevivequote")
 	if err != nil {
 		t.Fatalf("driver: %v", err)
@@ -237,7 +248,7 @@ func TestReviveCommandKeepsACapturedIDOutOfTheShell(t *testing.T) {
 func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 	manager := hooks.NewManager(t.TempDir())
 
-	plain := config.Tool{Command: "cat"}
+	plain := config.CLI{Command: "cat"}
 	command, env, err := Environment(manager, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment: %v", err)
@@ -252,7 +263,7 @@ func TestEnvironmentCarriesSessionIDAndHooks(t *testing.T) {
 		t.Fatalf("a tool with no MCP style should launch untouched, got %q", command)
 	}
 
-	hooked := config.Tool{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: "claude"}
+	hooked := config.CLI{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: "claude"}
 	command, env, err = Environment(manager, "hooked", hooked, hooked.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment hooked: %v", err)
@@ -295,7 +306,7 @@ func TestEnvironmentRefusesACLIOlderThanItsMinimum(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := hooks.NewManager(t.TempDir())
-	tool := config.Tool{Command: cli, MinimumVersion: "9.0.0", MCP: mcpreg.StyleNone}
+	tool := config.CLI{Command: cli, MinimumVersion: "9.0.0", MCP: mcpreg.StyleNone}
 
 	_, _, err := Environment(manager, "old", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	var outdated config.OutdatedToolError
@@ -307,7 +318,7 @@ func TestEnvironmentRefusesACLIOlderThanItsMinimum(t *testing.T) {
 func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	testenv.SkipPOSIXShell(t)
 	manager := hooks.NewManager(t.TempDir())
-	probe := config.Tool{Command: "sh -c 'echo $$ $" + hooks.EnvAgentPID + "'", MCP: mcpreg.StyleNone}
+	probe := config.CLI{Command: "sh -c 'echo $$ $" + hooks.EnvAgentPID + "'", MCP: mcpreg.StyleNone}
 	command, _, err := Environment(manager, "probe", probe, probe.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment: %v", err)
@@ -325,7 +336,7 @@ func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 	}
 
 	prompt := "it's \"quoted\" $HOME `date` \\n\nsecond line"
-	echo := config.Tool{Command: `sh -c 'printf "%s" "$1"' sh`, MCP: mcpreg.StyleNone}
+	echo := config.CLI{Command: `sh -c 'printf "%s" "$1"' sh`, MCP: mcpreg.StyleNone}
 	command, _, err = Environment(manager, "echo", echo, WithPrompt(echo, echo.Command, prompt), "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment: %v", err)
@@ -334,7 +345,7 @@ func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 		t.Fatalf("the agent got prompt %q, %v; want %q", out, err, prompt)
 	}
 
-	shell := config.Tool{Command: "", MCP: mcpreg.StyleNone}
+	shell := config.CLI{Command: "", MCP: mcpreg.StyleNone}
 	if command, env, err := Environment(manager, "terminal", shell, shell.Command, "abcd1234", t.TempDir(), time.Time{}, nil); err != nil || command != "" || env != nil {
 		t.Fatalf("shell launch = %q, %v, %v; want no command and no env, so tmux keeps its login shell", command, env, err)
 	}
@@ -348,7 +359,7 @@ func TestEnvironmentRunsTheAgentUnderThePIDItExports(t *testing.T) {
 // environment, beside the session's.
 func TestEnvironmentCarriesTheChoicesEnvironment(t *testing.T) {
 	manager := hooks.NewManager(t.TempDir())
-	tool := config.Tool{Command: "cat", ModelEnv: `PICKED={"model":{model}}`, MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
+	tool := config.CLI{Command: "cat", ModelEnv: `PICKED={"model":{model}}`, MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
 	command, env, err := Environment(manager, "plain", tool, tool.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment: %v", err)
@@ -362,7 +373,7 @@ func TestEnvironmentCarriesTheChoicesEnvironment(t *testing.T) {
 // with: 0 for a row's first launch, which leaves agent_launched_at unset.
 func TestEnvironmentNamesTheLaunch(t *testing.T) {
 	manager := hooks.NewManager(t.TempDir())
-	plain := config.Tool{Command: "cat"}
+	plain := config.CLI{Command: "cat"}
 	_, env, err := Environment(manager, "plain", plain, plain.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment: %v", err)
@@ -385,11 +396,11 @@ func TestEnvironmentExportsTheProfileUnderTheManagersOwn(t *testing.T) {
 	profile := map[string]string{"CLAUDE_CONFIG_DIR": "/home/me/.claude.work", hooks.EnvSessionID: "spoofed"}
 	for _, tool := range []struct {
 		name string
-		tool config.Tool
+		tool config.CLI
 	}{
-		{"plain", config.Tool{Command: "cat"}},
-		{"hooked", config.Tool{Command: "cat", StatusSource: hooks.StatusSourceClaude}},
-		{"terminal", config.Tool{Shell: true}},
+		{"plain", config.CLI{Command: "cat"}},
+		{"hooked", config.CLI{Command: "cat", StatusSource: hooks.StatusSourceClaude}},
+		{"terminal", config.Tool{}.Launch()},
 	} {
 		_, env, err := Environment(manager, tool.name, tool.tool, tool.tool.Command, "abcd1234", t.TempDir(), time.Time{}, profile)
 		if err != nil {
@@ -410,7 +421,7 @@ func TestEnvironmentWiresTheSessionReport(t *testing.T) {
 	t.Setenv("OPENCODE_CONFIG_DIR", t.TempDir())
 	manager := hooks.NewManager(t.TempDir())
 
-	pi := config.Tool{Command: "cat", ModelArgs: "--model {model}", SessionReport: "pi", MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
+	pi := config.CLI{Command: "cat", ModelArgs: "--model {model}", SessionReport: "pi", MCP: mcpreg.StyleNone}.WithChoice(config.Choice{Model: "big"})
 	command, _, err := Environment(manager, "pi", pi, pi.Command+" --session-id abc", "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment pi: %v", err)
@@ -419,7 +430,7 @@ func TestEnvironmentWiresTheSessionReport(t *testing.T) {
 		t.Fatalf("pi command = %q, want %q", command, want)
 	}
 
-	opencode := config.Tool{Command: "cat", SessionReport: "opencode", MCP: mcpreg.StyleNone}
+	opencode := config.CLI{Command: "cat", SessionReport: "opencode", MCP: mcpreg.StyleNone}
 	command, env, err := Environment(manager, "opencode", opencode, opencode.Command, "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
 		t.Fatalf("Environment opencode: %v", err)
@@ -445,7 +456,7 @@ func TestEnvironmentReportsClaudeConversationsThroughItsSettings(t *testing.T) {
 		report string
 		want   bool
 	}{{"claude", true}, {"none", false}} {
-		tool := config.Tool{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: mcpreg.StyleNone, SessionReport: tc.report}
+		tool := config.CLI{Command: "cat", StatusSource: hooks.StatusSourceClaude, MCP: mcpreg.StyleNone, SessionReport: tc.report}
 		if _, _, err := Environment(manager, "claude", tool, tool.Command, "abcd1234", t.TempDir(), time.Unix(5, 0), nil); err != nil {
 			t.Fatalf("Environment: %v", err)
 		}
@@ -476,7 +487,7 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 				dir = t.TempDir()
 				t.Setenv("GROK_HOME", dir)
 			}
-			grok := config.Tool{Command: "cat", MCP: mcpreg.StyleNone}
+			grok := config.CLI{Command: "cat", MCP: mcpreg.StyleNone}
 			if _, _, err := Environment(hooks.NewManager(t.TempDir()), "grok", grok, grok.Command, "abcd1234", t.TempDir(), time.Time{}, nil); err != nil {
 				t.Fatalf("Environment grok: %v", err)
 			}
@@ -494,7 +505,7 @@ func TestEnvironmentSetsGrokTerminalTheme(t *testing.T) {
 func TestEnvironmentKeepsGrokOffTheSharedLeader(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("GROK_HOME", "")
-	grok := config.Tool{Command: "cat", MCP: mcpreg.StyleNone}
+	grok := config.CLI{Command: "cat", MCP: mcpreg.StyleNone}
 	manager := hooks.NewManager(t.TempDir())
 	command, _, err := Environment(manager, "grok", grok, "cat --resume abc", "abcd1234", t.TempDir(), time.Time{}, nil)
 	if err != nil {
@@ -506,7 +517,7 @@ func TestEnvironmentKeepsGrokOffTheSharedLeader(t *testing.T) {
 }
 
 func TestAssembleCarriesTheDirectiveOverAPastedImagePath(t *testing.T) {
-	flagged := config.Tool{Command: "claude", PromptFlag: "-p"}
+	flagged := config.CLI{Command: "claude", PromptFlag: "-p"}
 	prompt := "/var/folders/_b/T/agent-manager-pastes/paste-268.png why is this session working?"
 	plan := Assemble("claude", flagged, prompt, true, true)
 	if len(plan.PendingInputs) != 0 {
@@ -525,7 +536,7 @@ func TestMuseLaunchAndRevive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := cfg.Tools["muse"]
+	tool := cfg.CLIs["muse"]
 	plan := Assemble("muse", tool, "fix the bug", false, true)
 	// Muse carries the MCP tools, whose descriptions stand in for the note.
 	if !strings.HasPrefix(plan.Command, "muse '") || strings.Contains(plan.Command, ProactiveCoordinationNote) || !strings.Contains(plan.Command, "fix the bug") {
@@ -547,7 +558,7 @@ func TestAntigravityLaunchAndRevive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := cfg.Tools["antigravity"]
+	tool := cfg.CLIs["antigravity"]
 	plan := Assemble("antigravity", tool, "fix the bug", false, true)
 	// agy carries the MCP tools, whose descriptions stand in for the note.
 	if !strings.HasPrefix(plan.Command, "agy -i '") || !strings.Contains(plan.Command, "fix the bug") || strings.Contains(plan.Command, ProactiveCoordinationNote) {
@@ -612,8 +623,8 @@ func TestAssembleResumesEveryAgentCLIByID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range cfg.AgentToolNames() {
-		tool := cfg.Tools[name]
+	for _, name := range cfg.CLINames() {
+		tool := cfg.CLIs[name]
 		want := strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", "'conv-1'")
 		if !strings.Contains(tool.ResumeByIDCommand, "{id}") {
 			t.Fatalf("%s has no resume_by_id_command to resume with: %q", name, tool.ResumeByIDCommand)
@@ -630,7 +641,7 @@ func TestAssembleResumesEveryAgentCLIByID(t *testing.T) {
 }
 
 func TestAssembleResumeQueuesTheNotesASlashCommandCannotCarry(t *testing.T) {
-	noClient := config.Tool{Command: "pi", ResumeByIDCommand: "pi --session {id}"}
+	noClient := config.CLI{Command: "pi", ResumeByIDCommand: "pi --session {id}"}
 	named := AssembleResume("pi", noClient, "summarize where we are", "conv-1", true, true)
 	if len(named.PendingInputs) != 1 || !strings.Contains(named.PendingInputs[0], RenameDirective) || !strings.Contains(named.PendingInputs[0], ProactiveCoordinationNote) {
 		t.Fatalf("an auto-named prompted resume should carry its notes, got %q", named.PendingInputs)

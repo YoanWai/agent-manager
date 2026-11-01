@@ -399,7 +399,7 @@ func TestNoLaunchWritesOutsideTheHooksDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		target := Target{Exe: oddExe, HooksDir: hooksDir, TelemetryFile: filepath.Join(hooksDir, name+".otel"), Cwd: cwd}
 		if _, err := Apply(tool.SessionReport, target, "exec "+tool.Command, map[string]string{}); err != nil {
 			t.Fatalf("%s: %v", name, err)

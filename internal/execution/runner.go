@@ -26,6 +26,8 @@ type Dependencies struct {
 	// ShowCommand shows a notify command the user has not seen run yet.
 	ShowCommand func(command string)
 	TakeFocus   func() (string, bool)
+	// Browsers reads terminal-browser's engines. A nil one reads none.
+	Browsers BrowserLister
 }
 
 type Options struct {
@@ -34,6 +36,7 @@ type Options struct {
 	MCPStyles     map[string]string
 	ReportStyles  map[string]string
 	ShellTools    map[string]bool
+	BrowserTools  map[string]bool
 	Binaries      ToolBinaries
 	Interval      time.Duration
 }
@@ -74,6 +77,12 @@ type Snapshot struct {
 	// FollowWarning reports a session whose conversation the pass could not
 	// follow, the first time it fails that way.
 	FollowWarning string
+	// Browsers is each live browser row's engine that ls listed, keyed by
+	// session id. BrowsersRead is false when the pass could not read them,
+	// and BrowserWarning names that failure the first time it happens.
+	Browsers       map[string]BrowserEngine
+	BrowsersRead   bool
+	BrowserWarning string
 }
 
 type Result struct {
@@ -102,7 +111,7 @@ func New(deps Dependencies, opts Options) *Runner {
 		store: deps.Store, tmux: deps.TMux, engine: deps.Engine, hooks: deps.Hooks,
 		gitDrv: deps.Git, inboxOwner: inbox, notifyFn: notifyFn, commandFn: runNotifyCommand, showCommandFn: showCommandFn, takeFocus: deps.TakeFocus,
 		statusSources: opts.StatusSources, sessionStores: opts.SessionStores,
-		mcpStyles: opts.MCPStyles, reportStyles: opts.ReportStyles, shellTools: opts.ShellTools, binaries: opts.Binaries,
+		mcpStyles: opts.MCPStyles, reportStyles: opts.ReportStyles, shellTools: opts.ShellTools, browserTools: opts.BrowserTools, browsers: deps.Browsers, binaries: opts.Binaries,
 		interval: interval, poke: make(chan struct{}, 1), paneHashes: map[string]uint64{},
 		transcripts: map[string]transcriptTailCache{}, quietSince: map[string]quietTimer{},
 		recaptureSeen: map[string]recaptureSighting{},
@@ -110,13 +119,16 @@ func New(deps Dependencies, opts Options) *Runner {
 }
 
 func OptionsFromConfig(cfg config.Config) Options {
-	opts := Options{Interval: config.PollInterval, StatusSources: map[string]string{}, SessionStores: map[string]string{}, MCPStyles: map[string]string{}, ReportStyles: map[string]string{}, ShellTools: map[string]bool{}, Binaries: NewToolBinaries(cfg)}
-	for name, tool := range cfg.Tools {
+	opts := Options{Interval: config.PollInterval, StatusSources: map[string]string{}, SessionStores: map[string]string{}, MCPStyles: map[string]string{}, ReportStyles: map[string]string{}, ShellTools: map[string]bool{}, BrowserTools: map[string]bool{}, Binaries: NewToolBinaries(cfg)}
+	for name, tool := range cfg.CLIs {
 		opts.StatusSources[name] = tool.StatusSource
 		opts.SessionStores[name] = tool.SessionStore
 		opts.MCPStyles[name] = mcpreg.Style(name, tool.MCP)
 		opts.ReportStyles[name] = tool.SessionReport
-		opts.ShellTools[name] = tool.Shell
+	}
+	for name := range cfg.Tools {
+		opts.ShellTools[name] = name == config.TerminalTool
+		opts.BrowserTools[name] = name == config.BrowserTool
 	}
 	return opts
 }

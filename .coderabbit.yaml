@@ -102,8 +102,8 @@ reviews:
           Pass overall only when both pass. A failure on either fails the
           check. Otherwise return Inconclusive when evidence is insufficient.
           For tool coverage, apply REVIEW.md#tool-coverage. New shared behavior
-          must reach every applicable tool in builtinTools
-          (internal/config/config.go) in the same PR. An unchanged fallback
+          must reach every applicable CLI in builtinCLIs
+          (internal/config/builtin.go) in the same PR. An unchanged fallback
           is not coverage of the new behavior. Naming exclusions or promising
           follow-ups does not pass tool coverage. A fix confined to a
           demonstrated tool-specific defect, support for a new CLI, or a change
@@ -197,12 +197,12 @@ reviews:
         tea.Cmd.
     - path: "internal/config/**"
       instructions: |
-        builtinTools is the only source of tool definitions and loads on every
-        start, so an edited tool pattern or command reaches every install on
-        that release and needs no migration. A config.toml from an earlier
-        release is read once, by the import in internal/store, for its
-        editor and key tables. Flag any other read or write of that file. A
-        default belongs in code.
+        builtinCLIs and builtinTools are the only sources of CLI and tool
+        definitions and load on every start, so an edited pattern or command
+        reaches every install on that release and needs no migration. A
+        config.toml from an earlier release is read once, by the import in
+        internal/store, for its editor and key tables. Flag any other read or
+        write of that file. A default belongs in code.
     - path: "internal/store/**"
       instructions: |
         The migrations slice is append-only. Editing or reordering an existing

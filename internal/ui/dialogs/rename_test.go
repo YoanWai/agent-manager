@@ -116,7 +116,7 @@ func TestRenameHints(t *testing.T) {
 	if got := RenameGroup("work", "", 0).Hints(); got[0] != [2]string{"tab", "name / path"} {
 		t.Fatalf("group hints = %v", got)
 	}
-	if got := RenameSession("s", "n", "zsh", []string{"zsh"}).Hints(); got[0] != [2]string{"tab", "tool: zsh"} {
+	if got := RenameSession("s", "n", "zsh", []string{"zsh"}).Hints(); got[0] != [2]string{"tab", "runs zsh"} {
 		t.Fatalf("session hints = %v", got)
 	}
 }

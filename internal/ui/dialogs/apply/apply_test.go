@@ -39,21 +39,44 @@ func TestExpandCommandQuotesPlaceholders(t *testing.T) {
 func TestValidateForkSourceRefusesWhatTheToolCannotDo(t *testing.T) {
 	source := store.Session{Name: "source", AgentSessionID: "conversation"}
 	for name, tc := range map[string]struct {
-		tool config.Tool
+		tool config.CLI
 		want string
 	}{
-		"shell":            {config.Tool{Shell: true}, "is a shell"},
-		"no command":       {config.Tool{}, "has no fork_command"},
-		"no placeholder":   {config.Tool{ForkCommand: "tool --fork latest"}, "must reference the source"},
-		"no conversation":  {config.Tool{ForkCommand: "tool {id}"}, "no captured conversation id"},
-		"session file":     {config.Tool{ForkCommand: "tool {session_file}"}, `session_store = "gemini"`},
-		"a working source": {config.Tool{ForkCommand: "tool {id}"}, ""},
+		"no command":       {config.CLI{}, "has no fork_command"},
+		"no placeholder":   {config.CLI{ForkCommand: "tool --fork latest"}, "must reference the source"},
+		"no conversation":  {config.CLI{ForkCommand: "tool {id}"}, "no captured conversation id"},
+		"session file":     {config.CLI{ForkCommand: "tool {session_file}"}, `session_store = "gemini"`},
+		"a working source": {config.CLI{ForkCommand: "tool {id}"}, ""},
 	} {
 		subject := source
 		if name == "no conversation" {
 			subject.AgentSessionID = ""
 		}
 		err := ValidateForkSource("tool", tc.tool, subject)
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: unexpected error %v", name, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%s: error = %v, want it to say %q", name, err, tc.want)
+		}
+	}
+}
+
+func TestForkSourceRefusesAToolPaneAndAnUnknownName(t *testing.T) {
+	cfg := config.Config{
+		CLIs:  map[string]config.CLI{"agent": {ForkCommand: "agent {id}"}},
+		Tools: map[string]config.Tool{"terminal": {}, "browser": {}},
+	}
+	for name, tc := range map[string]struct {
+		tool string
+		want string
+	}{
+		"a terminal":     {"terminal", "is a shell"},
+		"a browser":      {"browser", "is a browser"},
+		"unknown name":   {"removed", "no longer configured"},
+		"a forkable CLI": {"agent", ""},
+	} {
+		_, err := ForkSource(cfg, store.Session{Name: "source", Tool: tc.tool, AgentSessionID: "conversation"})
 		switch {
 		case tc.want == "" && err != nil:
 			t.Errorf("%s: unexpected error %v", name, err)
@@ -145,7 +168,7 @@ func TestForkRefusesASourceThatRestartedWhileQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = Fork(Sources{Store: st, Lifecycle: placedLauncher{}, Config: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
+	_, err = Fork(Sources{Store: st, Lifecycle: placedLauncher{}, Config: config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
 		Source: source,
 		Name:   "child",
 	})
@@ -161,7 +184,7 @@ func TestForkRefusesAWorkingDirectoryThatDied(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	_, err := Fork(Sources{Store: st, Lifecycle: placedLauncher{}, Config: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
+	_, err := Fork(Sources{Store: st, Lifecycle: placedLauncher{}, Config: config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat", ForkCommand: "tool {id}"}}}}, fixedProbe{}, ForkRequest{
 		Source: source,
 		Name:   "child",
 	})

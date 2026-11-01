@@ -128,7 +128,7 @@ func (f *remoteFixture) connect(t *testing.T, sessionID string) *mcp.ClientSessi
 		},
 		withStore: f.withStore,
 	}
-	return connectServer(t, newServerWithMailbox(sessionID, "test", true, f.terminals, f.local, &fakeReporter{}, sessioncmd.NewMailbox(f.profile), source))
+	return connectServer(t, newServerWithMailbox(sessionID, "test", true, f.terminals, &fakeBrowserCommands{}, f.local, &fakeReporter{}, sessioncmd.NewMailbox(f.profile), source))
 }
 
 func (f *remoteFixture) opener(t *testing.T, host, terminalID string) string {

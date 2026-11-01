@@ -124,7 +124,7 @@ func (m Model) ListedSessionIDs() []string {
 func (m Model) ListedAgentIDs() []string {
 	var ids []string
 	for _, session := range m.listed("", m.snapshot.Sessions) {
-		if !session.IsShell {
+		if !session.IsTool {
 			ids = append(ids, session.ID)
 		}
 	}
@@ -167,7 +167,7 @@ func (m *Model) Key(msg tea.KeyMsg, _ Frame, ctx KeyContext) Decision {
 }
 
 func (m *Model) action(action string, ctx KeyContext) Decision {
-	if m.showArchived && (action == keybind.Kill || action == keybind.KillAll || action == keybind.Revive || action == keybind.ReviveAll || action == keybind.Restart || action == keybind.Fork || action == keybind.Terminal || action == keybind.Prompt) {
+	if m.showArchived && (action == keybind.Kill || action == keybind.KillAll || action == keybind.Revive || action == keybind.ReviveAll || action == keybind.Restart || action == keybind.Fork || action == keybind.Terminal || action == keybind.Browser || action == keybind.Prompt) {
 		return Decision{Consumed: true}
 	}
 	switch action {
@@ -257,6 +257,8 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		return m.toggleArchived()
 	case keybind.Terminal:
 		return m.intent(NewTerminal)
+	case keybind.Browser:
+		return m.intent(NewBrowser)
 	case keybind.Editor:
 		return m.intent(OpenEditor)
 	case keybind.EmptyGroups:

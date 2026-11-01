@@ -34,8 +34,8 @@ type State struct {
 	// archived, restored, or deleted a group, a poll that listed the store
 	// before that moment must not put the old state back on the tree.
 	GoneGroups map[string]GoneMark
-	// TerminalKeyAt is when the last T finished being handled. Held down it
-	// autorepeats into a burst of keystrokes, and T is the only key that
+	// TerminalKeyAt is when the last t finished being handled. Held down it
+	// autorepeats into a burst of keystrokes, and t is the only key that
 	// spawns on the keystroke itself rather than opening a form that would
 	// swallow them.
 	TerminalKeyAt time.Time

@@ -36,6 +36,30 @@ func TestRefreshCarriesTheSocketItReadPanesFrom(t *testing.T) {
 	}
 }
 
+// A pass that read the engines replaces what the model knows of them, and a
+// pass that could not read them keeps it while warning once.
+func TestRefreshCarriesTheBrowserEngines(t *testing.T) {
+	m := &Model{rail: railModelFromRows(nil, 0)}
+	read := execution.Result{Snapshot: execution.Snapshot{
+		ListedAt:     time.Now(),
+		Browsers:     map[string]execution.BrowserEngine{"docs": {URL: "https://example.org/", Title: "Example", AgentDriven: true}},
+		BrowsersRead: true,
+	}}
+	m.Update(pollMessage(read))
+	want := browserState{URL: "https://example.org/", Title: "Example", Engine: true, AgentDriven: true}
+	if got := m.workspace.browsers["docs"]; got != want {
+		t.Fatalf("browser state = %+v, want %+v", got, want)
+	}
+	failed := execution.Result{Snapshot: execution.Snapshot{ListedAt: time.Now(), BrowserWarning: "reading the browser engines: boom"}}
+	m.Update(pollMessage(failed))
+	if got := m.workspace.browsers["docs"]; got != want {
+		t.Fatalf("a failed read dropped the last state: %+v", got)
+	}
+	if m.errBar.warn != "reading the browser engines: boom" {
+		t.Fatalf("warning = %q, want the read failure", m.errBar.warn)
+	}
+}
+
 func TestRefreshWithStaleSelectionFetchesPreview(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
@@ -550,7 +574,7 @@ func TestPollRetypesARowOntoTheCLIItsPaneRuns(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		tail = filepath.Join(testfixture.Dir, "tail.exe") + " -f NUL"
 	}
-	m.services.cfg.Tools["tail-tool"] = config.Tool{Command: tail, DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["tail-tool"] = config.CLI{Command: tail, DefaultStatus: status.Idle}
 	engine, err := status.NewEngine(m.services.cfg)
 	if err != nil {
 		t.Fatalf("engine: %v", err)

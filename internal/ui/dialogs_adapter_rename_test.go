@@ -13,6 +13,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/termbrowser"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uiapply "github.com/YoanWai/agent-manager/internal/ui/dialogs/apply"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
@@ -949,6 +950,38 @@ func TestRenameShellChildCheckRunsInWorker(t *testing.T) {
 	}
 	if stored.Name != "coder" || m.isShell(stored.Tool) {
 		t.Fatalf("failed precondition mutated the session: %+v", stored)
+	}
+}
+
+func TestRenameIntoTheBrowserRefusesWithoutTerminalBrowser(t *testing.T) {
+	pathWithoutTerminalBrowser(t)
+	m := buildModel(t)
+	createSession(t, m, "coder", t.TempDir(), "")
+	m.selectSessionRow(t, "coder")
+	m.openRename()
+	openRename(m).SetName("renamed")
+	for range openRename(m).Tools() {
+		if m.isBrowser(openRename(m).Tool()) {
+			break
+		}
+		m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	}
+	if !m.isBrowser(openRename(m).Tool()) {
+		t.Fatalf("rename picker never offered the browser: %v", openRename(m).Tools())
+	}
+	_, cmd := m.applyRename()
+	m.applyCmd(t, cmd)
+
+	want := sessioncmd.CheckBrowserPrerequisites(m.services.tmux, termbrowser.Installed)
+	if want == nil || m.errBar.text != want.Error() {
+		t.Fatalf("retype into the browser reported %q, want %v", m.errBar.text, want)
+	}
+	stored, err := m.services.store.Get(openRename(m).SessionID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Name != "coder" || m.isBrowser(stored.Tool) {
+		t.Fatalf("a refused retype mutated the session: %+v", stored)
 	}
 }
 

@@ -126,7 +126,7 @@ func TestStartingSessionGlyphMovesOnTheStartupTick(t *testing.T) {
 		m := previewModel(status.Starting, blankCapture)
 		selected := railSelectedSession(m)
 		setRailSessionTool(m, selected.ID, tool)
-		m.services.cfg.Tools = map[string]config.Tool{"shell": {Shell: true}}
+		m.services.cfg.Tools = map[string]config.Tool{"shell": {}}
 		first := ansi.Strip(m.sessionGlyph(railSelectedSession(m)))
 		m.Update(uistartup.TickMsg{})
 		second := ansi.Strip(m.sessionGlyph(railSelectedSession(m)))

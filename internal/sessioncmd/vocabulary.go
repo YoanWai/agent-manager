@@ -7,10 +7,12 @@ package sessioncmd
 type Vocabulary struct {
 	ListSessions   string
 	ListTerminals  string
+	ListBrowsers   string
 	ListTasks      string
 	ListGroups     string
 	CreateGroup    string
 	CreateTerminal string
+	CreateBrowser  string
 	SpawnTool      string
 	SpawnModel     string
 	SpawnEffort    string
@@ -28,10 +30,12 @@ func MCPVocabulary() Vocabulary {
 	return Vocabulary{
 		ListSessions:   "list_sessions",
 		ListTerminals:  "list_terminals",
+		ListBrowsers:   "list_browsers",
 		ListTasks:      `task with action "list"`,
 		ListGroups:     "list_groups",
 		CreateGroup:    "create_group",
 		CreateTerminal: "create_terminal",
+		CreateBrowser:  "create_browser",
 		SpawnTool:      "create_session tool",
 		SpawnModel:     "create_session model",
 		SpawnEffort:    "create_session effort",
@@ -50,10 +54,12 @@ func CLIVocabulary() Vocabulary {
 	return Vocabulary{
 		ListSessions:   "agent-manager sessions",
 		ListTerminals:  "agent-manager terminal list",
+		ListBrowsers:   "agent-manager browser list",
 		ListTasks:      "agent-manager task list",
 		ListGroups:     "agent-manager groups",
 		CreateGroup:    "agent-manager create-group",
 		CreateTerminal: "agent-manager terminal create",
+		CreateBrowser:  "agent-manager browser create",
 		SpawnTool:      "agent-manager spawn --tool",
 		SpawnModel:     "agent-manager spawn --model",
 		SpawnEffort:    "agent-manager spawn --effort",

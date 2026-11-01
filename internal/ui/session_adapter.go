@@ -451,10 +451,10 @@ func (m *Model) copyReplySelected() (tea.Model, tea.Cmd) {
 	}
 	sess := entry.sess
 	m.clearErr()
-	// A shell has no reply, and its scrollback is the user's own commands
-	// and their output rather than anything an agent said.
-	if m.isShell(sess.Tool) {
-		m.reportErr(uisession.ShellPromptHint(sess.Name))
+	// A shell or a browser has no reply, and a shell's scrollback is the
+	// user's own commands and their output rather than anything an agent said.
+	if m.isTool(sess.Tool) {
+		m.reportErr(uisession.NonAgentPromptHint(sess.Name, m.isBrowser(sess.Tool)))
 		return m, nil
 	}
 	reader := uilifecycle.ReplyReader{Store: m.services.store, Driver: m.services.tmux, Engine: m.services.engine, History: quoteHistoryLines}
@@ -680,7 +680,7 @@ type launchOptions struct {
 	rollbackWorktree bool
 }
 
-func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseCommand string, opts launchOptions) error {
+func (m *Model) launchNewSession(sess store.Session, tool config.CLI, baseCommand string, opts launchOptions) error {
 	paneWidth, paneHeight := m.paneTargetSize()
 	launched, err := m.services.lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:          sess,

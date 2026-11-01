@@ -51,7 +51,7 @@ func TestLifecycleCommandsRunWithNoCallingSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
-	if _, err := h.sessions.Kill("", terminal.ID); err == nil || !strings.Contains(err.Error(), "terminal, not an agent") {
+	if _, err := h.sessions.Kill("", terminal.ID); err == nil || !strings.Contains(err.Error(), "is not an agent; use the terminal or browser tools for it") {
 		t.Fatalf("killing a terminal as an agent = %v", err)
 	}
 	if _, err := h.sessions.Archive("", "nosuch01", true); err == nil || !strings.Contains(err.Error(), "does not exist") {

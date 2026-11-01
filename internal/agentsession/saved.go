@@ -69,7 +69,7 @@ func (env Env) command(ctx context.Context, name string, args ...string) *exec.C
 }
 
 // ErrNoStore reports a tool whose saved conversations the manager cannot read.
-var ErrNoStore = errors.New("tool keeps no conversations the manager reads")
+var ErrNoStore = errors.New("CLI keeps no conversations the manager reads")
 
 // Launch is where and how a tool starts: its directory, the variables it
 // gets and the profile it runs under.

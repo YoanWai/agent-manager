@@ -78,7 +78,7 @@ Named sets of environment variables a session launches under, kept in `state.db`
 
 ## Agent CLIs
 
-Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI, plus the shell `T` opens. OpenCode means OpenCode 2 (`@opencode/cli`), which the manager runs with `--standalone` so each session has a server of its own. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity, Oh My Pi and Cursor CLI have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
+Agent Manager supports Claude Code, OpenCode, Codex, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI. OpenCode means OpenCode 2 (`@opencode/cli`), which the manager runs with `--standalone` so each session has a server of its own. Each one's launch command, revive and fork commands, MCP registration, status rules, and the flags a session's model, effort and profile launch with are built into the binary, so an upgrade brings the current version of all of them. The models, efforts and profiles themselves are read from each CLI when you create a session (see [Model, effort and profile](usage.md#model-effort-and-profile)). Hermes, Antigravity, Oh My Pi and Cursor CLI have no fork, and Pi and Oh My Pi get no MCP registration. Settings (`s`) has a `CLIs` row that picks which of them the session pickers offer (see [Which CLIs you get offered](usage.md#which-clis-you-get-offered)).
 
 Agent Manager supports the current release of each CLI. A CLI can also carry the oldest release its launch, revive, fork and model list still work with. When yours is older, a spawn, a revive, or its model list opens a dialog that names your version, the one it needs, and the vendor installer that updates it. A CLI that lives under `/nix/store` gets no installer there, since the vendor script would not replace it; the dialog says to update it the way it was installed. Pi needs 0.84.3 or later, because earlier releases save every model they are asked about as your default.
 
@@ -102,6 +102,12 @@ tmux -L agentmgr capture-pane -p -t am_SESSION_ID
 
 A CLI that is not on the list above is a feature request; the `CLIs` row in Settings ends with `request CLI support`, which opens one prefilled.
 
+## Tools
+
+Tools are the panes Agent Manager provides itself, listed beside the agents: the terminal and the browser. `t` opens a shell tab under the selected agent or in the selected group (see [Terminal tabs](usage.md#terminal-tabs)), and `b` opens a browser tab the same way (see [Browser tabs](usage.md#browser-tabs)). A tool is built into the binary the way a CLI is, but it runs no agent. It stays out of the session pickers and the Settings `CLIs` row, and the keys that write a prompt into a pane refuse it. A session stores the name of its CLI or its tool, and no name is both.
+
+The browser is the built-in `[tools.browser]` block. It runs `terminal-browser open --no-merge` in the group's directory, with the URL after it when one is given, so each pane holds a browser of its own. Its status rests at idle. It needs terminal-browser on PATH and tmux 3.3 or newer. Seeing the page needs the manager to run outside another tmux. Agents drive a browser either way. On Windows the browser runs only inside WSL, so run agent-manager inside your WSL distro.
+
 ## Key bindings
 
 The **keybindings** row in Settings opens one picker with two tables: the keys the manager keeps inside a session, and the keys of its own list. Each action takes one key or several, and an action can be turned off. One key serves one action within a table.
@@ -124,7 +130,7 @@ A session key is `ctrl+<letter>` (the symbols `@ \ ] ^ _` too), `alt+<letter or 
 
 ### In the list
 
-Every key the list answers to is an action in the picker: `up`, `down`, `open`, `attach`, `step_in`, `step_out`, `reorder_up`, `reorder_down`, `new_session`, `terminal`, `new_group`, `fork`, `prompt`, `copy_reply`, `review`, `mark_idle`, `rename`, `move`, `editor`, `restart`, `kill`, `kill_all`, `revive`, `revive_all`, `archive`, `cancel_end`, `restore`, `delete`, `search`, `filter`, `archived`, `empty_groups`, `fold_all`, `resize`, `settings`, `messages`, `help` and `quit`.
+Every key the list answers to is an action in the picker: `up`, `down`, `open`, `attach`, `step_in`, `step_out`, `reorder_up`, `reorder_down`, `new_session`, `terminal`, `browser`, `new_group`, `fork`, `prompt`, `copy_reply`, `review`, `mark_idle`, `rename`, `move`, `editor`, `restart`, `kill`, `kill_all`, `revive`, `revive_all`, `archive`, `cancel_end`, `restore`, `delete`, `search`, `filter`, `archived`, `empty_groups`, `fold_all`, `resize`, `settings`, `messages`, `help` and `quit`.
 
 A list key is a plain character (`n`, `N`, `?`, `|`), a key name (`space`, `enter`, `tab`, `backspace`, `delete`, `up`, `down`, `left`, `right`, `home`, `end`, `pgup`, `pgdn`), `shift+` an arrow or tab, or the `ctrl+`, `alt+` and `f1` to `f12` forms above. `esc` and `ctrl+c` stay as they are. `esc` cancels everywhere. `ctrl+c` quits the manager even with `quit` turned off, and a focused session sends it to the agent. With saved prompts open over that session, `ctrl+c` closes the list. `settings` keeps at least one key, so the picker stays reachable. The footer, the `?` key map and the empty-list hints all read the table, so a moved key is named where it moved to.
 

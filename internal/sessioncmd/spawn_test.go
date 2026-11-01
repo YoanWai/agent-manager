@@ -666,7 +666,7 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 		t.Fatalf("open: %v", err)
 	}
 	everyTool := map[string]bool{}
-	for _, name := range runtime.cfg.AgentToolNames() {
+	for _, name := range runtime.cfg.CLINames() {
 		everyTool[name] = true
 	}
 	runtime.store.Close()
@@ -677,8 +677,8 @@ func TestSessionsCreateWithNoCallerTakesTheSettingsDefaults(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "create_session tool") {
 		t.Fatalf("Create with every tool hidden = %v, want a request to name one", err)
 	}
-	shell, _ := runtime.cfg.ShellTool()
-	_, listed, _ := strings.Cut(err.Error(), "(configured tools are ")
+	shell, _ := runtime.cfg.Terminal()
+	_, listed, _ := strings.Cut(err.Error(), "(configured CLIs are ")
 	if slices.Contains(strings.Split(strings.TrimSuffix(listed, ")"), ", "), shell) {
 		t.Fatalf("the error offers the shell tool %q as a choice: %v", shell, err)
 	}

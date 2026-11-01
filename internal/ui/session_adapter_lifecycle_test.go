@@ -1352,17 +1352,17 @@ func TestKillAgentConfirmNamesExtraTerminals(t *testing.T) {
 func TestRestartKeepsTheSessionChoice(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	tool.ModelArgs = "--model {model}"
 	tool.EffortArgs = "--effort {effort}"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 	if err := m.spawnSession("claude", "phoenix", t.TempDir(), "", "", false, false, config.Choice{Model: "sonnet", Effort: "high"}); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
 	sess := m.sessionRows()[0]
 	argsFile := filepath.Join(t.TempDir(), "launch-args")
 	tool.Command = argCaptureCommand(argsFile)
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 	if err := m.restartSession(sess); err != nil {
 		t.Fatalf("restart: %v", err)
 	}
@@ -1381,12 +1381,12 @@ func TestRestartLaunchesAFreshConversation(t *testing.T) {
 	sess := m.sessionRows()[0]
 
 	argsFile := filepath.Join(t.TempDir(), "launch-args")
-	tool := m.services.cfg.Tools[sess.Tool]
+	tool := m.services.cfg.CLIs[sess.Tool]
 	tool.Command = argCaptureCommand(argsFile)
 	tool.SessionIDFlag = "--session-id"
 	tool.ResumeByIDCommand = "false --resume {id}"
 	tool.ReviveCommand = "false --continue"
-	m.services.cfg.Tools[sess.Tool] = tool
+	m.services.cfg.CLIs[sess.Tool] = tool
 
 	if err := m.services.store.SetAgentSessionID(sess.ID, "old-conversation"); err != nil {
 		t.Fatal(err)
@@ -1448,10 +1448,10 @@ func TestRestartClearsCapturedConversationID(t *testing.T) {
 	sess := m.sessionRows()[0]
 	// The precondition under test, spelled out rather than inherited from
 	// whatever flags the fake tools happen to carry.
-	tool := m.services.cfg.Tools[sess.Tool]
+	tool := m.services.cfg.CLIs[sess.Tool]
 	tool.SessionIDFlag = ""
 	tool.SessionStore = "codex"
-	m.services.cfg.Tools[sess.Tool] = tool
+	m.services.cfg.CLIs[sess.Tool] = tool
 
 	if err := m.services.store.SetAgentSessionID(sess.ID, "captured-conversation"); err != nil {
 		t.Fatal(err)
@@ -1489,9 +1489,9 @@ func TestRestartEndsALiveAgentFirst(t *testing.T) {
 	m := buildModel(t)
 	createSession(t, m, "busy", t.TempDir(), "")
 	sess := m.sessionRows()[0]
-	tool := m.services.cfg.Tools[sess.Tool]
+	tool := m.services.cfg.CLIs[sess.Tool]
 	tool.Command = argCaptureCommand(filepath.Join(t.TempDir(), "launch-args"))
-	m.services.cfg.Tools[sess.Tool] = tool
+	m.services.cfg.CLIs[sess.Tool] = tool
 	m.selectSessionRow(t, "busy")
 
 	if _, _ = m.restartSelected(); !confirmOpen(m) {
@@ -1569,9 +1569,9 @@ func TestReviveRecreatesDeadSession(t *testing.T) {
 	previousLaunchTime := sess.LaunchTime()
 
 	argsFile := filepath.Join(t.TempDir(), "launch-args")
-	tool := m.services.cfg.Tools[sess.Tool]
+	tool := m.services.cfg.CLIs[sess.Tool]
 	tool.ResumeByIDCommand = argCaptureCommand(argsFile) + " --resume {id}"
-	m.services.cfg.Tools[sess.Tool] = tool
+	m.services.cfg.CLIs[sess.Tool] = tool
 
 	if err := m.services.tmux.Kill(sess.ID); err != nil {
 		t.Fatalf("kill: %v", err)
@@ -1670,7 +1670,7 @@ func TestRevivedLaunchTimeSitsInsideStartingGrace(t *testing.T) {
 // fallback warrants the warning.
 func TestDegradedResumeNoticeWarnsOnlyForBlindFallbacks(t *testing.T) {
 	t.Parallel()
-	base := config.Tool{
+	base := config.CLI{
 		Command:           "claude",
 		ReviveCommand:     "claude --continue",
 		ResumeByIDCommand: "claude --resume {id}",
@@ -1680,7 +1680,7 @@ func TestDegradedResumeNoticeWarnsOnlyForBlindFallbacks(t *testing.T) {
 
 	for _, tc := range []struct {
 		name string
-		tool config.Tool
+		tool config.CLI
 		id   string
 		want string
 	}{
@@ -1690,7 +1690,7 @@ func TestDegradedResumeNoticeWarnsOnlyForBlindFallbacks(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			m := buildModel(t)
-			m.services.cfg.Tools["claude"] = tc.tool
+			m.services.cfg.CLIs["claude"] = tc.tool
 			got := uilifecycle.DegradedResume(tc.tool, tc.id, "reviveme")
 			if tc.want == "" {
 				if got != "" {
@@ -2061,13 +2061,13 @@ func TestReviveStartsTheAgentAgainInALivePane(t *testing.T) {
 	// Hooks give the session a status file beside its id, so the relaunch
 	// has both to carry. The command runs through a shell, which is what
 	// survives the settings flag a hooked tool launches with.
-	hooked := m.services.cfg.Tools[sess.Tool]
+	hooked := m.services.cfg.CLIs[sess.Tool]
 	hooked.Command = "sh -c 'cat'"
 	if runtime.GOOS == "windows" {
 		hooked.Command = testfixture.ModeCommand("cat-stdin")
 	}
 	hooked.StatusSource = "claude-hooks"
-	m.services.cfg.Tools[sess.Tool] = hooked
+	m.services.cfg.CLIs[sess.Tool] = hooked
 	quitAgent(t, m, sess.ID)
 	if err := m.services.store.SetAcked(sess.ID, true); err != nil {
 		t.Fatalf("set acked: %v", err)
@@ -2144,9 +2144,9 @@ func TestReviveResumesTheStoredConversationOverAStaleListedRow(t *testing.T) {
 	createSession(t, m, "phoenix", t.TempDir(), "")
 	listed := m.sessionRows()[0]
 	argsFile := filepath.Join(t.TempDir(), "launch-args")
-	tool := m.services.cfg.Tools[listed.Tool]
+	tool := m.services.cfg.CLIs[listed.Tool]
 	tool.ResumeByIDCommand = launchCaptureCommand(argsFile) + " --resume {id}"
-	m.services.cfg.Tools[listed.Tool] = tool
+	m.services.cfg.CLIs[listed.Tool] = tool
 	if err := m.services.tmux.Kill(listed.ID); err != nil {
 		t.Fatalf("kill: %v", err)
 	}
@@ -2176,10 +2176,10 @@ func TestRestartStampsTheLaunchItExported(t *testing.T) {
 	createSession(t, m, "phoenix", t.TempDir(), "")
 	sess := m.sessionRows()[0]
 	argsFile := filepath.Join(t.TempDir(), "launch-args")
-	tool := m.services.cfg.Tools[sess.Tool]
+	tool := m.services.cfg.CLIs[sess.Tool]
 	tool.Command = launchCaptureCommand(argsFile)
 	tool.SessionIDFlag = "--session-id"
-	m.services.cfg.Tools[sess.Tool] = tool
+	m.services.cfg.CLIs[sess.Tool] = tool
 	if err := m.restartSession(sess); err != nil {
 		t.Fatalf("restart: %v", err)
 	}

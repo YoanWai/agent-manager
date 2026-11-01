@@ -49,6 +49,14 @@ func ShellPromptHint(name string) string {
 	return name + " is a shell, not an agent - enter it to type there"
 }
 
+// NonAgentPromptHint refuses a prompt for a shell or a browser row.
+func NonAgentPromptHint(name string, browser bool) string {
+	if browser {
+		return name + " is a browser, not an agent - attach it to use the page"
+	}
+	return ShellPromptHint(name)
+}
+
 // DegradedResumeText says a revive fell back to the working directory's most
 // recent conversation because its own conversation id was never captured,
 // which resumes the wrong conversation whenever sessions share a directory.

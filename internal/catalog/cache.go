@@ -26,7 +26,7 @@ type cached struct {
 func cacheDir(configDir string) string { return filepath.Join(configDir, "catalogs") }
 
 // Cached returns the last answer, whether it is fresh, and whether there is one.
-func Cached(configDir, toolName string, tool config.Tool) (Catalog, bool, bool) {
+func Cached(configDir, toolName string, tool config.CLI) (Catalog, bool, bool) {
 	raw, err := os.ReadFile(filepath.Join(cacheDir(configDir), toolName+".json"))
 	if err != nil {
 		return Catalog{}, false, false
@@ -41,7 +41,7 @@ func Cached(configDir, toolName string, tool config.Tool) (Catalog, bool, bool) 
 
 // Refresh asks from the manager's own directory, so a session an interface
 // opens to answer never lands where a real session works.
-func Refresh(ctx context.Context, configDir, toolName string, tool config.Tool) (Catalog, error) {
+func Refresh(ctx context.Context, configDir, toolName string, tool config.CLI) (Catalog, error) {
 	if err := config.CheckInstalled(tool.CatalogCommand); err != nil {
 		return Catalog{}, err
 	}
@@ -60,7 +60,7 @@ func Refresh(ctx context.Context, configDir, toolName string, tool config.Tool) 
 }
 
 // Keep stores cat as the tool's answer as of now.
-func Keep(configDir, toolName string, tool config.Tool, cat Catalog) error {
+func Keep(configDir, toolName string, tool config.CLI, cat Catalog) error {
 	raw, err := json.Marshal(cached{ReadAt: time.Now(), Binary: binaryStamp(tool.CatalogCommand), Catalog: cat})
 	if err != nil {
 		return err
@@ -70,7 +70,7 @@ func Keep(configDir, toolName string, tool config.Tool, cat Catalog) error {
 
 // Load is the fresh answer when there is one, asked again otherwise.
 // The version check comes first so a kept answer cannot skip it.
-func Load(ctx context.Context, configDir, toolName string, tool config.Tool) (Catalog, error) {
+func Load(ctx context.Context, configDir, toolName string, tool config.CLI) (Catalog, error) {
 	if err := config.CheckVersion(tool); err != nil {
 		return Catalog{}, err
 	}

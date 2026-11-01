@@ -77,6 +77,37 @@ func (f *fakeTerminalCommands) Close(_ string, id string) error {
 	return f.err
 }
 
+type fakeBrowserCommands struct {
+	listed      []sessioncmd.Browser
+	created     sessioncmd.Browser
+	output      sessioncmd.BrowserOutput
+	createdOpts sessioncmd.CreateBrowserOptions
+	commandID   string
+	command     string
+	closedID    string
+	err         error
+}
+
+func (f *fakeBrowserCommands) List(string) ([]sessioncmd.Browser, error) {
+	return f.listed, f.err
+}
+
+func (f *fakeBrowserCommands) Create(_ string, opts sessioncmd.CreateBrowserOptions) (sessioncmd.Browser, error) {
+	f.createdOpts = opts
+	return f.created, f.err
+}
+
+func (f *fakeBrowserCommands) Command(_ string, browserID, command string) (sessioncmd.BrowserOutput, error) {
+	f.commandID = browserID
+	f.command = command
+	return f.output, f.err
+}
+
+func (f *fakeBrowserCommands) Close(_ string, browserID string) error {
+	f.closedID = browserID
+	return f.err
+}
+
 type fakeSessionCommands struct {
 	listed        []sessioncmd.Session
 	created       sessioncmd.Session
@@ -348,6 +379,7 @@ func TestListsAllTools(t *testing.T) {
 	for _, want := range []string{
 		"rename", "review", "review_comment", "report_issue",
 		"list_terminals", "create_terminal", "send_terminal", "read_terminal", "close_terminal",
+		"list_browsers", "create_browser", "browser_command", "close_browser",
 	} {
 		if !names[want] {
 			t.Fatalf("missing tool %q in %v", want, names)
@@ -404,7 +436,7 @@ func TestSchemaBoundsMatchTheirConstants(t *testing.T) {
 	}
 }
 
-func TestServerTeachesProactiveTerminalWorkflow(t *testing.T) {
+func TestServerTeachesProactiveTerminalAndBrowserWorkflow(t *testing.T) {
 	session := connect(t, t.TempDir(), "abc123")
 	instructions := session.InitializeResult().Instructions
 	for _, want := range []string{
@@ -414,10 +446,12 @@ func TestServerTeachesProactiveTerminalWorkflow(t *testing.T) {
 		"list_terminals",
 		"create_terminal",
 		"send_terminal",
-		"read_terminal",
-		"close_terminal",
-		"reuse a running terminal",
-		"nests under this session",
+		"list_browsers",
+		"create_browser",
+		"browser_command",
+		"snapshot -i",
+		"Reuse one you already opened",
+		"close it when done",
 	} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("server instructions do not teach %q:\n%s", want, instructions)
@@ -466,7 +500,7 @@ func TestTerminalToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 			Output:   "build complete",
 		},
 	}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeSessionCommands{}, &fakeReporter{}))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeBrowserCommands{}, &fakeSessionCommands{}, &fakeReporter{}))
 
 	listed := callTool(t, session, "list_terminals", map[string]any{})
 	if listed.IsError || listed.StructuredContent == nil {
@@ -512,7 +546,7 @@ func TestTerminalToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 
 func TestCloseTerminalForwardsID(t *testing.T) {
 	fake := &fakeTerminalCommands{}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeSessionCommands{}, &fakeReporter{}))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeBrowserCommands{}, &fakeSessionCommands{}, &fakeReporter{}))
 	text, isError := callText(t, session, "close_terminal", map[string]any{"terminal_id": "a1b2c3d4"})
 	if isError || !strings.Contains(text, "closed terminal a1b2c3d4") {
 		t.Fatalf("close_terminal = %q, isError=%v", text, isError)
@@ -526,7 +560,7 @@ func TestCreateTerminalForwardsNest(t *testing.T) {
 	fake := &fakeTerminalCommands{
 		created: sessioncmd.Terminal{ID: "e5f6a7b8", Name: "terminal-e5f6"},
 	}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeSessionCommands{}, &fakeReporter{}))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeBrowserCommands{}, &fakeSessionCommands{}, &fakeReporter{}))
 
 	if created := callTool(t, session, "create_terminal", map[string]any{}); created.IsError {
 		t.Fatalf("create_terminal no args = %+v", created)
@@ -576,7 +610,7 @@ func TestTerminalToolAnnotationsDescribeLocalRisk(t *testing.T) {
 
 func TestTerminalToolErrorsAreToolErrors(t *testing.T) {
 	fake := &fakeTerminalCommands{err: errors.New("terminal is not running")}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeSessionCommands{}, &fakeReporter{}))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, fake, &fakeBrowserCommands{}, &fakeSessionCommands{}, &fakeReporter{}))
 	for _, call := range []struct {
 		name string
 		args map[string]any
@@ -590,6 +624,107 @@ func TestTerminalToolErrorsAreToolErrors(t *testing.T) {
 		text, isError := callText(t, session, call.name, call.args)
 		if !isError || !strings.Contains(text, "not running") {
 			t.Fatalf("%s = %q, isError=%v", call.name, text, isError)
+		}
+	}
+}
+
+func TestBrowserToolsRoundTrip(t *testing.T) {
+	fake := &fakeBrowserCommands{
+		listed: []sessioncmd.Browser{{
+			ID: "b1c2d3e4", Name: "browser-b1c2", Running: true,
+			ParentID: "abc123", ParentName: "lead", URL: "https://example.com", Title: "Example",
+		}},
+		created: sessioncmd.Browser{ID: "f5a6b7c8", Name: "browser-f5a6", Running: true, URL: "https://example.com"},
+		output:  sessioncmd.BrowserOutput{BrowserID: "f5a6b7c8", Command: "snapshot -i", Output: "- link \"More\" [ref=e14]"},
+	}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, fake, &fakeSessionCommands{}, &fakeReporter{}))
+
+	listed := callTool(t, session, "list_browsers", map[string]any{})
+	if listed.IsError || listed.StructuredContent == nil {
+		t.Fatalf("list_browsers = %+v", listed)
+	}
+	if text, _ := callText(t, session, "list_browsers", map[string]any{}); !strings.Contains(text, "browser-b1c2") || !strings.Contains(text, "https://example.com") {
+		t.Fatalf("list_browsers text = %q", text)
+	}
+
+	created := callTool(t, session, "create_browser", map[string]any{"url": "https://example.com", "nest": false, "group": "web", "directory": "/tmp"})
+	if created.IsError || created.StructuredContent == nil {
+		t.Fatalf("create_browser = %+v", created)
+	}
+	opts := fake.createdOpts
+	if opts.URL != "https://example.com" || opts.Nest == nil || *opts.Nest || opts.Group == nil || *opts.Group != "web" || opts.Directory != "/tmp" {
+		t.Fatalf("create_browser forwarded %+v", opts)
+	}
+	if text, _ := callText(t, session, "create_browser", map[string]any{}); !strings.Contains(text, "created") || !strings.Contains(text, "browser-f5a6") {
+		t.Fatalf("create_browser text = %q", text)
+	}
+	if fake.createdOpts.Nest != nil || fake.createdOpts.URL != "" {
+		t.Fatalf("create_browser with no args forwarded %+v", fake.createdOpts)
+	}
+
+	commanded := callTool(t, session, "browser_command", map[string]any{"browser_id": "f5a6b7c8", "command": "snapshot -i"})
+	if commanded.IsError || commanded.StructuredContent == nil {
+		t.Fatalf("browser_command = %+v", commanded)
+	}
+	if text, _ := callText(t, session, "browser_command", map[string]any{"browser_id": "f5a6b7c8", "command": "snapshot -i"}); text != "- link \"More\" [ref=e14]" {
+		t.Fatalf("browser_command text = %q", text)
+	}
+	if fake.commandID != "f5a6b7c8" || fake.command != "snapshot -i" {
+		t.Fatalf("browser_command forwarded id %q command %q", fake.commandID, fake.command)
+	}
+
+	if text, isError := callText(t, session, "close_browser", map[string]any{"browser_id": "f5a6b7c8"}); isError || !strings.Contains(text, "closed browser f5a6b7c8") {
+		t.Fatalf("close_browser = %q, isError=%v", text, isError)
+	}
+	if fake.closedID != "f5a6b7c8" {
+		t.Fatalf("close_browser forwarded id %q", fake.closedID)
+	}
+}
+
+func TestBrowserToolErrorsAreToolErrors(t *testing.T) {
+	fake := &fakeBrowserCommands{err: errors.New("the browser needs tmux 3.3 or newer (you have 3.2)")}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, fake, &fakeSessionCommands{}, &fakeReporter{}))
+	for _, call := range []struct {
+		name string
+		args map[string]any
+	}{
+		{"list_browsers", map[string]any{}},
+		{"create_browser", map[string]any{}},
+		{"browser_command", map[string]any{"browser_id": "b1", "command": "get url"}},
+		{"close_browser", map[string]any{"browser_id": "b1"}},
+	} {
+		text, isError := callText(t, session, call.name, call.args)
+		if !isError || !strings.Contains(text, "tmux 3.3 or newer") {
+			t.Fatalf("%s = %q, isError=%v", call.name, text, isError)
+		}
+	}
+}
+
+func TestBrowserToolAnnotations(t *testing.T) {
+	session := connect(t, t.TempDir(), "abc123")
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := map[string]*mcp.Tool{}
+	for _, tool := range listed.Tools {
+		tools[tool.Name] = tool
+	}
+	for name, want := range map[string]struct{ readOnly, destructive, openWorld bool }{
+		"list_browsers":   {true, false, false},
+		"create_browser":  {false, false, true},
+		"browser_command": {false, true, true},
+		"close_browser":   {false, true, false},
+	} {
+		tool := tools[name]
+		if tool == nil {
+			t.Fatalf("missing %s", name)
+		}
+		annotations := tool.Annotations
+		if annotations == nil || annotations.ReadOnlyHint != want.readOnly ||
+			annotations.DestructiveHint == nil || *annotations.DestructiveHint != want.destructive ||
+			annotations.OpenWorldHint == nil || *annotations.OpenWorldHint != want.openWorld {
+			t.Errorf("%s annotations = %+v, want %+v", name, annotations, want)
 		}
 	}
 }
@@ -826,6 +961,11 @@ func TestServerInstructionsSurviveTheClientLimit(t *testing.T) {
 			t.Fatalf("proactive %v: the instructions no longer say these tools act on the user's machine:\n%s", proactive, instructions)
 		}
 	}
+	for _, want := range []string{"create_browser", "browser_command"} {
+		if !strings.Contains(instructionsTail, want) {
+			t.Errorf("the instructions tail does not mention %s, so neither mode teaches the browser", want)
+		}
+	}
 }
 
 func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
@@ -881,7 +1021,7 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 		},
 		groups: []sessioncmd.Group{{Path: group, Directory: "/work", Sessions: 2}},
 	}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, fake, &fakeReporter{}))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeBrowserCommands{}, fake, &fakeReporter{}))
 
 	listed := callTool(t, session, "list_sessions", map[string]any{})
 	if listed.IsError || listed.StructuredContent == nil {
@@ -1092,7 +1232,7 @@ func TestSessionToolErrorsAreToolErrors(t *testing.T) {
 
 func serverWithFakes(t *testing.T, sessions sessionCommands) *mcp.Server {
 	t.Helper()
-	return newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, sessions, &fakeReporter{})
+	return newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeBrowserCommands{}, sessions, &fakeReporter{})
 }
 
 func TestTaskToolsForwardArgumentsAndRenderTheList(t *testing.T) {
@@ -1197,7 +1337,7 @@ func TestReportIssuePreviewsUntilTheUserConfirms(t *testing.T) {
 		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Route: report.RouteGH, Account: "yoan"},
 		result:  report.Filed{Route: report.RouteGH, URL: "https://github.com/YoanWai/agent-manager/issues/512"},
 	}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeSessionCommands{}, fake))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeBrowserCommands{}, &fakeSessionCommands{}, fake))
 
 	args := map[string]any{"kind": "bug", "title": "Space lands in the wrong pane", "body": "steps"}
 	text, isError := callText(t, session, "report_issue", args)
@@ -1230,7 +1370,7 @@ func TestReportIssuePreviewsUntilTheUserConfirms(t *testing.T) {
 
 func TestReportIssueRefusalsAreToolErrors(t *testing.T) {
 	fake := &fakeReporter{err: errors.New("body is empty; say what you did")}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeSessionCommands{}, fake))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeBrowserCommands{}, &fakeSessionCommands{}, fake))
 	for _, previewID := range []string{"", "3f2a91c4"} {
 		text, isError := callText(t, session, "report_issue", map[string]any{"kind": "bug", "title": "t", "body": "", "preview_id": previewID})
 		if !isError || !strings.Contains(text, "body is empty") {
@@ -1474,7 +1614,7 @@ func TestServerRunnersReturnCoordinationModeReadErrors(t *testing.T) {
 }
 
 func TestCreateSessionPresetSchemaIsOptional(t *testing.T) {
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeSessionCommands{}, &fakeReporter{}))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeBrowserCommands{}, &fakeSessionCommands{}, &fakeReporter{}))
 	listed, err := session.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -1519,7 +1659,7 @@ func TestCreateSessionPresetSchemaIsOptional(t *testing.T) {
 
 func TestCreateSessionForwardsSessionPreset(t *testing.T) {
 	fake := &fakeSessionCommands{}
-	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, fake, &fakeReporter{}))
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, &fakeTerminalCommands{}, &fakeBrowserCommands{}, fake, &fakeReporter{}))
 	result := callTool(t, session, "create_session", map[string]any{"saved": "project/reviewer", "prompt": " task "})
 	if result.IsError {
 		t.Fatalf("create_session: %+v", result)

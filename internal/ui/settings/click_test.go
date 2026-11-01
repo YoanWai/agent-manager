@@ -53,14 +53,14 @@ func TestClickMovesThenRunsTheRow(t *testing.T) {
 }
 
 // The docs and saved prompts rows open on the first click. The first row is
-// the default tool, and the body has no save button of its own.
+// the default CLI, and the body has no save button of its own.
 func TestClickOnTheButtonRowsRunsAtOnce(t *testing.T) {
 	ctx, view := testContext(), viewContext()
 	s := openState(ctx)
 	if strings.Contains(s.View(view).Body, "save and close") {
 		t.Fatal("save belongs in the footer, not the rows")
 	}
-	if clickText(t, &s, ctx, view, "default tool"); s.ToolIndex != 1 {
+	if clickText(t, &s, ctx, view, "default CLI"); s.ToolIndex != 1 {
 		t.Fatalf("the first row should step the tool, index %d", s.ToolIndex)
 	}
 	if result := clickText(t, &s, ctx, view, "open the docs"); result.Exit != OpenDocs || s.Field != FieldDocs {
