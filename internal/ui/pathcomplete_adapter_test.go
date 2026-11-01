@@ -160,7 +160,7 @@ func TestGroupPickerExitsToAdjacentFields(t *testing.T) {
 func TestStandaloneGroupPickerWrapsWhenThereAreNoAdjacentFields(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	s := uidialogs.NewMoveSurface(moveRoot{m}, uidialogs.MoveSession("s"), spawn.Picker{Groups: []spawn.GroupOption{{Path: ""}, {Path: "alpha"}, {Path: "beta"}}})
+	s := uidialogs.NewMoveSurface(moveRoot{m}, uidialogs.MoveSession("s"), spawn.Picker{Groups: []spawn.GroupOption{{Path: ""}, {Path: "alpha"}, {Path: "beta"}}}, m.prefs.glyphMode)
 	m.push(s)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyUp})

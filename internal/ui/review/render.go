@@ -69,14 +69,15 @@ type LegendSection struct {
 }
 
 type renderer struct {
-	m *Model
-	s Styles
-	g presentation.GlyphSet
-	c presentation.ChromeSet
+	mode presentation.GlyphMode
+	m    *Model
+	s    Styles
+	g    presentation.GlyphSet
+	c    presentation.ChromeSet
 }
 
 func (m *Model) renderer(ctx RenderContext) renderer {
-	return renderer{m: m, s: ctx.Styles, g: presentation.GlyphsFor(ctx.GlyphMode), c: presentation.ChromeFor(ctx.GlyphMode)}
+	return renderer{m: m, mode: ctx.GlyphMode, s: ctx.Styles, g: presentation.GlyphsFor(ctx.GlyphMode), c: presentation.ChromeFor(ctx.GlyphMode)}
 }
 
 func (s Styles) selectRow(row string) string {
@@ -200,7 +201,7 @@ func (m *Model) Header(ctx RenderContext, sessName string, width int) string {
 			target = m.commitTarget
 		}
 		if target != "" && branch != "" {
-			summary := presentation.EscapeControlsInline(StripBaseHash(target)) + " → " + branch
+			summary := presentation.EscapeControlsInline(StripBaseHash(target)) + " " + presentation.NavigationFor(ctx.GlyphMode).ToGlyph + " " + branch
 			if state.Set.BaseOverride == "" {
 				summary += " " + s.Subtle.Render("(auto)")
 			}
@@ -325,7 +326,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 	start, end := scrollWindow(len(shown), cursor, height)
 	var b strings.Builder
 	if start > 0 {
-		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↑ %d more", start)) + "\n")
+		b.WriteString(s.Subtle.Render("  "+presentation.OverflowLabel(ctx.GlyphMode, start, true)) + "\n")
 		m.fileRows.Show(shown[start-1], 1)
 		m.fileMarks.Skip(1)
 	}
@@ -376,7 +377,7 @@ func (m *Model) FileList(ctx RenderContext, width, height int) Pane {
 		m.fileMarks.Show(i, 1)
 	}
 	if end < len(shown) {
-		b.WriteString(s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(shown)-end)))
+		b.WriteString(s.Subtle.Render("  " + presentation.OverflowLabel(ctx.GlyphMode, len(shown)-end, false)))
 		m.fileRows.Show(shown[end], 1)
 	}
 	return Pane{Text: strings.TrimRight(b.String(), "\n")}
@@ -405,7 +406,7 @@ func (m *Model) Status(ctx RenderContext, width int) string {
 	return ""
 }
 
-func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
+func (m *Model) Legend(helpKey keybind.Binding, mode presentation.GlyphMode) []LegendSection {
 	if m.annotationOpen {
 		return []LegendSection{{Title: "Comment", Pairs: [][2]string{
 			{"↵", "save"}, {"esc", "cancel"},
@@ -417,9 +418,9 @@ func (m *Model) Legend(helpKey keybind.Binding) []LegendSection {
 		if b.Footer == nil {
 			continue
 		}
-		key := b.legendKey()
+		key := presentation.NavigationLabel(mode, b.legendKey())
 		if b.Action == actHelp {
-			if key = EffectiveHelpBinding(helpKey).Glyph("/"); key == "" {
+			if key = EffectiveHelpBinding(helpKey).Text("/", mode.Effective() == presentation.GlyphModeAdvanced); key == "" {
 				continue
 			}
 		}

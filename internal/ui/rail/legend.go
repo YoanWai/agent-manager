@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 )
 
 // ReviewModeHint is the row tier's reminder that an agent can be asked to
@@ -28,6 +29,7 @@ type Legend struct {
 // Session is filled for session rows. Unread is the messages alert, empty
 // when nothing is unread.
 type LegendContext struct {
+	GlyphMode     presentation.GlyphMode
 	ListKeys      keybind.Table
 	EnterFocuses  bool
 	MouseDisabled bool
@@ -191,7 +193,7 @@ func (m Model) ViewLegend(ctx LegendContext) Legend {
 }
 
 // ReorderLegend is the tier a lifted row shows while it moves.
-func (m Model) ReorderLegend() Legend {
+func (m Model) ReorderLegend(mode presentation.GlyphMode) Legend {
 	info := m.ReorderInfo()
 	if info.DropLabel != "" {
 		return Legend{Title: "Move", Pairs: [][2]string{
@@ -199,7 +201,7 @@ func (m Model) ReorderLegend() Legend {
 		}}
 	}
 	return Legend{Title: "Reorder", Pairs: [][2]string{
-		{"drag / ↑↓ / wheel", "move"}, {"↵ / release", "drop"}, {"esc", "put back"},
+		{presentation.NavigationLabel(mode, "drag / ↑↓ / wheel"), "move"}, {"↵ / release", "drop"}, {"esc", "put back"},
 	}}
 }
 
@@ -238,7 +240,7 @@ func boundPairs(pairs [][2]string) [][2]string {
 func (ctx LegendContext) glyph(actions ...string) string {
 	joined := ""
 	for _, action := range actions {
-		glyph := ctx.ListKeys.Binding(action).Glyph("/")
+		glyph := ctx.ListKeys.Binding(action).Text("/", ctx.GlyphMode.Effective() == presentation.GlyphModeAdvanced)
 		if glyph == "" {
 			continue
 		}

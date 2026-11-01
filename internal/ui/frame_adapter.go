@@ -294,12 +294,12 @@ func (m *Model) footer() legend {
 	footer := m.footerOf()
 	switch {
 	case m.rail.Reordering():
-		return m.transientFooter(legendOf(m.rail.ReorderLegend()))
+		return m.transientFooter(legendOf(m.rail.ReorderLegend(m.prefs.glyphMode)))
 	case m.quick() != nil:
 		return m.quickFooter(m.quick())
 	}
 	if s, ok := surfaceOf[*uigeometry.Surface](m); ok {
-		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.Footer()})
+		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.FooterFor(presentation.NavigationLabel(m.prefs.glyphMode, "←→"), strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "))})
 	}
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
 		return m.transientFooter(legendSection{Title: "Rename", Pairs: s.Footer()})
@@ -369,7 +369,7 @@ func (m *Model) transientFooter(section legendSection) legend {
 func (m *Model) listGlyph(actions ...string) string {
 	joined := ""
 	for _, action := range actions {
-		glyph := m.services.listKeys.Binding(action).Glyph("/")
+		glyph := m.services.listKeys.Binding(action).Text("/", m.prefs.glyphMode.Effective() == presentation.GlyphModeAdvanced)
 		if glyph == "" {
 			continue
 		}

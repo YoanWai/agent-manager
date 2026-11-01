@@ -78,7 +78,7 @@ func (s *Saved) View(h surface.Host, _ string) string {
 	return h.CardSized(width, "saved prompts", strings.Join(lines, "\n"), [][2]string{{"↵", "paste"}, {"esc", "close"}})
 }
 
-func (s *Saved) Footer() [][2]string { return s.list.Hint("paste", "close") }
+func (s *Saved) Footer() [][2]string { return s.list.Hint("paste", "close", s.styles.GlyphMode) }
 
 func (s *Saved) Owner() surface.Owner { return surface.Manager }
 

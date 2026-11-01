@@ -83,8 +83,9 @@ func (k Kind) Paint(text string, marks Marks, tones Tones) string {
 // Report is the status bar's own text; the rest are the conditions that
 // outrank it, most urgent first.
 type Message struct {
-	Report string
-	Kind   Kind
+	GlyphMode presentation.GlyphMode
+	Report    string
+	Kind      Kind
 
 	Focused         bool
 	ScrolledBack    bool
@@ -118,7 +119,7 @@ func Line(msg Message, glyphs presentation.GlyphSet, tones Tones) string {
 		return tones.Key.Render("copied ") +
 			tones.Subtle.Render(fmt.Sprintf("%d chars to clipboard", msg.Copied))
 	case msg.ResizeMode || msg.Dragging:
-		hint := "←→ resize · drag divider · enter set · esc cancel"
+		hint := presentation.NavigationLabel(msg.GlyphMode, "←→ resize · drag divider · enter set · esc cancel")
 		if msg.Dragging {
 			hint = "release to set · esc cancels"
 		}

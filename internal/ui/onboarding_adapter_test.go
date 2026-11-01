@@ -8,6 +8,7 @@ import (
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uionboarding "github.com/YoanWai/agent-manager/internal/ui/onboarding"
 	onboardingruntime "github.com/YoanWai/agent-manager/internal/ui/onboarding/runtime"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -348,5 +349,19 @@ func TestSetupFirstRunDefersProbeUntilInit(t *testing.T) {
 	m.Init()
 	if !probeQueued() {
 		t.Fatal("Init did not queue the first-run setup probe")
+	}
+}
+
+func TestCompatibleSetupUsesPortableKeysAndFooter(t *testing.T) {
+	m := setupModel(t)
+	m.prefs.glyphMode = presentation.GlyphModeBasic
+	m.prefs.arrowStep = true
+	keys := m.setupKeys()
+	if keys.Focus != "right" || keys.Back != "left" || keys.OtherFocus != "enter" {
+		t.Fatalf("Compatible setup keys: %+v", keys)
+	}
+	view := ansi.Strip(m.viewSetup(setupState(t, m)))
+	if !strings.Contains(view, "up/down move") || strings.Contains(view, "↑↓") {
+		t.Fatalf("Compatible setup footer: %s", view)
 	}
 }

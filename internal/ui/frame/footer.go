@@ -88,7 +88,7 @@ func (f Footer) Focused(focus Focus) Section {
 		if f.FullLayout && focus.PagesScrollback {
 			label = "back"
 		}
-		pairs = append(pairs, [2]string{"←", label})
+		pairs = append(pairs, [2]string{presentation.NavigationLabel(f.Mode, "←"), label})
 	}
 	if focus.Keys.Review != "" {
 		pairs = append(pairs, [2]string{focus.Keys.Review, "review"})

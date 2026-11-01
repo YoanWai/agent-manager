@@ -58,10 +58,10 @@ func (s *Surface) View(h surface.Host, _ string) string {
 	cols, rows := h.Size()
 	width := s.root.CardWidth(cols)
 	body := s.picker.Body(s.render, s.root.InnerWidth(width), rows)
-	return h.CardSized(width, s.glyph+" "+s.picker.Title(), body, s.picker.Hints())
+	return h.CardSized(width, s.glyph+" "+s.picker.Title(), body, s.picker.Hints(s.render.GlyphMode))
 }
 
-func (s *Surface) Footer() [][2]string { return s.picker.Hints() }
+func (s *Surface) Footer() [][2]string { return s.picker.Hints(s.render.GlyphMode) }
 
 func (s *Surface) Owner() surface.Owner { return surface.Manager }
 

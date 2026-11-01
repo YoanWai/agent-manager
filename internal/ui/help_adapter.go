@@ -34,7 +34,7 @@ func (h helpHost) QuickKeys() uihelp.QuickKeys {
 }
 
 func (h helpHost) ReviewRows() [][2]string {
-	return uireview.HelpRows(h.services.listKeys.Binding(keybind.Help))
+	return uireview.HelpRows(h.services.listKeys.Binding(keybind.Help), h.prefs.glyphMode)
 }
 
 func (h helpHost) CursorMarker() string { return uiframe.CursorMarker }

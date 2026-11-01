@@ -159,8 +159,9 @@ func (l *SavedList) Lines(width, visible int, st Styles) []string {
 	return lines
 }
 
-func (l *SavedList) Hint(enter, esc string) [][2]string {
-	return [][2]string{{"type", "filter"}, {"↑↓", "pick"}, {"↵", enter}, {"esc", esc}}
+// Hint is the list's key hint, with what enter does to the pick.
+func (l *SavedList) Hint(enter, esc string, mode presentation.GlyphMode) [][2]string {
+	return [][2]string{{"type", "filter"}, {presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵", enter}, {"esc", esc}}
 }
 
 func SavedPreview(text string, width int) string {

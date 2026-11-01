@@ -2,6 +2,7 @@ package notices
 
 import (
 	"fmt"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -84,7 +85,7 @@ func TestStackedNoticeFooterKeepsTheBodyBudget(t *testing.T) {
 }
 func TestStackedNoticeFooterKeepsConfiguredCloseKeys(t *testing.T) {
 	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
-		for _, binding := range []string{"M", "alt+m", "backspace"} {
+		for _, binding := range []string{"M", "alt+m", "backspace", "←"} {
 			for _, width := range []int{13, 20, 40, 120} {
 				for _, id := range []string{"", "custom"} {
 					f := testFrame()
@@ -92,7 +93,7 @@ func TestStackedNoticeFooterKeepsConfiguredCloseKeys(t *testing.T) {
 					p := NewPanel(nil, nil)
 					notices := footNotices(id)
 					view := p.View(notices, f)
-					label := "esc/q/" + f.CloseKey.Keys()[0].Glyph()
+					label := "esc/q/" + keybind.Keys(f.CloseKey.Keys()[0]).Text("", mode == presentation.GlyphModeAdvanced)
 					found := false
 					for _, hit := range p.Foot(notices, f) {
 						if hit.Label != label {
@@ -113,6 +114,9 @@ func TestStackedNoticeFooterKeepsConfiguredCloseKeys(t *testing.T) {
 					msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'M'}}
 					if key.Tea() == "alt+m" {
 						msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
+					}
+					if key.Tea() == "←" {
+						msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'←'}}
 					}
 					if key.Tea() == "backspace" {
 						msg = tea.KeyMsg{Type: tea.KeyBackspace}

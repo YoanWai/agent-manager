@@ -1288,7 +1288,7 @@ func TestQuickPromptModeLeadsTheFooterAndNamesTheOpenBar(t *testing.T) {
 			t.Fatalf("full layout %v: the prompt should sit in the footer:\n%s", full, ansi.Strip(frame))
 		}
 		rows := strings.Split(footer, "\n")
-		keysHeight := lipgloss.Height(paintLegend([]legendSection{{Title: quickModeTitle, Pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1, m.prefs.glyphMode).Text)
+		keysHeight := lipgloss.Height(paintLegend([]legendSection{{Title: quickModeTitle, Pairs: m.quick().Legend(m.quickBarHost(), m.prefs.glyphMode)}}, m.layout.width-1, m.prefs.glyphMode).Text)
 		for i, line := range rows {
 			tone := uitheme.QuickModeHex()
 			if i > 0 && i < len(rows)-keysHeight {
@@ -1713,7 +1713,7 @@ func TestQuickFooterFillsEveryBandCell(t *testing.T) {
 			}
 			backgrounds, _ := cellColors(frame, m.layout.width, m.layout.height)
 			footerHeight := lipgloss.Height(m.viewFooter())
-			keysHeight := lipgloss.Height(paintLegend([]legendSection{{Title: quickModeTitle, Pairs: m.quick().Legend(m.quickBarHost())}}, m.layout.width-1, m.prefs.glyphMode).Text)
+			keysHeight := lipgloss.Height(paintLegend([]legendSection{{Title: quickModeTitle, Pairs: m.quick().Legend(m.quickBarHost(), m.prefs.glyphMode)}}, m.layout.width-1, m.prefs.glyphMode).Text)
 			if !strings.Contains(ansi.Strip(frameRows[m.layout.height-footerHeight]), "new") {
 				t.Fatalf("full %v width %d footer must begin with the target", full, width)
 			}

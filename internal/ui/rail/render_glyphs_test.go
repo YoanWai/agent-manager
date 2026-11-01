@@ -143,3 +143,24 @@ func TestPortableGlyphsPreserveUserTextAndSpinnerGeometry(t *testing.T) {
 		}
 	}
 }
+
+func TestNavigationRailOverflowPreservesTargets(t *testing.T) {
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		var rows []treeRow
+		for i := 0; i < 20; i++ {
+			rows = append(rows, treeRow{kind: SessionRow, sess: Session{ID: fmt.Sprint(i), Name: "literal ↑↓←→", Status: "idle"}})
+		}
+		r := renderer{model: Model{rows: rows, cursor: 8}, ctx: RenderContext{GlyphMode: mode, Width: 80, ComfortableRows: true}, palette: newPalette(theme.Palettes[0]), previous: Frame{Window: Range{Start: 7}}, frame: Frame{Handles: map[string]int{}, visible: map[string]bool{}}}
+		lines := r.entryLines(8)
+		first, last := lines[0], lines[len(lines)-1]
+		if !first.HitOK || first.Hit != rows[r.frame.Window.Start].selection() || !last.HitOK || last.Hit != rows[r.frame.Window.End].selection() {
+			t.Fatal("overflow row lost target")
+		}
+		if mode == presentation.GlyphModeBasic && (!strings.Contains(first.Text, "more above") || !strings.Contains(last.Text, "more below")) {
+			t.Fatalf("overflow mode not applied: %s / %s", first.Text, last.Text)
+		}
+		if len(lines) != 8 {
+			t.Fatalf("line count=%d", len(lines))
+		}
+	}
+}

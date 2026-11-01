@@ -584,7 +584,7 @@ func TestQuickFooterKeepsShiftTabBesideTab(t *testing.T) {
 	setQuickTool(m, slices.Index(quickTools(m), "claude"))
 	m.quick().RestartChoice(m.spawnHost())
 	var keys []string
-	for _, pair := range m.quick().Legend(m.quickBarHost()) {
+	for _, pair := range m.quick().Legend(m.quickBarHost(), m.prefs.glyphMode) {
 		keys = append(keys, pair[0])
 	}
 	tab := slices.Index(keys, "tab")

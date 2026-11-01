@@ -175,13 +175,13 @@ func (b binding) helpKey() string {
 
 // HelpRows are the ? map's rows. The help row names the configured help
 // key, less any key Review already answers to.
-func HelpRows(helpKey keybind.Binding) [][2]string {
+func HelpRows(helpKey keybind.Binding, mode presentation.GlyphMode) [][2]string {
 	var rows [][2]string
 	for _, b := range keymap {
 		if b.Long == "" {
 			continue
 		}
-		key := b.helpKey()
+		key := presentation.NavigationLabel(mode, b.helpKey())
 		if b.Action == actHelp {
 			if key = EffectiveHelpBinding(helpKey).Label(); key == "" {
 				continue

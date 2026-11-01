@@ -81,6 +81,7 @@ func (m *Model) statusLine() string {
 		pagesScrollback = true
 	}
 	return uistatusbar.Line(uistatusbar.Message{
+		GlyphMode:       m.prefs.glyphMode,
 		Report:          m.errBar.text,
 		Kind:            m.errBar.kind(),
 		Focused:         m.focused(),
