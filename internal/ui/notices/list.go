@@ -148,16 +148,14 @@ func (p Panel) Active(src Sources) []Notice {
 		}
 	}
 	slices.SortStableFunc(kept, func(a, b Notice) int {
-		if a.Kind != b.Kind {
-			return cmp.Compare(a.Kind, b.Kind)
-		}
-		switch {
-		case a.Pinned && !b.Pinned:
-			return -1
-		case b.Pinned && !a.Pinned:
-			return 1
-		}
-		return 0
+		return cmp.Or(cmp.Compare(a.Kind, b.Kind), cmp.Compare(pinRank(a), pinRank(b)))
 	})
 	return kept
+}
+
+func pinRank(n Notice) int {
+	if n.Pinned {
+		return 0
+	}
+	return 1
 }
