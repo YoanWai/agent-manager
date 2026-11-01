@@ -12,11 +12,13 @@ import (
 var paneLinkPattern = regexp.MustCompile(`https?://\S+`)
 
 // paneLink is one row's cells, by column, that open url. A written link's
-// url is its own text, so a wrap carries the text on.
+// url is its own text, so a wrap carries the text on. A shown link's text is
+// its url, so a reader sees where it goes.
 type paneLink struct {
 	start, end int
 	url        string
 	written    bool
+	shown      bool
 }
 
 type wrapPiece struct {
@@ -35,29 +37,33 @@ func ReadPaneLinks(rows []string, box Box) PaneLinks {
 	return PaneLinks{box: box, links: frameLinks(safe, plain, box.Width)}
 }
 
-// At is the link a click on screen cell x, y opens.
-func (p PaneLinks) At(x, y int) string {
+// ShownAt is the link at screen cell x, y when its text is its own address,
+// so a click there goes where the reader expects without a hover first.
+func (p PaneLinks) ShownAt(x, y int) string {
 	row, col := y-p.box.Y, x-p.box.X
 	if !p.box.Valid || row < 0 || row >= len(p.links) || col < 0 || col >= p.box.Width {
 		return ""
 	}
-	return linkIn(p.links[row], col)
+	if link := linkIn(p.links[row], col); link.shown {
+		return link.url
+	}
+	return ""
 }
 
 func (m Model) linkAt(row, col int) string {
 	if row < 0 || row >= len(m.frame.links) {
 		return ""
 	}
-	return linkIn(m.frame.links[row], col)
+	return linkIn(m.frame.links[row], col).url
 }
 
-func linkIn(links []paneLink, col int) string {
+func linkIn(links []paneLink, col int) paneLink {
 	for _, link := range links {
 		if col >= link.start && col < link.end {
-			return link.url
+			return link
 		}
 	}
-	return ""
+	return paneLink{}
 }
 
 // paneText is each captured row with the escapes that move the cursor
@@ -80,7 +86,7 @@ func frameLinks(raw, plain []string, width int) [][]paneLink {
 	own := make([]int, len(raw))
 	for row := range raw {
 		if strings.Contains(raw[row], "://") {
-			links[row] = append(rowHyperlinks(raw[row]), writtenLinks(plain[row])...)
+			links[row] = append(rowHyperlinks(raw[row], plain[row]), writtenLinks(plain[row])...)
 			own[row] = len(links[row])
 		}
 	}
@@ -92,7 +98,7 @@ func frameLinks(raw, plain []string, width int) [][]paneLink {
 				link.url = trimLinkPunctuation(link.url + text)
 			}
 			for _, piece := range pieces {
-				links[piece.row] = append(links[piece.row], paneLink{end: piece.end, url: link.url})
+				links[piece.row] = append(links[piece.row], paneLink{end: piece.end, url: link.url, shown: link.shown})
 			}
 		}
 	}
@@ -107,13 +113,15 @@ func writtenLinks(line string) []paneLink {
 			end:     ansi.StringWidth(line[:span[1]]),
 			url:     line[span[0]:span[1]],
 			written: true,
+			shown:   true,
 		})
 	}
 	return links
 }
 
-// rowHyperlinks reads the OSC 8 hyperlinks capture-pane -e keeps, by column.
-func rowHyperlinks(line string) []paneLink {
+// rowHyperlinks reads the OSC 8 hyperlinks capture-pane -e keeps, by column,
+// from a row and the same row as plain text.
+func rowHyperlinks(line, plain string) []paneLink {
 	var links []paneLink
 	parser := ansi.GetParser()
 	defer ansi.PutParser(parser)
@@ -123,6 +131,8 @@ func rowHyperlinks(line string) []paneLink {
 	closeLink := func() {
 		if open.url != "" && col > open.start {
 			open.end = col
+			startByte, endByte := graphemeRangeAtColumns(plain, open.start, open.end)
+			open.shown = strings.TrimSpace(plain[startByte:endByte]) == open.url
 			links = append(links, open)
 		}
 	}

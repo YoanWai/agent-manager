@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -101,7 +102,7 @@ func OpenerCommand(goos, target string) (*exec.Cmd, error) {
 		if !ok {
 			return nil, errors.New("the file link does not name a file on this machine")
 		}
-		return revealCommand(goos, path), nil
+		return revealCommand(goos, path)
 	}
 	switch goos {
 	case "darwin":
@@ -117,11 +118,12 @@ func OpenerCommand(goos, target string) (*exec.Cmd, error) {
 // another host, as a UNC share does, is refused, since Windows would contact
 // that host to look it up.
 func localPath(goos string, link *url.URL) (string, bool) {
-	if (link.Host != "" && link.Host != "localhost") || strings.HasPrefix(link.Path, "//") {
+	if (link.Host != "" && link.Host != "localhost") || strings.HasPrefix(link.Path, "//") ||
+		strings.IndexFunc(link.Path, unicode.IsControl) >= 0 {
 		return "", false
 	}
 	if goos == "windows" {
-		if !windowsDrivePath.MatchString(link.Path) {
+		if !windowsDrivePath.MatchString(link.Path) || strings.ContainsAny(link.Path, `",;`) {
 			return "", false
 		}
 		return strings.ReplaceAll(strings.TrimPrefix(link.Path, "/"), "/", `\`), true
@@ -132,14 +134,22 @@ func localPath(goos string, link *url.URL) (string, bool) {
 	return filepath.Clean(link.Path), true
 }
 
-func revealCommand(goos, path string) *exec.Cmd {
+// revealCommand shows path in the file manager. explorer reads its switches
+// from commas in the one argument, which localPath keeps out of path. xdg-open
+// has no reveal, so it opens the folder, and only one that is a folder here,
+// since xdg-open runs whatever else it is handed.
+func revealCommand(goos, path string) (*exec.Cmd, error) {
 	switch goos {
 	case "darwin":
-		return exec.Command("open", "-R", path)
+		return exec.Command("open", "-R", path), nil
 	case "windows":
-		return exec.Command("explorer", "/select,"+path)
+		return exec.Command("explorer", "/select,"+path), nil
 	default:
-		return exec.Command("xdg-open", filepath.Dir(path))
+		folder := filepath.Dir(path)
+		if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+			return nil, errors.New("the file link does not sit in a folder on this machine")
+		}
+		return exec.Command("xdg-open", folder), nil
 	}
 }
 

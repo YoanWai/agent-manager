@@ -2684,8 +2684,9 @@ func TestPreviewPressFocusesOnlyALiveSession(t *testing.T) {
 	}
 }
 
-// A press on a link in the preview beside the list opens it instead of
-// focusing the session, and a press beside the link still focuses.
+// A press on a link whose text is its address in the preview beside the list
+// opens it instead of focusing the session. A label that hides its target
+// focuses, so the hover in focus names the target before any click.
 func TestPreviewPressOnALinkOpensIt(t *testing.T) {
 	opened := ""
 	prev := openURL
@@ -2696,18 +2697,19 @@ func TestPreviewPressOnALinkOpensIt(t *testing.T) {
 	createSession(t, m, "alpha", t.TempDir(), "")
 	m.selectSessionRow(t, "alpha")
 	waitForPreview(t, m)
-	m.workspace.preview = "read \x1b]8;;https://example.com/docs\x1b\\the docs\x1b]8;;\x1b\\ now\n"
+	m.workspace.preview = "read https://example.com/docs now\nsee \x1b]8;;https://example.com/hidden\x1b\\the guide\x1b]8;;\x1b\\ here\n"
 	view := strings.Split(ansi.Strip(preparedView(m)), "\n")
-	x, y := -1, -1
-	for row, line := range view {
-		if col := strings.Index(line, "the docs"); col >= 0 {
-			x, y = ansi.StringWidth(line[:col]), row
+	cell := func(text string) (int, int) {
+		for row, line := range view {
+			if col := strings.Index(line, text); col >= 0 {
+				return ansi.StringWidth(line[:col]), row
+			}
 		}
-	}
-	if y < 0 {
-		t.Fatalf("test setup: the preview does not show the link:\n%s", strings.Join(view, "\n"))
+		t.Fatalf("test setup: the preview does not show %q:\n%s", text, strings.Join(view, "\n"))
+		return 0, 0
 	}
 
+	x, y := cell("https://example.com/docs")
 	updated, cmd := m.handleMouse(tea.MouseMsg{X: x + 2, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	m = updated.(*Model)
 	if m.focused() || cmd == nil {
@@ -2718,9 +2720,10 @@ func TestPreviewPressOnALinkOpensIt(t *testing.T) {
 		t.Fatalf("opened %q", opened)
 	}
 
-	m = leftPress(m, x-3, y)
+	x, y = cell("the guide")
+	m = leftPress(m, x+2, y)
 	m.drainEffects(t)
-	if !m.focused() {
-		t.Fatalf("a press beside the link should focus, screen = %v", m.screenID())
+	if !m.focused() || opened != "https://example.com/docs" {
+		t.Fatalf("a press on a hidden-target label should focus, focused=%v opened=%q", m.focused(), opened)
 	}
 }

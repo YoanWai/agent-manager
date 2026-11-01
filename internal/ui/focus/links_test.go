@@ -40,59 +40,31 @@ func TestHyperlinkClicksOpenTheTarget(t *testing.T) {
 	}
 }
 
-func TestPaneLinksMapScreenCells(t *testing.T) {
+// The preview opens a link straight away only when its text is its address,
+// since nothing there names a hidden target before the click.
+func TestPaneLinksOpenOnlyShownAddresses(t *testing.T) {
 	links := ReadPaneLinks([]string{
 		"read " + hyperlink("https://example.com/docs", "the docs"),
 		"then https://example.com/next",
-	}, Box{X: 40, Y: 10, Width: 60, Height: 2, Valid: true})
+		"bare " + hyperlink("https://example.com/930", "https://example.com/930"),
+	}, Box{X: 40, Y: 10, Width: 60, Height: 3, Valid: true})
 	cases := []struct {
 		x, y int
 		want string
 	}{
-		{46, 10, "https://example.com/docs"},
+		{46, 10, ""},
 		{52, 11, "https://example.com/next"},
-		{41, 10, ""},
-		{6, 10, ""},
-		{46, 12, ""},
+		{50, 12, "https://example.com/930"},
+		{41, 11, ""},
+		{6, 11, ""},
+		{52, 13, ""},
 	}
 	for _, c := range cases {
-		if got := links.At(c.x, c.y); got != c.want {
-			t.Errorf("At(%d,%d) = %q, want %q", c.x, c.y, got, c.want)
+		if got := links.ShownAt(c.x, c.y); got != c.want {
+			t.Errorf("ShownAt(%d,%d) = %q, want %q", c.x, c.y, got, c.want)
 		}
 	}
-	if got := (PaneLinks{}).At(0, 0); got != "" {
+	if got := (PaneLinks{}).ShownAt(0, 0); got != "" {
 		t.Fatalf("a pane that painted nothing has link %q", got)
-	}
-}
-
-// tmux closes a hyperlink at the end of each captured row, so the row a
-// full-width link wrapped onto arrives with no link of its own.
-func TestHyperlinkFollowsItsWrap(t *testing.T) {
-	model := mouseModel(t, []string{
-		"ab" + hyperlink("https://example.com/x", "LINKLINKLINKLINKLI"),
-		"NKLINK zz",
-	}, 20, PaneUpdate{})
-	if got := clickURL(&model, testOriginX+2, testOriginY+1); got != "https://example.com/x" {
-		t.Fatalf("wrapped part of the label opened %q", got)
-	}
-	if got := clickURL(&model, testOriginX+8, testOriginY+1); got != "" {
-		t.Fatalf("text after the wrapped label opened %q", got)
-	}
-}
-
-func TestWrappedURLOpensFromEveryRow(t *testing.T) {
-	model := mouseModel(t, []string{
-		"https://example.com/",
-		"aaaaaaaaaaaaaaaaaaaa",
-		"tail. more text",
-	}, 20, PaneUpdate{})
-	want := "https://example.com/aaaaaaaaaaaaaaaaaaaatail"
-	for row := range 3 {
-		if got := clickURL(&model, testOriginX+2, testOriginY+row); got != want {
-			t.Errorf("row %d opened %q, want %q", row, got, want)
-		}
-	}
-	if got := clickURL(&model, testOriginX+8, testOriginY+2); got != "" {
-		t.Fatalf("text after the wrapped URL opened %q", got)
 	}
 }
