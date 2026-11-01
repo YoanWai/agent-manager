@@ -680,7 +680,7 @@ type launchOptions struct {
 	rollbackWorktree bool
 }
 
-func (m *Model) launchNewSession(sess store.Session, tool config.Tool, baseCommand string, opts launchOptions) error {
+func (m *Model) launchNewSession(sess store.Session, tool config.CLI, baseCommand string, opts launchOptions) error {
 	paneWidth, paneHeight := m.paneTargetSize()
 	launched, err := m.services.lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:          sess,

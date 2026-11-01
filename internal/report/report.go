@@ -270,10 +270,10 @@ func (r *Reporter) gather(sessionID string) (Context, error) {
 	if err != nil {
 		return Context{}, err
 	}
-	tool := cfg.Tools[toolName]
-	if tool.Shell {
+	if cfg.IsTool(toolName) {
 		return gathered, nil
 	}
+	tool := cfg.CLIs[toolName]
 	gathered.Tool = toolLabel(toolName)
 	// A CLI that will not name its version is context missing, not a failure.
 	if fields := strings.Fields(tool.Command); len(fields) > 0 {

@@ -66,7 +66,7 @@ func (d *Form) View(h FormHost, facts FormFacts) (string, [][2]string) {
 	if len(d.toolNames) > 0 {
 		toolVal = st.Subtle.Render(chrome.ChoiceLeftGlyph+" ") + st.Value.Render(d.toolNames[d.toolIndex]) + st.Subtle.Render(" "+chrome.ChoiceRightGlyph)
 	}
-	field("tool", toolVal, FieldTool)
+	field("CLI", toolVal, FieldTool)
 	toolName, ch := d.Tool(), &d.choice
 	if value, shown := ch.ProfileRow(h, toolName, st); shown {
 		field("profile", value, FieldProfile)

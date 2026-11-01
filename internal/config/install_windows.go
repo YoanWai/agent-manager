@@ -24,5 +24,5 @@ func checkBatchShim(binary, path string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("%s is a batch file, which cannot take a prompt holding \" safely; point the tool's command at its .exe or .ps1", path)
+	return fmt.Errorf("%s is a batch file, which cannot take a prompt holding \" safely; point the CLI's command at its .exe or .ps1", path)
 }

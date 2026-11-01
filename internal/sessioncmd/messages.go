@@ -28,7 +28,7 @@ func (r *runtime) deliverable(target store.Session) error {
 	if target.Archived {
 		return fmt.Errorf("session %s is archived, so Agent Manager no longer polls it; restore it with %s first", target.ID, r.words.Restore)
 	}
-	if r.cfg.Tools[target.Tool].ActivityCutoff == "" {
+	if r.cfg.CLIs[target.Tool].ActivityCutoff == "" {
 		return fmt.Errorf("session %s gives Agent Manager no way to tell when it is ready to read a message: %s", target.ID, unreadableTool(r.cfg, target.Tool))
 	}
 	return nil
@@ -37,7 +37,7 @@ func (r *runtime) deliverable(target store.Session) error {
 // unreadableTool says why the poller cannot judge a tool's readiness; a
 // session outliving the build that shipped its tool is the common case.
 func unreadableTool(cfg config.Config, name string) string {
-	if _, known := cfg.Tools[name]; !known {
+	if _, known := cfg.CLIs[name]; !known {
 		return fmt.Sprintf("%q is not a CLI it supports", name)
 	}
 	return fmt.Sprintf("%q marks no input box for it to read", name)
@@ -295,7 +295,7 @@ func (r *runtime) heldReason(sessionID string) (string, error) {
 	if !r.driver.Exists(target.ID) {
 		return fmt.Sprintf("session %s is not running, so nothing will type this in; revive it with %s", sessionID, r.words.Revive), nil
 	}
-	if r.cfg.Tools[target.Tool].ActivityCutoff == "" {
+	if r.cfg.CLIs[target.Tool].ActivityCutoff == "" {
 		return fmt.Sprintf("Agent Manager cannot tell when %s is ready, so nothing will type this in: %s", sessionID, unreadableTool(r.cfg, target.Tool)), nil
 	}
 	// The poller types into a resting session, and an errored one is not

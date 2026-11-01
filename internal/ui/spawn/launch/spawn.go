@@ -89,7 +89,8 @@ func Run(services Services, request Request) (Result, error) {
 	if services.Lifecycle == nil {
 		return result, errors.New("spawn requires the lifecycle service")
 	}
-	tool := services.Config.Tools[request.ToolName].WithChoice(request.Choice)
+	tool, _ := services.Config.Pane(request.ToolName)
+	tool = tool.WithChoice(request.Choice)
 	dir := request.Dir
 	if dir == "" {
 		if request.Kind == Shell {

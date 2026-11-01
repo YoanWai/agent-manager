@@ -48,7 +48,7 @@ body:
     id: tool
     attributes:
       label: Which agent CLI
-      description: The tool running in the session, if the bug involves one.
+      description: The CLI running in the session, if the bug involves one.
       options:
         - Claude Code
         - Codex

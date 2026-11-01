@@ -456,13 +456,13 @@ func TestEmptyGroupsKeyIsRefusedInTheArchivedView(t *testing.T) {
 		t.Fatalf("e should hide the empty group, got %v want %v", got, want)
 	}
 
-	press("t")
+	press("T")
 	press("e")
 	if !m.rail.HideEmptyGroups() {
 		t.Fatal("e in the archived view should leave the hide-empty setting alone")
 	}
 
-	press("t")
+	press("T")
 	if got, want := m.groupRowPaths(), []string{"work"}; !slices.Equal(got, want) {
 		t.Fatalf("back on the active list, empty groups should still be hidden, got %v want %v", got, want)
 	}
@@ -771,12 +771,12 @@ func TestForkClearsStatusFilter(t *testing.T) {
 	m.rebuildRows()
 	m.selectSessionRow(t, "source")
 
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = "true {id}; cat"
 	if runtime.GOOS == "windows" {
 		tool.ForkCommand = testfixture.ModeCommand("cat-stdin") + " {id}"
 	}
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 
 	m.openFork()
 	openFork(m).SetName("fork-under-filter")

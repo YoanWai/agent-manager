@@ -111,12 +111,14 @@ func New(deps Dependencies, opts Options) *Runner {
 
 func OptionsFromConfig(cfg config.Config) Options {
 	opts := Options{Interval: config.PollInterval, StatusSources: map[string]string{}, SessionStores: map[string]string{}, MCPStyles: map[string]string{}, ReportStyles: map[string]string{}, ShellTools: map[string]bool{}, Binaries: NewToolBinaries(cfg)}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		opts.StatusSources[name] = tool.StatusSource
 		opts.SessionStores[name] = tool.SessionStore
 		opts.MCPStyles[name] = mcpreg.Style(name, tool.MCP)
 		opts.ReportStyles[name] = tool.SessionReport
-		opts.ShellTools[name] = tool.Shell
+	}
+	for name := range cfg.Tools {
+		opts.ShellTools[name] = true
 	}
 	return opts
 }

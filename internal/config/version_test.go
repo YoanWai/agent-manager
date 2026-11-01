@@ -39,7 +39,7 @@ func fakeVersionCLI(t *testing.T, name, banner string) (path string, asked *int)
 func TestCheckVersionRefusesAnOlderRelease(t *testing.T) {
 	fakeVersionCLI(t, "pi", "0.84.2\n")
 
-	err := CheckVersion(Tool{Command: "pi --mode rpc", MinimumVersion: "0.84.3"})
+	err := CheckVersion(CLI{Command: "pi --mode rpc", MinimumVersion: "0.84.3"})
 	var outdated OutdatedToolError
 	if !errors.As(err, &outdated) {
 		t.Fatalf("err = %v, want OutdatedToolError", err)
@@ -55,7 +55,7 @@ func TestCheckVersionRefusesAnOlderRelease(t *testing.T) {
 func TestCheckVersionAcceptsTheMinimumAndNewer(t *testing.T) {
 	for _, banner := range []string{"0.84.3\n", "1.3.0\n"} {
 		fakeVersionCLI(t, "pi", banner)
-		if err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"}); err != nil {
+		if err := CheckVersion(CLI{Command: "pi", MinimumVersion: "0.84.3"}); err != nil {
 			t.Fatalf("%q: %v", banner, err)
 		}
 	}
@@ -63,7 +63,7 @@ func TestCheckVersionAcceptsTheMinimumAndNewer(t *testing.T) {
 
 func TestCheckVersionSkipsToolsWithoutAMinimum(t *testing.T) {
 	_, asked := fakeVersionCLI(t, "claude", "2.1.304 (Claude Code)\n")
-	if err := CheckVersion(Tool{Command: "claude"}); err != nil {
+	if err := CheckVersion(CLI{Command: "claude"}); err != nil {
 		t.Fatal(err)
 	}
 	if *asked != 0 {
@@ -73,7 +73,7 @@ func TestCheckVersionSkipsToolsWithoutAMinimum(t *testing.T) {
 
 func TestCheckVersionAsksEachBuildOnce(t *testing.T) {
 	path, asked := fakeVersionCLI(t, "pi", "0.84.3\n")
-	tool := Tool{Command: "pi", MinimumVersion: "0.84.3"}
+	tool := CLI{Command: "pi", MinimumVersion: "0.84.3"}
 	for range 3 {
 		if err := CheckVersion(tool); err != nil {
 			t.Fatal(err)
@@ -103,7 +103,7 @@ func TestCheckVersionReportsAMissingCLIAsNotInstalled(t *testing.T) {
 	}
 	t.Cleanup(func() { lookPath, readVersionOutput = origLook, origRead })
 
-	err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"})
+	err := CheckVersion(CLI{Command: "pi", MinimumVersion: "0.84.3"})
 	var missing MissingToolError
 	if !errors.As(err, &missing) || missing.Binary != "pi" || missing.WindowsPath != "" {
 		t.Fatalf("err = %v, want pi missing in this distro", err)
@@ -128,7 +128,7 @@ func TestCheckVersionDoesNotReadAWindowsOnlyCLI(t *testing.T) {
 	}
 	t.Cleanup(func() { readVersionOutput = origRead })
 
-	err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"})
+	err := CheckVersion(CLI{Command: "pi", MinimumVersion: "0.84.3"})
 	var missing MissingToolError
 	if !errors.As(err, &missing) || missing.Binary != "pi" || missing.WindowsPath != path {
 		t.Fatalf("err = %v, want the Windows copy at %s", err, path)
@@ -140,7 +140,7 @@ func TestCheckVersionDoesNotReadAWindowsOnlyCLI(t *testing.T) {
 
 func TestCheckVersionNamesABannerWithoutAVersion(t *testing.T) {
 	fakeVersionCLI(t, "pi", "pi dev build\n")
-	err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"})
+	err := CheckVersion(CLI{Command: "pi", MinimumVersion: "0.84.3"})
 	if err == nil || !strings.Contains(err.Error(), "pi dev build") {
 		t.Fatalf("err = %v, want the banner quoted", err)
 	}
@@ -166,13 +166,13 @@ func TestBuiltinMinimumVersionsParse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, tool := range cfg.Tools {
+	for name, tool := range cfg.CLIs {
 		if tool.MinimumVersion != "" && !versionNumber.MatchString(tool.MinimumVersion) {
 			t.Errorf("%s minimum_version %q is not a version", name, tool.MinimumVersion)
 		}
 	}
-	if cfg.Tools["pi"].MinimumVersion != "0.84.3" {
-		t.Fatalf("pi minimum_version = %q", cfg.Tools["pi"].MinimumVersion)
+	if cfg.CLIs["pi"].MinimumVersion != "0.84.3" {
+		t.Fatalf("pi minimum_version = %q", cfg.CLIs["pi"].MinimumVersion)
 	}
 }
 
@@ -181,7 +181,7 @@ func TestConcurrentVersionChecksShareTheProbe(t *testing.T) {
 	var workers sync.WaitGroup
 	for range 16 {
 		workers.Go(func() {
-			if err := CheckVersion(Tool{Command: "pi", MinimumVersion: "0.84.3"}); err != nil {
+			if err := CheckVersion(CLI{Command: "pi", MinimumVersion: "0.84.3"}); err != nil {
 				t.Error(err)
 			}
 		})

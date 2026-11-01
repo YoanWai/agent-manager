@@ -215,7 +215,7 @@ def smoke(sandbox, binary):
     sandbox.frame('group-form-name', 'e2e-group')
     sandbox.key('Enter')
     sandbox.frame('group-created', 'e2e-group', 'New Group')
-    sandbox.key('T')
+    sandbox.key('t')
     sandbox.frame('terminal-row', 'terminal-')
     panes = sandbox.wait('terminal-panes',
                         lambda: sandbox.tmux('list-panes', '-a', '-F',

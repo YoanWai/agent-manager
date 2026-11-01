@@ -22,8 +22,15 @@ func TestContentMarksPreserveQuotedTextForEveryTool(t *testing.T) {
 		if mode == presentation.GlyphModeAdvanced {
 			prompt, reply = "❯ ", "↳ "
 		}
-		for toolName, tool := range cfg.Tools {
-			sess := Session{ID: "quoted", Tool: toolName, Status: "idle", IsShell: tool.Shell, Prompt: text, PaneLine: text}
+		panes := map[string]bool{}
+		for name := range cfg.CLIs {
+			panes[name] = false
+		}
+		for name := range cfg.Tools {
+			panes[name] = true
+		}
+		for toolName, isShell := range panes {
+			sess := Session{ID: "quoted", Tool: toolName, Status: "idle", IsShell: isShell, Prompt: text, PaneLine: text}
 
 			got := ansi.Strip(r.replyCell(sess, r.palette.subtle, 200))
 			if got != reply+text {
@@ -36,13 +43,13 @@ func TestContentMarksPreserveQuotedTextForEveryTool(t *testing.T) {
 			sess.PaneLine = text
 			tall := strings.Split(ansi.Strip(r.tallRow(sess, "head", "", "  ", false, 200, "")), "\n")
 			wantRows := 3
-			if tool.Shell {
+			if isShell {
 				wantRows = 2
 			}
 			if len(tall) != wantRows {
 				t.Fatalf("%s/%s has %d rows, want %d", mode, toolName, len(tall), wantRows)
 			}
-			if !tool.Shell && !strings.Contains(tall[1], prompt+text) {
+			if !isShell && !strings.Contains(tall[1], prompt+text) {
 				t.Fatalf("missing prompt: %q", tall[1])
 			}
 			for _, line := range tall {

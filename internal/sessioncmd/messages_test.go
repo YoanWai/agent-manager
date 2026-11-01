@@ -375,7 +375,7 @@ func TestASenderIsToldWhenTheRecipientsToolIsOneThisBuildDoesNotShip(t *testing.
 		t.Fatalf("open: %v", err)
 	}
 	defer runtime.store.Close()
-	delete(runtime.cfg.Tools, "resting")
+	delete(runtime.cfg.CLIs, "resting")
 
 	reason, err := runtime.heldReason(worker.ID)
 	if err != nil {

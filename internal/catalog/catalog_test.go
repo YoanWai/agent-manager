@@ -223,7 +223,7 @@ func TestRefreshRefusesACLIOlderThanItsMinimum(t *testing.T) {
 	}
 	t.Setenv("CATALOG_TESTDATA", testdata)
 	t.Setenv("CATALOG_FAKE", "pi-0.84.2")
-	tool := config.Tool{Command: os.Args[0], Catalog: "pi", CatalogCommand: os.Args[0], MinimumVersion: "0.84.3"}
+	tool := config.CLI{Command: os.Args[0], Catalog: "pi", CatalogCommand: os.Args[0], MinimumVersion: "0.84.3"}
 
 	_, err = Refresh(context.Background(), t.TempDir(), "pi", tool)
 	var outdated config.OutdatedToolError
@@ -242,7 +242,7 @@ func TestLoadRefusesAnOlderCLIBeforeTheKeptAnswer(t *testing.T) {
 	t.Setenv("CATALOG_TESTDATA", testdata)
 	t.Setenv("CATALOG_FAKE", "pi-0.84.2")
 	dir := t.TempDir()
-	tool := config.Tool{Command: os.Args[0], Catalog: "pi", CatalogCommand: os.Args[0], MinimumVersion: "0.84.3"}
+	tool := config.CLI{Command: os.Args[0], Catalog: "pi", CatalogCommand: os.Args[0], MinimumVersion: "0.84.3"}
 	if err := Keep(dir, "pi", tool, Catalog{Models: []Model{{ID: "kept"}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestCachedAnswersAgeAndFollowTheBinary(t *testing.T) {
 	t.Setenv("CATALOG_TESTDATA", testdata)
 	t.Setenv("CATALOG_FAKE", "acp-gemini")
 	configDir := t.TempDir()
-	tool := config.Tool{Catalog: "acp", CatalogCommand: os.Args[0]}
+	tool := config.CLI{Catalog: "acp", CatalogCommand: os.Args[0]}
 	if _, _, ok := Cached(configDir, "gemini", tool); ok {
 		t.Fatal("a cache before any answer")
 	}

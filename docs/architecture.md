@@ -43,7 +43,7 @@ Under `internal/`:
 - `store`: SQLite state: sessions, groups, settings, inbox, tasks, reservations.
 - `tmux`: the `Driver` on the dedicated socket, the control-mode client, bindings, attach.
 - `status`: classifies pane output into agent states.
-- `config`: built-in tool definitions and CLI install.
+- `config`: built-in CLI and tool definitions, and CLI install.
 - `catalog`: asks each agent CLI for its models, efforts and profiles. `catalog/value`: what it answered.
 - `launch`: builds the shell command and environment for a managed session.
 - `agentsession`, `conversation`, `sessionreport`: find and track the conversation an agent is on.

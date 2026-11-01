@@ -44,7 +44,7 @@ func TestLifecycleNewSessionRejectsArchivedPlacement(t *testing.T) {
 						t.Fatal(err)
 					}
 				}
-				tool := runtime.Config.Tools[sess.Tool]
+				tool := runtime.Config.CLIs[sess.Tool]
 				if operation == "spawn" {
 					_, err = lifecycle.Spawn(SpawnRequest{Session: sess, Tool: tool, Plan: launch.Plan{Command: "sleep 30"}, Pane: PaneSize{80, 24}})
 				} else {
@@ -91,7 +91,7 @@ func TestLifecycleLaunchRefusesArchivedPlacementFromAnchor(t *testing.T) {
 				t.Fatal(err)
 			}
 			child := store.Session{ID: "child", Name: "child", Tool: "echoer", Cwd: anchor.Cwd}
-			_, err = lifecycle.Launch(LaunchRequest{Session: child, Tool: runtime.Config.Tools[child.Tool], BaseCommand: "sleep 30", Pane: PaneSize{80, 24}, BesideSessionID: anchor.ID})
+			_, err = lifecycle.Launch(LaunchRequest{Session: child, Tool: runtime.Config.CLIs[child.Tool], BaseCommand: "sleep 30", Pane: PaneSize{80, 24}, BesideSessionID: anchor.ID})
 			if err == nil || !strings.Contains(err.Error(), "archived") {
 				t.Errorf("launch beside archived placement error = %v", err)
 			}

@@ -204,7 +204,7 @@ func TestSettingsShowsVersion(t *testing.T) {
 
 func TestSettingsDocsRowOpensDocs(t *testing.T) {
 	m := footModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.openSettings()
 
 	var opened string
@@ -253,7 +253,7 @@ func TestSettingsDocsRowOpensDocs(t *testing.T) {
 
 func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 	m := footModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.openSettings()
 	if !m.settingsOpen() {
 		t.Fatalf("settings should open, screen = %v", m.screenID())
@@ -290,7 +290,7 @@ func TestSettingsBugReportRowOpensIssue(t *testing.T) {
 
 func TestSettingsFeatureRequestRowOpensForm(t *testing.T) {
 	m := footModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.openSettings()
 
 	var opened string
@@ -317,7 +317,7 @@ func TestSettingsFeatureRequestRowOpensForm(t *testing.T) {
 func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
 	m := footModel(t)
 	m.layout.width, m.layout.height = 120, 60
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.openSettings()
 	// Keep focus off the CTA rows so the accent2 unfocused styling is what paints.
 	m.settingsCard().State().Field = uisettings.FieldTool
@@ -342,7 +342,7 @@ func TestSettingsBugReportRowIsHighlighted(t *testing.T) {
 
 func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 	m := buildModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{
 		"claude": {Command: "cat"},
 		"codex":  {Command: "cat"},
 		"grok":   {Command: "cat"},
@@ -398,7 +398,7 @@ func TestSettingsCLIPickerHidesFromNewSessions(t *testing.T) {
 
 func TestSettingsCLIPickerKeepsOneEnabled(t *testing.T) {
 	m := buildModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{
 		"claude": {Command: "cat"},
 		"codex":  {Command: "cat"},
 	}}
@@ -422,7 +422,7 @@ func TestSettingsCLIPickerKeepsOneEnabled(t *testing.T) {
 
 func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 	m := buildModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	var opened string
 	openBrowser = func(url string) error {
 		opened = url
@@ -448,7 +448,7 @@ func TestSettingsCLIRequestSupportOpensIssue(t *testing.T) {
 
 func TestCLIPickerShowsSupportAction(t *testing.T) {
 	m := buildModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{
 		"claude": {Command: "cat"},
 		"codex":  {Command: "cat"},
 	}}
@@ -468,7 +468,7 @@ func TestCLIPickerShowsSupportAction(t *testing.T) {
 
 func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	m := footModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.release.Version = "v0.2.0"
 	m.release.Latest = "v0.3.0"
 	m.openSettings()
@@ -550,7 +550,7 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 
 func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
 	m := footModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.release.Version = "v0.3.0"
 	m.openSettings()
 	m.settingsCard().State().Field = uisettings.FieldUpdate
@@ -575,7 +575,7 @@ func TestSettingsUpdateRowIdleWhenCurrent(t *testing.T) {
 
 func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 	m := footModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.release.Version = "v0.2.0"
 	m.release.Latest = "v0.3.0"
 	m.openSettings()
@@ -625,7 +625,7 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 
 func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 	m := footModel(t)
-	m.services.cfg = config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat"}}}
+	m.services.cfg = config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat"}}}
 	m.release.Version = "v0.2.0"
 	m.release.Latest = "v0.3.0"
 	m.openSettings()

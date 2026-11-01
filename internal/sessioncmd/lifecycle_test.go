@@ -35,7 +35,7 @@ func TestLifecycleLaunchRollsBackPaneAndHookWhenStoreRejectsRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := lifecycle.Launch(LaunchRequest{
-		Session: sess, Tool: runtime.Config.Tools[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24},
+		Session: sess, Tool: runtime.Config.CLIs[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24},
 	}); err == nil {
 		t.Fatal("duplicate row launch succeeded")
 	}
@@ -58,7 +58,7 @@ func TestLifecycleLaunchReturnsLabelFailureAfterPersisting(t *testing.T) {
 	lifecycle.setLabel = func(string, string) error { return want }
 	sess := store.Session{ID: "labelerr", Name: "label-error", Tool: "echoer", Cwd: t.TempDir(), Status: status.Starting}
 	result, err := lifecycle.Launch(LaunchRequest{
-		Session: sess, Tool: runtime.Config.Tools[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24},
+		Session: sess, Tool: runtime.Config.CLIs[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +348,7 @@ func TestLifecycleLaunchReportsFailedPaneRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	sess := store.Session{ID: "rollback-failure", Name: "rollback", Tool: "echoer", Cwd: t.TempDir(), Status: status.Starting}
-	_, err = lifecycle.Launch(LaunchRequest{Session: sess, Tool: runtime.Config.Tools[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24}})
+	_, err = lifecycle.Launch(LaunchRequest{Session: sess, Tool: runtime.Config.CLIs[sess.Tool], BaseCommand: "sleep 30", Pane: PaneSize{Width: 80, Height: 24}})
 	if !errors.Is(err, rollbackErr) || !strings.Contains(err.Error(), sess.ID) || !strings.Contains(err.Error(), "has no row") || !strings.Contains(err.Error(), "row persistence failed") {
 		t.Fatalf("rollback error omitted persistence or surviving pane context: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestLifecycleSpawnHandsBackTheWorktreeWhenLaunchFails(t *testing.T) {
 	}
 	_, err = lifecycle.Spawn(SpawnRequest{
 		Session:  store.Session{ID: taken.ID, Name: "spawned", Tool: "echoer", Cwd: repo.root},
-		Tool:     runtime.Config.Tools["echoer"],
+		Tool:     runtime.Config.CLIs["echoer"],
 		Plan:     launch.Plan{Command: "sleep 30"},
 		Pane:     PaneSize{Width: 80, Height: 24},
 		Worktree: &WorktreeRequest{Base: repo.baseRef},
@@ -483,7 +483,7 @@ func TestRelaunchKillsTheNewPaneWhenItsLaunchCannotPersist(t *testing.T) {
 	if err := h.store.CreateSession(sess); err != nil {
 		t.Fatal(err)
 	}
-	tool := runtime.Config.Tools[sess.Tool]
+	tool := runtime.Config.CLIs[sess.Tool]
 	bind := func(launchedAt time.Time) error {
 		if err := h.store.Delete(sess.ID); err != nil {
 			return err

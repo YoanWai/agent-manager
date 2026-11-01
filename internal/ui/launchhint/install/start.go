@@ -81,7 +81,7 @@ func RunStart(services Services, request StartRequest) (StartResult, error) {
 	}
 	launched, err := services.Lifecycle.Launch(sessioncmd.LaunchRequest{
 		Session:     sess,
-		Tool:        tool,
+		Tool:        tool.Launch(),
 		BaseCommand: tool.Command,
 		Pane:        request.Pane,
 	})

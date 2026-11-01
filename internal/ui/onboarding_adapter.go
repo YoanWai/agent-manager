@@ -23,7 +23,7 @@ func (m *Model) setupSurface() (*uionboarding.Surface, bool) {
 func (m *Model) setupOpen() bool { _, ok := m.setupSurface(); return ok }
 
 func (m *Model) openSetup(firstRun bool) tea.Cmd {
-	m.push(uionboarding.NewSurface(onboardingRoot{m}, m.services.cfg.AgentToolNames(), m.setupChoices(), firstRun))
+	m.push(uionboarding.NewSurface(onboardingRoot{m}, m.services.cfg.CLINames(), m.setupChoices(), firstRun))
 	if firstRun {
 		return nil
 	}
@@ -54,8 +54,8 @@ func (m *Model) setupProbeCmd() tea.Cmd {
 		return nil
 	}
 	commands := make(map[string]string)
-	for _, name := range m.services.cfg.AgentToolNames() {
-		commands[name] = m.services.cfg.Tools[name].Command
+	for _, name := range m.services.cfg.CLINames() {
+		commands[name] = m.services.cfg.CLIs[name].Command
 	}
 	m.enqueueEffect(onboardingruntime.ProbeRequest{Target: setup.ID(), Commands: commands}, 0, false)
 	return m.nextEffectCmd()

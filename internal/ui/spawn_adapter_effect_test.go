@@ -618,10 +618,10 @@ func TestSpawnRepeatedSubmitKeepsOneAcceptedJob(t *testing.T) {
 func TestSpawnRetryRetainsManagerAndConversationIdentity(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	tool.Command = "am-missing-cli-xyz"
 	tool.SessionIDFlag = "--session-id"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 	command := submitFormSpawn(t, m, "agent", t.TempDir())
 	first := m.effects.Main.Active.Request.(uilaunch.Request)
 	msg := command().(uieffects.Completed)

@@ -21,7 +21,7 @@ type PaneSize struct {
 
 type LaunchRequest struct {
 	Session          store.Session
-	Tool             config.Tool
+	Tool             config.CLI
 	BaseCommand      string
 	Pane             PaneSize
 	BesideSessionID  string
@@ -118,7 +118,7 @@ type WorktreeRequest struct {
 
 type SpawnRequest struct {
 	Session  store.Session
-	Tool     config.Tool
+	Tool     config.CLI
 	Plan     launch.Plan
 	Pane     PaneSize
 	Worktree *WorktreeRequest
@@ -284,14 +284,14 @@ func (l *Lifecycle) Revive(listed store.Session, pane PaneSize) (RelaunchResult,
 
 func (l *Lifecycle) revive(sess store.Session, pane PaneSize) (RelaunchResult, error) {
 	var err error
-	tool, ok := l.runtime.Config.Tools[sess.Tool]
+	tool, ok := l.runtime.Config.Pane(sess.Tool)
 	if !ok {
-		return RelaunchResult{}, fmt.Errorf("tool %s is no longer configured", sess.Tool)
+		return RelaunchResult{}, fmt.Errorf("%s is no longer configured", sess.Tool)
 	}
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
 	}
-	if tool.Shell && l.runtime.Driver.Exists(sess.ID) {
+	if l.runtime.Config.IsTool(sess.Tool) && l.runtime.Driver.Exists(sess.ID) {
 		return RelaunchResult{}, fmt.Errorf("%s is a shell; its pane is already open", sess.Name)
 	}
 	degraded := func(sess store.Session) bool {
@@ -331,9 +331,9 @@ func (l *Lifecycle) Restart(listed store.Session, pane PaneSize) (RelaunchResult
 	if sess.Archived {
 		return RelaunchResult{}, fmt.Errorf("session %s is archived; restore it before restarting", sess.Name)
 	}
-	tool, ok := l.runtime.Config.Tools[sess.Tool]
+	tool, ok := l.runtime.Config.Pane(sess.Tool)
 	if !ok {
-		return RelaunchResult{}, fmt.Errorf("tool %s is no longer configured", sess.Tool)
+		return RelaunchResult{}, fmt.Errorf("%s is no longer configured", sess.Tool)
 	}
 	if _, err := resolveTerminalDirectory(sess.Cwd); err != nil {
 		return RelaunchResult{}, fmt.Errorf("working directory no longer exists: %s", sess.Cwd)
@@ -365,7 +365,7 @@ func (l *Lifecycle) Restart(listed store.Session, pane PaneSize) (RelaunchResult
 	return result, err
 }
 
-func (l *Lifecycle) launchExisting(sess store.Session, tool config.Tool, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (result RelaunchResult, launchErr error) {
+func (l *Lifecycle) launchExisting(sess store.Session, tool config.CLI, baseCommand string, pane PaneSize, degraded, injectPicker bool, bind func(time.Time) error) (result RelaunchResult, launchErr error) {
 	launchedAt := time.Now()
 	profile, err := l.runtime.Store.LaunchEnv(sess.Environment)
 	if err != nil {

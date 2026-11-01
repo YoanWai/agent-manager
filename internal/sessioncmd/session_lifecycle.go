@@ -35,7 +35,7 @@ func (s *Sessions) Kill(sessionID, targetID string) (Session, error) {
 	// Some CLIs keep the conversation they are on only while they run,
 	// and no manager screen may be open to have followed it.
 	var followErr error
-	if tool, known := runtime.cfg.Tools[target.Tool]; known && runtime.driver.Exists(target.ID) {
+	if tool, known := runtime.cfg.CLIs[target.Tool]; known && runtime.driver.Exists(target.ID) {
 		target, followErr = FollowConversation(runtime.store, lifecycle.runtime.Hooks, &conversation.Reader{}, target, tool.SessionReport)
 	}
 	killed, err := lifecycle.Kill(target)
@@ -164,7 +164,7 @@ func (r *runtime) agentCaller(sessionID string) (store.Session, error) {
 	if err != nil {
 		return store.Session{}, err
 	}
-	if r.cfg.Tools[caller.Tool].Shell {
+	if r.cfg.IsTool(caller.Tool) {
 		return store.Session{}, errors.New("this session is a terminal, which has no turns to end")
 	}
 	return caller, nil

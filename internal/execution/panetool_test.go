@@ -8,20 +8,31 @@ import (
 
 func TestToolBinaryNamesWhatARowRuns(t *testing.T) {
 	cases := map[string]struct {
-		tool config.Tool
+		tool config.CLI
 		want string
 	}{
-		"plain command":     {config.Tool{Command: "claude"}, "claude"},
-		"command with args": {config.Tool{Command: "hermes --cli"}, "hermes"},
-		"absolute path":     {config.Tool{Command: "/opt/homebrew/bin/codex"}, "codex"},
-		"shell":             {config.Tool{Command: "bash -l", Shell: true}, ""},
-		"no command":        {config.Tool{}, ""},
-		"wrapper script":    {config.Tool{Command: "sh -c 'claude'"}, ""},
+		"plain command":     {config.CLI{Command: "claude"}, "claude"},
+		"command with args": {config.CLI{Command: "hermes --cli"}, "hermes"},
+		"absolute path":     {config.CLI{Command: "/opt/homebrew/bin/codex"}, "codex"},
+		"no command":        {config.CLI{}, ""},
+		"wrapper script":    {config.CLI{Command: "sh -c 'claude'"}, ""},
 	}
 	for name, tc := range cases {
 		if got := toolBinary(tc.tool); got != tc.want {
 			t.Errorf("%s: toolBinary = %q, want %q", name, got, tc.want)
 		}
+	}
+}
+
+// A tool row is a shell whatever it launches, so even a terminal set to a
+// binary no interpreter list names claims none.
+func TestToolBinariesNameNoBinaryForATool(t *testing.T) {
+	binaries := NewToolBinaries(config.Config{
+		CLIs:  map[string]config.CLI{"claude": {Command: "claude"}},
+		Tools: map[string]config.Tool{"terminal": {Command: "nu"}},
+	})
+	if binaries["claude"] != "claude" || binaries["terminal"] != "" {
+		t.Fatalf("binaries = %v, want claude's binary and none for the terminal", binaries)
 	}
 }
 

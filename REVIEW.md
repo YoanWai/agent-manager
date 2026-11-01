@@ -11,7 +11,7 @@ required behavior, and why this approach. Compare the diff against it, and
 report behavior, public surface, or state that it does not ask for.
 
 A change holds on every agent CLI, platform, and terminal this project
-supports: the tools in `builtinTools` in `internal/config/config.go`, the
+supports: the CLIs in `builtinCLIs` in `internal/config/builtin.go`, the
 platforms `.goreleaser.yaml` builds plus WSL2, and any terminal the manager
 runs in, local or over SSH, on tmux 3.1 and later. Verify it on all of them,
 or name the values you left out and what supporting them would take, and let
@@ -20,7 +20,7 @@ Partial feature proposals follow the issue and draft PR path below.
 
 ## Tool coverage
 
-New shared behavior must work for every applicable tool in `builtinTools` in
+New shared behavior must work for every applicable CLI in `builtinCLIs` in
 the same PR. Compare the user benefit across tools, not just whether the code
 accepts every tool name. Keeping the old behavior on the other tools is partial
 coverage. Listing exclusions or promising follow-up PRs does not make it ready

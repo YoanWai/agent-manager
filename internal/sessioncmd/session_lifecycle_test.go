@@ -270,7 +270,7 @@ func TestKillFollowsTheConversationTheAgentHolds(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.sessions.loadConfig = testConfigLoader(t, sessionConfig+`
-[tools.holder]
+[clis.holder]
 command = "sh -c 'exec 3>`+held+`; echo holding; exec cat'"
 resume_by_id_command = "echo resumed {id}"
 session_report = "muse"
@@ -301,7 +301,7 @@ func TestReviveReadsTheConversationAQuitAgentLogged(t *testing.T) {
 	grokHome := t.TempDir()
 	t.Setenv("GROK_HOME", grokHome)
 	h.sessions.loadConfig = testConfigLoader(t, sessionConfig+`
-[tools.grokker]
+[clis.grokker]
 command = "echo started"
 resume_by_id_command = "echo resumed {id}"
 session_report = "grok"

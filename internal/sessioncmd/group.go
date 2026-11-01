@@ -40,7 +40,7 @@ func (s *Sessions) Groups(sessionID string) ([]Group, error) {
 func (r *runtime) groupRows(stored []store.Group, sessions []store.Session) []Group {
 	counts := make(map[string]int, len(stored))
 	for _, sess := range sessions {
-		if r.cfg.Tools[sess.Tool].Shell || sess.Archived {
+		if r.cfg.IsTool(sess.Tool) || sess.Archived {
 			continue
 		}
 		counts[sess.Group]++

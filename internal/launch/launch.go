@@ -45,7 +45,7 @@ const ProactiveCoordinationNote = `Other agent sessions may be running beside yo
 
 const OnRequestCoordinationNote = `Other agent sessions may be running beside you in Agent Manager. Work with them only when the user asks: on your own, do not list, message, spawn or wait on sessions, or claim tasks from the shared list. When the user does ask, run "agent-manager help" in your shell for the subcommands.`
 
-func coordinationNote(toolName string, tool config.Tool, proactive bool) string {
+func coordinationNote(toolName string, tool config.CLI, proactive bool) string {
 	if mcpreg.Style(toolName, tool.MCP) != mcpreg.StyleNone {
 		return ""
 	}
@@ -98,7 +98,7 @@ func Prompt(note, prompt string, autoNamed bool) string {
 // WithPrompt appends the first prompt to a tool's command, using the
 // tool's prompt flag when it has one. Tools that take their prompt as
 // typed input instead keep the bare command.
-func WithPrompt(tool config.Tool, command, prompt string) string {
+func WithPrompt(tool config.CLI, command, prompt string) string {
 	if prompt == "" || tool.PromptMode == "send" {
 		return command
 	}
@@ -129,7 +129,7 @@ type Plan struct {
 // session id launch with one, so a later revive resumes this exact
 // conversation rather than the directory's most recent one; tools without
 // the flag mint their own id, captured after launch by the poller.
-func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed, proactive bool) Plan {
+func Assemble(toolName string, tool config.CLI, rawPrompt string, autoNamed, proactive bool) Plan {
 	note := coordinationNote(toolName, tool, proactive)
 	prompt := Prompt(note, rawPrompt, autoNamed)
 	plan := Plan{Command: WithPrompt(tool, tool.Command, prompt)}
@@ -148,7 +148,7 @@ func Assemble(toolName string, tool config.Tool, rawPrompt string, autoNamed, pr
 }
 
 // AssembleResume opens conversation resumeID and types any prompt in once it is up.
-func AssembleResume(toolName string, tool config.Tool, rawPrompt, resumeID string, autoNamed, proactive bool) Plan {
+func AssembleResume(toolName string, tool config.CLI, rawPrompt, resumeID string, autoNamed, proactive bool) Plan {
 	plan := Plan{Command: ReviveCommand(tool, resumeID), AgentSessionID: resumeID}
 	if rawPrompt == "" {
 		return plan
@@ -179,7 +179,7 @@ func notesAfter(rawPrompt, note string, autoNamed bool) []string {
 // would be the wrong conversation whenever sessions share a cwd. The id is
 // read from the agent CLI's own store rather than minted here, so it is
 // quoted for the shell the way a fork's {id} already is.
-func ReviveCommand(tool config.Tool, agentSessionID string) string {
+func ReviveCommand(tool config.CLI, agentSessionID string) string {
 	if agentSessionID != "" && tool.ResumeByIDCommand != "" {
 		return strings.ReplaceAll(tool.ResumeByIDCommand, "{id}", tmux.ShellQuote(agentSessionID))
 	}
@@ -193,7 +193,7 @@ func ReviveCommand(tool config.Tool, agentSessionID string) string {
 }
 
 // Variables is the profile with the tool's own variables over it.
-func Variables(profile map[string]string, tool config.Tool) map[string]string {
+func Variables(profile map[string]string, tool config.CLI) map[string]string {
 	env := maps.Clone(profile)
 	if env == nil {
 		env = map[string]string{}
@@ -214,7 +214,7 @@ func Variables(profile map[string]string, tool config.Tool) map[string]string {
 // and their status-file path, plus a clean slate from any earlier files under
 // the same id. profile is the session's environment profile, under the
 // manager's own variables so it cannot unhook the session.
-func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time, profile map[string]string) (string, map[string]string, error) {
+func Environment(manager *hooks.Manager, toolName string, tool config.CLI, baseCommand, id, cwd string, launchedAt time.Time, profile map[string]string) (string, map[string]string, error) {
 	if err := config.CheckSupported(toolName); err != nil {
 		return "", nil, err
 	}

@@ -77,7 +77,7 @@ func (r *runtime) terminal(id string) (store.Session, error) {
 	if err != nil {
 		return store.Session{}, err
 	}
-	if !r.cfg.Tools[sess.Tool].Shell {
+	if !r.cfg.IsTool(sess.Tool) {
 		return store.Session{}, fmt.Errorf("session %s is an agent, not a terminal", id)
 	}
 	if sess.Archived {
@@ -178,7 +178,7 @@ func (t *Terminals) List(sessionID string) ([]Terminal, error) {
 	}
 	terminals := make([]Terminal, 0)
 	for _, sess := range sessions {
-		if !runtime.cfg.Tools[sess.Tool].Shell {
+		if !runtime.cfg.IsTool(sess.Tool) {
 			continue
 		}
 		_, running := panes[sess.ID]
@@ -201,7 +201,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	if err != nil {
 		return Terminal{}, err
 	}
-	toolName, tool := runtime.cfg.ShellTool()
+	toolName, tool := runtime.cfg.Terminal()
 	nest := caller.ID != ""
 	if opts.Nest != nil {
 		nest = *opts.Nest
@@ -218,7 +218,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	}
 	// A shell caller is a terminal itself, and nesting is one level, so the
 	// new shell joins it as a sibling instead of hanging under it.
-	callerIsShell := runtime.cfg.Tools[caller.Tool].Shell
+	callerIsShell := runtime.cfg.IsTool(caller.Tool)
 	parentID := ""
 	if nest {
 		parentID = caller.ID
@@ -255,7 +255,7 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 	}
 	launched, err := lifecycle.Launch(LaunchRequest{
 		Session:         sess,
-		Tool:            tool,
+		Tool:            tool.Launch(),
 		BaseCommand:     tool.Command,
 		BesideSessionID: besideID,
 	})
@@ -291,7 +291,7 @@ func (r *runtime) shellName(toolName, parentID string) (string, error) {
 // ShellName names a terminal after the session it hangs under, so a row
 // says which session opened it rather than four random digits. A terminal
 // with no session over it falls back to those digits, and one joining
-// terminals already named for that session counts up. Both the list's T
+// terminals already named for that session counts up. Both the list's t
 // and the terminal tools name through here, so a shell reads the same
 // whichever opened it.
 func ShellName(toolName, parentID, fallbackSuffix string, sessions []store.Session) string {

@@ -43,7 +43,7 @@ func sendServices(t *testing.T, st *store.Store) Services {
 	t.Helper()
 	return Services{
 		Store:  st,
-		Config: config.Config{Tools: map[string]config.Tool{"claude": {Command: "cat", DefaultStatus: status.Idle}}},
+		Config: config.Config{CLIs: map[string]config.CLI{"claude": {Command: "cat", DefaultStatus: status.Idle}}},
 		SessionExists: func(*tmux.Driver, string) (bool, error) {
 			return true, nil
 		},
@@ -130,7 +130,7 @@ func TestSendClassifiesTransportAndRecordsOnlyConfirmed(t *testing.T) {
 func TestSendRefusesAShellTarget(t *testing.T) {
 	st, captured := sendStore(t)
 	services := sendServices(t, st)
-	services.Config = config.Config{Tools: map[string]config.Tool{"claude": {Command: "sh", Shell: true}}}
+	services.Config = config.Config{Tools: map[string]config.Tool{"claude": {Command: "sh"}}}
 	if _, err := RunSend(services, SendRequest{Session: captured, Text: "hello"}); err == nil {
 		t.Fatal("a shell target accepted an agent prompt")
 	}

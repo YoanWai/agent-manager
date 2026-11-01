@@ -41,7 +41,7 @@ type CatalogMsg struct {
 // EnsureCatalog reads the kept answer or asks the CLI off the update path,
 // since an answer takes up to seconds. It reports whether a read is due.
 func (s *State) EnsureCatalog(cfg config.Config, configDir, toolName string, now time.Time) (tea.Cmd, bool) {
-	tool := cfg.Tools[toolName]
+	tool := cfg.CLIs[toolName]
 	if tool.Catalog == "" {
 		return nil, false
 	}
@@ -79,7 +79,7 @@ func (s *State) EnsureCatalog(cfg config.Config, configDir, toolName string, now
 	}, true
 }
 
-func refreshCatalog(configDir, toolName string, tool config.Tool) tea.Msg {
+func refreshCatalog(configDir, toolName string, tool config.CLI) tea.Msg {
 	cat, err := catalog.Refresh(context.Background(), configDir, toolName, tool)
 	return CatalogMsg{Tool: toolName, Cat: cat, Err: err}
 }
@@ -107,7 +107,7 @@ func (s *State) Apply(msg CatalogMsg, cfg config.Config, configDir string, now t
 	if !msg.Stale {
 		return outdated, nil
 	}
-	tool := cfg.Tools[msg.Tool]
+	tool := cfg.CLIs[msg.Tool]
 	return outdated, func() tea.Msg { return refreshCatalog(configDir, msg.Tool, tool) }
 }
 

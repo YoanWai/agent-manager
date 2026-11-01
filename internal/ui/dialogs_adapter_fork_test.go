@@ -71,9 +71,9 @@ func TestForkSelectedSessionCreatesNamedSibling(t *testing.T) {
 	m.selectSessionRow(t, "source")
 
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = captureArgsCommand(argsFile, "{id}", "{new_id}", "{name}")
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(*Model)
@@ -153,9 +153,9 @@ func TestForkBranchesFromTheConversationTheSourceReported(t *testing.T) {
 		t.Fatalf("listed row is on %q; the test needs it a poll behind", listed)
 	}
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = captureArgsCommand(argsFile, "{id}")
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
 	m = updated.(*Model)
@@ -178,11 +178,11 @@ func TestForkBranchesFromTheConversationTheSourceReported(t *testing.T) {
 func TestForkCarriesTheSourceChoice(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	tool.ModelArgs = "--model {model}"
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
 	tool.ForkCommand = argCaptureCommand(argsFile) + " {id}"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 	choice := config.Choice{Model: "opus"}
 	if err := m.spawnSession("claude", "source", t.TempDir(), "", "", false, false, choice); err != nil {
 		t.Fatalf("spawn: %v", err)
@@ -244,9 +244,9 @@ func TestForkCopiesManagedWorktreeReference(t *testing.T) {
 	}
 	loadStoredRows(t, m)
 	m.selectSessionRow(t, "source")
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = "true {id}; cat"
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 
 	m.openFork()
 	openFork(m).SetName("forked")
@@ -297,7 +297,7 @@ func TestForkLaunchFailureKeepsSharedWorktree(t *testing.T) {
 	forked := source
 	forked.ID = "failed-fork"
 	forked.Name = "forked"
-	if err := m.launchNewSession(forked, m.services.cfg.Tools[forked.Tool], "cat", launchOptions{}); err == nil {
+	if err := m.launchNewSession(forked, m.services.cfg.CLIs[forked.Tool], "cat", launchOptions{}); err == nil {
 		t.Fatal("launch failure was not reported")
 	}
 	if _, err := os.Stat(source.Cwd); err != nil {
@@ -312,23 +312,23 @@ func TestOpenForkRequiresConfiguredCommandAndConversationID(t *testing.T) {
 	m.selectSessionRow(t, "source")
 	source := railSelectedSession(m)
 
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = ""
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 	m.openFork()
 	if !strings.Contains(m.errBar.text, "no fork_command") {
 		t.Fatalf("missing command error = %q", m.errBar.text)
 	}
 
 	tool.ForkCommand = "tool --fork latest"
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 	m.openFork()
 	if !strings.Contains(m.errBar.text, "must reference the source via {id} or {session_file}") {
 		t.Fatalf("missing placeholder error = %q", m.errBar.text)
 	}
 
 	tool.ForkCommand = "tool --fork {id}"
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 	m.openFork()
 	if !strings.Contains(m.errBar.text, "no captured conversation id") {
 		t.Fatalf("missing id error = %q", m.errBar.text)
@@ -342,13 +342,13 @@ func TestShippedForkCommandsValidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.Tools) < 6 {
-		t.Fatalf("built-in tools = %d, expected every shipped CLI", len(cfg.Tools))
+	if len(cfg.CLIs) < 6 {
+		t.Fatalf("built-in tools = %d, expected every shipped CLI", len(cfg.CLIs))
 	}
 	source := store.Session{Name: "source", AgentSessionID: "source-conversation"}
 	forkable := 0
-	for name, tool := range cfg.Tools {
-		if tool.Shell || tool.ForkCommand == "" {
+	for name, tool := range cfg.CLIs {
+		if tool.ForkCommand == "" {
 			continue
 		}
 		forkable++
@@ -387,12 +387,12 @@ func TestOpenForkRejectsSessionFileWithoutAFileBackedStore(t *testing.T) {
 	}
 	t.Cleanup(func() { uiapply.ForkSessionFile = previousResolver })
 
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	if tool.SessionStore != "" {
 		t.Fatalf("claude session_store = %q, want empty", tool.SessionStore)
 	}
 	tool.ForkCommand = "claude --session-file {session_file}"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 
 	m.openFork()
 
@@ -452,10 +452,10 @@ func TestForkAgentSessionIDFollowsNewIDPlaceholder(t *testing.T) {
 			loadStoredRows(t, m)
 			m.selectSessionRow(t, "source")
 
-			tool := m.services.cfg.Tools[tc.tool]
+			tool := m.services.cfg.CLIs[tc.tool]
 			tool.ForkCommand = tc.forkCmd
 			tool.MCP = "none"
-			m.services.cfg.Tools[tc.tool] = tool
+			m.services.cfg.CLIs[tc.tool] = tool
 
 			m.openFork()
 			if m.errBar.text != "" {
@@ -511,7 +511,7 @@ func TestForkOpencodeOpensTheCopyItsStoreMade(t *testing.T) {
 	loadStoredRows(t, m)
 	m.selectSessionRow(t, "source")
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
-	m.services.cfg.Tools["opencode"] = config.Tool{SessionStore: "opencode", ForkCommand: captureArgsCommand(argsFile, "{new_id}"), MCP: "none"}
+	m.services.cfg.CLIs["opencode"] = config.CLI{SessionStore: "opencode", ForkCommand: captureArgsCommand(argsFile, "{new_id}"), MCP: "none"}
 
 	m.openFork()
 	if m.errBar.text != "" {
@@ -572,11 +572,11 @@ func TestForkGeminiResolvesSessionFile(t *testing.T) {
 	t.Cleanup(func() { uiapply.ForkSessionFile = previousResolver })
 
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
-	tool := m.services.cfg.Tools["gemini"]
+	tool := m.services.cfg.CLIs["gemini"]
 	tool.ForkCommand = captureArgsCommand(argsFile, "{session_file}")
 	tool.SessionStore = "gemini"
 	tool.MCP = "none"
-	m.services.cfg.Tools["gemini"] = tool
+	m.services.cfg.CLIs["gemini"] = tool
 
 	m.openFork()
 	if m.errBar.text != "" {
@@ -647,10 +647,10 @@ func TestForkGeminiResolverFailureReportsError(t *testing.T) {
 	}
 	t.Cleanup(func() { uiapply.ForkSessionFile = previousResolver })
 
-	tool := m.services.cfg.Tools["gemini"]
+	tool := m.services.cfg.CLIs["gemini"]
 	tool.ForkCommand = "gemini --session-file {session_file}"
 	tool.SessionStore = "gemini"
-	m.services.cfg.Tools["gemini"] = tool
+	m.services.cfg.CLIs["gemini"] = tool
 
 	before := len(m.sessionRows())
 	m.openFork()
@@ -717,11 +717,11 @@ func forkInSourceModel(t *testing.T) (*Model, store.Session, string) {
 	m.selectSessionRow(t, source.Name)
 
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.SessionStore = "muse"
 	tool.ForkKeys = "/fork"
 	tool.ForkCommand = captureArgsCommand(argsFile, "{new_id}")
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 	return m, source, argsFile
 }
 
@@ -907,9 +907,9 @@ func TestStaleForkCompletionIsDropped(t *testing.T) {
 func forkFileTool(t *testing.T, m *Model, name string) string {
 	t.Helper()
 	argsFile := filepath.Join(t.TempDir(), "fork-args")
-	tool := m.services.cfg.Tools[name]
+	tool := m.services.cfg.CLIs[name]
 	tool.ForkCommand = "printf '%s\\n' {id} {new_id} {name} > " + tmux.ShellQuote(argsFile) + "; cat"
-	m.services.cfg.Tools[name] = tool
+	m.services.cfg.CLIs[name] = tool
 	return argsFile
 }
 
@@ -1048,10 +1048,10 @@ func TestForkUpdateReturnsWhileWorkerIsBlocked(t *testing.T) {
 	}
 	m.rebuildRows()
 	m.selectSessionRow(t, "source")
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	tool.SessionStore = "gemini"
 	tool.ForkCommand = "cat {session_file}; cat"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -1224,9 +1224,9 @@ func TestForkLaunchFailureRetainsCapturedRequest(t *testing.T) {
 	}
 	m.rebuildRows()
 	m.selectSessionRow(t, "source")
-	tool := m.services.cfg.Tools["claude"]
+	tool := m.services.cfg.CLIs["claude"]
 	tool.ForkCommand = "definitely-missing-fork-cli {id}"
-	m.services.cfg.Tools["claude"] = tool
+	m.services.cfg.CLIs["claude"] = tool
 
 	m, cmd := submitForkDialog(t, m, "failed fork")
 	m.applyCmd(t, cmd)
@@ -1376,9 +1376,9 @@ func TestForkCompletionAfterSameSourceReopenKeepsNewerDialog(t *testing.T) {
 func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 	m, source, argsFile := forkInSourceModel(t)
 	_ = argsFile
-	tool := m.services.cfg.Tools[source.Tool]
+	tool := m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = "definitely-missing-fork-cli {new_id}"
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 
 	writeOnce := "fork-conversation"
 	writeTwice := "second-fork"
@@ -1426,9 +1426,9 @@ func TestForkKeysRetryDoesNotForkSourceTwice(t *testing.T) {
 
 	// The binary is "installed"; the retry must launch from the recorded
 	// fork without typing the source's fork keys a second time.
-	tool = m.services.cfg.Tools[source.Tool]
+	tool = m.services.cfg.CLIs[source.Tool]
 	tool.ForkCommand = "true {new_id}; cat"
-	m.services.cfg.Tools[source.Tool] = tool
+	m.services.cfg.CLIs[source.Tool] = tool
 	m.enqueueEffect(request, 0, false)
 	m.drainEffects(t)
 

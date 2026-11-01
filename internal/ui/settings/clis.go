@@ -49,7 +49,7 @@ func (s *State) cliPickerKey(msg tea.KeyMsg, ctx Context) Result {
 	return Result{}
 }
 
-// ShowTools narrows the default tool row to the CLIs left shown, staying on
+// ShowTools narrows the default CLI row to the CLIs left shown, staying on
 // preferred while it is one of them.
 func (s *State) ShowTools(tools Tools, preferred string) {
 	s.ToolNames = tools.Enabled(s.CLIHidden)

@@ -79,10 +79,10 @@ func sessionRowHelpRows(list keybind.Table) [][2]string {
 	h.action("copy its newest reply to the clipboard", keybind.CopyReply)
 	h.action("review its diff", keybind.Review)
 	h.action("fork it into a new session in the same group", keybind.Fork)
-	h.action("rename it, and re-pick its tool", keybind.Rename)
+	h.action("rename it, and re-pick what it runs", keybind.Rename)
 	h.action("move it to a group, or a terminal into a session", keybind.Move)
 	h.action("open its working directory in your editor", keybind.Editor)
-	h.action("restart it on an empty context (same name, group, dir, tool)", keybind.Restart)
+	h.action("restart it on an empty context (same name, group, dir, CLI)", keybind.Restart)
 	h.action("kill it / kill every live session (frees their RAM)", keybind.Kill, keybind.KillAll)
 	h.action("revive it, its pane included / revive every dead session", keybind.Revive, keybind.ReviveAll)
 	h.action("archive / restore (archive kills, restore revives)", keybind.Archive, keybind.Restore)
@@ -98,7 +98,7 @@ func markHelpRows(list keybind.Table, glyphs Glyphs) [][2]string {
 		{g.WaitingGlyph + " waiting", "blocked on you: a dialog, a permission ask, a question"},
 		{g.FinishedGlyph + " finished", "the turn ended; entering the session clears it to idle"},
 		{g.IdleGlyph + " idle", "nothing running"},
-		{g.ErroredGlyph + " errored", "the tool reported an error, or the session is dead"},
+		{g.ErroredGlyph + " errored", "the CLI reported an error, or the session is dead"},
 		{g.StartingGlyph + " starting", "the pane is still launching; its row mark spins"},
 		{g.InboxGlyph + "N", "messages from another agent, held until this one is at rest"},
 		{g.ReorderGrip, "drag handle; click, then use arrows to move, enter to drop"},
@@ -150,11 +150,11 @@ func helpSections(ctx Context) []helpSection {
 		{title: titledWith("quick prompt mode", list, keybind.Prompt), rows: [][2]string{
 			{"↵", "send"},
 			{"↑↓", "switch the target session, or step the caret in a taller prompt"},
-			{"tab", "step the tool a spawn uses forward (alt+m too)"},
-			{"shift+tab", "step the tool a spawn uses back one"},
-			{ctx.QuickKeys.Model, "pick the spawn's model from the ones the tool lists; type to filter"},
+			{"tab", "step the CLI a spawn uses forward (alt+m too)"},
+			{"shift+tab", "step the CLI a spawn uses back one"},
+			{ctx.QuickKeys.Model, "pick the spawn's model from the ones the CLI lists; type to filter"},
 			{ctx.QuickKeys.Effort, "step the spawn's reasoning effort through the model's levels"},
-			{ctx.QuickKeys.Profile, "step the spawn's profile, for a tool that has them"},
+			{ctx.QuickKeys.Profile, "step the spawn's profile, for a CLI that has them"},
 			{ctx.QuickKeys.Env, "step the spawn's environment profile; a group's own starts it"},
 			{"click", "step a spawn choice the way its key does, or pick a listed model"},
 			{"ctrl+t", "toggle worktree for the spawned agent (alt+w too)"},
@@ -208,7 +208,7 @@ func helpSections(ctx Context) []helpSection {
 			{"↑↓", "next field, or step the caret in a taller New Session prompt"},
 			{"ctrl+v", "in a prompt field, paste an image as a chip"},
 			{"←→", "change a picker's value"},
-			{"type", "in the model field, filter what the tool lists; tab fills one in"},
+			{"type", "in the model field, filter what the CLI lists; tab fills one in"},
 			{"ctrl+o", "in the model field, open or close the whole list"},
 			{"click", "focus a field, click it again to change it, or pick a listed entry"},
 			{"click outside", "close the card as esc does, unless it holds a draft"},

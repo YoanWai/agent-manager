@@ -19,7 +19,7 @@ not mean mirroring its feature set; prefer workspace features shared across tool
 ## What every change covers
 
 A feature, a tool, or a fix is done when it holds on the whole matrix. The
-matrix is every CLI in `builtinTools` (`internal/config/config.go`), every
+matrix is every CLI in `builtinCLIs` (`internal/config/builtin.go`), every
 platform `.goreleaser.yaml` builds plus WSL2, every terminal that reaches
 the manager, local or over SSH, and both input methods. A change that
 covers a subset names what it leaves out in the PR description and what
@@ -38,7 +38,7 @@ coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
   release. None publishes a long-term-support line. When an upstream release
   changes a flag, a subcommand, a file layout, or a screen, the adapter moves
   to the new behavior and drops the old one, with no branch for older
-  releases. The same change sets the tool's `minimum_version` in
+  releases. The same change sets the CLI's `minimum_version` in
   `internal/config/builtin.go` to the first release it needs, so a spawn on
   an older CLI opens the update dialog instead of failing.
 - **Configurable in the UI, or not configurable.** A setting a user can
@@ -54,8 +54,8 @@ coverage. [REVIEW.md](REVIEW.md#tool-coverage) defines the allowed exceptions.
   choice on a Settings row, behind `agent-manager settings`, or pick a
   default in code.
 - **Every tool.** New shared behavior covers every applicable tool in the
-  same PR. A field, status rule, or command added to one `[tools.*]` block
-  is added to every tool it applies to. A fix to one tool's adapter or support
+  same PR. A field, status rule, or command added to one `[clis.*]` block
+  is added to every CLI it applies to. A fix to one CLI's adapter or support
   for a new CLI can stay narrow. Any other partial feature needs evidence
   and an explicit maintainer decision before merge. Reuse shared paths first.
   A working first adapter or an unchanged fallback for other tools is not
@@ -124,7 +124,7 @@ substitution stays in the test process.
 
 Before finishing: `gofmt -l .` prints nothing, `go vet ./...` is clean.
 
-A change to the UI, the poller, or a tool's status rules is verified against
+A change to the UI, the poller, or a CLI's status rules is verified against
 real sessions before the PR says so: build the binary, run it under a
 throwaway `HOME` on its own socket (see Capturing a TUI frame in
 [CONTRIBUTING.md](.github/CONTRIBUTING.md)), drive a real CLI in it, and read
@@ -153,9 +153,12 @@ release or a user's sessions before.
   swallows "duplicate column", so an edited or reordered entry reaches fresh
   installs only while upgraded databases keep the old shape. New schema is a
   new entry at the end, written so re-running it is harmless.
-- **`builtinTools` is the only source of tool definitions.** It loads on
-  every start, so an edited pattern reaches every install on that release.
-  A default belongs in code.
+- **`builtinCLIs` and `builtinTools` are the only sources of definitions.**
+  `builtinCLIs` holds the agent CLIs and `builtinTools` the manager's own
+  panes, such as the terminal. Both load on every start, so an edited
+  pattern reaches every install on that release. A name lives in one of the
+  two, since a session row stores one name for either. A default belongs in
+  code.
 - **The key tables and the editor are read from the store, by every
   process.** The manager, the CLI and the MCP server each install the tmux
   bindings, so a table read from anywhere else gives a session the wrong
@@ -267,7 +270,7 @@ with `gh release edit <tag> --notes-file notes.md`.
 - `internal/tmux` owns the dedicated tmux socket and control-mode client;
   `internal/store` is the SQLite state, Settings included; `internal/status`
   classifies pane output into agent states; `internal/config` holds the
-  built-in tool rules.
+  built-in CLI and tool definitions.
 - The badges workflow publishes the clone count and contributor image to the
   `badges` branch; neither generated asset is edited by hand.
 

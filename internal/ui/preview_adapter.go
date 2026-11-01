@@ -411,7 +411,7 @@ func (m *Model) viewGroupAgents(group string, width, height int) string {
 
 	title := uipreview.RosterRow{
 		Name:  uitheme.SubtleStyle().Render("agent"),
-		Tool:  uitheme.SubtleStyle().Render("tool"),
+		Tool:  uitheme.SubtleStyle().Render("CLI"),
 		State: uitheme.SubtleStyle().Render("last activity"),
 	}
 	lines := uipreview.Roster(title, rows, width)

@@ -2,6 +2,7 @@ package status
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 
@@ -64,7 +65,12 @@ type toolRules struct {
 
 func NewEngine(cfg config.Config) (*Engine, error) {
 	engine := &Engine{tools: map[string]toolRules{}}
+	panes := make(map[string]config.CLI, len(cfg.CLIs)+len(cfg.Tools))
+	maps.Copy(panes, cfg.CLIs)
 	for name, tool := range cfg.Tools {
+		panes[name] = tool.Launch()
+	}
+	for name, tool := range panes {
 		compiled := make([]rule, 0, len(tool.Rules))
 		for _, raw := range tool.Rules {
 			re, err := regexp.Compile(raw.Pattern)
@@ -111,7 +117,7 @@ func NewEngine(cfg config.Config) (*Engine, error) {
 			*opt.target = re
 		}
 		if tr.dialogAsks != nil && tr.dialogAsks.NumSubexp() == 0 {
-			return nil, fmt.Errorf("tool %s: dialog_question needs a group for the question", name)
+			return nil, fmt.Errorf("CLI %s: dialog_question needs a group for the question", name)
 		}
 		engine.tools[name] = tr
 	}

@@ -177,10 +177,10 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 
 func (m *Model) captureServices() effectServices {
 	cfg := m.services.cfg
-	cfg.Tools = make(map[string]config.Tool, len(m.services.cfg.Tools))
-	for name, tool := range m.services.cfg.Tools {
+	cfg.CLIs = make(map[string]config.CLI, len(m.services.cfg.CLIs))
+	for name, tool := range m.services.cfg.CLIs {
 		tool.Rules = append([]config.Rule(nil), tool.Rules...)
-		cfg.Tools[name] = tool
+		cfg.CLIs[name] = tool
 	}
 	services := effectServices{cfg: cfg, store: m.services.store, driver: m.services.tmux, watch: m.focus.runtime.Watch, gitDrv: m.services.gitDrv, remote: m.ssh.Client}
 	services.engine = m.services.engine

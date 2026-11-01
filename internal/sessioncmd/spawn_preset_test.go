@@ -19,7 +19,7 @@ func TestSessionsCreatePresetPreservesLiteralInstructions(t *testing.T) {
 			t.Run(mode+"/"+strings.TrimSpace(task), func(t *testing.T) {
 				h := newSessionHarness(t)
 				if mode == "send" {
-					h.sessions.loadConfig = testConfigLoader(t, sessionConfig+"\n[tools.sender]\ncommand = \"cat\"\nprompt_mode = \"send\"\n")
+					h.sessions.loadConfig = testConfigLoader(t, sessionConfig+"\n[clis.sender]\ncommand = \"cat\"\nprompt_mode = \"send\"\n")
 				}
 				instructions := "- keep literal 界 ⇥␍\r\n\t  indented\n\n "
 				if err := h.store.SaveSessionPreset("", store.SessionPreset{Name: "project/reviewer", Instructions: instructions}); err != nil {
@@ -126,7 +126,7 @@ func TestSessionsCreatePresetCatalogFailureDoesNotFallBack(t *testing.T) {
 
 func TestSessionsCreatePresetReadsFreshWithoutRewritingQueuedPrompt(t *testing.T) {
 	h := newSessionHarness(t)
-	h.sessions.loadConfig = testConfigLoader(t, sessionConfig+"\n[tools.sender]\ncommand = \"cat\"\nprompt_mode = \"send\"\nrevive_command = \"cat\"\n")
+	h.sessions.loadConfig = testConfigLoader(t, sessionConfig+"\n[clis.sender]\ncommand = \"cat\"\nprompt_mode = \"send\"\nrevive_command = \"cat\"\n")
 	preset := store.SessionPreset{Name: "project/reviewer", Instructions: "  old instructions\n"}
 	if err := h.store.SaveSessionPreset("", preset); err != nil {
 		t.Fatal(err)

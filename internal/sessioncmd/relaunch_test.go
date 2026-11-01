@@ -19,7 +19,7 @@ import (
 
 func TestSnapshotRelaunchClearsUnavailableAndSkipsKnownIDs(t *testing.T) {
 	h := newSessionHarness(t)
-	tool := config.Tool{SessionStore: "codex"}
+	tool := config.CLI{SessionStore: "codex"}
 	if err := h.store.SetRelaunchSnapshot(h.caller.ID, map[string]int64{"stale": 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestSnapshotRelaunchClearsUnavailableAndSkipsKnownIDs(t *testing.T) {
 
 func TestInjectPickerKeysStopsOnInvalidInputAndPaneDisappearance(t *testing.T) {
 	h := newSessionHarness(t)
-	InjectPickerKeys(h.driver, h.caller.ID, config.Tool{InputPrefix: "[", ResumePickerKeys: "DO-NOT-SEND"})
+	InjectPickerKeys(h.driver, h.caller.ID, config.CLI{InputPrefix: "[", ResumePickerKeys: "DO-NOT-SEND"})
 	time.Sleep(100 * time.Millisecond)
 	pane, err := h.driver.CapturePane(h.caller.ID)
 	if err != nil {
@@ -66,7 +66,7 @@ func TestInjectPickerKeysStopsOnInvalidInputAndPaneDisappearance(t *testing.T) {
 	if err := h.driver.Create(goneID, filepath.Dir(h.caller.Cwd), "cat", nil, 80, 24); err != nil {
 		t.Fatal(err)
 	}
-	InjectPickerKeys(h.driver, goneID, config.Tool{InputPrefix: "NEVER-APPEARS", ResumePickerKeys: "/sessions"})
+	InjectPickerKeys(h.driver, goneID, config.CLI{InputPrefix: "NEVER-APPEARS", ResumePickerKeys: "/sessions"})
 	time.Sleep(50 * time.Millisecond)
 	if err := h.driver.Kill(goneID); err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ IFS= read -r -t 2 picked && printf 'PICKED TOP ROW\n'
 printf 'picker still open\n'
 sleep 30
 `)
-	InjectPickerKeys(h.driver, id, config.Tool{ActivityCutoff: "(?m)^[>!]", ResumePickerKeys: "/resume"})
+	InjectPickerKeys(h.driver, id, config.CLI{ActivityCutoff: "(?m)^[>!]", ResumePickerKeys: "/resume"})
 	pane := waitForPaneText(t, h.driver, id, "picker still open")
 	if strings.Contains(pane, "EARLY") {
 		t.Fatalf("keys went to a stale composer:\n%s", pane)
@@ -145,7 +145,7 @@ IFS= read -r -t 3 picked && printf 'PICKED TOP ROW\n'
 printf 'picker still open\n'
 sleep 30
 `)
-	InjectPickerKeys(h.driver, id, config.Tool{ActivityCutoff: "(?m)^[>!]", ResumePickerKeys: "/resume"})
+	InjectPickerKeys(h.driver, id, config.CLI{ActivityCutoff: "(?m)^[>!]", ResumePickerKeys: "/resume"})
 	if pane := waitForPaneText(t, h.driver, id, "picker still open"); strings.Contains(pane, "PICKED TOP ROW") {
 		t.Fatalf("an extra Enter picked the top row of a picker that drew late:\n%s", pane)
 	}
@@ -159,7 +159,7 @@ printf '> %s' "$keys"
 IFS= read -r -t 3 again && printf '\nOPENED %s\n' "$keys"
 sleep 30
 `)
-	InjectPickerKeys(h.driver, id, config.Tool{InputPrefix: "^>", ResumePickerKeys: "/sessions"})
+	InjectPickerKeys(h.driver, id, config.CLI{InputPrefix: "^>", ResumePickerKeys: "/sessions"})
 	waitForPaneText(t, h.driver, id, "OPENED /sessions")
 }
 
@@ -215,11 +215,11 @@ func TestRelaunchInPaneResumesTheStoredConversationUnderItsStampedLaunch(t *test
 	waitForSessionOutput(t, h.sessions, h.caller.ID, created.ID, fmt.Sprintf("resumed conv-switched launch=%d", store.LaunchStamp(stored.AgentLaunchedAt)))
 }
 
-func testConfigTool(t *testing.T, name string) config.Tool {
+func testConfigTool(t *testing.T, name string) config.CLI {
 	t.Helper()
 	cfg, err := testConfigLoader(t, sessionConfig)()
 	if err != nil {
 		t.Fatal(err)
 	}
-	return cfg.Tools[name]
+	return cfg.CLIs[name]
 }

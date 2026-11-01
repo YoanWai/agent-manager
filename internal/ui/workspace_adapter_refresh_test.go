@@ -550,7 +550,7 @@ func TestPollRetypesARowOntoTheCLIItsPaneRuns(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		tail = filepath.Join(testfixture.Dir, "tail.exe") + " -f NUL"
 	}
-	m.services.cfg.Tools["tail-tool"] = config.Tool{Command: tail, DefaultStatus: status.Idle}
+	m.services.cfg.CLIs["tail-tool"] = config.CLI{Command: tail, DefaultStatus: status.Idle}
 	engine, err := status.NewEngine(m.services.cfg)
 	if err != nil {
 		t.Fatalf("engine: %v", err)

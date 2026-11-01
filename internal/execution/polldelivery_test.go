@@ -54,9 +54,9 @@ func TestPendingInputCountsAsSentOnceTheComposerEmpties(t *testing.T) {
 	for _, tool := range []string{"collapsing-tool", "slow-submit-tool", "guarded-tool", "stuck-tool"} {
 		t.Run(tool, func(t *testing.T) {
 			m := buildModel(t)
-			sendMode := m.cfg.Tools[tool]
+			sendMode := m.cfg.CLIs[tool]
 			sendMode.PromptMode = "send"
-			m.cfg.Tools[tool] = sendMode
+			m.cfg.CLIs[tool] = sendMode
 			if err := m.spawnSession(tool, "worker", t.TempDir(), "", "rebase on main\n\nthen run the suite", false, false); err != nil {
 				t.Fatalf("spawn: %v", err)
 			}

@@ -8,7 +8,7 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 - **Suggest a feature** with the [feature request form](https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml).
 - **Ask a question or show what you built** in [Discussions](https://github.com/YoanWai/agent-manager/discussions).
 - **Talk about contributing** in #dev on the [Agent Manager Community Discord](https://discord.gg/ecS88An7pF).
-- **Add or fix status rules for a CLI** you use. Every CLI's launch command and detection rules ship in the binary, in `internal/config/config.go`, so a pull request there reaches everyone running that agent. An issue with the CLI's version and the pane text it draws is the next best thing.
+- **Add or fix status rules for a CLI** you use. Every CLI's launch command and detection rules ship in the binary, in `builtinCLIs` in `internal/config/builtin.go`, so a pull request there reaches everyone running that agent. An issue with the CLI's version and the pane text it draws is the next best thing.
 
 ## Picking up an issue
 
@@ -49,7 +49,7 @@ to merge or committing anyone to finish it.
 Build against the current release of each agent CLI. None of them publishes a
 long-term-support line, so the latest stable release is the one we support.
 When an upstream release changes a flag, a subcommand, or a screen, move to
-the new behavior and drop the old one. Set that tool's `minimum_version` in
+the new behavior and drop the old one. Set that CLI's `minimum_version` in
 `internal/config/builtin.go` to the first release with the new behavior, in
 the same pull request, so someone on an older release gets the update dialog.
 
@@ -118,7 +118,7 @@ In the pull request description, say what changed and why, and how you verified
 it. Fill the Scope section: what the change has to do and why this shape. A typo
 or a one-line fix answers both in a sentence, and a review reads them to tell
 the change you meant from the change you made. For a shared feature, account
-for every CLI in `builtinTools` with its behavior and verification, or evidence
+for every CLI in `builtinCLIs` with its behavior and verification, or evidence
 that the feature does not apply. For a tool-specific fix, name the affected
 tools and why the others are unaffected. For any partial feature exception,
 link the maintainer decision or state it explicitly when you are the maintainer.

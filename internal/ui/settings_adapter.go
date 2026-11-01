@@ -25,7 +25,7 @@ func SettingSpecs() ([]store.SettingSpec, error) {
 	if err != nil {
 		return nil, err
 	}
-	specs := uisettings.Specs(cfg.AgentToolNames())
+	specs := uisettings.Specs(cfg.CLINames())
 	out := make([]store.SettingSpec, len(specs))
 	for i, spec := range specs {
 		out[i] = store.SettingSpec(spec)
@@ -42,8 +42,8 @@ func (m *Model) openSettings() tea.Cmd {
 func (m *Model) openSettingsWithReader(reader uipersist.Reader) tea.Cmd {
 	s := &m.settings
 	s.Gen++
-	if len(m.services.cfg.Tools) == 0 {
-		m.reportErr("no tools configured")
+	if len(m.services.cfg.CLIs) == 0 {
+		m.reportErr("no CLIs configured")
 		return nil
 	}
 	m.clearErr()
