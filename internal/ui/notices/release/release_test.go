@@ -37,7 +37,7 @@ func TestDelegatedResult(t *testing.T) {
 func TestSourcesMapsFeedKindsActionBannerAndExpiry(t *testing.T) {
 	expires := time.Date(2026, time.November, 20, 0, 0, 0, 0, time.UTC)
 	state := State{Feed: []feed.Message{
-		{ID: "a", Kind: feed.KindHeadsUp, Banner: "Soon", Action: "Read it", ExpiresAt: expires},
+		{ID: "a", Kind: feed.KindHeadsUp, Banner: "Soon", Action: "Read it", Pinned: true, ExpiresAt: expires},
 		{ID: "b", Kind: feed.KindTip},
 		{ID: "c", Kind: feed.KindNews},
 		{ID: "d", Kind: "mystery"},
@@ -49,7 +49,7 @@ func TestSourcesMapsFeedKindsActionBannerAndExpiry(t *testing.T) {
 			t.Fatalf("feed[%d].Kind = %v, want %v", i, got[i].Kind, want)
 		}
 	}
-	if got[0].Banner != "Soon" || got[0].Action != "Read it" || !got[0].Expires.Equal(expires) {
+	if got[0].Banner != "Soon" || got[0].Action != "Read it" || !got[0].Pinned || !got[0].Expires.Equal(expires) {
 		t.Fatalf("feed[0] = %+v", got[0])
 	}
 }
