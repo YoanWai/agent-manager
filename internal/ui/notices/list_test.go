@@ -88,6 +88,26 @@ func TestActivePutsPinnedFirstWithinItsKind(t *testing.T) {
 	}
 }
 
+func TestActiveKeepsAPinnedMessageDismissedBeforeItWasPinned(t *testing.T) {
+	src := Sources{
+		Store:  true,
+		Update: Update{Version: "v0.47.1"},
+		Feed: []Message{
+			{ID: "news-pinned", Kind: KindNews, Pinned: true},
+			{ID: "news-a", Kind: KindNews},
+		},
+	}
+	dismissed := map[string]bool{"news-pinned": true, "news-a": true}
+	got := ids(NewPanel(dismissed, map[string]bool{}).Active(src))
+	if !slices.Equal(got, []string{"news-pinned"}) {
+		t.Fatalf("ids = %v, want only the pinned message", got)
+	}
+	src.Feed[0].Pinned = false
+	if got := ids(NewPanel(dismissed, map[string]bool{}).Active(src)); len(got) != 0 {
+		t.Fatalf("ids = %v, an unpinned message keeps its dismissal", got)
+	}
+}
+
 func TestActiveWhatsNewSubtitleIsTheNewestHeadline(t *testing.T) {
 	src := Sources{
 		Store:           true,
