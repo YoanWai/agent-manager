@@ -34,7 +34,7 @@ yay -S agent-manager-bin
 ## mise
 
 ```bash
-mise use -g ubi:wainmann/agent-manager
+mise use -g ubi:YoanWai/agent-manager
 ```
 
 Reads the GitHub release directly, so it needs no registry entry. Install tmux and git with your own package manager.
