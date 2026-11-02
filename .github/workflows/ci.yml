@@ -109,6 +109,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # CODECOV_TOKEN lives in the codecov environment, for the fallback below.
+    environment: codecov
     permissions:
       contents: read
       # Codecov authenticates the upload with the job's OIDC token.
@@ -122,11 +124,23 @@ jobs:
           name: coverage
           path: .
       - name: Upload coverage to Codecov
+        id: oidc
+        continue-on-error: true
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: coverage.out
           fail_ci_if_error: true
           use_oidc: true
+      # Token upload as a fallback. Remove this step and the environment once
+      # the OIDC upload has passed on main.
+      - name: Upload coverage to Codecov (token fallback)
+        if: steps.oidc.outcome == 'failure'
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          files: coverage.out
+          fail_ci_if_error: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   # The darwin-only files (notify, clipboard, sysstat, systheme) compile and
   # run nowhere else. gofmt, vet, shellcheck and coverage stay on the Linux job.
