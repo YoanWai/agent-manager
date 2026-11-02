@@ -39,7 +39,7 @@ brew install agent-manager
 ```
 
 Other routes: the install script, the AUR (`yay -S agent-manager-bin`), `mise use -g
-ubi:wainmann/agent-manager`, `go install github.com/YoanWai/agent-manager@latest`, or a
+github:wainmann/agent-manager`, `go install github.com/YoanWai/agent-manager@latest`, or a
 prebuilt binary from the releases page.
 
 ## The keys that matter

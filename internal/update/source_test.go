@@ -86,6 +86,24 @@ func TestDetectManager(t *testing.T) {
 			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
 		},
 		{
+			label:       "mise github backend install dir",
+			path:        "/home/user/.local/share/mise/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend custom data dir",
+			path:        "/data/tools/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend under the earlier repo",
+			path:        "/home/user/.local/share/mise/installs/github-yoan-wai-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:YoanWai/agent-manager",
+		},
+		{
 			label:       "pacman owned with yay",
 			path:        "/usr/bin/agent-manager",
 			helpers:     map[string]string{"yay": "/usr/bin/yay"},
@@ -117,6 +135,10 @@ func TestDetectManager(t *testing.T) {
 		{
 			label: "another ubi tool is direct",
 			path:  "/home/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
+		},
+		{
+			label: "another github backend tool is direct",
+			path:  "/home/user/.local/share/mise/installs/github-other-user-agent-manager/1.0.0/agent-manager",
 		},
 		{
 			label: "install script dir is direct",
