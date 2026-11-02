@@ -20,7 +20,7 @@ import (
 
 // downloadBase is a var so tests can point the release download at a
 // local server.
-var downloadBase = "https://github.com/YoanWai/agent-manager/releases/download"
+var downloadBase = "https://github.com/wainmann/agent-manager/releases/download"
 
 var buildSource string
 

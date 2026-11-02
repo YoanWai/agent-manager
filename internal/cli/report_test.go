@@ -39,7 +39,7 @@ func (f *fakeReporter) File(sessionID string, draft report.Draft, previewID stri
 func sampleReporter() *fakeReporter {
 	return &fakeReporter{
 		preview: report.Preview{ID: "3f2a91c4", Kind: report.Bug, Title: "Space lands in the wrong pane", Body: "### What happened\n\nsteps\n", Route: report.RouteGH, Account: "yoan"},
-		result:  report.Filed{Route: report.RouteGH, URL: "https://github.com/YoanWai/agent-manager/issues/512"},
+		result:  report.Filed{Route: report.RouteGH, URL: "https://github.com/wainmann/agent-manager/issues/512"},
 	}
 }
 
@@ -49,7 +49,7 @@ func TestIssuePreviewsUntilConfirmed(t *testing.T) {
 	if err := runIssue(out, fake, []string{"Space lands in the wrong pane", "--body", "steps"}, "cafe0001"); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
-	for _, want := range []string{"bug report for YoanWai/agent-manager, not filed yet", "preview id: 3f2a91c4", "through gh as yoan", "rerun with --confirm 3f2a91c4"} {
+	for _, want := range []string{"bug report for wainmann/agent-manager, not filed yet", "preview id: 3f2a91c4", "through gh as yoan", "rerun with --confirm 3f2a91c4"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("preview lacks %q:\n%s", want, out.String())
 		}
@@ -63,7 +63,7 @@ func TestIssuePreviewsUntilConfirmed(t *testing.T) {
 	if err := runIssue(out, fake, []string{"Space lands in the wrong pane", "--body", "steps", "--confirm", "3f2a91c4"}, "cafe0001"); err != nil {
 		t.Fatalf("issue --confirm: %v", err)
 	}
-	if out.String() != "filed https://github.com/YoanWai/agent-manager/issues/512\n" {
+	if out.String() != "filed https://github.com/wainmann/agent-manager/issues/512\n" {
 		t.Fatalf("issue --confirm output = %q", out.String())
 	}
 	if len(fake.filed) != 1 || fake.filed[0] != want || fake.approved != "3f2a91c4" {
@@ -74,7 +74,7 @@ func TestIssuePreviewsUntilConfirmed(t *testing.T) {
 func TestFeatureDraftsAFeatureRequest(t *testing.T) {
 	fake := sampleReporter()
 	fake.preview.Kind = report.Feature
-	fake.preview.Route, fake.preview.Account, fake.preview.Reason, fake.preview.URL = report.RouteBrowser, "", "gh is not installed", "https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml"
+	fake.preview.Route, fake.preview.Account, fake.preview.Reason, fake.preview.URL = report.RouteBrowser, "", "gh is not installed", "https://github.com/wainmann/agent-manager/issues/new?template=feature_request.yml"
 	out := &bytes.Buffer{}
 	if err := runFeature(out, fake, []string{"--body", "I keep several agents on one repo.", "Show overlapping files"}, "cafe0001"); err != nil {
 		t.Fatalf("feature: %v", err)
