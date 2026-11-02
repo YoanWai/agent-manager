@@ -4,9 +4,9 @@ Thanks for taking an interest. Bug reports, feature ideas, and pull requests are
 
 ## Ways to help
 
-- **Report a bug** with the [bug report form](https://github.com/YoanWai/agent-manager/issues/new?template=bug_report.yml).
-- **Suggest a feature** with the [feature request form](https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml).
-- **Ask a question or show what you built** in [Discussions](https://github.com/YoanWai/agent-manager/discussions).
+- **Report a bug** with the [bug report form](https://github.com/wainmann/agent-manager/issues/new?template=bug_report.yml).
+- **Suggest a feature** with the [feature request form](https://github.com/wainmann/agent-manager/issues/new?template=feature_request.yml).
+- **Ask a question or show what you built** in [Discussions](https://github.com/wainmann/agent-manager/discussions).
 - **Talk about contributing** in #dev on the [Agent Manager Community Discord](https://discord.gg/ecS88An7pF).
 - **Add or fix status rules for a CLI** you use. Every CLI's launch command and detection rules ship in the binary, in `internal/config/config.go`, so a pull request there reaches everyone running that agent. An issue with the CLI's version and the pane text it draws is the next best thing.
 
@@ -39,7 +39,7 @@ an exception. Listing exclusions or promising follow-up PRs does not.
 See [tool coverage](../REVIEW.md#tool-coverage) for the evidence required.
 
 If you want a feature for one tool but cannot or do not plan to build it for
-the other applicable tools, [open a feature request](https://github.com/YoanWai/agent-manager/issues/new?template=feature_request.yml)
+the other applicable tools, [open a feature request](https://github.com/wainmann/agent-manager/issues/new?template=feature_request.yml)
 first. You may also open a draft PR linked to that issue as a reference
 implementation. Mark it as reference only and name the missing tool coverage.
 Keep it in draft until the coverage is complete or the maintainer accepts an
@@ -64,7 +64,7 @@ each of these with the reason behind it.
 You need Go 1.27.3+ and tmux.
 
 ```bash
-git clone https://github.com/YoanWai/agent-manager.git
+git clone https://github.com/wainmann/agent-manager.git
 cd agent-manager
 go run .
 ```
