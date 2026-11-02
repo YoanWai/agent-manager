@@ -48,7 +48,7 @@ const (
 )
 
 // feedURL is a var so tests can point the fetch at a local server.
-var feedURL = "https://raw.githubusercontent.com/YoanWai/agent-manager/main/docs/messages.json"
+var feedURL = "https://raw.githubusercontent.com/wainmann/agent-manager/main/docs/messages.json"
 
 var validFeedID = regexp.MustCompile(feedIDPattern)
 

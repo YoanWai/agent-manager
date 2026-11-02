@@ -15,9 +15,12 @@ jobs:
     # workflow pushed on a branch cannot read them.
     environment: release
     permissions:
-      contents: read
+      # Creates the release with the workflow token.
+      contents: write
       id-token: write
       attestations: write
+      # Dispatches badges.yml once the release is out.
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -29,11 +32,22 @@ jobs:
         with:
           version: "~> v2"
           args: release --clean
+        # GITHUB_TOKEN creates the release on this repository. RELEASE_TOKEN
+        # pushes only the Homebrew cask to the tap repository.
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           SCOOP_TOKEN: ${{ secrets.SCOOP_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           AUR_KEY: ${{ secrets.AUR_KEY }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-checksums: dist/checksums.txt
+      # A release created with the workflow token starts no other workflow,
+      # so the badges refresh is dispatched here. The release is already out,
+      # so a failed dispatch leaves the run green.
+      - name: Refresh badges
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run badges.yml --repo "$GITHUB_REPOSITORY"

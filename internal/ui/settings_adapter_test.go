@@ -482,7 +482,7 @@ func TestSettingsUpdateRowAppliesOnEnter(t *testing.T) {
 	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest: "v0.6.0",
-			URL:    "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
+			URL:    "https://github.com/wainmann/agent-manager/releases/tag/v0.6.0",
 			Releases: []update.Release{
 				uiRelease("v0.6.0", "Newest release"),
 				uiRelease("v0.2.0", "Current release"),
@@ -588,7 +588,7 @@ func TestSettingsUpdateRowApplyFailureSurfaces(t *testing.T) {
 	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest:   "v0.3.0",
-			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+			URL:      "https://github.com/wainmann/agent-manager/releases/tag/v0.3.0",
 			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
 		}, nil
 	}
@@ -640,7 +640,7 @@ func TestSettingsUpdateRowPersistsStagedSettings(t *testing.T) {
 	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest:   "v0.3.0",
-			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+			URL:      "https://github.com/wainmann/agent-manager/releases/tag/v0.3.0",
 			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
 		}, nil
 	}

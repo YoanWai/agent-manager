@@ -66,7 +66,7 @@ var thanksGroupHeadings = map[string]string{
 }
 
 // releasesURL is a var so tests can point the fetch at a local server.
-var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases?per_page=100"
+var releasesURL = "https://api.github.com/repos/wainmann/agent-manager/releases?per_page=100"
 
 var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)

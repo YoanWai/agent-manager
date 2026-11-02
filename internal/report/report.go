@@ -26,7 +26,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
-const repo = "YoanWai/agent-manager"
+const repo = "wainmann/agent-manager"
 
 const newIssueURL = "https://github.com/" + repo + "/issues/new"
 

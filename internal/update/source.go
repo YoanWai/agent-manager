@@ -38,6 +38,7 @@ func DetectManager(execPath string) Manager {
 		path = resolved
 	}
 	slashPath := filepath.ToSlash(path)
+	miseSlug := miseManaged(slashPath)
 	switch {
 	case scoopManaged(slashPath):
 		// Scoop refuses to update an app while its binary is running.
@@ -46,8 +47,8 @@ func DetectManager(execPath string) Manager {
 		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "--cask", "yoanwai/tap/agent-manager"}}
 	case buildSource == "Homebrew" || homebrewTree(slashPath) != "":
 		return Manager{Name: "Homebrew", Command: []string{"brew", "upgrade", "agent-manager"}}
-	case miseManaged(slashPath):
-		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", "ubi:YoanWai/agent-manager"}}
+	case miseSlug != "":
+		return Manager{Name: "mise", Command: []string{"mise", "upgrade", "--bump", miseSlug}}
 	case strings.HasPrefix(slashPath, "/nix/store/"):
 		// The store is read-only, and the user's Nix profile or config owns the install.
 		return Manager{Name: "Nix", Advice: "installed with Nix; update it through Nix, for example: nix profile upgrade agent-manager"}
@@ -117,19 +118,28 @@ func homebrewTree(slashPath string) string {
 	return ""
 }
 
-// miseManaged matches mise's install layout regardless of MISE_DATA_DIR:
-// .../installs/ubi-yoan-wai-agent-manager/<version>/agent-manager.
-func miseManaged(slashPath string) bool {
+// miseSlugs maps mise's install dir name to the ubi slug it was installed
+// as. mise keys an install by the slug it was first registered under, so
+// each dir upgrades through its own slug.
+var miseSlugs = map[string]string{
+	"ubi-yoan-wai-agent-manager": "ubi:YoanWai/agent-manager",
+	"ubi-wainmann-agent-manager": "ubi:wainmann/agent-manager",
+}
+
+// miseManaged matches mise's install layout regardless of MISE_DATA_DIR,
+// .../installs/<dir>/<version>/agent-manager, and returns the ubi slug the
+// dir belongs to, or "" when the path is not a mise install.
+func miseManaged(slashPath string) string {
 	parts := strings.Split(slashPath, "/")
 	for i := 0; i+1 < len(parts); i++ {
 		if parts[i] != "installs" {
 			continue
 		}
-		if parts[i+1] == "ubi-yoan-wai-agent-manager" {
-			return true
+		if slug, ok := miseSlugs[parts[i+1]]; ok {
+			return slug
 		}
 	}
-	return false
+	return ""
 }
 
 func pacmanOwnsPath(path string) bool {
