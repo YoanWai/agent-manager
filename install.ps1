@@ -6,7 +6,8 @@
 # directory (default %LOCALAPPDATA%\Programs\agent-manager).
 # AGENT_MANAGER_VERIFY_ATTESTATION=1 refuses to install unless
 # `gh attestation verify` accepts the archive, with --repo
-# wainmann/agent-manager or, for older releases, --owner YoanWai.
+# wainmann/agent-manager or, for older releases, --owner YoanWai
+# --signer-repo YoanWai/agent-manager.
 
 # `irm | iex` runs in the caller's session, so everything lives in a script
 # block that keeps its preferences and variables out of it, and a failure
@@ -84,9 +85,10 @@
 		try {
 			& gh attestation verify $path --repo $Repo
 			if ($LASTEXITCODE) {
-				# Older releases verify only with --owner YoanWai.
-				Write-Host "attestation for $path did not verify with --repo $Repo, trying --owner YoanWai" -ForegroundColor Yellow
-				& gh attestation verify $path --owner YoanWai
+				# Older releases verify only with --owner YoanWai and
+				# --signer-repo YoanWai/agent-manager.
+				Write-Host "attestation for $path did not verify with --repo $Repo, trying --owner YoanWai --signer-repo YoanWai/agent-manager" -ForegroundColor Yellow
+				& gh attestation verify $path --owner YoanWai --signer-repo YoanWai/agent-manager
 				if ($LASTEXITCODE) { throw "attestation verification failed for $path" }
 			}
 		} finally {
