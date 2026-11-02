@@ -18,7 +18,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/muesli/termenv v0.16.0
 	github.com/sergi/go-diff v1.4.0
-	github.com/shirou/gopsutil/v4 v4.26.9
+	github.com/shirou/gopsutil/v4 v4.26.10
 	golang.design/x/clipboard v0.11.0
 	golang.org/x/image v0.47.0
 	golang.org/x/sync v0.24.0
