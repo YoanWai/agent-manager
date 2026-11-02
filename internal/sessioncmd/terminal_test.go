@@ -246,6 +246,11 @@ func TestCreateTerminalAppliesExplicitName(t *testing.T) {
 	if named.Name != "cu-1234-api" {
 		t.Fatalf("named create = %q, want cu-1234-api", named.Name)
 	}
+	bad := "cu-1234\x1b[31mapi"
+	if _, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Name: bad}); err == nil || !strings.Contains(err.Error(), "control character") {
+		t.Fatalf("control-character name error = %v", err)
+	}
+
 	sessions, err := h.store.ListSessions(true)
 	if err != nil {
 		t.Fatal(err)

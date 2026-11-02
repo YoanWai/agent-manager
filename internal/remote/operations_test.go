@@ -91,6 +91,10 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.CreateTerminal(ctx, "gpu", sessioncmd.CreateTerminalOptions{Group: &root, Directory: "/srv", Nest: &no})
 			return err
 		}, []string{"terminal", "create", "--json", "--group=", "--directory=/srv", "--nest=false"}},
+		{"terminal create named", func(ctx context.Context, c *Client) error {
+			_, err := c.CreateTerminal(ctx, "gpu", sessioncmd.CreateTerminalOptions{Name: `cu 1234 "api"`})
+			return err
+		}, []string{"terminal", "create", "--json", `--name=cu 1234 "api"`}},
 		{"terminal send command", func(ctx context.Context, c *Client) error {
 			_, err := c.TerminalSend(ctx, ref, "ls -la; echo '$x'", nil)
 			return err

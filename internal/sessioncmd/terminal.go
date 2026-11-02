@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -230,6 +232,12 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 		}
 	}
 	name := strings.TrimSpace(opts.Name)
+	if name != "" && (strings.IndexFunc(name, unicode.IsControl) >= 0 || !utf8.ValidString(name)) {
+		// A name reaches the list, the picker and the JSON output: a control
+		// character there moves the cursor instead of reading as text. Same
+		// rule connection names already follow.
+		return Terminal{}, fmt.Errorf("a terminal name cannot contain control characters")
+	}
 	if name == "" {
 		name, err = runtime.shellName(toolName, parentID)
 		if err != nil {
