@@ -44,6 +44,9 @@ type CreateTerminalOptions struct {
 	Group     *string
 	Directory string
 	Nest      *bool
+	// Name names the terminal at creation, the way spawn names a session.
+	// Empty keeps the name derived from the session it hangs under.
+	Name string
 }
 
 type Terminals struct {
@@ -226,9 +229,12 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 			parentID = caller.ParentID
 		}
 	}
-	name, err := runtime.shellName(toolName, parentID)
-	if err != nil {
-		return Terminal{}, err
+	name := strings.TrimSpace(opts.Name)
+	if name == "" {
+		name, err = runtime.shellName(toolName, parentID)
+		if err != nil {
+			return Terminal{}, err
+		}
 	}
 	environment, err := runtime.environmentFor(caller, group, nil)
 	if err != nil {

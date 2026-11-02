@@ -23,6 +23,16 @@ func TestTerminalVerbsDispatch(t *testing.T) {
 	if fake.opts.Directory != "/repo" || fake.opts.Group != nil {
 		t.Fatalf("terminal create opts = %+v", fake.opts)
 	}
+	if fake.opts.Name != "" {
+		t.Fatalf("terminal create named without --name: %+v", fake.opts)
+	}
+
+	if err := runTerminalCreate(&bytes.Buffer{}, fake, []string{"--name", "cu-1234-api"}, "cafe0001"); err != nil {
+		t.Fatalf("terminal create --name: %v", err)
+	}
+	if fake.opts.Name != "cu-1234-api" {
+		t.Fatalf("terminal create name = %q, want cu-1234-api", fake.opts.Name)
+	}
 
 	sent := &bytes.Buffer{}
 	if err := runTerminalSend(sent, fake, []string{"t1", "--command", "go test ./..."}, "cafe0001"); err != nil {

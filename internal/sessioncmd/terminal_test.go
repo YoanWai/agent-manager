@@ -229,6 +229,46 @@ func TestCreateTerminalResolvesExplicitGroupAndDirectory(t *testing.T) {
 	}
 }
 
+func TestCreateTerminalAppliesExplicitName(t *testing.T) {
+	h := newTerminalHarness(t)
+	derived, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if derived.Name == "" || derived.Name == "cu-1234-api" {
+		t.Fatalf("unnamed create = %q, want a derived name", derived.Name)
+	}
+
+	named, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Name: "cu-1234-api"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if named.Name != "cu-1234-api" {
+		t.Fatalf("named create = %q, want cu-1234-api", named.Name)
+	}
+	sessions, err := h.store.ListSessions(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := ""
+	for _, row := range sessions {
+		if row.ID == named.ID {
+			stored = row.Name
+		}
+	}
+	if stored != "cu-1234-api" {
+		t.Fatalf("stored name = %q, want cu-1234-api", stored)
+	}
+
+	padded, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{Name: "  spaced name  "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if padded.Name != "spaced name" {
+		t.Fatalf("padded name = %q, want it trimmed", padded.Name)
+	}
+}
+
 func TestTerminalCommandsRejectUnsafeTargetsAndInvalidInput(t *testing.T) {
 	h := newTerminalHarness(t)
 	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
