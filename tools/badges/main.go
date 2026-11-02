@@ -3,6 +3,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -10,6 +11,10 @@ import (
 	"strings"
 	"time"
 )
+
+// apiBase is a variable so tests can point the traffic and contributor
+// calls at a local server.
+var apiBase = "https://api.github.com"
 
 const (
 	repo     = "wainmann/agent-manager"
@@ -35,12 +40,26 @@ func run() error {
 }
 
 // writeCloneEndpoint writes nothing when the traffic call fails, so the
-// badges branch keeps its published figure and a missing token shows up on
-// the run summary rather than as a zero in the README.
+// badges branch keeps its published figure and the failure shows up on the
+// run summary rather than as a zero in the README. The one exception is a
+// BADGE_TOKEN that GitHub rejects with 401 or 403: that returns an error so
+// the run fails instead of quietly keeping a stale count. Without
+// BADGE_TOKEN the call falls back to the Actions GITHUB_TOKEN, which cannot
+// read traffic, so a 403 there is expected and only warns.
 func writeCloneEndpoint() error {
-	count, measured := cloneCount()
-	if !measured {
-		fmt.Println("::warning::clone traffic was unavailable, so the published count was left alone; add a BADGE_TOKEN secret to refresh it")
+	count, err := cloneCount()
+	if err != nil {
+		badgeToken := os.Getenv("BADGE_TOKEN") != ""
+		var status *statusError
+		if badgeToken && errors.As(err, &status) && (status.Code == http.StatusUnauthorized || status.Code == http.StatusForbidden) {
+			return fmt.Errorf("BADGE_TOKEN is set but GitHub rejected it for clone traffic (%s); renew the token or restore its access to %s", status.Status, repo)
+		}
+		fmt.Fprintf(os.Stderr, "badges: clone traffic unavailable: %v\n", err)
+		if badgeToken {
+			fmt.Println("::warning::clone traffic was unavailable, so the published count was left alone")
+		} else {
+			fmt.Println("::warning::clone traffic was unavailable, so the published count was left alone; add a BADGE_TOKEN secret to refresh it")
+		}
 		return nil
 	}
 	endpoint := struct {
@@ -57,17 +76,16 @@ func writeCloneEndpoint() error {
 }
 
 // cloneCount reads 14-day clone traffic. The endpoint needs push access, which
-// the Actions GITHUB_TOKEN does not carry, so the caller is told whether the
-// figure was actually measured rather than being handed a zero to publish.
-func cloneCount() (int, bool) {
+// the Actions GITHUB_TOKEN does not carry, so a failed call comes back as an
+// error rather than a zero to publish. A non-200 answer is a *statusError.
+func cloneCount() (int, error) {
 	var clones struct {
 		Count int `json:"count"`
 	}
-	if err := get("https://api.github.com/repos/"+repo+"/traffic/clones", &clones); err != nil {
-		fmt.Fprintf(os.Stderr, "badges: clone traffic unavailable: %v\n", err)
-		return 0, false
+	if err := get(apiBase+"/repos/"+repo+"/traffic/clones", &clones); err != nil {
+		return 0, err
 	}
-	return clones.Count, true
+	return clones.Count, nil
 }
 
 // compact renders large counts as 1.9k rather than 1918, which keeps a chip
@@ -81,6 +99,18 @@ func compact(n int) string {
 	default:
 		return fmt.Sprint(n)
 	}
+}
+
+// statusError is a GitHub API answer other than 200 OK, kept typed so callers
+// can tell a rejected token from a network failure.
+type statusError struct {
+	URL    string
+	Code   int
+	Status string
+}
+
+func (e *statusError) Error() string {
+	return fmt.Sprintf("GET %s: %s", e.URL, e.Status)
 }
 
 func get(url string, into any) error {
@@ -103,7 +133,7 @@ func get(url string, into any) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET %s: %s", url, resp.Status)
+		return &statusError{URL: url, Code: resp.StatusCode, Status: resp.Status}
 	}
 	return json.NewDecoder(resp.Body).Decode(into)
 }
