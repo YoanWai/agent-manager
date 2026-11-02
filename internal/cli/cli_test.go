@@ -291,7 +291,9 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
 		{"revive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRevive(out, sessions, args, "cafe0001") }},
 		{"archive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runArchive(out, sessions, args, "cafe0001") }},
-		{"move", []string{"beef1234", "api/web"}, func(out io.Writer, args []string) error { return runMove(out, sessions, args, "cafe0001") }},
+		{"move", []string{"beef1234", "api/web"}, func(out io.Writer, args []string) error {
+			return runMove(out, moveLayer{sessionCommands: sessions}, args, "cafe0001")
+		}},
 		{"archive-self", nil, func(out io.Writer, args []string) error { return runArchiveSelf(out, sessions, args, "cafe0001") }},
 		{"kill-self", []string{"--cancel"}, func(out io.Writer, args []string) error { return runKillSelf(out, sessions, args, "cafe0001") }},
 		{"groups", nil, func(out io.Writer, args []string) error { return runGroups(out, sessions, args, "cafe0001") }},
@@ -371,7 +373,7 @@ func TestMissingSessionIDIsAUsageError(t *testing.T) {
 			return runWait(out, f, args, "cafe0001")
 		},
 		"move": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
-			return runMove(out, f, args, "cafe0001")
+			return runMove(out, moveLayer{sessionCommands: f}, args, "cafe0001")
 		},
 		"send": func(out *bytes.Buffer, f *fakeSessions, args []string) error {
 			return runSend(out, f, args, "cafe0001")
