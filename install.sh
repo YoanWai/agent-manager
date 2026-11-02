@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="YoanWai/agent-manager"
+REPO="wainmann/agent-manager"
 BINARY="agent-manager"
 
 say() {
@@ -21,7 +21,7 @@ detect_os() {
 	case $(uname -s) in
 	Darwin) echo darwin ;;
 	Linux) echo linux ;;
-	*) err "unsupported operating system: $(uname -s). On Windows, download and read https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1, then run it" ;;
+	*) err "unsupported operating system: $(uname -s). On Windows, download and read https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1, then run it" ;;
 	esac
 }
 

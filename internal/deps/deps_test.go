@@ -497,7 +497,7 @@ func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
 	dir := t.TempDir()
 	log := filepath.Join(dir, "gh.log")
 	writeExe(t, filepath.Join(dir, "gh"), "#!/bin/sh\nprintf 'prompt=%s\\n' \"${GH_PROMPT_DISABLED-unset}\" >> \"$GH_LOG\"\nprintf '%s\\n' \"$*\" >> \"$GH_LOG\"\nexit \"${GH_EXIT:-0}\"\n")
-	body := "set -eu\nREPO=YoanWai/agent-manager\n" + installFuncs(t, "err", "verify_attestation") + "verify_attestation /tmp/archive.tar.gz\nprintf 'done\\n'\n"
+	body := "set -eu\nREPO=wainmann/agent-manager\n" + installFuncs(t, "err", "verify_attestation") + "verify_attestation /tmp/archive.tar.gz\nprintf 'done\\n'\n"
 	path := "PATH=" + dir
 	base := []string{path, "GH_LOG=" + log}
 
@@ -512,7 +512,7 @@ func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
 		}
 		out, code = runDash(t, body, append(append([]string{}, base...), "AGENT_MANAGER_VERIFY_ATTESTATION="+flag, "GH_EXIT=0"))
 		got := readLog(t, log)
-		if code != 0 || !strings.Contains(out, "done") || !strings.Contains(got, "prompt=1\nattestation verify /tmp/archive.tar.gz --repo YoanWai/agent-manager\n") {
+		if code != 0 || !strings.Contains(out, "done") || !strings.Contains(got, "prompt=1\nattestation verify /tmp/archive.tar.gz --repo wainmann/agent-manager\n") {
 			t.Fatalf("flag %s: exit %d\n%s\nlog %q", flag, code, out, got)
 		}
 	}
@@ -676,7 +676,7 @@ func runPwsh(t *testing.T, script, pathDir string) (string, int) {
 func TestDetectOSOnWindowsNamesTheReadableInstaller(t *testing.T) {
 	body := "set -eu\n" + installFuncs(t, "err", "detect_os") + "uname() { echo Windows_NT; }\ndetect_os\n"
 	out, code := runDash(t, body, []string{"PATH=/usr/bin:/bin"})
-	const want = "https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1"
+	const want = "https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1"
 	if code != 1 || !strings.Contains(out, want) || strings.Contains(out, "releases/latest/download/install.ps1") {
 		t.Fatalf("windows hint: exit %d\n%s", code, out)
 	}

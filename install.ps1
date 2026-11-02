@@ -1,7 +1,7 @@
 # Installs agent-manager on Windows. Download this file, read it, then:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 # The release copy is:
-#   https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1
+#   https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1
 # AGENT_MANAGER_VERSION pins a release, AGENT_MANAGER_INSTALL_DIR picks the
 # directory (default %LOCALAPPDATA%\Programs\agent-manager).
 # AGENT_MANAGER_VERIFY_ATTESTATION=1 refuses to install unless
@@ -14,7 +14,7 @@
 	$ErrorActionPreference = 'Stop'
 	$ProgressPreference = 'SilentlyContinue'
 
-	$Repo = 'YoanWai/agent-manager'
+	$Repo = 'wainmann/agent-manager'
 	$Binary = 'agent-manager.exe'
 
 	# Windows PowerShell 5.1 does not offer TLS 1.2 by default.

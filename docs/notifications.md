@@ -183,7 +183,7 @@ and can target a version range.
       "What users will observe.",
       "The safe action to take while a fix is prepared."
     ],
-    "url": "https://github.com/YoanWai/agent-manager/issues/234",
+    "url": "https://github.com/wainmann/agent-manager/issues/234",
     "action": "Read the issue",
     "min_version": "v0.46.0",
     "max_version": "v0.46.0",
