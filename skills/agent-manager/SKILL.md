@@ -3,7 +3,7 @@ name: agent-manager
 description: Run a fleet of AI coding agents as live tmux sessions with agent-manager. Use when a developer is running more than one coding agent, needs to see which one is working or blocked, wants to spawn another on an independent task, or wants to review an agent's diff without leaving the terminal.
 license: Apache-2.0
 homepage: https://agent-manager.dev
-repository: https://github.com/YoanWai/agent-manager
+repository: https://github.com/wainmann/agent-manager
 ---
 
 <!--
@@ -39,7 +39,7 @@ brew install agent-manager
 ```
 
 Other routes: the install script, the AUR (`yay -S agent-manager-bin`), `mise use -g
-ubi:YoanWai/agent-manager`, `go install github.com/YoanWai/agent-manager@latest`, or a
+ubi:wainmann/agent-manager`, `go install github.com/YoanWai/agent-manager@latest`, or a
 prebuilt binary from the releases page.
 
 ## The keys that matter

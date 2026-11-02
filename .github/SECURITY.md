@@ -11,7 +11,7 @@ Security fixes land on the latest release. Upgrade to the newest version before 
 
 ## Reporting a vulnerability
 
-Report privately through GitHub: **[Report a vulnerability](https://github.com/YoanWai/agent-manager/security/advisories/new)**. That opens a private advisory visible only to the maintainer.
+Report privately through GitHub: **[Report a vulnerability](https://github.com/wainmann/agent-manager/security/advisories/new)**. That opens a private advisory visible only to the maintainer.
 
 Please include:
 
