@@ -109,9 +109,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment: codecov
     permissions:
       contents: read
+      # Codecov authenticates the upload with the job's OIDC token.
+      id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -125,8 +126,7 @@ jobs:
         with:
           files: coverage.out
           fail_ci_if_error: true
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          use_oidc: true
 
   # The darwin-only files (notify, clipboard, sysstat, systheme) compile and
   # run nowhere else. gofmt, vet, shellcheck and coverage stay on the Linux job.
