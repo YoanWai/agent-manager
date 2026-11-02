@@ -154,7 +154,7 @@ func TestUpdateNoticeSummarizesEverySkippedRelease(t *testing.T) {
 	}
 	m.Update(uirelease.UpdateMsg{
 		Latest:   "v0.6.0",
-		URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
+		URL:      "https://github.com/wainmann/agent-manager/releases/tag/v0.6.0",
 		Releases: releases,
 	})
 	m.openNotices("update-v0.6.0")
@@ -942,7 +942,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 		Banner: "Hold off on v0.36",
 		Title:  "Hold off on v0.36",
 		Body:   []string{"Sessions may drop.", "Stay on v0.35 until the fix."},
-		URL:    "https://github.com/YoanWai/agent-manager/issues/1",
+		URL:    "https://github.com/wainmann/agent-manager/issues/1",
 	}}})
 	feedFrame := ansi.Strip(preparedView(feedModel))
 	for _, want := range []string{"messages", "Hold off on v0.36", "Sessions may drop", "Stay on v0.35", "esc"} {
@@ -956,7 +956,7 @@ func TestAutoOpenFeedAndUpdateFrames(t *testing.T) {
 	upd.base = baseList
 	upd.Update(uirelease.UpdateMsg{
 		Latest:   "v0.3.0",
-		URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+		URL:      "https://github.com/wainmann/agent-manager/releases/tag/v0.3.0",
 		Releases: []update.Release{uiRelease("v0.3.0", "Notices: Open the modal on a new message")},
 	})
 	updFrame := ansi.Strip(preparedView(upd))
@@ -983,7 +983,7 @@ func TestUpdateNoticeAppliesOnU(t *testing.T) {
 	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest: "v0.6.0",
-			URL:    "https://github.com/YoanWai/agent-manager/releases/tag/v0.6.0",
+			URL:    "https://github.com/wainmann/agent-manager/releases/tag/v0.6.0",
 			Releases: []update.Release{
 				uiRelease("v0.6.0", "Newest release"),
 				uiRelease("v0.2.0", "Current release"),
@@ -1037,7 +1037,7 @@ func TestUpdateNoticeApplyFailureSurfaces(t *testing.T) {
 	uirelease.RefreshForApply = func(context.Context, string, string) (update.Result, error) {
 		return update.Result{
 			Latest:   "v0.3.0",
-			URL:      "https://github.com/YoanWai/agent-manager/releases/tag/v0.3.0",
+			URL:      "https://github.com/wainmann/agent-manager/releases/tag/v0.3.0",
 			Releases: []update.Release{uiRelease("v0.3.0", "Newest release"), uiRelease("v0.2.0", "Current release")},
 		}, nil
 	}
@@ -1147,7 +1147,7 @@ func uiRelease(version string, changes ...string) update.Release {
 func uiReleaseWithTotal(version string, total int, changes ...string) update.Release {
 	release := update.Release{
 		Version:      version,
-		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
+		URL:          "https://github.com/wainmann/agent-manager/releases/tag/" + version,
 		TotalChanges: total,
 	}
 	for _, text := range changes {

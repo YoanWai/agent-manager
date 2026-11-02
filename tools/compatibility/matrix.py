@@ -40,7 +40,7 @@ def released_binary(work, tag):
     system = {'Darwin': 'darwin', 'Linux': 'linux'}[platform.system()]
     arch = {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'amd64', 'AMD64': 'amd64'}[platform.machine()]
     name = f'agent-manager_{tag.removeprefix("v")}_{system}_{arch}.tar.gz'
-    base = f'https://github.com/YoanWai/agent-manager/releases/download/{tag}/'
+    base = f'https://github.com/wainmann/agent-manager/releases/download/{tag}/'
     def download(name):
         with urllib.request.urlopen(base + name, timeout=30) as response:
             return response.read()

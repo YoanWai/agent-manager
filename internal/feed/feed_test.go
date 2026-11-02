@@ -41,7 +41,7 @@ func fetch(t *testing.T, dir, version string) []Message {
 }
 
 func TestFetchParsesAndPrefixesIDs(t *testing.T) {
-	serve(t, `[{"id":"holdoff-0142","banner":"known issue in v0.14.2","title":"Hold off on v0.14.2","body":["Sessions may drop.","Fixed in v0.14.3."],"url":"https://github.com/YoanWai/agent-manager/issues/200"}]`)
+	serve(t, `[{"id":"holdoff-0142","banner":"known issue in v0.14.2","title":"Hold off on v0.14.2","body":["Sessions may drop.","Fixed in v0.14.3."],"url":"https://github.com/wainmann/agent-manager/issues/200"}]`)
 	messages := fetch(t, t.TempDir(), "v0.14.2")
 	if len(messages) != 1 {
 		t.Fatalf("want 1 message, got %d", len(messages))
