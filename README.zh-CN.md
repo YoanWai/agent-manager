@@ -112,9 +112,9 @@ gh attestation verify install.sh --repo wainmann/agent-manager &&
 sh install.sh
 ```
 
-在那个版本发布之前，上面的发布 URL 没有文件，所以在此之前请使用第一条命令。
+在那个版本发布之前，上面的发布 URL 没有文件，所以在此之前请使用第一条命令。较早的版本请用 `--owner YoanWai` 代替 `--repo wainmann/agent-manager` 来验证。
 
-脚本会下载适合你平台的最新版本，按发布的校验和验证后安装到 `~/.local/bin`，然后检查 tmux 3.1+ 和 git。在 macOS 上它会提议使用 Homebrew，缺少 Homebrew 时会先提议安装它。在 Linux 上它会提议使用 apt、dnf、pacman、zypper、apk 或 Homebrew，在桌面环境中还会提议安装剪贴板和通知相关的包。你拒绝时，它会打印对应的命令。没有终端时会跳过提示，仍然安装二进制文件。设置 `AGENT_MANAGER_INSTALL_DIR` 可以换安装目录，`AGENT_MANAGER_VERSION` 可以固定版本，`AGENT_MANAGER_INSTALL_DEPS=1` 可以提前同意安装依赖（`=0` 跳过）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` 会在 `gh attestation verify` 不接受下载的压缩包时拒绝安装。在没有 `gh` 的机器上安装时请不要设置它。`gh` 对证明被拒、未登录和网络错误使用同一个退出码，所以脚本不会区分这几种情况。
+脚本会下载适合你平台的最新版本，按发布的校验和验证后安装到 `~/.local/bin`，然后检查 tmux 3.1+ 和 git。在 macOS 上它会提议使用 Homebrew，缺少 Homebrew 时会先提议安装它。在 Linux 上它会提议使用 apt、dnf、pacman、zypper、apk 或 Homebrew，在桌面环境中还会提议安装剪贴板和通知相关的包。你拒绝时，它会打印对应的命令。没有终端时会跳过提示，仍然安装二进制文件。设置 `AGENT_MANAGER_INSTALL_DIR` 可以换安装目录，`AGENT_MANAGER_VERSION` 可以固定版本，`AGENT_MANAGER_INSTALL_DEPS=1` 可以提前同意安装依赖（`=0` 跳过）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` 会在 `gh attestation verify` 不接受下载的压缩包时拒绝安装。该检查失败时，脚本会用较早版本所需的 `--owner YoanWai` 再试一次，两次都失败才会停止。在没有 `gh` 的机器上安装时请不要设置它。`gh` 对证明被拒、未登录和网络错误使用同一个退出码，所以脚本不会区分这几种情况。
 
 不先下载文件阅读，直接运行：
 
@@ -139,7 +139,7 @@ if ($?) {
 }
 ```
 
-一旦发布版本附带了 `install.ps1` 并把它列入 `checksums.txt`，请改为下载那个文件。登录 `gh` 后，在下载之后、运行安装程序之前验证它。缺少 `gh` 时示例会停止：否则 PowerShell 会保留上一个 `$LASTEXITCODE`，之前某条命令返回的 `0` 会看起来像验证成功。在那个版本发布之前，该发布 URL 没有文件。
+一旦发布版本附带了 `install.ps1` 并把它列入 `checksums.txt`，请改为下载那个文件。登录 `gh` 后，在下载之后、运行安装程序之前验证它。较早的版本请用 `--owner YoanWai` 代替 `--repo wainmann/agent-manager` 来验证。缺少 `gh` 时示例会停止：否则 PowerShell 会保留上一个 `$LASTEXITCODE`，之前某条命令返回的 `0` 会看起来像验证成功。在那个版本发布之前，该发布 URL 没有文件。
 
 ```powershell
 irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1

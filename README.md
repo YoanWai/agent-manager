@@ -110,9 +110,9 @@ gh attestation verify install.sh --repo wainmann/agent-manager &&
 sh install.sh
 ```
 
-The release URL above has no file until that tag exists, so the first command is the one that works until then.
+The release URL above has no file until that tag exists, so the first command is the one that works until then. Older releases verify with `--owner YoanWai` in place of `--repo wainmann/agent-manager`.
 
-Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
+Downloads the latest release for your platform, verifies it against the published checksums, and installs it to `~/.local/bin`. Then it checks for tmux 3.1+ and git. On macOS it offers Homebrew, and offers to install Homebrew first when that is missing. On Linux it offers apt, dnf, pacman, zypper, apk, or Homebrew, and on a desktop it also offers the clipboard and notification packages. It prints the command when you decline. A run with no terminal skips the prompt and still installs the binary. Set `AGENT_MANAGER_INSTALL_DIR` for another directory, `AGENT_MANAGER_VERSION` to pin a version, and `AGENT_MANAGER_INSTALL_DEPS=1` to answer the dependency prompt up front (`=0` to skip it). `AGENT_MANAGER_VERIFY_ATTESTATION=1` refuses the install unless `gh attestation verify` accepts the downloaded archive. When that check fails, the script tries again with `--owner YoanWai`, which older releases need, and stops only if both fail. Leave it unset to install on a machine without `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error, so the script does not try to tell those apart.
 
 Running it without a file to read first:
 
@@ -137,7 +137,7 @@ if ($?) {
 }
 ```
 
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. A missing `gh` stops the example: PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
+Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Older releases verify with `--owner YoanWai` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example: PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
 
 ```powershell
 irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1

@@ -99,7 +99,7 @@ $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
 if ($actual -ne $expected) { throw "Checksum mismatch for $archive" }
 ```
 
-Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify.
+Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. Older releases verify with `--owner YoanWai` in place of `--repo wainmann/agent-manager`.
 
 ```powershell
 Get-Command gh -ErrorAction Stop | Out-Null
@@ -140,7 +140,7 @@ if ($?) {
 }
 ```
 
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
+Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Older releases verify with `--owner YoanWai` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
 
 ```powershell
 irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
@@ -168,7 +168,7 @@ Short form. Piping into `iex` skips the download-and-read step and does not cons
 irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 | iex
 ```
 
-On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo wainmann/agent-manager` belongs between the download and `sh install.sh`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh`.
+On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo wainmann/agent-manager` belongs between the download and `sh install.sh`. Older releases verify with `--owner YoanWai` in place of `--repo wainmann/agent-manager`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh`.
 
 | Tool | Install |
 | --- | --- |
@@ -194,9 +194,9 @@ The release workflow attests every digest in `checksums.txt`. That covers the ar
 gh attestation verify <archive> --repo wainmann/agent-manager
 ```
 
-`<archive>` is the file you downloaded, such as `agent-manager_0.43.0_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them.
+`<archive>` is the file you downloaded, such as `agent-manager_0.43.0_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them. Older releases verify with `--owner YoanWai` in place of `--repo wainmann/agent-manager`.
 
-The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They stop if the command fails, and they skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats any failure as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
+The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They try `--repo wainmann/agent-manager` first, retry with `--owner YoanWai` when that fails, and stop only if both fail. They skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats a failure of both as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
 
 ## Updating
 

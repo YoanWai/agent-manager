@@ -77,7 +77,7 @@ release:
     }
     ```
 
-    `install.sh` is attached too. `gh attestation verify <file> --repo wainmann/agent-manager` checks build provenance once `gh` is logged in.
+    `install.sh` is attached too. `gh attestation verify <file> --repo wainmann/agent-manager` checks build provenance once `gh` is logged in. Older releases verify with `--owner YoanWai` in place of `--repo wainmann/agent-manager`.
 
     The shell short form runs the script without a local copy: `curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh`.
 

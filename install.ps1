@@ -5,7 +5,8 @@
 # AGENT_MANAGER_VERSION pins a release, AGENT_MANAGER_INSTALL_DIR picks the
 # directory (default %LOCALAPPDATA%\Programs\agent-manager).
 # AGENT_MANAGER_VERIFY_ATTESTATION=1 refuses to install unless
-# `gh attestation verify` accepts the archive.
+# `gh attestation verify` accepts the archive, with --repo
+# wainmann/agent-manager or, for older releases, --owner YoanWai.
 
 # `irm | iex` runs in the caller's session, so everything lives in a script
 # block that keeps its preferences and variables out of it, and a failure
@@ -82,7 +83,12 @@
 		$env:GH_PROMPT_DISABLED = '1'
 		try {
 			& gh attestation verify $path --repo $Repo
-			if ($LASTEXITCODE) { throw "attestation verification failed for $path" }
+			if ($LASTEXITCODE) {
+				# Older releases verify only with --owner YoanWai.
+				Write-Host "attestation for $path did not verify with --repo $Repo, trying --owner YoanWai" -ForegroundColor Yellow
+				& gh attestation verify $path --owner YoanWai
+				if ($LASTEXITCODE) { throw "attestation verification failed for $path" }
+			}
 		} finally {
 			$env:GH_PROMPT_DISABLED = $previousPrompt
 		}

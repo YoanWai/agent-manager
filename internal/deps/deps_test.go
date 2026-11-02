@@ -534,6 +534,9 @@ func TestVerifyAttestationMatchesPowerShellCase(t *testing.T) {
 	if code != 1 || !strings.Contains(out, "error: attestation verification failed for /tmp/archive.tar.gz") {
 		t.Fatalf("rejected attestation: exit %d\n%s", code, out)
 	}
+	if got := readLog(t, log); !strings.Contains(got, "attestation verify /tmp/archive.tar.gz --repo wainmann/agent-manager\nprompt=1\nattestation verify /tmp/archive.tar.gz --owner YoanWai\n") {
+		t.Fatalf("rejected attestation did not retry with --owner YoanWai: log %q", got)
+	}
 
 	out, code = runDash(t, body, []string{"PATH=" + t.TempDir(), "AGENT_MANAGER_VERIFY_ATTESTATION=yes"})
 	if code != 1 || !strings.Contains(out, "error: AGENT_MANAGER_VERIFY_ATTESTATION is set but gh is not installed") {
