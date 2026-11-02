@@ -1,8 +1,10 @@
 package connections
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 )
@@ -42,10 +44,49 @@ func TestSessionCallAnswersEveryRemoteAction(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := SessionCall(tc.row, tc.kind); got != tc.want {
+			if got := SessionCall(tc.row, tc.kind, boundKeys(map[string]string{keybind.Revive: "v", keybind.Kill: "x"})); got != tc.want {
 				t.Fatalf("SessionCall = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSessionCallNamesTheBoundKeys(t *testing.T) {
+	row := Row{Kind: SessionRow, Host: "box", Name: "api", Status: "idle"}
+	dead := Row{Kind: SessionRow, Host: "box", Name: "api", Status: "dead"}
+	shell := Row{Kind: SessionRow, Host: "box", Name: "sh", Terminal: true}
+	cases := []struct {
+		name string
+		keys map[string]string
+		row  Row
+		kind uirail.ActionKind
+		want string
+	}{
+		{"rebound revive on a kill", map[string]string{keybind.Revive: "Z"}, row, uirail.Kill, " frees its RAM there, Z revives it."},
+		{"unbound revive on a kill", nil, row, uirail.Kill, " frees its RAM there."},
+		{"rebound revive on a dead attach", map[string]string{keybind.Revive: "Z"}, dead, uirail.Attach, "api is dead on box - press Z to revive it"},
+		{"unbound revive on a dead attach", nil, dead, uirail.Attach, "api is dead on box"},
+		{"rebound kill on a terminal", map[string]string{keybind.Kill: "D"}, shell, uirail.Archive, "a terminal on box is not archived or revived - D closes it"},
+		{"unbound kill on a terminal", nil, shell, uirail.Archive, "a terminal on box is not archived or revived"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			call := SessionCall(tc.row, tc.kind, boundKeys(tc.keys))
+			if got := call.Consequence + call.Refusal; got != tc.want {
+				t.Fatalf("SessionCall words it %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// boundKeys is a key hint over the keys a test binds; an action it leaves out
+// has no key.
+func boundKeys(bound map[string]string) KeyHint {
+	return func(action, format string) string {
+		if bound[action] == "" {
+			return ""
+		}
+		return fmt.Sprintf(format, bound[action])
 	}
 }
 

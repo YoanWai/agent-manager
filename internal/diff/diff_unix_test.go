@@ -27,7 +27,7 @@ func TestBuildSetSkipsUntrackedSpecialFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "")
+	set, err := BuildSet(driver, dir, git.ScopeUncommitted, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

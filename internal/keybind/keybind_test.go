@@ -396,3 +396,20 @@ func TestTmuxPrefixIsOffUntilWrittenAndTakesTwoKeysAtMost(t *testing.T) {
 		}
 	}
 }
+
+func TestBindingTextPreservesLiteralDirections(t *testing.T) {
+	b := keys("left", "shift+up", "←", "↑", "^", "v", "<", ">", "/")
+	canonical := "left / shift+up / ← / ↑ / ^ / v / < / > / /"
+	if got := b.Text(" / ", false); got != canonical {
+		t.Fatalf("names=%q", got)
+	}
+	if got := b.Text(" / ", true); got != "← / shift+↑ / ← / ↑ / ^ / v / < / > / /" {
+		t.Fatalf("glyphs=%q", got)
+	}
+	if b.Label() != canonical {
+		t.Fatal("display changed binding values")
+	}
+	if got := (Binding{}).Text("/", false); got != "" {
+		t.Fatal(got)
+	}
+}

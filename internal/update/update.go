@@ -27,7 +27,7 @@ const (
 	cacheFile       = "release-catalog.json"
 	legacyCacheFile = "update-check.json"
 	// catalogParser names the shape this build parses a release into. Raise it when that shape changes.
-	catalogParser        = 1
+	catalogParser        = 2
 	checkInterval        = 10 * time.Minute
 	requestBudget        = 4 * time.Second
 	refreshBudget        = 2 * time.Minute
@@ -48,22 +48,33 @@ const (
 	highlightsHeading = "## Highlights"
 	thanksHeading     = "## Thank you"
 	changesHeading    = "## What's Changed"
+	// labeledNotesSince is the first release whose highlights open with their label in backticks.
+	labeledNotesSince = "v0.46.0"
 )
+
+// Thanks groups, as the Thank you section's sub-headings file them.
+const (
+	ThanksBuilt   = "built"
+	ThanksFound   = "found"
+	ThanksStarted = "started"
+)
+
+var thanksGroupHeadings = map[string]string{
+	"### built it":          ThanksBuilt,
+	"### found it":          ThanksFound,
+	"### started something": ThanksStarted,
+}
 
 // releasesURL is a var so tests can point the fetch at a local server.
 var releasesURL = "https://api.github.com/repos/YoanWai/agent-manager/releases?per_page=100"
-
-// userFacingTypes are the conventional commit types that change what the
-// program does for the person reading the digest. The rest are real work
-// that leaves the running program identical, and every row one of them
-// takes is a row a feature or a fix does not get.
-var userFacingTypes = map[string]bool{"feat": true, "fix": true, "perf": true}
 
 var (
 	conventionalTitle = regexp.MustCompile(`(?i)^(feat|fix|docs|refactor|perf|test|build|ci|chore|style)(?:\(([^)]+)\))?!?:\s*(.+)$`)
 	pullSuffix        = regexp.MustCompile(`\s+by\s+(@[A-Za-z0-9-]+(?:\[bot])?)\s+in\s+https://github\.com/\S+\s*$`)
 	markdownLink      = regexp.MustCompile(`\[([^]]+)]\([^)]+\)`)
 	boldLine          = regexp.MustCompile(`^\*\*([^*]+)\*\*$`)
+	highlightLabel    = regexp.MustCompile("^`([^`]+)`\\s*(.*)$")
+	thanksRefs        = regexp.MustCompile(`\s*\((#\d+(?:,\s*#\d+)*)\)\.?$`)
 )
 
 const (
@@ -72,27 +83,73 @@ const (
 	KindOther   = "other"
 )
 
+// Highlight is one authored bullet. Label is empty for releases before labeledNotesSince.
+type Highlight struct {
+	Label string `json:"label,omitempty"`
+	Text  string `json:"text"`
+}
+
+// Thanks is one contributor line. Handle is empty when the bullet does not open with one.
+type Thanks struct {
+	Handle string   `json:"handle,omitempty"`
+	Group  string   `json:"group"`
+	Text   string   `json:"text"`
+	Refs   []string `json:"refs,omitempty"`
+}
+
+// UnmarshalJSON also reads the plain string a parser 1 catalog stored, so that catalog paints until it is refetched.
+func (highlight *Highlight) UnmarshalJSON(raw []byte) error {
+	if !isJSONString(raw) {
+		type fields Highlight
+		return json.Unmarshal(raw, (*fields)(highlight))
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return err
+	}
+	*highlight = Highlight{Text: text}
+	return nil
+}
+
+// UnmarshalJSON also reads the plain string a parser 1 catalog stored, filed under Built it.
+func (thanks *Thanks) UnmarshalJSON(raw []byte) error {
+	if !isJSONString(raw) {
+		type fields Thanks
+		return json.Unmarshal(raw, (*fields)(thanks))
+	}
+	var line string
+	if err := json.Unmarshal(raw, &line); err != nil {
+		return err
+	}
+	*thanks = parseThanks(line, ThanksBuilt)
+	return nil
+}
+
+func isJSONString(raw []byte) bool {
+	return len(raw) > 0 && raw[0] == '"'
+}
+
 // Change is one line of a release's generated list.
 type Change struct {
 	Kind   string `json:"kind"`
+	Scope  string `json:"scope,omitempty"`
 	Text   string `json:"text"`
 	Author string `json:"author,omitempty"`
 }
 
 // Release is one stable GitHub release with a compact, terminal-safe summary.
-// The panel lists Changes under Highlights for the newest release. Changes are every
-// user-facing line of the generated list, kept up to a bound that TotalChanges
-// may exceed.
-// Highlights and Summary keep the backticks their author put around the words to accent.
+// Changes holds every generated line up to a bound that TotalChanges may exceed.
+// Summary and highlight text keep their accent backticks. A highlight's Label is stored without them.
 type Release struct {
-	Version      string   `json:"version"`
-	URL          string   `json:"url"`
-	Headline     string   `json:"headline,omitempty"`
-	Summary      string   `json:"summary,omitempty"`
-	Highlights   []string `json:"highlights,omitempty"`
-	Thanks       []string `json:"thanks,omitempty"`
-	Changes      []Change `json:"changes,omitempty"`
-	TotalChanges int      `json:"total_changes"`
+	Version      string      `json:"version"`
+	URL          string      `json:"url"`
+	PublishedAt  time.Time   `json:"published_at,omitempty"`
+	Headline     string      `json:"headline,omitempty"`
+	Summary      string      `json:"summary,omitempty"`
+	Highlights   []Highlight `json:"highlights,omitempty"`
+	Thanks       []Thanks    `json:"thanks,omitempty"`
+	Changes      []Change    `json:"changes,omitempty"`
+	TotalChanges int         `json:"total_changes"`
 }
 
 // Result is the locally known release catalog plus an optional release newer
@@ -121,21 +178,22 @@ type cache struct {
 // legacyCache is update-check.json from releases before v0.40.0, whose change rows carry no kind and seed as other.
 type legacyCache struct {
 	Releases []struct {
-		Version      string   `json:"version"`
-		URL          string   `json:"url"`
-		Highlights   []string `json:"highlights"`
-		Thanks       []string `json:"thanks"`
-		Changes      []string `json:"changes"`
-		TotalChanges int      `json:"total_changes"`
+		Version      string      `json:"version"`
+		URL          string      `json:"url"`
+		Highlights   []Highlight `json:"highlights"`
+		Thanks       []Thanks    `json:"thanks"`
+		Changes      []string    `json:"changes"`
+		TotalChanges int         `json:"total_changes"`
 	} `json:"releases"`
 }
 
 type githubRelease struct {
-	TagName    string `json:"tag_name"`
-	HTMLURL    string `json:"html_url"`
-	Body       string `json:"body"`
-	Draft      bool   `json:"draft"`
-	Prerelease bool   `json:"prerelease"`
+	TagName     string    `json:"tag_name"`
+	HTMLURL     string    `json:"html_url"`
+	Body        string    `json:"body"`
+	PublishedAt time.Time `json:"published_at"`
+	Draft       bool      `json:"draft"`
+	Prerelease  bool      `json:"prerelease"`
 }
 
 // Check returns a cache-backed release catalog. Every build checks at most once
@@ -319,9 +377,10 @@ func fetchReleases(ctx context.Context, etag string, budget time.Duration) ([]Re
 		releases = append(releases, Release{
 			Version:      item.TagName,
 			URL:          item.HTMLURL,
+			PublishedAt:  item.PublishedAt,
 			Headline:     headline,
 			Summary:      summary,
-			Highlights:   extractHighlights(item.Body),
+			Highlights:   extractHighlights(item.Body, item.TagName),
 			Thanks:       extractThanks(item.Body),
 			Changes:      changes,
 			TotalChanges: total,
@@ -368,32 +427,76 @@ func bulletText(line string) (string, bool) {
 	return strings.TrimSpace(line[2:]), true
 }
 
-// Prose under an authored heading is the release page's own copy, written
-// for a browser rather than a modal, so only bullets travel.
-func extractSectionBullets(body, heading string, limit int, clean func(string) string) []string {
-	var bullets []string
-	for _, line := range sectionLines(body, heading) {
-		text, ok := bulletText(line)
+// extractHighlights keeps only bullets, since the prose under the heading is the release page's copy.
+func extractHighlights(body, tag string) []Highlight {
+	labeled := !Newer(labeledNotesSince, tag)
+	var highlights []Highlight
+	for _, line := range sectionLines(body, highlightsHeading) {
+		bullet, ok := bulletText(line)
 		if !ok {
 			continue
 		}
-		if text = clean(text); text == "" {
+		text := markedText(bullet)
+		if text == "" {
 			continue
 		}
-		bullets = append(bullets, sentenceCase(truncate(text, maxLineLength)))
-		if len(bullets) == limit {
+		text = truncate(text, maxLineLength)
+		if match := highlightLabel.FindStringSubmatch(text); labeled && match != nil {
+			highlights = append(highlights, Highlight{Label: match[1], Text: sentenceCase(match[2])})
+		} else {
+			highlights = append(highlights, Highlight{Text: sentenceCase(text)})
+		}
+		if len(highlights) == maxHighlights {
 			break
 		}
 	}
-	return bullets
+	return highlights
 }
 
-func extractHighlights(body string) []string {
-	return extractSectionBullets(body, highlightsHeading, maxHighlights, markedText)
+func extractThanks(body string) []Thanks {
+	var thanks []Thanks
+	group := ThanksBuilt
+	for _, line := range sectionLines(body, thanksHeading) {
+		if heading, ok := thanksGroupHeadings[strings.ToLower(line)]; ok {
+			group = heading
+			continue
+		}
+		bullet, ok := bulletText(line)
+		if !ok {
+			continue
+		}
+		entry := parseThanks(plainText(bullet), group)
+		if entry.Handle == "" && entry.Text == "" {
+			continue
+		}
+		thanks = append(thanks, entry)
+		if len(thanks) == maxThanks {
+			break
+		}
+	}
+	return thanks
 }
 
-func extractThanks(body string) []string {
-	return extractSectionBullets(body, thanksHeading, maxThanks, plainText)
+// parseThanks splits "@handle what they did (#1, #2)" and keeps the visible line within maxLineLength.
+func parseThanks(line, group string) Thanks {
+	entry := Thanks{Group: group}
+	text := strings.TrimSpace(line)
+	if strings.HasPrefix(text, "@") {
+		handle, rest, _ := strings.Cut(text, " ")
+		entry.Handle, text = handle, strings.TrimSpace(rest)
+	}
+	if match := thanksRefs.FindStringSubmatchIndex(text); match != nil {
+		for _, ref := range strings.Split(text[match[2]:match[3]], ",") {
+			entry.Refs = append(entry.Refs, strings.TrimSpace(ref))
+		}
+		text = text[:match[0]]
+	}
+	budget := maxLineLength - len([]rune(entry.Handle)) - 1
+	if len(entry.Refs) > 0 {
+		budget -= len([]rune(" (" + strings.Join(entry.Refs, ", ") + ")"))
+	}
+	entry.Text = truncate(text, max(budget, 1))
+	return entry
 }
 
 // extractLead reads an optional bold headline, then the summary, under the release's own heading.
@@ -433,7 +536,6 @@ func extractChanges(body string) ([]Change, int) {
 	return changes, total
 }
 
-// A bullet that names no type cannot be judged, so it stays.
 func cleanChange(bullet string) (Change, bool) {
 	change := Change{Kind: KindOther}
 	// Credit outside contributors on their digest lines; the maintainer's
@@ -445,20 +547,14 @@ func cleanChange(bullet string) (Change, bool) {
 	}
 	row := plainText(pullSuffix.ReplaceAllString(bullet, ""))
 	if match := conventionalTitle.FindStringSubmatch(row); match != nil {
-		kind := strings.ToLower(match[1])
-		if !userFacingTypes[kind] {
-			return Change{}, false
-		}
-		change.Kind = KindFeature
-		if kind == KindFix {
+		switch strings.ToLower(match[1]) {
+		case "feat":
+			change.Kind = KindFeature
+		case "fix", "perf":
 			change.Kind = KindFix
 		}
-		description := sentenceCase(match[3])
-		if scope := labelCase(match[2]); scope != "" {
-			row = scope + ": " + description
-		} else {
-			row = description
-		}
+		change.Scope = labelCase(match[2])
+		row = sentenceCase(match[3])
 	} else {
 		row = sentenceCase(row)
 	}
@@ -544,7 +640,7 @@ func labelCase(label string) string {
 
 func releaseAcronym(word string) bool {
 	switch strings.ToLower(word) {
-	case "ai", "api", "ci", "cli", "cpu", "mcp", "os", "pr", "ram", "tui", "ui":
+	case "ai", "api", "ci", "cli", "cpu", "e2e", "mcp", "os", "pr", "ram", "tui", "ui":
 		return true
 	default:
 		return false

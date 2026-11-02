@@ -17,6 +17,9 @@ const (
 	ThemeSetting       = uitheme.ThemeSetting
 	ThemeAutoSetting   = uitheme.ThemeAutoSetting
 	DiffLayoutSetting  = "diff_layout"
+	// ReviewScopeSetting is the scope review opens a session in when it
+	// has none of its own stored.
+	ReviewScopeSetting = "review_scope"
 	// SessionLayoutSetting is the list's shape: "full" gives the rail the
 	// whole width, anything else keeps the split with the preview beside it.
 	SessionLayoutSetting = "layout"
@@ -64,6 +67,7 @@ const (
 	FieldHeader
 	FieldStats
 	FieldLayout
+	FieldReviewScope
 	FieldQuickClose
 	FieldFocusKey
 	FieldArrowStep
@@ -95,6 +99,7 @@ type State struct {
 	ThemeIndex      int
 	Field           int
 	LayoutSplit     bool
+	ReviewScope     string
 	QuickCloseSend  bool
 	EnterFocuses    bool
 	ArrowStep       bool
@@ -204,6 +209,7 @@ func FromSnapshot(s Snapshot) State {
 	names := s.Tools.Enabled(hidden)
 	state := State{
 		GlyphMode:   presentation.GlyphMode(value(GlyphModeSetting)),
+		ReviewScope: reviewScope(value(ReviewScopeSetting)),
 		ToolNames:   names,
 		ToolIndex:   ToolIndex(names, value(DefaultToolSetting)),
 		ThemeIndex:  uitheme.Index(s.Theme),

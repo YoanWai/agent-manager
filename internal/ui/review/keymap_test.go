@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	git "github.com/YoanWai/agent-manager/internal/git/value"
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -15,7 +17,7 @@ func TestLegendReadsTheKeymap(t *testing.T) {
 	m := New(false)
 	want := []LegendSection{
 		{Title: "Review", Pairs: [][2]string{
-			{"c", "comment"}, {"d", "remove/handle"}, {"C", "send"}, {"space", "reviewed"},
+			{"c", "comment"}, {"d", "remove/handle"}, {"C", "send"}, {"space", "reviewed"}, {"A", "all reviewed"},
 			{"s", "scope: " + m.scope.String()}, {"r", "repo"}, {"b", "branch"}, {"B", "target"},
 		}},
 		{Title: "Move", Quiet: true, Pairs: [][2]string{
@@ -25,8 +27,19 @@ func TestLegendReadsTheKeymap(t *testing.T) {
 			{"esc/q", "close"}, {"ctrl+c", "quit"},
 		}},
 	}
-	if got := m.Legend(defaultHelpKey()); !reflect.DeepEqual(got, want) {
+	if got := m.Legend(defaultHelpKey(), presentation.DefaultGlyphMode); !reflect.DeepEqual(got, want) {
 		t.Fatalf("legend =\n%v\nwant\n%v", got, want)
+	}
+}
+
+// The commit keys join the footer only while the commit scope is in view.
+func TestLegendNamesTheCommitKeysInTheCommitScope(t *testing.T) {
+	m := New(false)
+	m.scope = git.ScopeCommit
+	review := m.Legend(defaultHelpKey(), presentation.DefaultGlyphMode)[0].Pairs
+	want := [][2]string{{"L", "commit"}, {"[/]", "older/newer"}, {"{/}", "oldest/newest"}}
+	if got := review[len(review)-len(want):]; !reflect.DeepEqual(got, want) {
+		t.Fatalf("commit scope legend ends %v, want %v", got, want)
 	}
 }
 
@@ -34,16 +47,20 @@ func TestLegendReadsTheKeymap(t *testing.T) {
 // by some pair or ? row, so the two cannot drift apart.
 func TestEveryNamedKeyIsHandled(t *testing.T) {
 	named := map[string]bool{}
-	m := New(false)
-	for _, section := range m.Legend(defaultHelpKey()) {
-		for _, pair := range section.Pairs {
-			if pair == quitPair {
-				continue
-			}
-			for _, key := range legendKeys(pair[0]) {
-				named[key] = true
-				if _, ok := bindingFor(key); !ok {
-					t.Errorf("footer names %q (%s) but no binding runs it", key, pair[1])
+	// The commit keys show only in the commit scope, so both footers count.
+	for _, scope := range []git.Scope{git.ScopeUncommitted, git.ScopeCommit} {
+		m := New(false)
+		m.scope = scope
+		for _, section := range m.Legend(defaultHelpKey(), presentation.DefaultGlyphMode) {
+			for _, pair := range section.Pairs {
+				if pair == quitPair {
+					continue
+				}
+				for _, key := range legendKeys(pair[0]) {
+					named[key] = true
+					if _, ok := bindingFor(key); !ok {
+						t.Errorf("footer names %q (%s) but no binding runs it", key, pair[1])
+					}
 				}
 			}
 		}
@@ -82,10 +99,14 @@ func TestHelpRowsReadTheKeymap(t *testing.T) {
 		{"d", "remove a draft, or mark sent feedback handled / open"},
 		{"C", "send drafts to the agent as the next review round"},
 		{"space", "mark the file reviewed"},
-		{"s", "cycle the scope (uncommitted / vs target / last commit / staged)"},
+		{"A", "mark every listed file reviewed, or clear them all"},
+		{"s", "cycle the scope (uncommitted / vs target / commit / staged)"},
 		{"r", "pick the repo when the session dir holds several"},
 		{"b", "switch to another worktree, listed by branch"},
-		{"B", "pick the target branch the branch diff compares against"},
+		{"B", "pick the target branch, bounding the branch diff and commit list"},
+		{"L", "pick the commit the commit scope shows"},
+		{"[ / ]", "older / newer commit"},
+		{"{ / }", "oldest / newest commit"},
 		{"↑↓ / jk", "move a line"},
 		{"ctrl+d / ctrl+u", "half a page"},
 		{"pgup / pgdn", "page"},
@@ -98,7 +119,7 @@ func TestHelpRowsReadTheKeymap(t *testing.T) {
 		{"?", "this key map"},
 		{"esc / q", "close the review"},
 	}
-	if got := HelpRows(defaultHelpKey()); !reflect.DeepEqual(got, want) {
+	if got := HelpRows(defaultHelpKey(), presentation.DefaultGlyphMode); !reflect.DeepEqual(got, want) {
 		t.Fatalf("help rows =\n%v\nwant\n%v", got, want)
 	}
 }
@@ -121,7 +142,7 @@ func TestHelpRowNamesTheConfiguredKey(t *testing.T) {
 		{keybind.Binding{}, ""},
 	} {
 		got := ""
-		for _, row := range HelpRows(tc.binding) {
+		for _, row := range HelpRows(tc.binding, presentation.DefaultGlyphMode) {
 			if row[1] == "this key map" {
 				got = row[0]
 			}
@@ -130,7 +151,7 @@ func TestHelpRowNamesTheConfiguredKey(t *testing.T) {
 			t.Fatalf("help row key = %q, want %q", got, tc.want)
 		}
 		got = ""
-		for _, section := range m.Legend(tc.binding) {
+		for _, section := range m.Legend(tc.binding, presentation.DefaultGlyphMode) {
 			for _, pair := range section.Pairs {
 				if pair[1] == "keys" {
 					got = pair[0]
@@ -139,6 +160,25 @@ func TestHelpRowNamesTheConfiguredKey(t *testing.T) {
 		}
 		if got != tc.want {
 			t.Fatalf("footer key = %q, want %q", got, tc.want)
+		}
+	}
+}
+
+// A help key the user sets never takes a key the keymap gives another
+// action, so adding a binding to keymap is all it takes to protect it.
+func TestHelpKeyNeverTakesAKeymapKey(t *testing.T) {
+	for _, b := range keymap {
+		if b.Action == actHelp {
+			continue
+		}
+		for _, name := range b.Keys {
+			key, err := keybind.Parse(name)
+			if err != nil {
+				continue
+			}
+			if got := EffectiveHelpBinding(keybind.Keys(key)).Label(); got != "" {
+				t.Errorf("help key %q kept although %q is %v", got, name, b.Action)
+			}
 		}
 	}
 }

@@ -57,6 +57,11 @@ func Run(request Request, st Store, writer Writer) (Result, error) {
 			Ref: request.BaseRef, Generation: request.Generation,
 			Err: st.SetReviewBase(request.TargetID, request.RepoRoot, request.BaseRef),
 		}}, nil
+	case SetScope:
+		if err := st.SetReviewScope(request.TargetID, request.Scope); err != nil {
+			return Result{Op: SetScope}, fmt.Errorf("saving review scope: %w", err)
+		}
+		return Result{Op: SetScope}, nil
 	case Send:
 		return runSend(request, st, writer)
 	}

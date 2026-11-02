@@ -1,6 +1,7 @@
 package rail
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -39,16 +40,39 @@ func TestGroupMenuReturnsTypedGroupIntent(t *testing.T) {
 	}
 }
 
-func TestArchivedToggleWaitsForFreshInventory(t *testing.T) {
+func TestArchivedToggleSwapsRowsAtOnce(t *testing.T) {
 	model := New(nil)
-	model.Reconcile(Snapshot{Sessions: []Session{{ID: "active", Name: "active"}}})
+	model.Reconcile(Snapshot{
+		Sessions: []Session{{ID: "active", Name: "active"}, {ID: "old", Name: "old", Archived: true}},
+		Hosts: []Host{{Name: "box", State: HostOnline, Sessions: []Session{
+			{ID: "remote-active", Name: "remote-active"}, {ID: "remote-old", Name: "remote-old", Archived: true},
+		}}},
+	})
+	model.Focus(Selection{Kind: SessionRow, SessionID: "active"})
 
-	decision := model.action(keybind.Archived, KeyContext{})
-	if !decision.Refresh || !model.ShowArchived() {
-		t.Fatalf("archive toggle = %+v showArchived=%v", decision, model.ShowArchived())
-	}
-	if rows := model.Rows(); len(rows) != 2 || rows[1].SessionID != "active" {
-		t.Fatalf("toggle rebuilt stale inventory: %+v", rows)
+	for _, step := range []struct {
+		archived bool
+		want     []string
+	}{
+		{archived: true, want: []string{"old", "remote-old"}},
+		{archived: false, want: []string{"active", "remote-active"}},
+	} {
+		decision := model.action(keybind.Archived, KeyContext{})
+		if !decision.Refresh || model.ShowArchived() != step.archived {
+			t.Fatalf("archive toggle = %+v showArchived=%v", decision, model.ShowArchived())
+		}
+		var sessions []string
+		for _, row := range model.Rows() {
+			if row.Kind == SessionRow {
+				sessions = append(sessions, row.SessionID)
+			}
+		}
+		if !slices.Equal(sessions, step.want) {
+			t.Fatalf("showArchived=%v rows = %v, want %v", step.archived, sessions, step.want)
+		}
+		if current, _ := model.Selected(); decision.Selection != current || decision.SelectionEffect != SelectionEffectFilter {
+			t.Fatalf("showArchived=%v decision = %+v, selected %+v", step.archived, decision, current)
+		}
 	}
 }
 

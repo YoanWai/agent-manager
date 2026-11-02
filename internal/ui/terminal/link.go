@@ -6,10 +6,14 @@ package terminal
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
+	"regexp"
 	"runtime"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -75,15 +79,79 @@ func DefaultOpenBrowser(target string) error {
 
 // DefaultOpener starts the platform's URL handler and returns without
 // waiting for it.
-func DefaultOpener(url string) error {
-	if runtime.GOOS == "windows" {
-		return StartReaped(exec.Command("rundll32", "url.dll,FileProtocolHandler", url))
+func DefaultOpener(target string) error {
+	cmd, err := OpenerCommand(runtime.GOOS, target)
+	if err != nil {
+		return err
 	}
-	opener := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		opener = "open"
+	return StartReaped(cmd)
+}
+
+var windowsDrivePath = regexp.MustCompile(`^/[A-Za-z]:/`)
+
+// OpenerCommand is what DefaultOpener runs on goos. A file link is shown in
+// the file manager rather than opened, so a click never runs what an agent
+// linked to.
+func OpenerCommand(goos, target string) (*exec.Cmd, error) {
+	link, err := url.Parse(target)
+	if err != nil {
+		return nil, err
 	}
-	return StartReaped(exec.Command(opener, url))
+	if strings.EqualFold(link.Scheme, "file") {
+		file, ok := localPath(goos, link)
+		if !ok {
+			return nil, errors.New("the file link does not name a file on this machine")
+		}
+		return revealCommand(goos, file)
+	}
+	switch goos {
+	case "darwin":
+		return exec.Command("open", target), nil
+	case "windows":
+		return exec.Command("rundll32", "url.dll,FileProtocolHandler", target), nil
+	default:
+		return exec.Command("xdg-open", target), nil
+	}
+}
+
+// localPath is the path a file link names on this machine. A path naming
+// another host, as a UNC share does, is refused, since Windows would contact
+// that host to look it up.
+func localPath(goos string, link *url.URL) (string, bool) {
+	if (link.Host != "" && link.Host != "localhost") || strings.HasPrefix(link.Path, "//") ||
+		strings.IndexFunc(link.Path, unicode.IsControl) >= 0 {
+		return "", false
+	}
+	if goos == "windows" {
+		if !windowsDrivePath.MatchString(link.Path) || strings.ContainsAny(link.Path, `",;`) {
+			return "", false
+		}
+		return strings.ReplaceAll(strings.TrimPrefix(link.Path, "/"), "/", `\`), true
+	}
+	if !strings.HasPrefix(link.Path, "/") {
+		return "", false
+	}
+	return path.Clean(link.Path), true
+}
+
+// revealCommand shows file in the file manager. explorer reads its switches
+// from commas, which localPath keeps out of file, and takes the path as its
+// own argument so Go quotes a path with spaces the way explorer expects. xdg-open
+// has no reveal, so it opens the folder, and only one that is a folder here,
+// since xdg-open runs whatever else it is handed.
+func revealCommand(goos, file string) (*exec.Cmd, error) {
+	switch goos {
+	case "darwin":
+		return exec.Command("open", "-R", file), nil
+	case "windows":
+		return exec.Command("explorer", "/select,", file), nil
+	default:
+		folder := path.Dir(file)
+		if info, err := os.Stat(folder); err != nil || !info.IsDir() {
+			return nil, errors.New("the file link does not sit in a folder on this machine")
+		}
+		return exec.Command("xdg-open", folder), nil
+	}
 }
 
 func OpenBrowserWith(goos, browser, target string, run func(*exec.Cmd) error) error {

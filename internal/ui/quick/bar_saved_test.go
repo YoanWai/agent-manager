@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,7 +19,7 @@ func TestQuickBarPicksASavedPrompt(t *testing.T) {
 		t.Fatalf("ctrl+o asked for %+v", request)
 	}
 	q.LoadSaved([]spawn.Saved{{Name: "coordinator", Text: "lead"}, {Name: "reviewer", Text: "review"}}, nil)
-	if legend := q.Legend(h); legend[0] != [2]string{"type", "filter"} {
+	if legend := q.Legend(h, presentation.DefaultGlyphMode); legend[0] != [2]string{"type", "filter"} {
 		t.Fatalf("legend while picking = %v", legend)
 	}
 	st := spawn.Styles{Input: func(in textinput.Model) string { return in.View() }}

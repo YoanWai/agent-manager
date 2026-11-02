@@ -68,15 +68,6 @@ type Host interface {
 	ClearErr()
 }
 
-// TypedText marks a multi-rune key as a paste, so it bypasses Bubble Tea's
-// named-key bindings.
-func TypedText(msg tea.KeyMsg) tea.KeyMsg {
-	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 && !msg.Alt {
-		msg.Paste = true
-	}
-	return msg
-}
-
 // PasteImageMsg is the result of an async clipboard image read started by
 // a composer's ctrl+v handler.
 type PasteImageMsg struct {

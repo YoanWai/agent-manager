@@ -82,19 +82,22 @@ type BaseFetchKey struct{ Dir, Override string }
 
 // BaseFetch is one refresh of a spawn's base: when it started, the default
 // branch the repo resolved to, and how the fetch ended.
+// LookupErr is the default base failing to resolve, Err the fetch failing.
 type BaseFetch struct {
-	At       time.Time
-	Resolved bool
-	Detected string
-	Fetched  bool
-	Err      error
+	At        time.Time
+	Resolved  bool
+	Detected  string
+	LookupErr error
+	Fetched   bool
+	Err       error
 }
 
 type BaseFetchedMsg struct {
-	Key      BaseFetchKey
-	Detected string
-	Fetched  bool
-	Err      error
+	Key       BaseFetchKey
+	Detected  string
+	LookupErr error
+	Fetched   bool
+	Err       error
 }
 
 // ReserveBaseFetch claims one repo's refresh, reporting false when a recent
@@ -113,7 +116,8 @@ func (s *State) ReserveBaseFetch(key BaseFetchKey, now time.Time) bool {
 // ResolveBaseCmd reads the repo's default branch off the update path.
 func ResolveBaseCmd(driver *git.Driver, key BaseFetchKey) tea.Cmd {
 	return func() tea.Msg {
-		return BaseFetchedMsg{Key: key, Detected: driver.DefaultBase(key.Dir)}
+		detected, err := driver.DefaultBase(key.Dir)
+		return BaseFetchedMsg{Key: key, Detected: detected, LookupErr: err}
 	}
 }
 
@@ -124,7 +128,7 @@ func (s *State) RecordBaseFetch(msg BaseFetchedMsg, driver *git.Driver, fetchOff
 	if !ok {
 		return nil
 	}
-	fetch.Resolved, fetch.Detected = true, msg.Detected
+	fetch.Resolved, fetch.Detected, fetch.LookupErr = true, msg.Detected, msg.LookupErr
 	if msg.Fetched {
 		fetch.Fetched, fetch.Err = true, msg.Err
 	}
@@ -135,7 +139,8 @@ func (s *State) RecordBaseFetch(msg BaseFetchedMsg, driver *git.Driver, fetchOff
 	key := msg.Key
 	return func() tea.Msg {
 		err := driver.FetchBase(key.Dir, key.Override)
-		return BaseFetchedMsg{Key: key, Detected: driver.DefaultBase(key.Dir), Fetched: true, Err: err}
+		detected, lookupErr := driver.DefaultBase(key.Dir)
+		return BaseFetchedMsg{Key: key, Detected: detected, LookupErr: lookupErr, Fetched: true, Err: err}
 	}
 }
 

@@ -15,10 +15,9 @@ type RepoAnswer struct {
 // directory cannot host one.
 const WorktreeUnavailable = "unavailable (not a git repo)"
 
-// WorktreeLookupTTL bounds how long a directory's repo answer is reused. The
-// quick bar stays open across prompts, so a directory git-initialised
-// meanwhile has to be seen without closing it, while a frame that repaints on
-// every keystroke must not shell out to git each time.
+// WorktreeLookupTTL bounds reuse for explicit toggles, so repository changes
+// are discovered while a composer stays open. Paint keeps the last observation
+// until a probe replaces it; time passing alone is not a new repo verdict.
 const WorktreeLookupTTL = 2 * time.Second
 
 type ProbeTarget uint8

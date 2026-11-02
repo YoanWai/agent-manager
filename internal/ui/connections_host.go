@@ -78,6 +78,7 @@ type connectionsRoot struct{ *Model }
 func (r connectionsRoot) Look() uiconnections.DialogView {
 	styles := r.spawnStyles()
 	return uiconnections.DialogView{
+		GlyphMode: r.prefs.glyphMode,
 		Field: func(label, value string, focused bool) string {
 			return spawn.FormField(styles, label, value, focused)
 		},

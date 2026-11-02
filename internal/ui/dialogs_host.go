@@ -117,7 +117,7 @@ func (r moveRoot) PlaceMove(move uidialogs.Move, picker *spawn.Picker) tea.Cmd {
 }
 
 func (r moveRoot) PaintMove(picker *spawn.Picker) string {
-	return r.CardSized(r.cardWidth(), uidialogs.MoveTitle(r.prefs.glyphMode), r.viewGroupPicker(picker), uidialogs.MoveHints())
+	return r.CardSized(r.cardWidth(), uidialogs.MoveTitle(r.prefs.glyphMode), r.viewGroupPicker(picker), uidialogs.MoveHints(r.prefs.glyphMode))
 }
 
 // groupRoot is the root as the New Group card reaches it.

@@ -259,12 +259,14 @@ func reviewBase(mailbox *hooks.Manager, sessionID, cwd, ref string) (string, err
 var validScopes = map[string]bool{
 	"uncommitted": true,
 	"branch":      true,
+	"commit":      true,
 	"last_commit": true,
 	"staged":      true,
 }
 
 // ReviewScope records the diff scope the review screen should open with
-// for this session: uncommitted, branch (vs target), last_commit, or staged.
+// for this session: uncommitted, branch (vs target), commit, or staged. The
+// commit scope opens on HEAD; last_commit, its earlier name, still names it.
 func ReviewScope(configDir, sessionID, scope string) (string, error) {
 	return reviewScope(hooks.NewManager(configDir), sessionID, scope)
 }
@@ -272,7 +274,7 @@ func ReviewScope(configDir, sessionID, scope string) (string, error) {
 func reviewScope(mailbox *hooks.Manager, sessionID, scope string) (string, error) {
 	scope = strings.TrimSpace(scope)
 	if !validScopes[scope] {
-		return "", fmt.Errorf("unknown scope %q (uncommitted, branch, last_commit, staged)", scope)
+		return "", fmt.Errorf("unknown scope %q (uncommitted, branch, commit, staged)", scope)
 	}
 	if err := validSession(sessionID); err != nil {
 		return "", err

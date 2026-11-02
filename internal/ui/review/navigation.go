@@ -32,7 +32,7 @@ func IsNonCodePath(path string) bool {
 }
 
 func (m Model) scrollKey(path string) string {
-	return m.reviewKey() + "\x00" + m.scope.String() + "\x00" + path
+	return m.reviewKey() + "\x00" + m.scopeKey() + "\x00" + path
 }
 
 func (m Model) FileHidden(fd *diff.FileDiff) bool { return m.fileHidden(fd) }

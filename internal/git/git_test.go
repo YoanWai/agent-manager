@@ -2,18 +2,32 @@ package git
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/YoanWai/agent-manager/internal/testenv"
 )
+
+// TestMain drops an inherited GIT_DIR and its siblings, which would point
+// the temp repos these tests build at the repo running them.
+func TestMain(m *testing.M) {
+	if err := testenv.IsolateGit(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 // helperProcessEnv selects a fixture in TestHelperProcess when the test
 // binary re-executes itself as a child process with a chosen cwd.
@@ -313,14 +327,14 @@ func TestRenameAndNumStat(t *testing.T) {
 	}
 	commit(t, dir, "rename")
 
-	files, err := driver.ChangedFiles(dir, ScopeLastCommit, "")
+	files, err := driver.ChangedFiles(dir, ScopeCommit, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) != 1 || files[0].Status != Renamed || files[0].OldPath != "old.txt" || files[0].Path != "renamed.txt" {
 		t.Fatalf("files = %+v", files)
 	}
-	stats, err := driver.NumStat(dir, ScopeLastCommit, "")
+	stats, err := driver.NumStat(dir, ScopeCommit, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +347,7 @@ func TestSingleCommitLastScope(t *testing.T) {
 	driver, dir := testRepo(t)
 	write(t, dir, "a.txt", "one\n")
 	commit(t, dir, "only")
-	files, err := driver.ChangedFiles(dir, ScopeLastCommit, "")
+	files, err := driver.ChangedFiles(dir, ScopeCommit, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -821,12 +835,57 @@ func TestDefaultBase(t *testing.T) {
 			withRemote(t, dir)
 			return driver, dir
 		}, "origin/main"},
+		{"a remote named neither upstream nor origin", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", "-o", "company", fork, work)
+			// A removed origin can leave its HEAD behind, naming a branch
+			// that no longer exists.
+			gitIn(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
+			return driver, work
+		}, "company/main"},
+		{"a configured origin whose HEAD names a missing branch", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", "-o", "company", fork, work)
+			gitIn(t, work, "remote", "add", "origin", fork)
+			gitIn(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/master")
+			return driver, work
+		}, "company/main"},
+		{"other remotes by name", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", "-o", "zeta", fork, work)
+			gitIn(t, work, "remote", "add", "alpha", fork)
+			gitIn(t, work, "fetch", "-q", "alpha")
+			gitIn(t, work, "update-ref", "refs/remotes/alpha/trunk", "refs/remotes/alpha/main")
+			gitIn(t, work, "symbolic-ref", "refs/remotes/alpha/HEAD", "refs/remotes/alpha/trunk")
+			return driver, work
+		}, "alpha/trunk"},
+		{"a local branch named like the remote's default", func(t *testing.T) (*Driver, string) {
+			driver, _, _, fork := forkClone(t)
+			work := filepath.Join(t.TempDir(), "clone")
+			gitIn(t, fork, "clone", "-q", fork, work)
+			gitIn(t, work, "update-ref", "refs/remotes/origin/trunk", "refs/remotes/origin/main")
+			gitIn(t, work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk")
+			// Shortening origin/HEAD's target is ambiguous now, so git names
+			// it in full, and origin/trunk alone names the local branch.
+			gitIn(t, work, "branch", "origin/trunk")
+			return driver, work
+		}, "remotes/origin/trunk"},
 		{"no remote", func(t *testing.T) (*Driver, string) {
 			driver, dir := testRepo(t)
 			write(t, dir, "a.txt", "x")
 			commit(t, dir, "seed")
 			return driver, dir
 		}, "main"},
+		{"a tag named like the local branch", func(t *testing.T) (*Driver, string) {
+			driver, dir := testRepo(t)
+			write(t, dir, "a.txt", "x")
+			commit(t, dir, "seed")
+			gitIn(t, dir, "tag", "main")
+			return driver, dir
+		}, "heads/main"},
 		{"no default branch", func(t *testing.T) (*Driver, string) {
 			driver, dir := testRepo(t)
 			gitIn(t, dir, "checkout", "-q", "-b", "trunk")
@@ -838,10 +897,60 @@ func TestDefaultBase(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			driver, dir := tc.layout(t)
-			if got := driver.DefaultBase(dir); got != tc.want {
-				t.Fatalf("DefaultBase = %q, want %q", got, tc.want)
+			if got, err := driver.DefaultBase(dir); err != nil || got != tc.want {
+				t.Fatalf("DefaultBase = %q, %v, want %q", got, err, tc.want)
 			}
 		})
+	}
+}
+
+// A local branch sharing the remote default's short name, at another
+// commit, does not move the base off the remote branch.
+func TestBaseRefPrefersTheRemoteOverALocalNamesake(t *testing.T) {
+	driver, _, _, fork := forkClone(t)
+	work := filepath.Join(t.TempDir(), "clone")
+	gitIn(t, fork, "clone", "-q", fork, work)
+	gitIn(t, work, "config", "user.email", "test@test")
+	gitIn(t, work, "config", "user.name", "test")
+	remote, err := driver.run(work, "rev-parse", "refs/remotes/origin/main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, work, "checkout", "-q", "-b", "origin/main")
+	write(t, work, "local.txt", "x")
+	commit(t, work, "local")
+	gitIn(t, work, "checkout", "-q", "-b", "feature")
+	write(t, work, "feature.txt", "x")
+	commit(t, work, "feature")
+	ref, describe, err := driver.BaseRef(work)
+	if want := "remotes/origin/main@" + remote[:7]; err != nil || ref != remote || describe != want {
+		t.Fatalf("BaseRef = %q, %q, %v, want %q, %q", ref, describe, err, remote, want)
+	}
+}
+
+// A repo whose remotes git cannot list fails base detection, rather than
+// falling back to a local branch or HEAD its remotes may disagree with.
+func TestDefaultBaseReportsUnlistableRemotes(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "a.txt", "x")
+	commit(t, dir, "seed")
+	withRemote(t, dir)
+	config, err := os.OpenFile(filepath.Join(dir, ".git", "config"), os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.WriteString("[remote \"broken\n"); err != nil {
+		t.Fatal(err)
+	}
+	config.Close()
+	if base, err := driver.DefaultBase(dir); err == nil {
+		t.Fatalf("DefaultBase = %q, want an error", base)
+	}
+	if _, err := driver.worktreeBase(dir, ""); err == nil {
+		t.Fatal("worktreeBase should fail instead of falling back to HEAD")
+	}
+	if ref, _, err := driver.BaseRef(dir); err == nil {
+		t.Fatalf("BaseRef = %q, want an error", ref)
 	}
 }
 
@@ -2018,4 +2127,355 @@ func TestRunCannotPromptOnTheManagersTerminal(t *testing.T) {
 			t.Fatalf("git ran with %q, want no controlling terminal", out)
 		}
 	}
+}
+
+// featureRepo builds main with one commit and a feature branch of three on
+// top, each touching its own file.
+func featureRepo(t *testing.T) (*Driver, string) {
+	t.Helper()
+	driver, dir := testRepo(t)
+	write(t, dir, "base.txt", "base\n")
+	commit(t, dir, "base")
+	gitIn(t, dir, "checkout", "-q", "-b", "feature")
+	for _, name := range []string{"one", "two", "three"} {
+		write(t, dir, name+".txt", name+"\n")
+		commit(t, dir, name)
+	}
+	return driver, dir
+}
+
+func shortOf(t *testing.T, driver *Driver, dir, rev string) string {
+	t.Helper()
+	short, err := driver.run(dir, "rev-parse", "--short", rev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return short
+}
+
+func listed(t *testing.T, driver *Driver, dir string, subjects map[string]string) []Commit {
+	t.Helper()
+	var commits []Commit
+	for _, rev := range []string{"HEAD", "HEAD~1", "HEAD~2", "HEAD~3"} {
+		subject, ok := subjects[rev]
+		if !ok {
+			break
+		}
+		// featureRepo names each commit's only file after its subject.
+		commits = append(commits, Commit{SHA: revParse(t, driver, dir, rev), Short: shortOf(t, driver, dir, rev), Subject: subject, Files: []string{subject + ".txt"}})
+	}
+	return commits
+}
+
+func TestCommitsListsBranchSinceTarget(t *testing.T) {
+	driver, dir := featureRepo(t)
+	commits, describe, history, err := driver.Commits(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := listed(t, driver, dir, map[string]string{"HEAD": "three", "HEAD~1": "two", "HEAD~2": "one"})
+	if !reflect.DeepEqual(commits, want) || history {
+		t.Fatalf("Commits = %+v history %v, want %+v and the branch's own", commits, history, want)
+	}
+	if wantDesc := "main@" + shortOf(t, driver, dir, "main"); describe != wantDesc {
+		t.Fatalf("describe = %q, want %q", describe, wantDesc)
+	}
+}
+
+func TestCommitsFollowTheTarget(t *testing.T) {
+	driver, dir := featureRepo(t)
+	gitIn(t, dir, "branch", "partway", "HEAD~1")
+	commits, _, _, err := driver.Commits(dir, "partway")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := listed(t, driver, dir, map[string]string{"HEAD": "three"})
+	if !reflect.DeepEqual(commits, want) {
+		t.Fatalf("Commits = %+v, want %+v", commits, want)
+	}
+	if _, _, _, err := driver.Commits(dir, "gone"); err == nil {
+		t.Fatal("an override that does not resolve must fail")
+	}
+}
+
+func TestCommitsFallBackToHistoryOnTheTarget(t *testing.T) {
+	driver, dir := featureRepo(t)
+	gitIn(t, dir, "checkout", "-q", "main")
+	commits, _, history, err := driver.Commits(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := listed(t, driver, dir, map[string]string{"HEAD": "base"})
+	if !reflect.DeepEqual(commits, want) || !history {
+		t.Fatalf("Commits = %+v history %v, want %+v as history", commits, history, want)
+	}
+}
+
+// log.showSignature prints a signature check ahead of each signed commit's
+// header, which the list must not read as a path.
+func TestCommitsIgnoreShownSignatures(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen not installed")
+	}
+	driver, dir := testRepo(t)
+	keys := t.TempDir()
+	key := filepath.Join(keys, "key")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen: %v: %s", err, out)
+	}
+	public, err := os.ReadFile(key + ".pub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, keys, "allowed", "test@test "+string(public))
+	gitIn(t, dir, "config", "gpg.format", "ssh")
+	gitIn(t, dir, "config", "user.signingkey", key+".pub")
+	gitIn(t, dir, "config", "gpg.ssh.allowedSignersFile", filepath.Join(keys, "allowed"))
+	gitIn(t, dir, "config", "commit.gpgSign", "true")
+	gitIn(t, dir, "config", "log.showSignature", "true")
+	write(t, dir, "base.txt", "base\n")
+	commit(t, dir, "base")
+	gitIn(t, dir, "checkout", "-q", "-b", "feature")
+	write(t, dir, "one.txt", "one\n")
+	commit(t, dir, "one")
+	commits, _, _, err := driver.Commits(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := listed(t, driver, dir, map[string]string{"HEAD": "one"})
+	if !reflect.DeepEqual(commits, want) {
+		t.Fatalf("Commits = %+v, want %+v", commits, want)
+	}
+}
+
+func TestCommitsListAwkwardPaths(t *testing.T) {
+	driver, dir := testRepo(t)
+	write(t, dir, "base.txt", "base\n")
+	commit(t, dir, "base")
+	gitIn(t, dir, "checkout", "-q", "-b", "feature")
+	write(t, dir, "two words.txt", "x\n")
+	awkward := []string{"two words.txt"}
+	// Windows refuses a newline in a file name.
+	if runtime.GOOS != "windows" {
+		write(t, dir, "\nleading newline.txt", "x\n")
+		awkward = []string{"\nleading newline.txt", "two words.txt"}
+	}
+	commit(t, dir, "awkward")
+	gitIn(t, dir, "commit", "-q", "--allow-empty", "-m", "empty")
+	commits, _, _, err := driver.Commits(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Commit{
+		{SHA: revParse(t, driver, dir, "HEAD"), Short: shortOf(t, driver, dir, "HEAD"), Subject: "empty"},
+		{SHA: revParse(t, driver, dir, "HEAD~1"), Short: shortOf(t, driver, dir, "HEAD~1"), Subject: "awkward", Files: awkward},
+	}
+	if !reflect.DeepEqual(commits, want) {
+		t.Fatalf("Commits = %q, want %q", commits, want)
+	}
+}
+
+func TestCommitsUnbornIsEmpty(t *testing.T) {
+	driver, dir := testRepo(t)
+	commits, describe, _, err := driver.Commits(dir, "")
+	if err != nil || commits != nil || describe != "" {
+		t.Fatalf("Commits = %+v, %q, %v", commits, describe, err)
+	}
+	if _, _, _, err := driver.Commits(t.TempDir(), ""); !errors.Is(err, ErrNotARepo) {
+		t.Fatalf("Commits outside a repo = %v, want ErrNotARepo", err)
+	}
+}
+
+// A merge lists the paths it brings in over its first parent, and a rename
+// one path even with rename detection off, matching what the commit diffs.
+func TestCommitsListPathsLikeTheCommitDiff(t *testing.T) {
+	driver, dir := featureRepo(t)
+	gitIn(t, dir, "config", "diff.renames", "false")
+	gitIn(t, dir, "checkout", "-q", "-b", "side", "main")
+	write(t, dir, "side.txt", "side\n")
+	commit(t, dir, "side")
+	gitIn(t, dir, "checkout", "-q", "feature")
+	gitIn(t, dir, "merge", "-q", "--no-ff", "-m", "merge side", "side")
+	gitIn(t, dir, "mv", "one.txt", "uno.txt")
+	commit(t, dir, "rename")
+	commits, _, _, err := driver.Commits(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string][]string{}
+	for _, c := range commits {
+		got[c.Subject] = c.Files
+	}
+	if !slices.Equal(got["merge side"], []string{"side.txt"}) || !slices.Equal(got["rename"], []string{"uno.txt"}) {
+		t.Fatalf("paths = %q, want the merge to list side.txt and the rename uno.txt", got)
+	}
+}
+
+func TestCommitScopeAtPastCommit(t *testing.T) {
+	driver, dir := featureRepo(t)
+	rev := revParse(t, driver, dir, "HEAD~1")
+	files, err := driver.ChangedFiles(dir, ScopeCommit, rev)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []ChangedFile{{Path: "two.txt", OldPath: "two.txt", Status: Added}}
+	if !reflect.DeepEqual(files, want) {
+		t.Fatalf("ChangedFiles = %+v, want %+v", files, want)
+	}
+}
+
+func TestCommitSHA(t *testing.T) {
+	driver, dir := featureRepo(t)
+	sha, err := driver.CommitSHA(dir, "HEAD~1")
+	if err != nil || sha != revParse(t, driver, dir, "HEAD~1") {
+		t.Fatalf("CommitSHA = %q, %v", sha, err)
+	}
+	if _, err := driver.CommitSHA(dir, "0123456789012345678901234567890123456789"); err == nil {
+		t.Fatal("a missing commit must fail")
+	}
+}
+
+func TestCommitParent(t *testing.T) {
+	driver, dir := featureRepo(t)
+	root := revParse(t, driver, dir, "main")
+	if got := driver.CommitParent(dir, root); got != emptyTree {
+		t.Fatalf("root parent = %q, want the empty tree", got)
+	}
+	if got := driver.CommitParent(dir, "HEAD"); got != "HEAD~1" {
+		t.Fatalf("parent = %q, want HEAD~1", got)
+	}
+}
+
+func TestRewritesFollowsRebaseAndAmend(t *testing.T) {
+	driver, dir := featureRepo(t)
+	one := revParse(t, driver, dir, "HEAD~2")
+	two := revParse(t, driver, dir, "HEAD~1")
+	three := revParse(t, driver, dir, "HEAD")
+
+	// main moves on, the branch rebases onto it, and the top commit is
+	// amended with new content: one and two keep their patches, three
+	// keeps only its subject.
+	gitIn(t, dir, "checkout", "-q", "main")
+	write(t, dir, "upstream.txt", "upstream\n")
+	commit(t, dir, "upstream")
+	gitIn(t, dir, "checkout", "-q", "feature")
+	gitIn(t, dir, "rebase", "-q", "main")
+	write(t, dir, "three.txt", "three, amended\n")
+	gitIn(t, dir, "add", "-A")
+	gitIn(t, dir, "commit", "-q", "--amend", "--no-edit")
+
+	commits, _, _, err := driver.Commits(dir, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := driver.Rewrites(dir, []string{one, two, three}, commits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{
+		one:   revParse(t, driver, dir, "HEAD~2"),
+		two:   revParse(t, driver, dir, "HEAD~1"),
+		three: revParse(t, driver, dir, "HEAD"),
+	}
+	if !maps.Equal(moved, want) {
+		t.Fatalf("Rewrites = %v, want %v", moved, want)
+	}
+}
+
+func TestRewritesSkipsReachableAndUnmatched(t *testing.T) {
+	driver, dir := featureRepo(t)
+	one := revParse(t, driver, dir, "HEAD~2")
+	three := revParse(t, driver, dir, "HEAD")
+	// Dropping three leaves nothing with its patch or subject; one is
+	// still reached from HEAD and needs no mapping.
+	gitIn(t, dir, "reset", "-q", "--hard", "HEAD~1")
+	commits, _, _, err := driver.Commits(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := driver.Rewrites(dir, []string{one, three, "0123456789012345678901234567890123456789"}, commits)
+	if err != nil || !maps.Equal(moved, map[string]string{}) {
+		t.Fatalf("Rewrites = %v, %v, want none", moved, err)
+	}
+}
+
+// sameSubjectRepo builds main with one commit and a feature branch of
+// commits all titled subject, each adding its own file.
+func sameSubjectRepo(t *testing.T, subject string, count int) (*Driver, string) {
+	t.Helper()
+	driver, dir := testRepo(t)
+	write(t, dir, "base.txt", "base\n")
+	commit(t, dir, "base")
+	gitIn(t, dir, "checkout", "-q", "-b", "feature")
+	for i := range count {
+		write(t, dir, fmt.Sprintf("%d.txt", i), "x\n")
+		commit(t, dir, subject)
+	}
+	return driver, dir
+}
+
+// A shared subject only carries a commit to its replacement: never from one
+// a sibling branch still holds, and never to an older commit, one carrying
+// review state of its own, one another commit's patch already claimed, or
+// one of several that share it.
+func TestRewritesMatchBySubjectOnlyAReplacement(t *testing.T) {
+	t.Run("dropped beside an older namesake", func(t *testing.T) {
+		driver, dir := sameSubjectRepo(t, "wip", 2)
+		dropped := revParse(t, driver, dir, "HEAD")
+		gitIn(t, dir, "reset", "-q", "--hard", "HEAD~1")
+		commits, _, _, err := driver.Commits(dir, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		moved, err := driver.Rewrites(dir, []string{dropped}, commits)
+		if err != nil || !maps.Equal(moved, map[string]string{}) {
+			t.Fatalf("Rewrites = %v, %v, want none", moved, err)
+		}
+	})
+	t.Run("dropped before a rebased namesake", func(t *testing.T) {
+		driver, dir := sameSubjectRepo(t, "wip", 3)
+		dropped := revParse(t, driver, dir, "HEAD~1")
+		last := revParse(t, driver, dir, "HEAD")
+		gitIn(t, dir, "rebase", "-q", "--onto", "HEAD~2", "HEAD~1")
+		commits, _, _, err := driver.Commits(dir, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		moved, err := driver.Rewrites(dir, []string{dropped, last}, commits)
+		want := map[string]string{last: revParse(t, driver, dir, "HEAD")}
+		if err != nil || !maps.Equal(moved, want) {
+			t.Fatalf("Rewrites = %v, %v, want %v", moved, err, want)
+		}
+	})
+	t.Run("on a sibling branch", func(t *testing.T) {
+		driver, dir := sameSubjectRepo(t, "wip", 1)
+		sibling := revParse(t, driver, dir, "HEAD")
+		gitIn(t, dir, "checkout", "-q", "-b", "other", "main")
+		write(t, dir, "other.txt", "x\n")
+		commit(t, dir, "wip")
+		commits, _, _, err := driver.Commits(dir, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		moved, err := driver.Rewrites(dir, []string{sibling}, commits)
+		if err != nil || !maps.Equal(moved, map[string]string{}) {
+			t.Fatalf("Rewrites = %v, %v, want none", moved, err)
+		}
+	})
+	t.Run("amended beside an older namesake", func(t *testing.T) {
+		driver, dir := sameSubjectRepo(t, "fix", 2)
+		amended := revParse(t, driver, dir, "HEAD")
+		write(t, dir, "1.txt", "changed\n")
+		gitIn(t, dir, "add", "-A")
+		gitIn(t, dir, "commit", "-q", "--amend", "--no-edit")
+		commits, _, _, err := driver.Commits(dir, "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		moved, err := driver.Rewrites(dir, []string{amended}, commits)
+		want := map[string]string{amended: revParse(t, driver, dir, "HEAD")}
+		if err != nil || !maps.Equal(moved, want) {
+			t.Fatalf("Rewrites = %v, %v, want %v", moved, err, want)
+		}
+	})
 }

@@ -19,9 +19,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if mm, ok := model.(*Model); ok {
 		mm.flushPendingNotice()
 		mm.prepareFrame()
+		mm.syncPointerShape()
 		return mm, tea.Batch(cmd, mm.syncMouseCapture(), mm.refreshSpawnBase(), mm.nextEffectCmd())
 	}
 	m.prepareFrame()
+	m.syncPointerShape()
 	return model, tea.Batch(cmd, m.syncMouseCapture(), m.nextEffectCmd())
 }
 

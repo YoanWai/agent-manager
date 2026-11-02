@@ -69,3 +69,77 @@ func TestCompatibleSendConfirmationMeasuresDisplayedKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestNavigationHeaderKeepsLiteralBranchesAndTargetHit(t *testing.T) {
+	m := New(false)
+	m.scope = git.ScopeBranch
+	m.set = diff.Set{Repo: git.Repo{Root: "/repo", Branch: "feature→branch"}, BaseDesc: "base←"}
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		text := ansi.Strip(m.Header(RenderContext{GlyphMode: mode}, "session ↑↓", 220))
+		separator := " → "
+		if mode == presentation.GlyphModeBasic {
+			separator = " -> "
+		}
+		want := "base←" + separator + "feature→branch"
+		if !strings.Contains(text, want) || !strings.Contains(text, "session ↑↓") {
+			t.Fatalf("%s header changed literal text: %s", mode, text)
+		}
+		found := false
+		for _, hit := range m.HeaderKeys() {
+			if hit.Label == "B" {
+				found = true
+				if got := ansi.Cut(text, hit.X0, hit.X1); !strings.Contains(got, want) {
+					t.Fatalf("target hit=%q", got)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("target pill lost mouse target")
+		}
+	}
+}
+
+func TestNavigationReviewOverflowKeepsLineMapsAndLiteralSource(t *testing.T) {
+	const literal = "literal ↑↓←→"
+	for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+		for _, split := range []bool{false, true} {
+			m := New(split)
+			m.target = Target{ID: "session"}
+			m.scroll = 4
+			fd := diff.FileDiff{File: git.ChangedFile{Path: "file.go"}, IsLoaded: true}
+			for i := 0; i < 15; i++ {
+				fd.Lines = append(fd.Lines, diff.Line{Kind: diff.Same, OldNum: i + 1, NewNum: i + 1, Text: literal, Pair: -1})
+			}
+			m.set = diff.Set{Files: []diff.FileDiff{fd}}
+			text := ansi.Strip(m.Code(RenderContext{GlyphMode: mode}, 100, 4).Text)
+			above := "4 more above"
+			below := "more below"
+			if mode == presentation.GlyphModeAdvanced {
+				above = "↑ 4 more"
+				below = "↓"
+			}
+			if len(strings.Split(text, "\n")) != 4 || !strings.Contains(text, above) || !strings.Contains(text, below) || !strings.Contains(text, literal) {
+				t.Fatalf("%s/%t code overflow: %s", mode, split, text)
+			}
+			if line, ok := m.codeRows.At(0); !ok || line != 3 {
+				t.Fatalf("overflow lost previous-line target: %d/%t", line, ok)
+			}
+		}
+		m := New(false)
+		m.target = Target{ID: "session"}
+		m.fileIdx = 5
+		for i := 0; i < 10; i++ {
+			m.set.Files = append(m.set.Files, diff.FileDiff{File: git.ChangedFile{Path: literal}, IsLoaded: true})
+		}
+		text := ansi.Strip(m.FileList(RenderContext{GlyphMode: mode}, 80, 4).Text)
+		if !strings.Contains(text, literal) {
+			t.Fatal("file name changed")
+		}
+		if mode == presentation.GlyphModeBasic && (!strings.Contains(text, "more above") || !strings.Contains(text, "more below")) {
+			t.Fatalf("file overflow: %s", text)
+		}
+		if _, ok := m.fileRows.At(0); !ok {
+			t.Fatal("file overflow lost mouse target")
+		}
+	}
+}

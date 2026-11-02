@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
@@ -60,13 +61,15 @@ type Row struct {
 
 // View is what the decisions read from the manager: the loaded rows, the rows
 // the Rail lists, the group paths, the view on screen, and what the last poll,
-// or a launch since, says about each row's window.
+// or a launch since, says about each row's window. KeyHint fills format with
+// the list key bound to action, and is empty while nothing is bound.
 type View interface {
 	Sessions() []store.Session
 	Listed() []store.Session
 	Groups() []string
 	ArchivedView() bool
 	Live(id string) bool
+	KeyHint(action, format string) string
 }
 
 func Children(sessions []store.Session, sess store.Session) []store.Session {
@@ -159,8 +162,8 @@ func Archive(view View, row Row) Intent {
 	sessions := Children(view.Sessions(), row.Sess)
 	return Intent{ClearsErr: true, Card: Card{
 		Label: uisession.FollowConfirmLabel("archive", row.Sess.Name, len(sessions)-1,
-			"frees its RAM, t to find it.",
-			"frees their RAM, t to find them."),
+			"frees its RAM"+view.KeyHint(keybind.Archived, ", %s to find it")+".",
+			"frees their RAM"+view.KeyHint(keybind.Archived, ", %s to find them")+"."),
 		Target: uilifecycle.Target{
 			Action:    uilifecycle.Archive,
 			Sessions:  sessions,
@@ -215,8 +218,8 @@ func Kill(view View, row Row) Intent {
 		}
 		return Intent{Card: Card{
 			Group: true,
-			Label: fmt.Sprintf("kill group %s (%d live sessions)? frees their RAM, v revives them.",
-				uiframe.DisplayGroup(row.Group), len(live)),
+			Label: fmt.Sprintf("kill group %s (%d live sessions)? frees their RAM%s.",
+				uiframe.DisplayGroup(row.Group), len(live), view.KeyHint(keybind.Revive, ", %s revives them")),
 			Target: uilifecycle.Target{
 				Path:     row.Group,
 				Action:   uilifecycle.Kill,
@@ -231,8 +234,8 @@ func Kill(view View, row Row) Intent {
 	}
 	return Intent{Card: Card{
 		Label: SessionActionLabel("kill", row.Sess, sessions,
-			"frees its RAM, v revives it.",
-			"frees their RAM, v revives them."),
+			"frees its RAM"+view.KeyHint(keybind.Revive, ", %s revives it")+".",
+			"frees their RAM"+view.KeyHint(keybind.Revive, ", %s revives them")+"."),
 		Target: uilifecycle.Target{
 			Action:    uilifecycle.Kill,
 			Sessions:  sessions,
@@ -250,7 +253,7 @@ func KillAll(view View) Intent {
 		return Intent{Notice: "no live sessions to kill"}
 	}
 	return Intent{Card: Card{
-		Label:  fmt.Sprintf("kill every live session (%d)? frees their RAM, v revives them.", len(live)),
+		Label:  fmt.Sprintf("kill every live session (%d)? frees their RAM%s.", len(live), view.KeyHint(keybind.Revive, ", %s revives them")),
 		Target: uilifecycle.Target{Action: uilifecycle.Kill, Sessions: live},
 	}}
 }

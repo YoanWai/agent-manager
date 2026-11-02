@@ -148,6 +148,11 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 	case uinotices.DismissRequest:
 		m.applyNoticeDismiss(job, err)
 		return nil
+	case uinotices.SeenRequest:
+		if err != nil {
+			m.reportErr(err.Error())
+		}
+		return nil
 	case uitheme.PaneRequest:
 		return uitheme.ApplyPane(themeHost{m}, err)
 	case uilifecycle.Request:

@@ -10,6 +10,10 @@
 <p align="center">agent manager is a local terminal app that connects to your existing subscriptions and tools.</p>
 
 <p align="center">
+  English · <a href="README.zh-CN.md">简体中文</a> · <a href="README.ja.md">日本語</a>
+</p>
+
+<p align="center">
   <a href="https://peerlist.io/yoanwai/project/agent-manager" target="_blank" rel="noopener noreferrer">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="docs/brand/peerlist-laurel-dark.webp">
@@ -205,7 +209,7 @@ Configuration (Settings, the editor `o` opens, and the key tables) is in [docs/c
 
 ```bash
 go run .
-env -u TMUX TMUX_TMPDIR=/tmp/amtest go test ./...   # end-to-end tests drive a real tmux server
+mkdir -p /tmp/amtest && env -u TMUX TMUX_TMPDIR=/tmp/amtest SHELL=/bin/sh go test -race ./...   # end-to-end tests drive a real tmux server
 ```
 
 See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the checks CI runs, and [AGENTS.md](AGENTS.md) if you point a coding agent at this repo.
@@ -223,6 +227,20 @@ Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md]
 ### Contributors
 
 <a href="https://github.com/YoanWai/agent-manager/graphs/contributors"><img src="https://raw.githubusercontent.com/YoanWai/agent-manager/badges/contributors.png" alt="Contributors"></a>
+
+## Sponsors
+
+<p align="center">
+  <a href="https://github.com/dempc6469">
+    <img src="https://github.com/dempc6469.png?size=144" width="72" height="72" alt="dempc6469">
+    <br>
+    <sub><b>@dempc6469</b></sub>
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/sponsors/YoanWai"><img src="https://img.shields.io/badge/Sponsor_this_project-bf4b78?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=1f2328" alt="Sponsor this project" height="28"></a>
+</p>
 
 ## License
 

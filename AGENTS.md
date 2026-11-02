@@ -251,8 +251,10 @@ with `gh release edit <tag> --notes-file notes.md`.
   focus are surfaces on a stack over the base screen (list or Review), read
   from the top for input; there is no mode enum
   ([docs/architecture.md](docs/architecture.md#decisions)). A package never imports the
-  root and changes root state only by returning values (`rail.Decision`,
-  `rail.Intent`); its `Root` and host interfaces are for reads. Store, tmux
+  root. It changes root state by returning values (`rail.Decision`,
+  `rail.Intent`), or, where a surface's signature returns only a `tea.Cmd`,
+  through `Root` calls that each carry out one decision
+  (`settings.Root.Apply`, `dialogs.ForkRoot.Submit`). Store, tmux
   and Git work runs on the ordered effect lane: `ui/effects` holds the
   contract, each package declares its own requests, and the root only binds
   and applies them in `effects_adapter_executor.go`. Root files are the

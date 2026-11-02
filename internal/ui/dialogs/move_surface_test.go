@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -12,7 +13,7 @@ func testMoveSurface(root MoveRoot, groups ...string) *MoveSurface {
 	for i, path := range groups {
 		options[i] = spawn.GroupOption{Path: path}
 	}
-	return NewMoveSurface(root, MoveSession("shell"), spawn.Picker{Groups: options})
+	return NewMoveSurface(root, MoveSession("shell"), spawn.Picker{Groups: options}, presentation.GlyphModeAdvanced)
 }
 
 // A click on a target picks it, and a click on the target under the cursor
@@ -64,7 +65,21 @@ func TestMoveSurfaceIsDismissible(t *testing.T) {
 	if host.popped != 1 || len(root.placed) != 0 {
 		t.Fatalf("esc popped %d times and placed %d rows", host.popped, len(root.placed))
 	}
-	if got := s.Footer(); len(got) != len(MoveHints()) {
+	if got := s.Footer(); len(got) != len(MoveHints(presentation.DefaultGlyphMode)) {
 		t.Fatalf("footer = %v, want the card's hints", got)
+	}
+}
+
+func TestMoveSurfaceFooterFollowsGlyphMode(t *testing.T) {
+	for _, tc := range []struct {
+		mode presentation.GlyphMode
+		key  string
+	}{
+		{presentation.GlyphModeBasic, "up/down"}, {presentation.GlyphModeAdvanced, "↑↓"},
+	} {
+		s := NewMoveSurface(&moveStub{}, MoveSession("shell"), spawn.Picker{}, tc.mode)
+		if got := s.Footer()[0]; got != [2]string{tc.key, "pick"} {
+			t.Fatalf("%s: %v", tc.mode, got)
+		}
 	}
 }

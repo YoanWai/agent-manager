@@ -11,8 +11,10 @@ import (
 
 const docsURL = uinotices.DocsURL
 
+var _ columnClicker = (*uinotices.Surface)(nil)
+
 // noticesPanel is the messages modal: uinotices.Panel owns the list it
-// builds, the cursor, the body scroll and the dismissed set, and
+// builds, the cursor, the body scroll, the dismissed and seen sets, and
 // uirelease.State the releases and the feed. The root keeps a refused config
 // import and the notice that waits for the list to come back before it
 // opens.
@@ -25,7 +27,6 @@ type noticesPanel struct {
 // the panel never reaches into the store or the key tables itself.
 func (m *Model) noticeSources() uinotices.Sources {
 	sources := m.release.Sources()
-	sources.GlyphMode = m.prefs.glyphMode
 	sources.Store = m.services.store != nil
 	sources.ConfigImportError = m.notices.ImportError
 	return sources
@@ -69,6 +70,7 @@ func (m *Model) startupGreeting() string {
 func (m *Model) openNotices(id string) {
 	if s, ok := surfaceOf[*uinotices.Surface](m); ok {
 		s.Panel().Open(m.activeNotices(), id)
+		m.seeShownNotice(s)
 		return
 	}
 	m.push(uinotices.NewSurface(noticesRoot{m}, m.notices.Panel, id))
@@ -107,6 +109,7 @@ func (m *Model) keepNoticeSelection(apply func()) {
 	selected := s.Panel().Selected(m.activeNotices())
 	apply()
 	s.Panel().Reselect(m.activeNotices(), selected)
+	m.seeShownNotice(s)
 }
 
 func (m *Model) applyNotices(apply func()) {
@@ -158,6 +161,20 @@ func (m *Model) dismissNotice(id string) {
 		ForegroundGen: m.gens.foreground,
 		Modal:         m.noticesOpen(),
 	}, 0, false)
+}
+
+// seeNotice marks the notice the open panel shows as read and persists it.
+func (m *Model) seeNotice(id string) {
+	if id == "" || m.services.store == nil || m.notices.Seen(id) {
+		return
+	}
+	m.notices.See(id)
+	m.enqueueEffect(uinotices.SeenRequest{ID: id}, 0, false)
+}
+
+// seeShownNotice marks read the notice a cursor the root moved now shows.
+func (m *Model) seeShownNotice(s *uinotices.Surface) {
+	m.seeNotice(s.Panel().Selected(m.activeNotices()))
 }
 
 // noticeDismissQueued reports whether the lane already carries a dismissal
@@ -237,7 +254,13 @@ func (r noticesRoot) RefreshNotices() tea.Cmd { return r.refreshNotices() }
 
 func (r noticesRoot) StartUpdate() tea.Cmd { return r.startUpdate() }
 
-func (r noticesRoot) DismissNotice(id string) { r.dismissNotice(id) }
+func (r noticesRoot) MarkNotice(mark uinotices.Mark) {
+	if mark.Dismiss {
+		r.dismissNotice(mark.ID)
+		return
+	}
+	r.seeNotice(mark.ID)
+}
 
 func (r noticesRoot) PaintNoticesCard(card []string, foot []presentation.PaintedKey) string {
 	return r.paintNoticesCard(card, foot)

@@ -93,8 +93,11 @@ func (s *Surface) Wheel(surface.Host, tea.KeyMsg) tea.Cmd { return nil }
 func (s *Surface) View(_ surface.Host, below string) string { return below }
 
 func (s *Surface) Footer() [][2]string {
-	commit := strings.TrimPrefix(s.keys.Binding(keybind.Resize).Glyph("/")+" / release", " / ")
-	return [][2]string{{"←→", "nudge"}, {"drag", "divider"}, {commit, "commit"}, {"esc", "cancel"}}
+	return s.FooterFor("←→", strings.TrimPrefix(s.keys.Binding(keybind.Resize).Glyph("/")+" / release", " / "))
+}
+
+func (s *Surface) FooterFor(nudge, commit string) [][2]string {
+	return [][2]string{{nudge, "nudge"}, {"drag", "divider"}, {commit, "commit"}, {"esc", "cancel"}}
 }
 
 func (s *Surface) Owner() surface.Owner { return surface.Manager }

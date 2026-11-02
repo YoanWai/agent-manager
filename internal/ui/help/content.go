@@ -173,7 +173,7 @@ func (s State) Content(ctx Context) Content {
 		Title:  title,
 		Head:   head,
 		Lines:  lines,
-		Hints:  s.hints(ctx.ListKeys.Binding(keybind.Help)),
+		Hints:  s.hints(ctx.ListKeys.Binding(keybind.Help), ctx.Glyphs.Mode),
 		Offset: s.scroll,
 	}
 }
@@ -193,22 +193,22 @@ func (s State) searchLine(sections []helpSection, ctx Context) string {
 	return line + ctx.Styles.Subtle.Render(fmt.Sprintf("   %d%s", count, label))
 }
 
-func (s State) hints(binding keybind.Binding) [][2]string {
+func (s State) hints(binding keybind.Binding, mode presentation.GlyphMode) [][2]string {
 	closeKeys := "q"
 	for _, key := range closeBinding(binding).Keys() {
 		if key.Tea() != "q" {
-			closeKeys += "/" + key.Glyph()
+			closeKeys += "/" + keybind.Keys(key).Text("", mode.Effective() == presentation.GlyphModeAdvanced)
 		}
 	}
 	if s.searching {
-		return [][2]string{{"type", "search"}, {"↵", "done"}, {"↑↓", "scroll"}, {"esc", "clear"}}
+		return [][2]string{{"type", "search"}, {"↵", "done"}, {presentation.NavigationLabel(mode, "↑↓"), "scroll"}, {"esc", "clear"}}
 	}
 	docs := [2]string{"o", "docs"}
 	if s.query != "" {
-		return [][2]string{{"↑↓/jk", "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {closeKeys, "close"}}
+		return [][2]string{{presentation.NavigationLabel(mode, "↑↓/jk"), "scroll"}, {"/", "search"}, docs, {"esc", "clear search"}, {closeKeys, "close"}}
 	}
 	return [][2]string{
-		{"↑↓/jk", "scroll"}, {"pgup/pgdn", "page"}, {"g/G", "top/bottom"},
+		{presentation.NavigationLabel(mode, "↑↓/jk"), "scroll"}, {"pgup/pgdn", "page"}, {"g/G", "top/bottom"},
 		{"/", "search"}, docs, {"esc/" + closeKeys, "close"},
 	}
 }

@@ -72,6 +72,21 @@ func TestSyncMouseCaptureRespectsMouseDisabled(t *testing.T) {
 	}
 }
 
+// A focused pane asks for every motion, so the mouse hovering a link
+// reaches it with no button held.
+func TestSyncMouseCaptureAsksFocusForEveryMotion(t *testing.T) {
+	m := &Model{}
+	m.push(newFocusSurface(m))
+	cmd := m.syncMouseCapture()
+	if cmd == nil || cmd() != tea.EnableMouseAllMotion() {
+		t.Fatal("focus did not ask for every motion")
+	}
+	m.clearSurfaces()
+	if cmd := m.syncMouseCapture(); cmd == nil || m.mouse.hover {
+		t.Fatal("leaving focus kept every motion on")
+	}
+}
+
 func TestDragReleasePersistsAndExits(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "state.db"))
 	if err != nil {
@@ -1501,7 +1516,12 @@ func messagesCell(t *testing.T, m *Model) (x, y int) {
 			return ansi.StringWidth(line[:col]), row
 		}
 	}
-	t.Fatal("test setup: the frame painted no messages card or badge")
+	for _, hit := range m.layout.keyHits {
+		if m.services.listKeys.Binding(keybind.Messages).Has(hit.Key.String()) {
+			return hit.X0, hit.Y
+		}
+	}
+	t.Fatal("test setup: the frame painted no messages card or key")
 	return 0, 0
 }
 
@@ -1636,6 +1656,28 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if binding == "alt+m" {
 					msg = tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}
 				}
+				// A footer too narrow for words paints the entry as its key
+				// alone, so the entry is found by the hit that presses it and
+				// read back from the cells under that hit.
+				rows := strings.Split(ansi.Strip(preparedView(m)), "\n")
+				found := false
+				var entry keyHit
+				for _, hit := range m.layout.keyHits {
+					if hit.Key.String() == msg.String() && (!found || hit.Y > entry.Y) {
+						entry, found = hit, true
+					}
+				}
+				if !found {
+					t.Fatalf("full=%v width=%d binding=%s: no hit opens messages %+v", full, width, binding, m.layout.keyHits)
+				}
+				if painted := strings.TrimSpace(ansi.Cut(rows[entry.Y], entry.X0, entry.X1)); !strings.HasPrefix(painted, m.listGlyph(keybind.Messages)) {
+					t.Fatalf("full=%v width=%d binding=%s: the messages hit covers %q, not its key %q", full, width, binding, painted, m.listGlyph(keybind.Messages))
+				}
+				x, y = entry.X0, entry.Y
+				if m = leftClick(m, x, y); !m.noticesOpen() {
+					t.Fatalf("click on messages should open notices, screen=%v", m.screenID())
+				}
+				m.handleKey(key("esc"))
 				m.handleKey(msg)
 				if !m.noticesOpen() {
 					t.Fatalf("%s should open notices, screen = %v", binding, m.screenID())
@@ -1648,9 +1690,10 @@ func TestMessagesLegendOpensNoticesByMouseAndKey(t *testing.T) {
 				if footer := ansi.Strip(m.viewFooter()); strings.Contains(footer, "unread") {
 					t.Fatalf("with nothing unread the legend must give its room back:\n%s", footer)
 				}
-				if m = leftClick(m, x, y); !m.onList() {
-					t.Fatalf("a click where the entry was must not open Messages, screen = %v", m.screenID())
+				if m = leftClick(m, x, y); m.noticesOpen() {
+					t.Fatal("a click where the entry was must not open Messages")
 				}
+				m.handleKey(key("esc"))
 				m.handleKey(msg)
 				if !m.noticesOpen() {
 					t.Fatalf("%s should still open an empty Messages, screen = %v", binding, m.screenID())
@@ -2489,7 +2532,7 @@ func TestClickOnMessagesFootRunsItsKeys(t *testing.T) {
 	m.release.Feed = []feed.Message{{ID: noticeTip, Title: "A tip", Body: []string{strings.Repeat("a tip wide enough to give the card room for every key ", 2)}}}
 	m.openNotices("")
 
-	for _, key := range []string{"↑↓ pick", "pgup/pgdn"} {
+	for _, key := range []string{"↑↓ message", "pgup/pgdn"} {
 		x, y := paintedCell(t, m, key)
 		if _, ok := m.layout.keyHits.At(x, y); ok {
 			t.Fatalf("%q moves the cursor; the rows and the wheel answer for it", key)
@@ -2638,5 +2681,49 @@ func TestPreviewPressFocusesOnlyALiveSession(t *testing.T) {
 		if m = leftPress(m, m.layout.width-3, y0+1); m.focused() {
 			t.Errorf("%s: a press on the preview focused", tc.name)
 		}
+	}
+}
+
+// A press on a link whose text is its address in the preview beside the list
+// opens it instead of focusing the session. A label that hides its target
+// focuses, so the hover in focus names the target before any click.
+func TestPreviewPressOnALinkOpensIt(t *testing.T) {
+	opened := ""
+	prev := openURL
+	openURL = func(url string) error { opened = url; return nil }
+	t.Cleanup(func() { openURL = prev })
+
+	m := buildModel(t)
+	createSession(t, m, "alpha", t.TempDir(), "")
+	m.selectSessionRow(t, "alpha")
+	waitForPreview(t, m)
+	m.workspace.preview = "read https://example.com/docs now\nsee \x1b]8;;https://example.com/hidden\x1b\\the guide\x1b]8;;\x1b\\ here\n"
+	view := strings.Split(ansi.Strip(preparedView(m)), "\n")
+	cell := func(text string) (int, int) {
+		for row, line := range view {
+			if col := strings.Index(line, text); col >= 0 {
+				return ansi.StringWidth(line[:col]), row
+			}
+		}
+		t.Fatalf("test setup: the preview does not show %q:\n%s", text, strings.Join(view, "\n"))
+		return 0, 0
+	}
+
+	x, y := cell("https://example.com/docs")
+	updated, cmd := m.handleMouse(tea.MouseMsg{X: x + 2, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	m = updated.(*Model)
+	if m.focused() || cmd == nil {
+		t.Fatalf("a press on the link focused=%v cmd=%v", m.focused(), cmd != nil)
+	}
+	cmd()
+	if opened != "https://example.com/docs" {
+		t.Fatalf("opened %q", opened)
+	}
+
+	x, y = cell("the guide")
+	m = leftPress(m, x+2, y)
+	m.drainEffects(t)
+	if !m.focused() || opened != "https://example.com/docs" {
+		t.Fatalf("a press on a hidden-target label should focus, focused=%v opened=%q", m.focused(), opened)
 	}
 }

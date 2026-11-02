@@ -72,7 +72,11 @@ func (d *Driver) worktreeBase(dir, override string) (string, error) {
 		}
 		return override, nil
 	}
-	if base := d.DefaultBase(dir); base != "" {
+	base, err := d.DefaultBase(dir)
+	if err != nil {
+		return "", err
+	}
+	if base != "" {
 		return base, nil
 	}
 	if d.ResolveRef(dir, "HEAD") == nil {

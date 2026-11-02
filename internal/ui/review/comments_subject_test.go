@@ -15,13 +15,19 @@ func TestReviewSubjectNamesTheCheckout(t *testing.T) {
 		want  string
 	}{
 		{git.ScopeBranch, "the branch changes on `stack-2` (`" + head + "`) vs `stack-1` (merge-base `" + mergeBase + "`) in `" + dir + "`"},
-		{git.ScopeLastCommit, "the last commit on `stack-2` (`" + head + "`) in `" + dir + "`"},
+		{git.ScopeCommit, "the commit on `stack-2` (`" + head + "`) in `" + dir + "`"},
 		{git.ScopeStaged, "the staged changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 		{git.ScopeUncommitted, "the uncommitted changes on `stack-2` (`" + head + "`) in `" + dir + "`"},
 	} {
 		if got := reviewSubject(tc.scope, onBranch, dir); got != tc.want {
 			t.Errorf("%s:\n got %s\nwant %s", tc.scope, got, tc.want)
 		}
+	}
+
+	onCommit := onBranch
+	onCommit.Commit = "0123456789abcdef0123456789abcdef01234567"
+	if got, want := reviewSubject(git.ScopeCommit, onCommit, dir), "commit `0123456789ab` on `stack-2` (`"+head+"`) in `"+dir+"`"; got != want {
+		t.Errorf("a commit:\n got %s\nwant %s", got, want)
 	}
 
 	detached := diff.Set{Repo: git.Repo{Root: dir, Head: head, Detached: true}}

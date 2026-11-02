@@ -19,7 +19,7 @@ func TestPureLineModelPairsChangedRows(t *testing.T) {
 
 func TestScopeCyclePreservesStoredNames(t *testing.T) {
 	scope := value.ScopeUncommitted
-	for _, want := range []string{"uncommitted", "vs target", "last commit", "staged"} {
+	for _, want := range []string{"uncommitted", "vs target", "commit", "staged"} {
 		if scope.String() != want {
 			t.Fatalf("scope %d: %q, want %q", scope, scope.String(), want)
 		}

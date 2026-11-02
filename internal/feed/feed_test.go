@@ -243,27 +243,21 @@ func TestFetchCapsCountAndSize(t *testing.T) {
 	}
 }
 
-func TestFetchCarriesHeadlineAndAccent(t *testing.T) {
-	serve(t, `[{"id":"pickers","banner":"Pickers are here","title":"v0.40.0: pickers are here","headline":"Model + reasoning pickers are here!","accent":["ctrl+l","ctrl+x"],"body":["ctrl+l opens the model list and ctrl+x steps the effort."]}]`)
+func TestFetchCarriesAccent(t *testing.T) {
+	serve(t, `[{"id":"pickers","banner":"Pickers are here","title":"v0.40.0: pickers are here","accent":["ctrl+l","ctrl+x"],"body":["ctrl+l opens the model list and ctrl+x steps the effort."]}]`)
 	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
-	if msg.Headline != "Model + reasoning pickers are here!" {
-		t.Fatalf("headline = %q", msg.Headline)
-	}
 	if !slices.Equal(msg.Accent, []string{"ctrl+l", "ctrl+x"}) {
 		t.Fatalf("accent = %q", msg.Accent)
 	}
 }
 
-func TestFetchBoundsHeadlineAndAccent(t *testing.T) {
+func TestFetchBoundsAccent(t *testing.T) {
 	phrases := []string{`""`, `"` + strings.Repeat("y", maxAccentLen+20) + `"`}
 	for index := 0; index < maxAccents+2; index++ {
 		phrases = append(phrases, `"phrase `+strconv.Itoa(index)+`"`)
 	}
-	serve(t, `[{"id":"bounded","banner":"x","title":"x","headline":"`+strings.Repeat("h", maxHeadlineLen+20)+`","accent":[`+strings.Join(phrases, ",")+`]}]`)
+	serve(t, `[{"id":"bounded","banner":"x","title":"x","accent":[`+strings.Join(phrases, ",")+`]}]`)
 	msg := fetch(t, t.TempDir(), "v0.40.0")[0]
-	if len([]rune(msg.Headline)) != maxHeadlineLen {
-		t.Fatalf("headline is %d characters, want %d", len([]rune(msg.Headline)), maxHeadlineLen)
-	}
 	if len(msg.Accent) != maxAccents {
 		t.Fatalf("kept %d accent phrases, want %d", len(msg.Accent), maxAccents)
 	}
@@ -345,6 +339,9 @@ func TestShippedFeedFileIsRenderableAndRetires(t *testing.T) {
 		if entry.MaxVersion == "" && entry.ExpiresAt == "" {
 			t.Errorf("%s: needs max_version or expires_at, or it keeps showing after it stops being true", entry.ID)
 		}
+		if entry.Pinned && entry.ExpiresAt == "" {
+			t.Errorf("%s: a pinned entry needs expires_at, or it stays undismissable until the feed changes", entry.ID)
+		}
 		if entry.MaxVersion != "" {
 			versionEntry := entry
 			versionEntry.ExpiresAt = ""
@@ -385,8 +382,6 @@ func majorAbove(t *testing.T, version string) string {
 	return strconv.Itoa(major+1) + "." + fields[1] + "." + fields[2]
 }
 
-const legacyFeedJSON = `{"checked_at":"2099-01-01T00:00:00Z","etag":"\"legacy-feed\"","messages":[{"id":"one","banner":"x","title":"Seeded","body":["from the older build"]}]}`
-
 func TestFeedIsCachedInItsOwnFile(t *testing.T) {
 	serve(t, `[{"id":"one","banner":"x","title":"x"}]`)
 	dir := t.TempDir()
@@ -394,9 +389,6 @@ func TestFeedIsCachedInItsOwnFile(t *testing.T) {
 	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, "feed-messages.json"))
 	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
 		t.Fatalf("feed not cached with its parser: %+v", written)
-	}
-	if _, err := os.Stat(filepath.Join(dir, "message-feed.json")); !os.IsNotExist(err) {
-		t.Fatalf("the file older builds own must be left alone: %v", err)
 	}
 }
 
@@ -427,90 +419,11 @@ func TestFeedFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
 	}
 }
 
-func TestLegacyFeedSeedsUntilTheFirstFetch(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "message-feed.json"), []byte(legacyFeedJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "down", http.StatusServiceUnavailable)
-	}))
-	t.Cleanup(server.Close)
-	old := feedURL
-	feedURL = server.URL
-	t.Cleanup(func() { feedURL = old })
-
-	messages := fetch(t, dir, "v0.40.0")
-	if len(messages) != 1 || messages[0].Title != "Seeded" {
-		t.Fatalf("the older build's feed should show while the fetch fails: %+v", messages)
-	}
-	kept, err := os.ReadFile(filepath.Join(dir, "message-feed.json"))
-	if err != nil || string(kept) != legacyFeedJSON {
-		t.Fatalf("the legacy file must stay byte for byte: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, cacheFile)); !os.IsNotExist(err) {
-		t.Fatalf("a failed fetch must not write a cache: %v", err)
-	}
-}
-
-func TestFeedFileWinsOverTheLegacyFile(t *testing.T) {
-	dir := t.TempDir()
-	_ = atomicfile.WriteJSON(filepath.Join(dir, cacheFile), cache{
-		CheckedAt: time.Now(),
-		Parser:    feedParser,
-		Messages:  []rawMessage{{ID: "one", Banner: "x", Title: "From the new file"}},
-	}, 0o644)
-	if err := os.WriteFile(filepath.Join(dir, legacyCacheFile), []byte(legacyFeedJSON), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
-	t.Cleanup(server.Close)
-	old := feedURL
-	feedURL = server.URL
-	t.Cleanup(func() { feedURL = old })
-
-	messages := fetch(t, dir, "v0.40.0")
-	if hits.Load() != 0 || len(messages) != 1 || messages[0].Title != "From the new file" {
-		t.Fatalf("hits=%d messages=%+v, want the fresh new file with no fetch", hits.Load(), messages)
-	}
-	if kept, err := os.ReadFile(filepath.Join(dir, legacyCacheFile)); err != nil || string(kept) != legacyFeedJSON {
-		t.Fatalf("the legacy file must stay byte for byte: %v", err)
-	}
-}
-
-func TestLegacyFeedSeedIsFetchedAtOnceWithoutItsETag(t *testing.T) {
-	dir := t.TempDir()
-	seed := `{"checked_at":"` + time.Now().Format(time.RFC3339) + `","etag":"\"legacy-feed\"","messages":[{"id":"one","banner":"x","title":"Seeded"}]}`
-	if err := os.WriteFile(filepath.Join(dir, legacyCacheFile), []byte(seed), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	var hits atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
-		if got := r.Header.Get("If-None-Match"); got != "" {
-			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the older build's parse", got)
-		}
-		w.Write([]byte(`[{"id":"one","banner":"x","title":"Fetched"}]`))
-	}))
-	t.Cleanup(server.Close)
-	old := feedURL
-	feedURL = server.URL
-	t.Cleanup(func() { feedURL = old })
-
-	messages := fetch(t, dir, "v0.40.0")
-	if hits.Load() != 1 || len(messages) != 1 || messages[0].Title != "Fetched" {
-		t.Fatalf("hits=%d messages=%+v, want one fetch at once: a seed is never fresh", hits.Load(), messages)
-	}
-	written, ok := atomicfile.ReadJSON[cache](filepath.Join(dir, cacheFile))
-	if !ok || written.Parser != feedParser || len(written.Messages) != 1 {
-		t.Fatalf("feed not cached with its parser: %+v", written)
-	}
-}
-
 func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	shapes := map[int][]string{
 		1: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at"},
+		2: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at", "kind", "action"},
+		3: {"id", "banner", "title", "headline", "accent", "body", "url", "min_version", "max_version", "expires_at", "kind", "action", "pinned"},
 	}
 	want, ok := shapes[feedParser]
 	if !ok {
@@ -523,5 +436,66 @@ func TestParserNumberPinsTheEntryShape(t *testing.T) {
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("rawMessage has fields %q, parser %d names %q: a changed field set needs a higher parser number", got, feedParser, want)
+	}
+}
+
+func TestSanitizeKeepsKindActionPinAndExpiry(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	raw := []rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: "heads-up", Action: "Join on Discord", Pinned: true, ExpiresAt: "2026-11-22T12:00:00Z"}}
+	got := sanitize(raw, "0.46.0", now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 message, got %+v", got)
+	}
+	if got[0].Kind != KindHeadsUp {
+		t.Errorf("kind = %q, want %q", got[0].Kind, KindHeadsUp)
+	}
+	if got[0].Action != "Join on Discord" {
+		t.Errorf("action = %q", got[0].Action)
+	}
+	if !got[0].Pinned {
+		t.Error("pinned entry came back unpinned")
+	}
+	if want := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC); !got[0].ExpiresAt.Equal(want) {
+		t.Errorf("expires at = %v, want %v", got[0].ExpiresAt, want)
+	}
+}
+
+func TestSanitizeKeepsEveryKnownKind(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	for _, kind := range []string{KindNews, KindHeadsUp, KindTip} {
+		got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: kind}}, "0.46.0", now)
+		if len(got) != 1 || got[0].Kind != kind {
+			t.Errorf("kind %q came back as %+v", kind, got)
+		}
+	}
+}
+
+func TestUnknownOrMissingKindReadsAsNews(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	for _, kind := range []string{"", "survey"} {
+		got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Kind: kind}}, "0.46.0", now)
+		if len(got) != 1 || got[0].Kind != KindNews {
+			t.Errorf("kind %q = %+v, want %q", kind, got, KindNews)
+		}
+	}
+}
+
+func TestMissingExpiryLeavesTheZeroTime(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t"}}, "0.46.0", now)
+	if len(got) != 1 || !got[0].ExpiresAt.IsZero() {
+		t.Fatalf("expires at = %+v", got)
+	}
+}
+
+func TestActionIsCleanedAndBounded(t *testing.T) {
+	now := time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)
+	action := "\x1b[31m" + strings.Repeat("x", 60)
+	got := sanitize([]rawMessage{{ID: "a", Banner: "b", Title: "t", Action: action}}, "0.46.0", now)
+	if len(got) != 1 {
+		t.Fatalf("want 1 message, got %+v", got)
+	}
+	if want := strings.Repeat("x", maxActionLen); got[0].Action != want {
+		t.Errorf("action = %q, want %d x runes with no escape", got[0].Action, maxActionLen)
 	}
 }

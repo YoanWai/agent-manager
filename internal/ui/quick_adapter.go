@@ -15,6 +15,7 @@ import (
 	uiquicksend "github.com/YoanWai/agent-manager/internal/ui/quick/send"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
 	uipersist "github.com/YoanWai/agent-manager/internal/ui/settings/persist"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uilaunch "github.com/YoanWai/agent-manager/internal/ui/spawn/launch"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -87,7 +88,7 @@ func (m *Model) handleQuickKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	q := m.quick()
 	// The move and toggle effects change the bar's own aim and toggle, so
 	// they land before a later repaint reads them.
-	cmd := uiquick.Decide(m.quickBarHost(), q, composer.TypedText(msg))
+	cmd := uiquick.Decide(m.quickBarHost(), q, spawn.TypedText(msg))
 	return m, cmd
 }
 
@@ -131,7 +132,7 @@ func (m *Model) dispatchQuickSpawn(request uilaunch.Request, reader directoryPre
 }
 
 // toggleQuickWorktree flips the worktree choice, or probes the target first
-// when its repo verdict is not cached.
+// when its repo verdict is unknown or stale.
 func (m *Model) toggleQuickWorktree() tea.Cmd {
 	q := m.quick()
 	if _, remote := m.remoteTarget(); remote {
@@ -139,7 +140,7 @@ func (m *Model) toggleQuickWorktree() tea.Cmd {
 		return nil
 	}
 	dir := m.quickTargetDir()
-	capable, known := m.cachedWorktreeCapability(dir)
+	capable, known := m.freshWorktreeCapability(dir)
 	if !known {
 		return m.quickWorktreeProbeCmd(true)
 	}
@@ -176,7 +177,7 @@ const quickModeTitle = "Quick prompt mode"
 func (m *Model) quickFooter(q *uiquick.Surface) legend {
 	edge := uitheme.KeyStyle().Render(m.chrome().QuickEdgeGlyph)
 	gutter := strings.Repeat(" ", quickGutter-1)
-	painted := paintLegend([]legendSection{{Title: quickModeTitle, Pairs: q.Legend(m.quickBarHost())}}, max(m.layout.width-1, 1), m.prefs.glyphMode)
+	painted := paintLegend([]legendSection{{Title: quickModeTitle, Pairs: q.Legend(m.quickBarHost(), m.prefs.glyphMode)}}, max(m.layout.width-1, 1), m.prefs.glyphMode)
 	keys := uitheme.SplitLines(painted.Text)
 	rows := uiquick.BarMaxRows + 1
 	if q.Picking() != uiquick.PickNone {

@@ -17,9 +17,20 @@ import (
 	"github.com/YoanWai/agent-manager/internal/report"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
+	"github.com/YoanWai/agent-manager/internal/testenv"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// TestMain drops an inherited GIT_DIR and its siblings, which would point
+// the temp repos these tests build at the repo running them.
+func TestMain(m *testing.M) {
+	if err := testenv.IsolateGit(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 type fakeTerminalCommands struct {
 	listed      []sessioncmd.Terminal
@@ -94,6 +105,7 @@ type fakeSessionCommands struct {
 	killedID      string
 	archivedID    string
 	archived      bool
+	movedID       string
 	endedAction   string
 	endCanceled   bool
 	groupPath     string
@@ -166,6 +178,13 @@ func (f *fakeSessionCommands) Archive(_ string, id string, archived bool) (sessi
 	updated := f.created
 	updated.Archived = archived
 	return updated, f.err
+}
+
+func (f *fakeSessionCommands) Move(_ string, id, group string) (sessioncmd.Session, error) {
+	f.movedID, f.groupPath = id, group
+	moved := f.created
+	moved.Group = group
+	return moved, f.err
 }
 
 func (f *fakeSessionCommands) EndAfterTurn(_ string, action string) (sessioncmd.AfterTurn, error) {
@@ -669,7 +688,7 @@ func TestReviewModeWritesMailbox(t *testing.T) {
 	configDir := t.TempDir()
 	session := connect(t, configDir, "abc123")
 
-	for _, scope := range []string{"uncommitted", "branch", "last_commit", "staged"} {
+	for _, scope := range []string{"uncommitted", "branch", "commit", "last_commit", "staged"} {
 		text, isError := callText(t, session, "review", map[string]any{"mode": scope})
 		if isError {
 			t.Fatalf("review mode %q error: %q", scope, text)
@@ -750,7 +769,7 @@ func TestListsFleetTools(t *testing.T) {
 	}
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
-		"revive_session", "kill_session", "archive_session", "archive_self", "kill_self",
+		"revive_session", "kill_session", "archive_session", "move_session", "archive_self", "kill_self",
 		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
 		"task",
 		"reserve_files", "release_files", "list_reservations",
@@ -837,6 +856,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"revive_session":   {"dead session"},
 		"kill_session":     {"revive_session", "ask first", "kill_self"},
 		"archive_session":  {"archived false", "archive_self"},
+		"move_session":     {"list_groups", "create_group", "keeps running"},
 		"archive_self":     {"once the turn making this call ends", "finish your reply", "cancel true", "archive_session"},
 		"kill_self":        {"once the turn making this call ends", "finish your reply", "cancel true", "revive_session", "kill_session"},
 		"create_group":     {"list_groups", "parent"},
@@ -962,6 +982,13 @@ func TestSessionToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 	}
 	if fake.archived {
 		t.Fatal("archived false should restore")
+	}
+
+	if text, isError := callText(t, session, "move_session", map[string]any{"session_id": "a1b2c3d4", "group": "api/web"}); isError || !strings.Contains(text, "moved") || !strings.Contains(text, "api/web") {
+		t.Fatalf("move text = %q, error %v", text, isError)
+	}
+	if fake.movedID != "a1b2c3d4" || fake.groupPath != "api/web" {
+		t.Fatalf("move reached the layer with id %q group %q", fake.movedID, fake.groupPath)
 	}
 
 	for tool, action := range map[string]string{"archive_self": store.AfterTurnArchive, "kill_self": store.AfterTurnKill} {

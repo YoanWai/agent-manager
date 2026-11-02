@@ -16,6 +16,7 @@ type Model struct {
 	selection selection
 	pending   pendingClick
 	forward   forwardedGesture
+	pointer   pointerAt
 
 	copied  int
 	copyGen uint64
@@ -43,6 +44,7 @@ type paneState struct {
 type displayedFrame struct {
 	box       Box
 	lines     []string
+	links     [][]paneLink
 	rowOffset int
 }
 
@@ -113,6 +115,7 @@ func (m *Model) Enter(ctx EnterContext) {
 	m.clearSelection()
 	m.pending = pendingClick{}
 	m.forward = forwardedGesture{}
+	m.ForgetPointer()
 	m.cursorOn = true
 	m.scroll = 0
 	m.fetchInFlight = false

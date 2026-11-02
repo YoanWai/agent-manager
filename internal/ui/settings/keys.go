@@ -1,6 +1,8 @@
 package settings
 
 import (
+	"slices"
+
 	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
@@ -161,6 +163,10 @@ func (s *State) Cycle(step int) Result {
 		}
 		s.Dirty = true
 		return Result{Glyphs: true}
+	case FieldReviewScope:
+		count := len(ReviewScopes)
+		at := max(slices.Index(ReviewScopes, s.ReviewScope), 0)
+		s.ReviewScope = ReviewScopes[(at+step+count)%count]
 	case FieldEditor:
 		s.Editor.cycle(step)
 	default:

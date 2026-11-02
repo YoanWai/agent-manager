@@ -107,3 +107,35 @@ func TestDismissNoticeMergesConcurrentWriters(t *testing.T) {
 		t.Fatalf("dismissed notices lost concurrent writes:\n got %q\nwant %q", got, want)
 	}
 }
+
+func TestSeeNoticeMergesWithAnotherWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.db")
+	stores := make([]*Store, 2)
+	for i := range stores {
+		st, err := Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stores[i] = st
+		t.Cleanup(func() { _ = st.Close() })
+	}
+	if err := stores[0].SeeNotice("whatsnew-v0.47.0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := stores[1].SeeNotice("feed-tip"); err != nil {
+		t.Fatal(err)
+	}
+	if err := stores[1].SeeNotice(""); err == nil || err.Error() != "see notice: id is empty" {
+		t.Fatalf("empty id error = %v", err)
+	}
+	raw, err := stores[0].Setting(seenNoticesSetting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if raw != `["feed-tip","whatsnew-v0.47.0"]` {
+		t.Fatalf("seen notices = %s", raw)
+	}
+	if dismissed, err := stores[0].Setting(dismissedNoticesSetting); err != nil || dismissed != "" {
+		t.Fatalf("seeing a notice wrote the dismissed set: %q, %v", dismissed, err)
+	}
+}

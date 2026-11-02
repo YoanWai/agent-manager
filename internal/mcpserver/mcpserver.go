@@ -26,7 +26,7 @@ type renameArgs struct {
 type reviewArgs struct {
 	Repo string `json:"repo,omitempty" jsonschema:"path inside the git repo or worktree being worked on, so review opens there"`
 	Base string `json:"base,omitempty" jsonschema:"git ref the branch scope diffs against (e.g. origin/develop); \"auto\" returns to auto-detection"`
-	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, last_commit or staged"`
+	Mode string `json:"mode,omitempty" jsonschema:"diff scope review opens with: uncommitted, branch, commit or staged"`
 }
 
 type reviewCommentArgs struct {
@@ -84,6 +84,11 @@ type sendSessionArgs struct {
 type archiveSessionArgs struct {
 	SessionID string `json:"session_id" jsonschema:"session id returned by list_sessions"`
 	Archived  *bool  `json:"archived,omitempty" jsonschema:"true archives the session out of the active list, false restores it; defaults to true"`
+}
+
+type moveSessionArgs struct {
+	SessionID string `json:"session_id" jsonschema:"session id returned by list_sessions"`
+	Group     string `json:"group" jsonschema:"existing group path to file it under, from list_groups; empty for the root group"`
 }
 
 type endSelfArgs struct {
@@ -197,6 +202,7 @@ type sessionCommands interface {
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
+	Move(sessionID, targetID, group string) (sessioncmd.Session, error)
 	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
 	CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error)
 	Tasks(sessionID string) ([]sessioncmd.Task, error)
@@ -307,7 +313,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		Description: "Declare what the user's review screen shows for this session; set any of repo, base and mode together. " +
 			"repo is the git repo or worktree you are working in, so review opens there: declare it when you start in a repo or switch to another. " +
 			"base is the git ref your work will merge into (e.g. origin/develop), which the branch scope diffs against; \"auto\" returns to auto-detection. " +
-			"mode is the diff scope review opens with: uncommitted (working dir), branch (vs base), last_commit or staged, e.g. staged before committing.",
+			"mode is the diff scope review opens with: uncommitted (working dir), branch (vs base), commit (HEAD, the user steps to others) or staged, e.g. staged before committing.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args reviewArgs) (*mcp.CallToolResult, any, error) {
 		var done []string
 		if args.Repo != "" {
@@ -564,6 +570,23 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			return nil, sessioncmd.Session{}, err
 		}
 		return textContent(sessioncmd.FormatArchiveState(updated)), updated, nil
+	})
+
+	addTool(server, noCaller, &mcp.Tool{
+		Name: "move_session",
+		Description: "File a session under another group, the way the user's move key does; terminals nested under it go with it. " +
+			"Use it when the user asks to file or tidy sessions into the group their work belongs to. The group must already exist: call list_groups, or create_group first. " +
+			"Only where the row is filed changes; the agent keeps running.",
+		Annotations: toolAnnotations(false, false, false),
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args moveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
+		if err := localOnly("move_session", args.SessionID); err != nil {
+			return nil, sessioncmd.Session{}, err
+		}
+		moved, err := sessions.Move(sessionID, args.SessionID, args.Group)
+		if err != nil {
+			return nil, sessioncmd.Session{}, err
+		}
+		return textContent("moved " + sessioncmd.FormatSession(moved)), moved, nil
 	})
 
 	endSelf := func(action string) func(context.Context, *mcp.CallToolRequest, endSelfArgs) (*mcp.CallToolResult, sessioncmd.AfterTurn, error) {

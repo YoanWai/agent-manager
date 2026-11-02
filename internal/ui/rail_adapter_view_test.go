@@ -9,6 +9,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/clipboard"
 	"github.com/YoanWai/agent-manager/internal/config"
+	"github.com/YoanWai/agent-manager/internal/keybind"
 	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	uigeometry "github.com/YoanWai/agent-manager/internal/ui/geometry"
@@ -333,6 +334,44 @@ func TestFilterBadgesStackOverTheList(t *testing.T) {
 		if strings.Contains(header, unwanted) {
 			t.Errorf("header still carries the %s badge:\n%s", unwanted, header)
 		}
+	}
+}
+
+func TestFilterBadgesNameTheBoundKeys(t *testing.T) {
+	m := shotModel()
+	m.layout.width, m.layout.height = 120, 40
+	m.services.listKeys = m.services.listKeys.
+		With(keybind.Archived, bindingOf(t, "T")).
+		With(keybind.Filter, bindingOf(t, "W")).
+		With(keybind.EmptyGroups, bindingOf(t, "E"))
+	m.rail.SetArchived(true)
+	m.rail.SetFilteringAttention(true)
+	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+	for _, want := range []string{"ARCHIVED   T back to active", "ATTENTION   W show all"} {
+		if !strings.Contains(rail, want) {
+			t.Errorf("rail should name the bound key %q:\n%s", want, rail)
+		}
+	}
+	m.rail.SetArchived(false)
+	m.rail.SetFilteringAttention(false)
+	m.rail.SetHideEmptyGroups(true)
+	rail = ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+	if !strings.Contains(rail, "HIDE EMPTY   E show empty") {
+		t.Errorf("rail should name the bound key %q:\n%s", "E show empty", rail)
+	}
+}
+
+func TestFilterBadgeWithAnUnboundKeyKeepsTheLabel(t *testing.T) {
+	m := shotModel()
+	m.layout.width, m.layout.height = 120, 40
+	m.services.listKeys = m.services.listKeys.With(keybind.Archived, bindingOf(t))
+	m.rail.SetArchived(true)
+	rail := ansi.Strip(railLinesText(m.railLines(36, m.listBodyHeight())))
+	if !strings.Contains(rail, "ARCHIVED") {
+		t.Errorf("rail lost the ARCHIVED badge:\n%s", rail)
+	}
+	if strings.Contains(rail, "back to active") {
+		t.Errorf("rail names a key that is not bound:\n%s", rail)
 	}
 }
 

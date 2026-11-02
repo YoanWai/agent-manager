@@ -1,6 +1,7 @@
 package quick
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
@@ -16,6 +17,7 @@ type effectsHost struct {
 	sent    []string
 	spawned []spawn.Request
 	loaded  int
+	catalog []string
 }
 
 func (h *effectsHost) MoveCursor(delta int) tea.Cmd { h.moved += delta; return nil }
@@ -25,6 +27,10 @@ func (h *effectsHost) LoadSaved() tea.Cmd           { h.loaded++; return nil }
 func (h *effectsHost) Send(text string) tea.Cmd     { h.sent = append(h.sent, text); return nil }
 func (h *effectsHost) Spawn(request spawn.Request) tea.Cmd {
 	h.spawned = append(h.spawned, request)
+	return nil
+}
+func (h *effectsHost) LoadCatalog(toolName string) tea.Cmd {
+	h.catalog = append(h.catalog, toolName)
 	return nil
 }
 
@@ -82,5 +88,22 @@ func TestDecideSpawnsOnEnterOverAGroup(t *testing.T) {
 	}
 	if len(h.sent) != 0 {
 		t.Fatalf("a group target must spawn, not answer: %v", h.sent)
+	}
+}
+
+// Stepping the CLI by key or click asks the root for the models of the CLI
+// it lands on.
+func TestDecideAsksTheRootForTheSteppedCLIsModels(t *testing.T) {
+	t.Parallel()
+	h := &effectsHost{fakeHost: fakeHost{prompt: &fakePrompt{}, settings: map[string]string{}, selected: true, target: Target{IsGroup: true, Group: "web"}}}
+	q := NewSurface(h)
+	q.Bar = NewBar(h, []string{"claude", "codex", "opencode"}, 0, false)
+
+	Decide(h, q, tea.KeyMsg{Type: tea.KeyTab})
+	Decide(h, q, tea.KeyMsg{Type: tea.KeyShiftTab})
+	Execute(h, q, q.Bar.Click(h, Hit{Action: ClickTool}), nil)
+
+	if want := []string{"codex", "claude", "codex"}; !slices.Equal(h.catalog, want) {
+		t.Fatalf("asked for the models of %v, want %v", h.catalog, want)
 	}
 }

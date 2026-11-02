@@ -12,12 +12,26 @@ func StoredScope(stored string) git.Scope {
 	switch stored {
 	case "branch":
 		return git.ScopeBranch
-	case "last_commit":
-		return git.ScopeLastCommit
+	case "last_commit", "commit":
+		return git.ScopeCommit
 	case "staged":
 		return git.ScopeStaged
 	default:
 		return git.ScopeUncommitted
+	}
+}
+
+// ScopeName is the name StoredScope reads scope back from.
+func ScopeName(scope git.Scope) string {
+	switch scope {
+	case git.ScopeBranch:
+		return "branch"
+	case git.ScopeCommit:
+		return "commit"
+	case git.ScopeStaged:
+		return "staged"
+	default:
+		return "uncommitted"
 	}
 }
 
@@ -26,23 +40,10 @@ func (m *Model) CycleScope() (LoadRequest, bool) {
 		return LoadRequest{}, false
 	}
 	m.scope = m.scope.Next()
-	m.gen++
-	m.loading = true
-	m.errText = ""
-	m.set = zeroDiffSet()
-	m.fileIdx = 0
-	m.scroll = 0
-	m.cursorLine = 0
-	m.fileLoading = make(map[int]bool)
-	m.reanchor = nil
-	request := LoadRequest{
-		Target: m.target, Scope: m.scope, Generation: m.gen,
-		RepoWanted: m.repoSel, RepoRoot: m.repoSel,
-		RepoRoots: append([]string(nil), m.repoRoots...),
-		Resolve:   m.repoSel == "" || len(m.repoRoots) == 0,
-		Restored:  maps.Clone(m.stateLoaded),
+	if m.scope == git.ScopeCommit {
+		m.commitPin = CommitPin{Unreviewed: true}
 	}
-	return request, true
+	return m.reloadScope(), true
 }
 
 func (m *Model) SelectRepo(root string) (LoadRequest, bool) {
@@ -50,6 +51,7 @@ func (m *Model) SelectRepo(root string) (LoadRequest, bool) {
 		return LoadRequest{}, false
 	}
 	m.repoSel = root
+	m.resetCommitScope(CommitPin{Unreviewed: true})
 	m.gen++
 	m.loading = true
 	m.errText = ""
@@ -59,14 +61,17 @@ func (m *Model) SelectRepo(root string) (LoadRequest, bool) {
 	m.cursorLine = 0
 	m.fileLoading = make(map[int]bool)
 	m.reanchor = nil
-	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: root, Resolve: true, Restored: maps.Clone(m.stateLoaded)}, true
+	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: root, Resolve: true, Restored: maps.Clone(m.stateLoaded), Commit: m.commitLoad()}, true
 }
 
 func (m *Model) SelectBase(ref string) (LoadRequest, bool) {
 	if !m.active || m.target.ID == "" {
 		return LoadRequest{}, false
 	}
-	m.scope = scopeBranch()
+	// The commit scope stays: the base bounds its commit list.
+	if m.scope != git.ScopeCommit {
+		m.scope = scopeBranch()
+	}
 	m.gen++
 	m.loading = true
 	m.errText = ""
@@ -80,7 +85,7 @@ func (m *Model) SelectBase(ref string) (LoadRequest, bool) {
 		Target: m.target, Scope: m.scope, Generation: m.gen,
 		RepoWanted: m.repoSel, RepoRoot: m.repoSel,
 		RepoRoots: append([]string(nil), m.repoRoots...), Resolve: m.repoSel == "" || len(m.repoRoots) == 0,
-		Restored: maps.Clone(m.stateLoaded), BaseOverride: &ref,
+		Restored: maps.Clone(m.stateLoaded), BaseOverride: &ref, Commit: m.commitLoad(),
 	}, true
 }
 
@@ -92,7 +97,7 @@ func (m *Model) RefreshRequest() (ProbeRequest, bool) {
 	if m.probeTick%2 != 0 {
 		return ProbeRequest{}, false
 	}
-	return ProbeRequest{Target: m.target, Scope: m.scope, RepoSelected: m.repoSel, GitRoot: m.set.Repo.Root}, true
+	return ProbeRequest{Target: m.target, Scope: m.scope, RepoSelected: m.repoSel, GitRoot: m.set.Repo.Root, Commit: m.set.Commit}, true
 }
 
 func (m *Model) ApplyProbe(result ProbeResult) (LoadRequest, bool) {
@@ -104,5 +109,5 @@ func (m *Model) ApplyProbe(result ProbeResult) (LoadRequest, bool) {
 	}
 	m.gen++
 	m.loading = true
-	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: m.repoSel, Refresh: true, Resolve: true, Restored: maps.Clone(m.stateLoaded)}, true
+	return LoadRequest{Target: m.target, Scope: m.scope, Generation: m.gen, RepoWanted: m.repoSel, Refresh: true, Resolve: true, Restored: maps.Clone(m.stateLoaded), Commit: m.commitLoad()}, true
 }

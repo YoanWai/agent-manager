@@ -3,6 +3,7 @@
 package diff
 
 import (
+	"cmp"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,35 +29,44 @@ type Row = model.Row
 
 const maxDiffBytes = 32 << 20
 
+// scopeRef is what the scope's git range takes: the commit for ScopeCommit,
+// the merge base otherwise.
+func scopeRef(s Set) string {
+	if s.Scope == git.ScopeCommit {
+		return s.Commit
+	}
+	return s.BaseRef
+}
+
 // BuildSet loads only the changed-file metadata for a scope. File contents and
 // line models are loaded on demand so large reviews can show their file list
 // without waiting for every file to be read and diffed. A non-empty
 // baseOverride selects the ScopeBranch base and fails loudly when it no longer
-// resolves; empty keeps auto-detection.
-func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride string) (Set, error) {
+// resolves; empty keeps auto-detection. commit names the ScopeCommit commit,
+// HEAD when empty.
+func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride, commit string) (Set, error) {
 	repo, err := driver.OpenRepo(cwd)
 	if err != nil {
 		return Set{}, err
 	}
 	set := Set{Repo: repo, Scope: scope, BaseOverride: baseOverride}
 
-	baseRef := ""
 	switch scope {
 	case git.ScopeBranch:
-		var describe string
-		baseRef, describe, err = driver.BranchBase(repo.Root, baseOverride)
+		set.BaseRef, set.BaseDesc, err = driver.BranchBase(repo.Root, baseOverride)
 		if err != nil {
 			return Set{}, err
 		}
-		set.BaseDesc = describe
-		set.BaseRef = baseRef
 	case git.ScopeStaged, git.ScopeUncommitted:
 		set.BaseDesc = "HEAD"
-	case git.ScopeLastCommit:
-		set.BaseDesc = "HEAD~1"
 	}
 	if repo.Unborn && scope != git.ScopeUncommitted && scope != git.ScopeStaged {
 		return set, nil
+	}
+	if scope == git.ScopeCommit {
+		if set.Commit, err = driver.CommitSHA(repo.Root, cmp.Or(commit, "HEAD")); err != nil {
+			return Set{}, err
+		}
 	}
 
 	var files []git.ChangedFile
@@ -66,11 +76,11 @@ func BuildSet(driver *git.Driver, cwd string, scope git.Scope, baseOverride stri
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		files, filesErr = driver.ChangedFiles(repo.Root, scope, baseRef)
+		files, filesErr = driver.ChangedFiles(repo.Root, scope, scopeRef(set))
 	}()
 	go func() {
 		defer wg.Done()
-		stats, statsErr = driver.NumStat(repo.Root, scope, baseRef)
+		stats, statsErr = driver.NumStat(repo.Root, scope, scopeRef(set))
 	}()
 	wg.Wait()
 	if filesErr != nil {
@@ -147,12 +157,12 @@ func LoadFile(driver *git.Driver, set Set, index int) FileDiff {
 	}
 	fd := set.Files[index]
 	if !fd.IsLoaded {
-		loadFile(driver, set.Repo.Root, set.Scope, set.BaseRef, &fd)
+		loadFile(driver, set.Repo.Root, set.Scope, scopeRef(set), &fd)
 	}
 	return fd
 }
 
-func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, fd *FileDiff) {
+func loadFile(driver *git.Driver, root string, scope git.Scope, ref string, fd *FileDiff) {
 	fd.IsLoaded = true
 	if !fd.HasStat && fd.File.Status == git.Untracked {
 		if err := countUnknownStat(driver, root, fd); err != nil {
@@ -160,7 +170,7 @@ func loadFile(driver *git.Driver, root string, scope git.Scope, baseRef string, 
 			return
 		}
 	}
-	oldContent, newContent, err := fileSides(driver, root, scope, baseRef, fd.File)
+	oldContent, newContent, err := fileSides(driver, root, scope, ref, fd.File)
 	if err != nil {
 		fd.Err = err
 		return
@@ -194,20 +204,17 @@ func countUnknownStat(driver *git.Driver, root string, fd *FileDiff) error {
 	return nil
 }
 
-func fileSides(driver *git.Driver, root string, scope git.Scope, baseRef string, file git.ChangedFile) (oldContent, newContent []byte, err error) {
+func fileSides(driver *git.Driver, root string, scope git.Scope, ref string, file git.ChangedFile) (oldContent, newContent []byte, err error) {
 	oldRef, newRef := "", ""
 	switch scope {
 	case git.ScopeUncommitted:
 		oldRef = "HEAD"
 	case git.ScopeStaged:
 		oldRef, newRef = "HEAD", ":0"
-	case git.ScopeLastCommit:
-		oldRef, newRef = baseRef, "HEAD"
-		if oldRef == "" {
-			oldRef = driver.LastCommitParent(root)
-		}
+	case git.ScopeCommit:
+		oldRef, newRef = driver.CommitParent(root, ref), ref
 	case git.ScopeBranch:
-		oldRef, newRef = baseRef, "HEAD"
+		oldRef, newRef = ref, "HEAD"
 	}
 
 	if file.Status != git.Added && file.Status != git.Untracked {

@@ -25,6 +25,7 @@ const (
 	usageKill          = "kill <session-id> [--json]"
 	usageRevive        = "revive <session-id> [--json]"
 	usageArchive       = "archive <session-id> [--restore] [--json]"
+	usageMove          = "move <session-id> <group> [--json]"
 	usageArchiveSelf   = "archive-self [--cancel] [--json]"
 	usageKillSelf      = "kill-self [--cancel] [--json]"
 	usageGroups        = "groups [--json]"
@@ -47,6 +48,7 @@ type sessionCommands interface {
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
+	Move(sessionID, targetID, group string) (sessioncmd.Session, error)
 	EndAfterTurn(sessionID, action string) (sessioncmd.AfterTurn, error)
 	CancelAfterTurn(sessionID string) (sessioncmd.AfterTurn, error)
 	Groups(sessionID string) ([]sessioncmd.Group, error)
@@ -77,6 +79,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(open, runKill)},
 			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(open, runRevive)},
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(open, runArchive)},
+			{name: "move", usage: usageMove, about: "file a session under another existing group, the way the move key does; an empty group is the root", run: bind(open, runMove)},
 			{name: "archive-self", usage: usageArchiveSelf, about: "archive this session once the current turn ends, the way the archive key does; --cancel withdraws a pending archive or kill", run: bind(open, runArchiveSelf)},
 			{name: "kill-self", usage: usageKillSelf, about: "stop this session's agent once the current turn ends, keeping its row for revive; --cancel withdraws a pending archive or kill", run: bind(open, runKillSelf)},
 			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(open, runGroups)},
@@ -318,6 +321,20 @@ func runArchive(out io.Writer, sessions sessionCommands, args []string, sessionI
 		return err
 	}
 	return emit(out, *asJSON, updated, sessioncmd.FormatArchiveState(updated))
+}
+
+func runMove(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageMove)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 2, 2)
+	if err != nil {
+		return err
+	}
+	moved, err := sessions.Move(sessionID, operands[0], operands[1])
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, moved, "moved "+sessioncmd.FormatSession(moved))
 }
 
 func runArchiveSelf(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {

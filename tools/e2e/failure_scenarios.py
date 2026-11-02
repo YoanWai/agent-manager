@@ -109,7 +109,9 @@ def settings_partial_save(sandbox, binary):
     frame(sandbox, 'settings-density-cycled', 'comfortable')
     key(sandbox, 'Down')
     key(sandbox, 'Right')
-    for _ in range(5):
+    # header, computer stats, review layout, review scope and after quick
+    # prompt sit between sessions layout and session keys.
+    for _ in range(6):
         key(sandbox, 'Down')
     key(sandbox, 'Right')
     key(sandbox, 'Enter')

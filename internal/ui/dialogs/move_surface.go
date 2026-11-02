@@ -1,6 +1,7 @@
 package dialogs
 
 import (
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	"github.com/YoanWai/agent-manager/internal/ui/surface"
 	tea "github.com/charmbracelet/bubbletea"
@@ -13,6 +14,7 @@ type MoveSurface struct {
 	Move
 	picker spawn.Picker
 	root   MoveRoot
+	mode   presentation.GlyphMode
 }
 
 type MoveRoot interface {
@@ -22,8 +24,8 @@ type MoveRoot interface {
 
 // NewMoveSurface opens the card on the row it places, the picker the root
 // shaped for it and the root it reaches beyond the stack.
-func NewMoveSurface(root MoveRoot, move Move, picker spawn.Picker) *MoveSurface {
-	return &MoveSurface{Move: move, picker: picker, root: root}
+func NewMoveSurface(root MoveRoot, move Move, picker spawn.Picker, mode presentation.GlyphMode) *MoveSurface {
+	return &MoveSurface{Move: move, picker: picker, root: root, mode: mode}
 }
 
 func (s *MoveSurface) Root() MoveRoot { return s.root }
@@ -65,7 +67,7 @@ func (s *MoveSurface) View(h surface.Host, _ string) string {
 	return s.root.PaintMove(&s.picker)
 }
 
-func (s *MoveSurface) Footer() [][2]string { return MoveHints() }
+func (s *MoveSurface) Footer() [][2]string { return MoveHints(s.mode) }
 
 func (s *MoveSurface) Owner() surface.Owner { return surface.Manager }
 

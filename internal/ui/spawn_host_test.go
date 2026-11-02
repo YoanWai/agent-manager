@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+
 	"github.com/YoanWai/agent-manager/internal/config"
 	uidialogs "github.com/YoanWai/agent-manager/internal/ui/dialogs"
 	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
@@ -477,10 +479,25 @@ func TestWorktreeCapabilityExpiresSoAFreshRepoIsSeen(t *testing.T) {
 	answer := m.ledger.spawner.WorktreeRepos[dir]
 	answer.At = answer.At.Add(-uilaunch.WorktreeLookupTTL)
 	m.ledger.spawner.WorktreeRepos[dir] = answer
-	if _, known := m.cachedWorktreeCapability(dir); known {
-		t.Fatal("expired capability still appeared current")
+	if capable, known := m.cachedWorktreeCapability(dir); !known || capable {
+		t.Fatal("expiration discarded the last observed non-repository verdict")
 	}
-	m.applyTestMsg(t, m.formWorktreeProbeCmd(false)())
+	if _, fresh := m.freshWorktreeCapability(dir); fresh {
+		t.Fatal("expired capability still appeared fresh for a toggle")
+	}
+	if view := ansi.Strip(m.viewForm()); !strings.Contains(view, uilaunch.WorktreeUnavailable) {
+		t.Fatalf("an aged answer should read unavailable until the toggle asks again: %q", view)
+	}
+	m.form().SetWorktree(true)
+	m.form().FocusField(m.spawnHost(), spawn.FieldWorktree)
+	_, probe := m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
+	if probe == nil {
+		t.Fatal("a toggle on an aged answer should ask git again")
+	}
+	m.applyTestMsg(t, probe())
+	if view := ansi.Strip(m.viewForm()); !m.formWorktreeOn() || strings.Contains(view, uilaunch.WorktreeUnavailable) {
+		t.Fatalf("a repo initialised while the form was open should take the toggle: %q", view)
+	}
 	if capable, known := m.cachedWorktreeCapability(dir); !known || !capable {
 		t.Fatalf("fresh probe cache = capable %t known %t", capable, known)
 	}
@@ -567,5 +584,22 @@ func TestFormWorktreeStaysOnInRepoDir(t *testing.T) {
 	m.handleFormKey(tea.KeyMsg{Type: tea.KeyRight})
 	if m.formWorktreeOn() {
 		t.Fatal("toggle should turn worktree off in a repo dir")
+	}
+}
+
+// A base lookup that fails reads as a failure in the preview, not as the
+// HEAD a repo with no default branch falls back to.
+func TestSpawnBasePreviewNamesAFailedLookup(t *testing.T) {
+	m := buildModel(t)
+	m.prefs.baseFetchOff = true
+	key := uilaunch.BaseFetchKey{Dir: t.TempDir()}
+	m.ledger.spawner.BaseFetches = map[uilaunch.BaseFetchKey]uilaunch.BaseFetch{key: {}}
+	m.recordBaseFetch(uilaunch.BaseFetchedMsg{Key: key, LookupErr: errors.New("bad config line")})
+	if got := ansi.Strip(m.spawnBaseLabel(key.Dir, "")); got != "base lookup failed" {
+		t.Fatalf("label = %q, want base lookup failed", got)
+	}
+	m.recordBaseFetch(uilaunch.BaseFetchedMsg{Key: key})
+	if got := ansi.Strip(m.spawnBaseLabel(key.Dir, "")); got != "HEAD (auto)" {
+		t.Fatalf("label = %q, want HEAD (auto) when the repo names no default", got)
 	}
 }

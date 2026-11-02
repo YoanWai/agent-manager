@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 	"github.com/YoanWai/agent-manager/internal/ui/review"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -50,7 +51,7 @@ func TestHelpBindingCannotStealLocalReviewActions(t *testing.T) {
 			if spec == "c" && !model.Snapshot().Annotating {
 				t.Fatalf("comment action stolen: %+v", result)
 			}
-			for _, tier := range model.Legend(binding) {
+			for _, tier := range model.Legend(binding, presentation.DefaultGlyphMode) {
 				for _, pair := range tier.Pairs {
 					if pair[1] == "keys" {
 						t.Fatalf("local key advertised as Help: %v", pair)

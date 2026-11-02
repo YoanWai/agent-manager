@@ -23,6 +23,7 @@ const (
 	Status
 	Normalize
 	SetBase
+	SetScope
 )
 
 // Store is the rows the runtime reads and writes. Taking *store.Store is
@@ -33,6 +34,7 @@ type Store interface {
 	SetReviewCommentHandled(sessionID, commentID string, handled bool) (bool, error)
 	ReviewBase(sessionID, repoRoot string) (string, error)
 	SetReviewBase(sessionID, repoRoot, baseRef string) error
+	SetReviewScope(sessionID, scope string) error
 	Get(id string) (store.Session, error)
 	SetAcked(id string, acked bool) error
 	ListKeys() (keybind.Table, error)
@@ -64,6 +66,7 @@ type Request struct {
 	SourceRepo    string
 	Generation    int
 	BaseRef       string
+	Scope         string
 	State         uireview.SavedState
 	PreviousState uireview.SavedState
 	CommentID     string

@@ -24,4 +24,6 @@ func (h sessionHost) ArchivedView() bool { return h.m.rail.ShowArchived() }
 // Live is the pane projection: the last poll, plus launches accepted since it.
 func (h sessionHost) Live(id string) bool { return h.m.sessionWindowProjectedLive(id) }
 
+func (h sessionHost) KeyHint(action, format string) string { return h.m.listKeyHint(action, format) }
+
 var _ sessiondialogs.View = sessionHost{}

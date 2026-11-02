@@ -5,6 +5,7 @@ import (
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/keybind"
@@ -42,7 +43,7 @@ func (m *Model) prepareFrame() {
 }
 
 func (m *Model) renderFrame() string {
-	m.layout.keyHits, m.layout.card = nil, cardRect{}
+	m.layout.keyHits, m.layout.card, m.layout.previewLinks = nil, cardRect{}, uifocus.PaneLinks{}
 	if m.layout.width == 0 {
 		return m.syncCursorAnchor("loading...")
 	}
@@ -83,7 +84,7 @@ func (m *Model) placeKeys(hits keyHits, x, y int) {
 func (m *Model) placePainted(keys []presentation.PaintedKey, x, y int) {
 	var hits keyHits
 	for _, key := range keys {
-		hits = hits.Add(key.X0, key.X1, 0, key.Label)
+		hits = hits.Add(key.X0, key.X1, key.Y, key.Label)
 	}
 	m.placeKeys(hits, x, y)
 }
@@ -293,12 +294,12 @@ func (m *Model) footer() legend {
 	footer := m.footerOf()
 	switch {
 	case m.rail.Reordering():
-		return m.transientFooter(legendOf(m.rail.ReorderLegend()))
+		return m.transientFooter(legendOf(m.rail.ReorderLegend(m.prefs.glyphMode)))
 	case m.quick() != nil:
 		return m.quickFooter(m.quick())
 	}
 	if s, ok := surfaceOf[*uigeometry.Surface](m); ok {
-		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.Footer()})
+		return m.transientFooter(legendSection{Title: "Resize", Pairs: s.FooterFor(presentation.NavigationLabel(m.prefs.glyphMode, "←→"), strings.TrimPrefix(m.listGlyph(keybind.Resize)+" / release", " / "))})
 	}
 	if s, ok := surfaceOf[*uidialogs.RenameSurface](m); ok {
 		return m.transientFooter(legendSection{Title: "Rename", Pairs: s.Footer()})
@@ -312,11 +313,12 @@ func (m *Model) footer() legend {
 // footerOf is the footer's height rule, over the base screen's tiers.
 func (m *Model) footerOf() uiframe.Footer {
 	return uiframe.Footer{
-		Mode:       m.prefs.glyphMode,
-		List:       m.listTiers(),
-		Width:      m.layout.width,
-		FullLayout: m.prefs.fullLayout,
-		ArrowStep:  m.prefs.arrowStep,
+		Mode:        m.prefs.glyphMode,
+		List:        m.listTiers(),
+		Measurement: m.layout.footer.Measure(m.legendReference(), m.layout.width, max(uiframe.MaxRows, (m.layout.height-m.listChromeRows()-1)/2), m.prefs.glyphMode),
+		Width:       m.layout.width,
+		FullLayout:  m.prefs.fullLayout,
+		ArrowStep:   m.prefs.arrowStep,
 	}
 }
 
@@ -367,7 +369,7 @@ func (m *Model) transientFooter(section legendSection) legend {
 func (m *Model) listGlyph(actions ...string) string {
 	joined := ""
 	for _, action := range actions {
-		glyph := m.services.listKeys.Binding(action).Glyph("/")
+		glyph := m.services.listKeys.Binding(action).Text("/", m.prefs.glyphMode.Effective() == presentation.GlyphModeAdvanced)
 		if glyph == "" {
 			continue
 		}
@@ -379,6 +381,16 @@ func (m *Model) listGlyph(actions ...string) string {
 	return presentation.KeyLabel(m.prefs.glyphMode, joined)
 }
 
+// listKeyHint fills format with the key bound to action, and is empty while
+// nothing is bound, so a sentence never names a key that does nothing.
+func (m *Model) listKeyHint(action, format string) string {
+	glyph := m.listGlyph(action)
+	if glyph == "" {
+		return ""
+	}
+	return fmt.Sprintf(format, glyph)
+}
+
 func (m *Model) messagesAlert() (glyph, label string) {
 	glyph = m.listGlyph(keybind.Messages)
 	if glyph == "" {
@@ -387,11 +399,19 @@ func (m *Model) messagesAlert() (glyph, label string) {
 	if m.release.FeedPending {
 		return glyph, uinotices.FeedPendingText
 	}
-	if len(m.activeNotices()) == 0 {
+	notices := m.activeNotices()
+	if len(notices) == 0 {
 		return "", ""
 	}
-	return glyph, "unread"
+	if slices.ContainsFunc(notices, func(n uinotices.Notice) bool { return n.Unread }) {
+		return glyph, "unread"
+	}
+	return glyph, messagesReadLabel
 }
+
+// messagesReadLabel is the chip once every active notice is read: dim, and
+// still a click into the panel.
+const messagesReadLabel = "messages"
 
 const (
 	contentGutter = 2

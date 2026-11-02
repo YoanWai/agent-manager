@@ -15,6 +15,12 @@ func LegendKey(label string) (tea.KeyMsg, bool) {
 	if strings.ContainsAny(label, "↑↓←→") || strings.Contains(label, "pgup") {
 		return tea.KeyMsg{}, false
 	}
+	for _, token := range strings.FieldsFunc(label, func(r rune) bool { return r == '/' || r == ' ' }) {
+		switch token {
+		case "up", "down", "left", "right", "shift+up", "shift+down", "shift+left", "shift+right":
+			return tea.KeyMsg{}, false
+		}
+	}
 	if key, ok := pressKey(strings.TrimSpace(label)); ok {
 		return key, true
 	}
@@ -53,7 +59,7 @@ func pressKey(name string) (tea.KeyMsg, bool) {
 	return tea.KeyMsg{}, false
 }
 
-var legendGlyphKeys = map[string]string{"↵": "enter", "⌫": "backspace"}
+var legendGlyphKeys = map[string]string{"↵": "enter", "⌫": "backspace", "↑": "up", "↓": "down", "←": "left", "→": "right"}
 
 var namedKeyTypes = func() map[string]tea.KeyType {
 	types := map[string]tea.KeyType{}

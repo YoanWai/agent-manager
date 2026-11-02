@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
 )
 
 func importStep(t *testing.T) Model {
@@ -57,7 +59,7 @@ func TestImportRowsTakeTheMouse(t *testing.T) {
 	if !ok || !slices.Equal(request.From, []string{"claude"}) || request.Days != 14 {
 		t.Fatalf("after two clicks the import is %+v, ready %v", request, ok)
 	}
-	if got := m.Hints(); !slices.Contains(got, [2]string{"↵", "import and start"}) {
+	if got := m.Hints(presentation.GlyphModeAdvanced); !slices.Contains(got, [2]string{"↵", "import and start"}) {
 		t.Fatalf("hints = %v", got)
 	}
 }

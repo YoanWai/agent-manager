@@ -221,7 +221,7 @@ func (s *GroupFormSurface) View(h surface.Host, _ string) string {
 	}
 	if s.pc.Active() {
 		view.Suggestions = func() string { return s.pc.View(pathStyles(s.styles)) }
-		view.SuggestHints = pathSuggestHints(s.pc.Chosen)
+		view.SuggestHints = pathSuggestHints(s.pc.Chosen, s.styles.GlyphMode)
 	}
 	card := s.GroupForm.View(view)
 	return h.CardSized(s.root.CardWidth(cols), card.Title, card.Body, card.Hints)
@@ -250,11 +250,11 @@ func pathStyles(st spawn.Styles) pathcomplete.Styles {
 	return pathcomplete.Styles{GlyphMode: st.GlyphMode, Muted: st.Muted, Accent: st.Accent, Accent2: st.Accent2}
 }
 
-func pathSuggestHints(chosen bool) [][2]string {
+func pathSuggestHints(chosen bool, mode presentation.GlyphMode) [][2]string {
 	if chosen {
-		return [][2]string{{"↑↓", "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
+		return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"↵/tab", "complete"}, {"esc", "close"}}
 	}
-	return [][2]string{{"↑↓", "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
+	return [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "pick"}, {"tab", "complete"}, {"↵", "create"}, {"esc", "close"}}
 }
 
 // BaseChoice renders a group's base picker: its own ref, or auto and the

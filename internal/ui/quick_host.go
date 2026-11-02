@@ -84,6 +84,8 @@ func (h quickBarHost) MoveCursor(delta int) tea.Cmd {
 
 func (h quickBarHost) ToggleWorktree() tea.Cmd { return h.m.toggleQuickWorktree() }
 
+func (h quickBarHost) LoadCatalog(toolName string) tea.Cmd { return h.m.ensureCatalog(toolName) }
+
 func (h quickBarHost) Close() { h.m.closeQuick() }
 
 func (h quickBarHost) LoadSaved() tea.Cmd {

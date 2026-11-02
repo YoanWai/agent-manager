@@ -46,6 +46,32 @@ func TestCatalogIsReadFromTheKeptAnswer(t *testing.T) {
 	}
 }
 
+// Tab moves the quick bar to a CLI this manager has not asked yet, and the
+// bar reads that CLI's models instead of waiting on them for good.
+func TestQuickTabReadsTheModelsOfTheCLIItLandsOn(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.services.configDir = t.TempDir()
+	tool := m.services.cfg.Tools["claude-hooked"]
+	tool.Catalog, tool.CatalogCommand, tool.ModelArgs = "claude", "sh", "--model {model}"
+	m.services.cfg.Tools["claude-hooked"] = tool
+	if err := catalog.Keep(m.services.configDir, "claude-hooked", tool, claudeAnswer); err != nil {
+		t.Fatal(err)
+	}
+	m.openQuickMode()
+	_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyTab})
+	if m.quickTool() != "claude-hooked" {
+		t.Fatalf("after tab, quick tool = %q want claude-hooked", m.quickTool())
+	}
+	if cmd == nil {
+		t.Fatal("tab asked claude-hooked for nothing")
+	}
+	m.applyCmd(t, cmd)
+	if note, listed := spawn.ModelNote(m.quickBarHost(), "claude-hooked", spawn.Styles{}); !listed {
+		t.Fatalf("model row after the answer: %q", note)
+	}
+}
+
 // A CLI that failed to answer says why in the model row, and the session
 // launches on its defaults.
 func TestFormLaunchesOnDefaultsWhenTheCLIFailsToAnswer(t *testing.T) {

@@ -70,9 +70,10 @@ func ComputerLines(r Readings, net Net, width int, mode presentation.GlyphMode) 
 		lines = append(lines, pad+uitheme.LabelStyle().Width(5).Render("temp")+temps)
 	}
 	if net.Rates {
+		nav := presentation.NavigationFor(mode)
 		lines = append(lines, pad+uitheme.LabelStyle().Width(5).Render("net")+
-			uitheme.ValueStyle().Render("↓ "+uiframe.HumanBytes(net.Down)+"/s")+
-			uitheme.SubtleStyle().Render("  ↑ "+uiframe.HumanBytes(net.Up)+"/s"))
+			uitheme.ValueStyle().Render(nav.DownGlyph+" "+uiframe.HumanBytes(net.Down)+"/s")+
+			uitheme.SubtleStyle().Render("  "+nav.UpGlyph+" "+uiframe.HumanBytes(net.Up)+"/s"))
 	}
 	return append(lines, "")
 }
@@ -87,7 +88,7 @@ func tempReadings(r Readings) string {
 
 // FootLine is the machine readings condensed to one line, for the full
 // screen layout whose rail has a single row to spare.
-func FootLine(r Readings, net Net, width int) []string {
+func FootLine(r Readings, net Net, width int, mode presentation.GlyphMode) []string {
 	reading := func(label, value string, ok bool) string {
 		if !ok {
 			return uitheme.LabelStyle().Render(label+" ") + uitheme.SubtleStyle().Render("n/a")
@@ -113,7 +114,8 @@ func FootLine(r Readings, net Net, width int) []string {
 		parts = append(parts, uitheme.LabelStyle().Render("temp ")+temps)
 	}
 	if net.Rates {
-		parts = append(parts, reading("net", "↓ "+uiframe.HumanBytes(net.Down)+"/s ↑ "+uiframe.HumanBytes(net.Up)+"/s", true))
+		nav := presentation.NavigationFor(mode)
+		parts = append(parts, reading("net", nav.DownGlyph+" "+uiframe.HumanBytes(net.Down)+"/s "+nav.UpGlyph+" "+uiframe.HumanBytes(net.Up)+"/s", true))
 	}
 	line := strings.Repeat(" ", railInset) + strings.Join(parts, "  ")
 	return []string{ansi.Truncate(line, max(width-railInset, 0), "…")}

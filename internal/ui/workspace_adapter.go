@@ -82,7 +82,7 @@ func (m *Model) railFootLines(width int) []string {
 }
 
 func (m *Model) fullFootLine(width int) []string {
-	return uiworkspace.FootLine(m.workspace.snap, m.workspace.net, width)
+	return uiworkspace.FootLine(m.workspace.snap, m.workspace.net, width, m.prefs.glyphMode)
 }
 
 var postNotification = notify.Notify

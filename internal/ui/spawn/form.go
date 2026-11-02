@@ -282,7 +282,16 @@ func (d *Form) DefaultsTouched() bool { return d.defaultsTouched }
 
 func (d *Form) Focused() Field { return d.focus }
 
-// HandleKey takes a key the root has made typed text where it was pasted.
+// TypedText marks a multi-rune key as a paste, so it bypasses Bubble Tea's
+// named-key bindings.
+func TypedText(msg tea.KeyMsg) tea.KeyMsg {
+	if msg.Type == tea.KeyRunes && len(msg.Runes) > 1 && !msg.Alt {
+		msg.Paste = true
+	}
+	return msg
+}
+
+// HandleKey takes a key after TypedText, so a pasted run of runes is text.
 func (d *Form) HandleKey(h FormHost, msg tea.KeyMsg) (tea.Cmd, FormRequest) {
 	if d.savedList.Open() {
 		return d.savedKey(msg), FormRequest{}

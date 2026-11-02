@@ -59,6 +59,7 @@ func (m *Model) Pop() {
 		return
 	}
 	top := m.surfaces[n-1]
+	m.surfaces[n-1] = nil
 	m.surfaces = m.surfaces[:n-1]
 	top.Leave(m)
 }

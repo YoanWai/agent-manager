@@ -219,7 +219,7 @@ func (r renderer) unifiedRows(fd *diff.FileDiff, hl *Highlight, width, height in
 
 	var rows paintedRows
 	if scroll > 0 {
-		rows.add(scroll-1, r.s.Subtle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		rows.add(scroll-1, r.s.Subtle.Render("  "+presentation.OverflowLabel(r.mode, scroll, true)))
 	}
 	i := scroll
 	for ; i < total && len(rows.text) < height; i++ {
@@ -230,7 +230,7 @@ func (r renderer) unifiedRows(fd *diff.FileDiff, hl *Highlight, width, height in
 		if len(rows.text) >= height {
 			rows.cut(height - 1)
 		}
-		rows.add(i, r.s.Subtle.Render(fmt.Sprintf("  ↓ %d more", total-i)))
+		rows.add(i, r.s.Subtle.Render("  "+presentation.OverflowLabel(r.mode, total-i, false)))
 	} else if len(rows.text) > height {
 		rows.cut(height)
 	}
@@ -286,7 +286,7 @@ func (r renderer) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *Hi
 	}
 	var out paintedRows
 	if scroll > 0 {
-		out.add(scroll-1, r.s.Subtle.Render(fmt.Sprintf("  ↑ %d more", scroll)))
+		out.add(scroll-1, r.s.Subtle.Render("  "+presentation.OverflowLabel(r.mode, scroll, true)))
 	}
 	i := scroll
 	for ; i < len(rows) && len(out.text) < height; i++ {
@@ -324,7 +324,7 @@ func (r renderer) renderSideBySide(b *strings.Builder, fd *diff.FileDiff, hl *Hi
 		if len(out.text) >= height {
 			out.cut(height - 1)
 		}
-		out.add(i, r.s.Subtle.Render(fmt.Sprintf("  ↓ %d more", len(rows)-i)))
+		out.add(i, r.s.Subtle.Render("  "+presentation.OverflowLabel(r.mode, len(rows)-i, false)))
 	} else if len(out.text) > height {
 		out.cut(height)
 	}

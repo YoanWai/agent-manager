@@ -33,3 +33,45 @@ func TestCompatibleHelpSearchUsesDisplayedKeys(t *testing.T) {
 		t.Fatal("Advanced key labels changed")
 	}
 }
+
+func TestNavigationHelpPreservesLiteralBindingsAndSearch(t *testing.T) {
+	for _, tc := range []struct{ key, basic string }{{"left", "left"}, {"shift+up", "shift+up"}, {"←", "←"}, {"↑", "↑"}, {"→", "→"}, {"↕", "↕"}} {
+		ctx := testContext(100)
+		ctx.ListKeys = ctx.ListKeys.With(keybind.Prompt, bindingOf(t, tc.key))
+		for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
+			ctx.Glyphs.Mode = mode
+			sections := helpSections(ctx)
+			want := tc.basic
+			if mode == presentation.GlyphModeAdvanced {
+				want = ctx.ListKeys.Binding(keybind.Prompt).Glyph(" / ")
+			}
+			found := false
+			for _, section := range sections {
+				if section.title == "quick prompt mode ("+want+")" {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("%s binding %q lost: %+v", mode, tc.key, sections)
+			}
+		}
+	}
+	ctx := testContext(84)
+	ctx.Glyphs.Mode = presentation.GlyphModeBasic
+	s := State{scope: Global, query: "left", searching: true}
+	body := strings.Join(s.Content(ctx).Lines, "\n")
+	if !strings.Contains(body, "left") || strings.Contains(body, "no matches") || strings.ContainsAny(body, "↑↓←→↕") {
+		t.Fatalf("navigation search: %s", body)
+	}
+}
+
+func TestCompatibleResizeHelpKeepsCancelVisible(t *testing.T) {
+	for _, width := range []int{84, 100} {
+		ctx := testContext(width)
+		ctx.Glyphs.Mode = presentation.GlyphModeBasic
+		body := ansi.Strip(strings.Join(New(Global).Content(ctx).Lines, "\n"))
+		if !strings.Contains(body, "resize split: left/right, h/l, drag; enter sets, esc cancels") {
+			t.Fatalf("width %d clips resize controls: %s", width, body)
+		}
+	}
+}

@@ -360,20 +360,20 @@ func (m *Model) toggleAgent(name string) {
 func (m Model) Leaving() bool { return m.leaving }
 
 // Hints are the footer's keys for the open step.
-func (m Model) Hints() [][2]string {
+func (m Model) Hints(mode presentation.GlyphMode) [][2]string {
 	step := m.Step()
 	var hints [][2]string
 	switch {
 	case step == Agents:
-		hints = [][2]string{{"↑↓", "move"}, {"space", "check"}}
+		hints = [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "move"}, {"space", "check"}}
 	case step == Theme:
-		hints = [][2]string{{"↑↓", "theme"}, {"space", "follow OS"}}
+		hints = [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "theme"}, {"space", "follow OS"}}
 	case m.onValueRow():
-		hints = [][2]string{{"↑↓", "move"}, {"←→", "change"}}
+		hints = [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "move"}, {presentation.NavigationLabel(mode, "←→"), "change"}}
 	case step == Import && len(m.importSources()) > 0:
-		hints = [][2]string{{"↑↓", "move"}, {"space", "check"}}
+		hints = [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "move"}, {"space", "check"}}
 	case step.choosing():
-		hints = [][2]string{{"↑↓", "choose"}}
+		hints = [][2]string{{presentation.NavigationLabel(mode, "↑↓"), "choose"}}
 	}
 	switch {
 	case step == Welcome:

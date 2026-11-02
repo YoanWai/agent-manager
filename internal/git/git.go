@@ -3,6 +3,7 @@ package git
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -10,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,6 +44,10 @@ func New() (*Driver, error) {
 // warnings there on success (Git for Windows' default core.autocrlf=true warns
 // about every LF file), and they must not corrupt parsed output.
 func (d *Driver) run(dir string, args ...string) (string, error) {
+	return d.runInput(dir, "", args...)
+}
+
+func (d *Driver) runInput(dir, input string, args ...string) (string, error) {
 	cmd := exec.Command(d.bin, append([]string{"-c", "core.quotepath=false"}, args...)...)
 	cmd.Dir = dir
 	// The manager's UI owns the terminal, so a credential, askpass or ssh
@@ -48,6 +55,9 @@ func (d *Driver) run(dir string, args ...string) (string, error) {
 	// and with prompts disabled, git fails instead.
 	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "SSH_ASKPASS_REQUIRE=never")
 	detachTerminal(cmd)
+	if input != "" {
+		cmd.Stdin = strings.NewReader(input)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -74,7 +84,7 @@ type Scope = value.Scope
 const (
 	ScopeUncommitted = value.ScopeUncommitted
 	ScopeBranch      = value.ScopeBranch
-	ScopeLastCommit  = value.ScopeLastCommit
+	ScopeCommit      = value.ScopeCommit
 	ScopeStaged      = value.ScopeStaged
 )
 
@@ -273,38 +283,81 @@ func forEachIndex(count int, work func(i int)) {
 // BaseRef finds the merge base against the repo's default base for the
 // branch scope, returning the resolved ref and a short description.
 func (d *Driver) BaseRef(root string) (ref, describe string, err error) {
-	candidate := d.DefaultBase(root)
+	candidate, err := d.DefaultBase(root)
+	if err != nil {
+		return "", "", err
+	}
 	if candidate == "" {
-		return "", "", errors.New("no default branch found on upstream, origin, or as a local main or master")
+		return "", "", errors.New("no default branch found on a remote, or as a local main or master")
 	}
 	return d.baseRefFor(root, candidate)
 }
 
 // DefaultBase is the branch work in the repo merges into: the default
 // branch on upstream, which GitHub's fork layout names the parent, else on
-// origin, else the local branch. "" when the repo names no default branch.
-func (d *Driver) DefaultBase(dir string) string {
-	name := d.defaultBranchName(dir)
-	if name == "" {
-		return ""
+// origin, else on any other remote, else the local branch. "" when the repo
+// names no default branch.
+func (d *Driver) DefaultBase(dir string) (string, error) {
+	remotes, err := d.baseRemotes(dir)
+	if err != nil {
+		return "", err
 	}
-	for _, remoteRef := range []string{"upstream/" + name, "origin/" + name} {
-		if d.ResolveRef(dir, "refs/remotes/"+remoteRef) == nil {
-			return remoteRef
+	name := d.defaultBranchName(dir, remotes)
+	if name == "" {
+		return "", nil
+	}
+	candidates := make([]string, 0, len(remotes)+1)
+	for _, remote := range remotes {
+		candidates = append(candidates, "refs/remotes/"+remote+"/"+name)
+	}
+	for _, full := range append(candidates, "refs/heads/"+name) {
+		if d.ResolveRef(dir, full) == nil {
+			return d.shortRef(dir, full)
 		}
 	}
-	if d.ResolveRef(dir, "refs/heads/"+name) == nil {
-		return name
+	return "", nil
+}
+
+// shortRef names full the shortest way git resolves back to it, so a local
+// branch or tag sharing the short name cannot stand in for it.
+func (d *Driver) shortRef(dir, full string) (string, error) {
+	return d.run(dir, "rev-parse", "--abbrev-ref", full)
+}
+
+// baseRemotes lists the repo's remotes in the order a base is looked for on
+// them: upstream, then origin, then the rest by name.
+func (d *Driver) baseRemotes(dir string) ([]string, error) {
+	out, err := d.run(dir, "remote")
+	if err != nil {
+		return nil, err
 	}
-	return ""
+	rank := func(name string) int {
+		switch name {
+		case "upstream":
+			return 0
+		case "origin":
+			return 1
+		}
+		return 2
+	}
+	remotes := strings.Fields(out)
+	slices.SortFunc(remotes, func(a, b string) int {
+		return cmp.Or(cmp.Compare(rank(a), rank(b)), cmp.Compare(a, b))
+	})
+	return remotes, nil
 }
 
 // defaultBranchName reads the default branch a clone or fetch recorded as
 // a remote's HEAD, or takes a local main or master when no remote names one.
-func (d *Driver) defaultBranchName(dir string) string {
-	for _, remote := range []string{"upstream", "origin"} {
-		if target, err := d.run(dir, "symbolic-ref", "-q", "--short", "refs/remotes/"+remote+"/HEAD"); err == nil {
-			return strings.TrimPrefix(target, remote+"/")
+// A HEAD naming a branch its remote no longer has, as a removed or renamed
+// remote leaves behind, names nothing.
+func (d *Driver) defaultBranchName(dir string, remotes []string) string {
+	for _, remote := range remotes {
+		// The full target, since --short keeps it whole when a local branch
+		// shares the short name.
+		target, err := d.run(dir, "symbolic-ref", "-q", "refs/remotes/"+remote+"/HEAD")
+		if err == nil && d.ResolveRef(dir, target) == nil {
+			return strings.TrimPrefix(target, "refs/remotes/"+remote+"/")
 		}
 	}
 	for _, name := range []string{"main", "master"} {
@@ -368,6 +421,197 @@ func (d *Driver) ResolveRef(root, ref string) error {
 	return nil
 }
 
+type Commit = value.Commit
+
+// maxCommits caps the commit list; the picker filters past what it shows.
+const maxCommits = 500
+
+// Commits lists the commits the commit scope steps through, newest first:
+// those since the merge base with the target, or HEAD's recent history when
+// the branch has none of its own, which history reports. describe names the
+// target the way BranchBase does, "" when none resolves. An override that no
+// longer resolves fails the way the branch scope does; an unborn HEAD has no
+// commits.
+func (d *Driver) Commits(root, override string) (commits []Commit, describe string, history bool, err error) {
+	if _, err := d.run(root, "rev-parse", "--verify", "-q", "HEAD"); err != nil {
+		if unbornHead(err) {
+			return nil, "", false, nil
+		}
+		return nil, "", false, err
+	}
+	base, describe, err := d.BranchBase(root, override)
+	if err != nil && override != "" {
+		return nil, "", false, err
+	}
+	if err == nil {
+		if commits, err = d.log(root, base+"..HEAD"); err != nil {
+			return nil, "", false, err
+		}
+	}
+	if len(commits) == 0 {
+		commits, err = d.log(root, "HEAD")
+		history = true
+	}
+	return commits, describe, history, err
+}
+
+// commitHeader opens each commit's record in log's output; the paths that
+// follow can hold anything but a NUL, but never a full SHA and a unit
+// separator.
+var commitHeader = regexp.MustCompile(`^[0-9a-f]{40,64}\x1f`)
+
+// unbornHead reports whether a `rev-parse --verify -q HEAD` failure means
+// only that HEAD names no commit yet, which -q reports as a quiet exit 1.
+func unbornHead(err error) bool {
+	var exit *exec.ExitError
+	return errors.As(err, &exit) && exit.ExitCode() == 1
+}
+
+// log lists each commit's paths the way the commit scope diffs it: against
+// its first parent with renames found, so a merge lists what it brings in and
+// a rename one path, whatever diff.renames says. A signature check that
+// log.showSignature asks for would land ahead of the headers.
+func (d *Driver) log(root string, revs ...string) ([]Commit, error) {
+	args := append([]string{"log", "-z", "--no-show-signature", "--name-only", "-M", "--diff-merges=first-parent", "--max-count=" + strconv.Itoa(maxCommits), "--format=%H%x1f%h%x1f%s"}, revs...)
+	out, err := d.run(root, args...)
+	if err != nil {
+		return nil, err
+	}
+	var commits []Commit
+	for _, field := range splitNUL(out) {
+		if commitHeader.MatchString(field) {
+			parts := strings.SplitN(field, "\x1f", 3)
+			commits = append(commits, Commit{SHA: parts[0], Short: parts[1], Subject: parts[2]})
+			continue
+		}
+		// The first path follows its header after a newline.
+		if path := strings.TrimPrefix(field, "\n"); path != "" {
+			if len(commits) == 0 {
+				return nil, fmt.Errorf("git log: unexpected output before the first commit: %q", field)
+			}
+			last := &commits[len(commits)-1]
+			last.Files = append(last.Files, path)
+		}
+	}
+	return commits, nil
+}
+
+// CommitSHA resolves rev to the full SHA of the commit it names.
+func (d *Driver) CommitSHA(root, rev string) (string, error) {
+	sha, err := d.run(root, "rev-parse", "--verify", "-q", rev+"^{commit}")
+	if err != nil {
+		return "", fmt.Errorf("%q does not resolve to a commit", rev)
+	}
+	return sha, nil
+}
+
+// Rewrites maps each of olds that HEAD no longer reaches to the commit in
+// commits that took its place after an amend or rebase: the one carrying
+// the same patch, else the only one left that can have replaced it under the
+// same subject. A commit matching neither, one a local branch still holds,
+// as after a checkout of a sibling branch, or one whose object git has
+// pruned, is left out.
+func (d *Driver) Rewrites(root string, olds []string, commits []Commit) (map[string]string, error) {
+	var gone []string
+	for _, old := range olds {
+		if _, err := d.run(root, "merge-base", "--is-ancestor", old, "HEAD"); err == nil {
+			continue
+		}
+		if _, err := d.run(root, "cat-file", "-e", old+"^{commit}"); err != nil {
+			continue
+		}
+		if branch, err := d.run(root, "for-each-ref", "--count=1", "--contains", old, "refs/heads"); err != nil {
+			return nil, err
+		} else if branch != "" {
+			continue
+		}
+		gone = append(gone, old)
+	}
+	if len(gone) == 0 || len(commits) == 0 {
+		return nil, nil
+	}
+	revs := append([]string(nil), gone...)
+	for _, c := range commits {
+		revs = append(revs, c.SHA)
+	}
+	patches, err := d.patchIDs(root, revs)
+	if err != nil {
+		return nil, err
+	}
+	previous, err := d.log(root, append([]string{"--no-walk=unsorted"}, gone...)...)
+	if err != nil {
+		return nil, err
+	}
+	byPatch := map[string]string{}
+	for _, c := range commits {
+		if patch := patches[c.SHA]; patch != "" {
+			if _, seen := byPatch[patch]; !seen {
+				byPatch[patch] = c.SHA
+			}
+		}
+	}
+	moved := map[string]string{}
+	claimed := map[string]bool{}
+	for _, old := range olds {
+		claimed[old] = true
+	}
+	var unmatched []Commit
+	for _, old := range previous {
+		if sha, ok := byPatch[patches[old.SHA]]; ok {
+			moved[old.SHA] = sha
+			claimed[sha] = true
+		} else {
+			unmatched = append(unmatched, old)
+		}
+	}
+	for _, old := range unmatched {
+		if sha := d.subjectReplacement(root, old, commits, claimed); sha != "" {
+			moved[old.SHA] = sha
+		}
+	}
+	return moved, nil
+}
+
+// subjectReplacement is the one commit that can have replaced old by subject
+// alone: same subject, no review state or patch match of its own, and not
+// one of old's ancestors, which predate it. "" when none or several can.
+func (d *Driver) subjectReplacement(root string, old Commit, commits []Commit, claimed map[string]bool) string {
+	found := ""
+	for _, c := range commits {
+		if c.Subject != old.Subject || claimed[c.SHA] {
+			continue
+		}
+		if _, err := d.run(root, "merge-base", "--is-ancestor", c.SHA, old.SHA); err == nil {
+			continue
+		}
+		if found != "" {
+			return ""
+		}
+		found = c.SHA
+	}
+	return found
+}
+
+// patchIDs returns the stable patch id of each rev; a commit with an empty
+// diff has none.
+func (d *Driver) patchIDs(root string, revs []string) (map[string]string, error) {
+	patches, err := d.run(root, append([]string{"show", "--no-color", "--no-ext-diff", "--no-show-signature", "--format=commit %H"}, revs...)...)
+	if err != nil {
+		return nil, err
+	}
+	out, err := d.runInput(root, patches+"\n", "patch-id", "--stable")
+	if err != nil {
+		return nil, err
+	}
+	ids := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		if patch, sha, ok := strings.Cut(line, " "); ok {
+			ids[sha] = patch
+		}
+	}
+	return ids, nil
+}
+
 type Status = value.Status
 
 const (
@@ -382,33 +626,35 @@ const (
 
 type ChangedFile = value.ChangedFile
 
-// LastCommitParent returns HEAD's parent ref, or git's empty-tree object
-// when HEAD is a root commit.
-func (d *Driver) LastCommitParent(root string) string {
-	if _, err := d.run(root, "rev-parse", "--verify", "-q", "HEAD~1"); err != nil {
+// CommitParent returns rev's first parent, or git's empty-tree object when
+// rev is a root commit.
+func (d *Driver) CommitParent(root, rev string) string {
+	if _, err := d.run(root, "rev-parse", "--verify", "-q", rev+"~1"); err != nil {
 		return emptyTree
 	}
-	return "HEAD~1"
+	return rev + "~1"
 }
 
-// diffRange returns the base ref and diff arguments for a scope; baseRef
-// is only consulted for ScopeBranch.
-func (d *Driver) diffRange(root string, scope Scope, baseRef string) (base string, args []string, err error) {
+// diffRange returns the base ref and diff arguments for a scope. ref is the
+// merge base for ScopeBranch and the commit for ScopeCommit, where "" means
+// HEAD; other scopes ignore it.
+func (d *Driver) diffRange(root string, scope Scope, ref string) (base string, args []string, err error) {
 	switch scope {
 	case ScopeStaged:
 		return "", []string{"--cached"}, nil
-	case ScopeLastCommit:
-		parent := d.LastCommitParent(root)
-		return parent, []string{parent, "HEAD"}, nil
+	case ScopeCommit:
+		rev := cmp.Or(ref, "HEAD")
+		parent := d.CommitParent(root, rev)
+		return parent, []string{parent, rev}, nil
 	case ScopeBranch:
-		return baseRef, []string{baseRef, "HEAD"}, nil
+		return ref, []string{ref, "HEAD"}, nil
 	default:
 		return "HEAD", []string{"HEAD"}, nil
 	}
 }
 
-func (d *Driver) ChangedFiles(root string, scope Scope, baseRef string) ([]ChangedFile, error) {
-	_, rangeArgs, err := d.diffRange(root, scope, baseRef)
+func (d *Driver) ChangedFiles(root string, scope Scope, ref string) ([]ChangedFile, error) {
+	_, rangeArgs, err := d.diffRange(root, scope, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -473,8 +719,8 @@ func splitNUL(out string) []string {
 
 type FileStat = value.FileStat
 
-func (d *Driver) NumStat(root string, scope Scope, baseRef string) (map[string]FileStat, error) {
-	_, rangeArgs, err := d.diffRange(root, scope, baseRef)
+func (d *Driver) NumStat(root string, scope Scope, ref string) (map[string]FileStat, error) {
+	_, rangeArgs, err := d.diffRange(root, scope, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -603,14 +849,14 @@ func (d *Driver) WorkingFile(root, path string) ([]byte, error) {
 
 // Fingerprint hashes the repo state visible to a scope so callers can
 // cheaply detect when a reload is needed.
-func (d *Driver) Fingerprint(root string, scope Scope, baseRef string) (uint64, error) {
+func (d *Driver) Fingerprint(root string, scope Scope, ref string) (uint64, error) {
 	head, _ := d.run(root, "rev-parse", "-q", "--verify", "HEAD")
 	porcelain, err := d.run(root, "status", "--porcelain", "-z")
 	if err != nil {
 		return 0, err
 	}
 	hash := fnv.New64a()
-	fmt.Fprintf(hash, "%d|%s|%s|%s", scope, baseRef, head, porcelain)
+	fmt.Fprintf(hash, "%d|%s|%s|%s", scope, ref, head, porcelain)
 	if scope == ScopeUncommitted {
 		// Content edits with unchanged status lines still need detection;
 		// mtimes of changed files catch them.

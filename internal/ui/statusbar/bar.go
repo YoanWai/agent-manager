@@ -83,14 +83,16 @@ func (k Kind) Paint(text string, marks Marks, tones Tones) string {
 // Report is the status bar's own text; the rest are the conditions that
 // outrank it, most urgent first.
 type Message struct {
-	Report string
-	Kind   Kind
+	GlyphMode presentation.GlyphMode
+	Report    string
+	Kind      Kind
 
 	Focused         bool
 	ScrolledBack    bool
 	ScrollOffset    int
 	PagesScrollback bool
 	Copied          int
+	Link            string
 
 	ResizeMode bool
 	Dragging   bool
@@ -107,6 +109,8 @@ func Line(msg Message, glyphs presentation.GlyphSet, tones Tones) string {
 	// hide a failure report.
 	case msg.Focused && msg.Report != "":
 		return msg.Kind.Paint(msg.Report, marks, tones)
+	case msg.Link != "":
+		return tones.Key.Render("link ") + tones.Subtle.Render(presentation.EscapeControlsInline(msg.Link))
 	case msg.ScrolledBack:
 		catchUp := "wheel down or type"
 		if msg.PagesScrollback {
@@ -118,7 +122,7 @@ func Line(msg Message, glyphs presentation.GlyphSet, tones Tones) string {
 		return tones.Key.Render("copied ") +
 			tones.Subtle.Render(fmt.Sprintf("%d chars to clipboard", msg.Copied))
 	case msg.ResizeMode || msg.Dragging:
-		hint := "←→ resize · drag divider · enter set · esc cancel"
+		hint := presentation.NavigationLabel(msg.GlyphMode, "←→ resize · drag divider · enter set · esc cancel")
 		if msg.Dragging {
 			hint = "release to set · esc cancels"
 		}

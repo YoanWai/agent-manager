@@ -12,6 +12,7 @@ import (
 	uireview "github.com/YoanWai/agent-manager/internal/ui/review"
 	uireviewsource "github.com/YoanWai/agent-manager/internal/ui/review/source"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	uisettings "github.com/YoanWai/agent-manager/internal/ui/settings"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -270,7 +271,7 @@ func (m *Model) openDiffWithReader(reader uireviewsource.Preferences) tea.Cmd {
 	target := uireviewsource.Target(sess)
 	target.Cwd = m.sessionDir(sess)
 	request := m.review.Open(target, git.ScopeUncommitted, preferred)
-	return uireviewsource.PreferencesCmd(reader, sess, request, preferred, picked)
+	return uireviewsource.PreferencesCmd(reader, sess, request, preferred, picked, uisettings.ReviewScopeSetting)
 }
 
 func (m *Model) handleReviewPreferences(msg uireviewsource.PreferencesMsg) (tea.Model, tea.Cmd) {
@@ -294,7 +295,9 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		ctx.IsShell = true
 		ctx.SendError = uisession.ShellPromptHint(sess.Name)
 	}
+	scope := m.review.Scope()
 	result := m.review.Key(msg, ctx)
+	m.saveReviewScope(scope)
 	if result.Error != "" {
 		m.reportErr(result.Error)
 	}
@@ -310,8 +313,21 @@ func (m *Model) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		navigation = m.openBranchPick()
 	case uireview.NavigationBasePicker:
 		navigation = m.openBasePick()
+	case uireview.NavigationCommitPicker:
+		m.openCommitPick()
 	}
 	return m, tea.Batch(navigation, m.reviewCommands(result.Requests))
+}
+
+// saveReviewScope stores the scope review moved to from before for its
+// session, so the next review of it opens there, after a restart too.
+func (m *Model) saveReviewScope(before git.Scope) {
+	if m.services.store == nil || !m.review.Active() || m.review.Scope() == before {
+		return
+	}
+	m.enqueueEffect(uireviewsource.Change{Request: uireviewsource.Request{
+		Op: uireviewsource.SetScope, TargetID: m.review.SessionID(), Scope: uireview.ScopeName(m.review.Scope()),
+	}}, 0, false)
 }
 
 func (m *Model) applyReviewResult(result uireview.ApplyResult) tea.Cmd {
@@ -467,6 +483,25 @@ func (m *Model) openRepoPick() {
 	m.openReviewPicker(rows, "Review repo", uireview.PickRepo, state.RepoSelected, m.reviewPickerSource(), "")
 }
 
+// openCommitPick lists the commit scope's commits, newest first, cursor on
+// the one in view.
+func (m *Model) openCommitPick() {
+	rows, current, err := m.review.CommitPickerRows()
+	if err != "" {
+		m.reportErr(err)
+		return
+	}
+	m.openReviewPicker(rows, "Review commit", uireview.PickCommit, current, m.reviewPickerSource(), "")
+}
+
+func (m *Model) showReviewCommit(sha string) tea.Cmd {
+	request, ok := m.review.ShowCommit(sha)
+	if !ok {
+		return nil
+	}
+	return tea.Batch(m.reviewLoadCmd(request), m.startStartupTick())
+}
+
 // openBranchPick lists the currently selected repo's worktrees, one branch per
 // row, so the user can retarget review to another worktree.
 func (m *Model) openBranchPick() tea.Cmd {
@@ -550,6 +585,9 @@ func (m *Model) applyReviewPick(msg uireview.PickedMsg) tea.Cmd {
 	if decision.Base != nil {
 		return m.selectBase(*decision.Base)
 	}
+	if decision.Commit != "" {
+		return m.showReviewCommit(decision.Commit)
+	}
 	return m.selectRepo(decision.Repo)
 }
 
@@ -605,9 +643,11 @@ func (m *Model) applyReviewBase(result uireviewsource.BaseResult) tea.Cmd {
 	if m.effects.Quitting || !m.review.PickerSourceCurrent(source) {
 		return nil
 	}
+	scope := m.review.Scope()
 	request, ok := m.review.SelectBase(result.Ref)
 	if !ok {
 		return nil
 	}
+	m.saveReviewScope(scope)
 	return m.reviewLoadCmd(request)
 }

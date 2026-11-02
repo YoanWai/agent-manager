@@ -73,13 +73,43 @@ type Model struct {
 	repoSel   string
 	worktrees []Worktree
 
-	// fileRows and codeRows are the file and the cursor line each painted
-	// row of the two panes shows; headerKeys and statusKeys are the keys
-	// the header and the status line painted. All are for clicks.
-	fileRows   presentation.Lines[int]
-	codeRows   presentation.Lines[int]
-	headerKeys []presentation.PaintedKey
-	statusKeys []presentation.PaintedKey
+	// fileRows, codeRows and commitRows are the file, the cursor line and
+	// the commit each painted row of the panes and the commit rail shows;
+	// fileMarks and commitMarks keep those rows that paint a reviewed
+	// glyph. headerKeys and statusKeys are the keys the header and the
+	// status line painted. All are for clicks.
+	fileRows    presentation.Lines[int]
+	codeRows    presentation.Lines[int]
+	commitRows  presentation.Lines[int]
+	fileMarks   presentation.Lines[int]
+	commitMarks presentation.Lines[int]
+	headerKeys  []presentation.PaintedKey
+	statusKeys  []presentation.PaintedKey
+
+	// commits lists what the commit scope steps through, newest first, since
+	// the target commitTarget names. rewriteHead is the HEAD review state was
+	// last carried across rewrites at.
+	commitPin    CommitPin
+	commits      []git.Commit
+	commitTarget string
+	rewriteHead  string
+	// lastPins holds the commit each session and repo last showed, keyed
+	// like reviewed, so reopening review resumes there.
+	lastPins map[string]CommitPin
+
+	// markAll is set while A waits on file loads to mark every shown file
+	// reviewed. markLoad is the generation of a load a click on another
+	// commit's glyph started, to mark every file once it lands; markFile is
+	// a file whose glyph was clicked before it had loaded.
+	markAll  bool
+	markLoad int
+	markFile pendingMark
+}
+
+// pendingMark is a file to mark once it loads in the set of generation.
+type pendingMark struct {
+	generation int
+	path       string
 }
 
 func New(defaultSideBySide bool) Model {
@@ -123,7 +153,10 @@ func (m *Model) Open(target Target, scope git.Scope, preferredRepo string) LoadR
 	m.ensureInitialized()
 	m.active = true
 	m.scope = scope
-	return m.retarget(target, preferredRepo, false)
+	m.resetCommitScope(CommitPin{Unreviewed: true})
+	request := m.retarget(target, preferredRepo, false)
+	request.Commit.Resume = maps.Clone(m.lastPins)
+	return request
 }
 
 func (m *Model) retarget(target Target, preferredRepo string, refresh bool) LoadRequest {
@@ -139,7 +172,8 @@ func (m *Model) retarget(target Target, preferredRepo string, refresh bool) Load
 	m.repoSel = preferredRepo
 	m.fileLoading = make(map[int]bool)
 	m.reanchor = nil
-	return LoadRequest{Target: target, Scope: m.scope, Generation: m.gen, RepoWanted: preferredRepo, Refresh: refresh, Resolve: true, Restored: maps.Clone(m.stateLoaded)}
+	m.markAll = false
+	return LoadRequest{Target: target, Scope: m.scope, Generation: m.gen, RepoWanted: preferredRepo, Refresh: refresh, Resolve: true, Restored: maps.Clone(m.stateLoaded), Commit: m.commitLoad()}
 }
 
 func (m *Model) Close() int {
@@ -163,6 +197,8 @@ func (m *Model) Close() int {
 	m.highlightOrder = nil
 	m.annotationOpen = false
 	m.sendConfirm = false
+	m.markAll = false
+	m.resetCommitScope(CommitPin{})
 	return m.gen
 }
 
@@ -186,7 +222,7 @@ func (m Model) Snapshot() Snapshot {
 		Generation: m.gen, Loading: m.loading, Error: m.errText,
 		Set: SetSummary{
 			Repo: m.set.Repo, Scope: m.set.Scope, BaseDesc: m.set.BaseDesc,
-			BaseRef: m.set.BaseRef, BaseOverride: m.set.BaseOverride, Files: files,
+			BaseRef: m.set.BaseRef, BaseOverride: m.set.BaseOverride, Commit: m.set.Commit, Files: files,
 		},
 		FileIndex: m.fileIdx, Scroll: m.scroll,
 		CursorLine: m.cursorLine, SideBySide: m.sideBySide,
@@ -195,11 +231,12 @@ func (m Model) Snapshot() Snapshot {
 		Notice:      m.notice, Fingerprint: m.fingerprint,
 		RepoRoots: slices.Clone(m.repoRoots), RepoSelected: m.repoSel,
 		Worktrees: slices.Clone(m.worktrees), SendPending: m.sendPending,
+		Commits: slices.Clone(m.commits), CommitPin: m.commitPin,
 	}
 }
 
 func (m Model) reviewKey() string          { return m.target.ID + "\x00" + m.repoSel }
-func (m Model) markKey(path string) string { return m.scope.String() + "\x00" + path }
+func (m Model) markKey(path string) string { return m.scopeKey() + "\x00" + path }
 
 func (m Model) SavedState() SavedState { return m.savedState(m.reviewKey()) }
 

@@ -72,6 +72,7 @@ type generations struct {
 }
 
 type layoutState struct {
+	footer        uiframe.LayoutCache
 	frame         string
 	width         int
 	height        int
@@ -82,6 +83,12 @@ type layoutState struct {
 	card cardRect
 	// keyHits are the key pairs this frame painted, for clicks.
 	keyHits keyHits
+	// previewLinks are the links of the pane preview this frame painted
+	// beside the list, for clicks.
+	previewLinks uifocus.PaneLinks
+	// reviewFilesTop is the frame row Review's file list first painted on,
+	// under the commit rail when the commit scope shows one, for clicks.
+	reviewFilesTop int
 }
 
 type focusState struct {
@@ -209,7 +216,7 @@ func newView(deps Dependencies, version string) (*Model, error) {
 			Booting: true,
 		},
 		notices: noticesPanel{
-			Panel: uinotices.NewPanel(uirelease.Dismissed(st)),
+			Panel: uinotices.NewPanel(uirelease.Dismissed(st), uirelease.Seen(st)),
 			Log:   uinotices.Log{ImportError: configImportError},
 		},
 	}

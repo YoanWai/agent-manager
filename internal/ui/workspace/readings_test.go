@@ -164,7 +164,7 @@ func TestFootLineCondensesEveryReading(t *testing.T) {
 		CPUPercent: 22, CPUOK: true,
 		MemPercent: 75, MemOK: true,
 		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
-	}, net, 119), "\n"))
+	}, net, 119, presentation.DefaultGlyphMode), "\n"))
 	for _, want := range []string{"cpu 22%", "mem 75%", "disk 66% 167.9GB available", "net"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("condensed foot line misses %q:\n%s", want, line)
@@ -176,7 +176,7 @@ func TestFootLineFitsItsWidth(t *testing.T) {
 	line := FootLine(Readings{
 		CPUPercent: 22, CPUOK: true, MemPercent: 75, MemOK: true,
 		DiskOK: true, DiskPercent: 66, DiskAvailable: 167_950_000_000,
-	}, Net{Rates: true, Down: 1_000_000, Up: 500_000}, 40)
+	}, Net{Rates: true, Down: 1_000_000, Up: 500_000}, 40, presentation.DefaultGlyphMode)
 	if got := ansi.StringWidth(line[0]); got > 39 {
 		t.Fatalf("foot line %d cells wide: %q", got, ansi.Strip(line[0]))
 	}

@@ -13,7 +13,7 @@ const (
 	usageRename        = `rename "<name>"`
 	usageReviewRepo    = "review-repo <path>"
 	usageReviewBase    = "review-base <ref>|--clear"
-	usageReviewMode    = "review-mode <uncommitted|branch|last_commit|staged>"
+	usageReviewMode    = "review-mode <uncommitted|branch|commit|staged>"
 	usageReviewComment = "review-comment <comment-id> [--reopen]"
 )
 

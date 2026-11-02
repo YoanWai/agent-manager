@@ -12,6 +12,7 @@ import (
 type Preferences interface {
 	ReviewScope(string) (string, error)
 	ReviewRepo(string) (string, error)
+	Setting(string) (string, error)
 }
 
 // PreferencesMsg carries the preferences read for one opened review. The
@@ -25,14 +26,20 @@ type PreferencesMsg struct {
 }
 
 // PreferencesCmd reads the stored scope and repo a review opens on, with the
-// request the review would use if the read kept its defaults.
-func PreferencesCmd(reader Preferences, session store.Session, request uireview.LoadRequest, preferred string, picked bool) tea.Cmd {
+// request the review would use if the read kept its defaults. defaultScopeKey
+// names the setting a session with no scope of its own opens in.
+func PreferencesCmd(reader Preferences, session store.Session, request uireview.LoadRequest, preferred string, picked bool, defaultScopeKey string) tea.Cmd {
 	return func() tea.Msg {
 		result := PreferencesMsg{Session: session, Request: request, Scope: git.ScopeUncommitted, Preferred: preferred}
 		if reader == nil {
 			return result
 		}
 		scope, err := reader.ReviewScope(session.ID)
+		if err == nil && scope == "" {
+			// A session with no scope of its own opens in the one Settings
+			// picks.
+			scope, err = reader.Setting(defaultScopeKey)
+		}
 		result.Err = err
 		if err == nil {
 			result.Scope = uireview.StoredScope(scope)

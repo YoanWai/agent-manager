@@ -71,11 +71,6 @@ func (m *Model) selectedGroupPath() string {
 	return ""
 }
 
-func (m *Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	cmd, request := m.form().HandleKey(m.spawnHost(), composer.TypedText(msg))
-	return m, tea.Batch(cmd, m.runFormRequest(request, systemDirectoryPreflight{git: m.services.gitDrv}))
-}
-
 // runFormRequest executes what a form key or click asked of the root.
 func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPreflight) tea.Cmd {
 	if cmd, taken := m.remoteFormRequest(request); taken {
@@ -111,14 +106,6 @@ func (m *Model) runFormRequest(request spawn.FormRequest, reader directoryPrefli
 		return m.nextEffectCmd()
 	}
 	return nil
-}
-
-func (m *Model) handleFormClick(line int) (tea.Model, tea.Cmd) {
-	return m, m.runFormRequest(m.form().Form.Click(m.spawnHost(), line), nil)
-}
-
-func (m *Model) formWheel(step int) tea.Cmd {
-	return m.runFormRequest(m.form().Form.Wheel(m.spawnHost(), step), nil)
 }
 
 // moveGroupCursor moves within the form's group picker, wrapping at the
@@ -214,17 +201,11 @@ type spawnFormRoot struct {
 	prompt *composer.Composer
 }
 
-func (r spawnFormRoot) FormKey(msg tea.KeyMsg) tea.Cmd {
-	_, cmd := r.handleFormKey(msg)
-	return cmd
-}
+func (r spawnFormRoot) Host() spawn.FormHost { return r.spawnHost() }
 
-func (r spawnFormRoot) FormClick(line int) tea.Cmd {
-	_, cmd := r.handleFormClick(line)
-	return cmd
+func (r spawnFormRoot) Run(request spawn.FormRequest) tea.Cmd {
+	return r.runFormRequest(request, systemDirectoryPreflight{git: r.services.gitDrv})
 }
-
-func (r spawnFormRoot) FormWheel(step int) tea.Cmd { return r.formWheel(step) }
 
 func (r spawnFormRoot) FormView() string { return r.viewForm() }
 
@@ -453,6 +434,8 @@ func (m *Model) spawnBaseLabel(dir, group string) string {
 		switch {
 		case !fetch.Resolved:
 			label = uitheme.SubtleStyle().Render("…")
+		case fetch.LookupErr != nil:
+			label = uitheme.SubtleStyle().Render("base lookup failed")
 		case fetch.Detected == "":
 			label = uitheme.ValueStyle().Render("HEAD") + uitheme.SubtleStyle().Render(" (auto)")
 		default:
@@ -605,7 +588,7 @@ func (m *Model) formWorktreeOn() bool {
 // rules a worktree out.
 func (m *Model) toggleFormWorktree() tea.Cmd {
 	dir := m.formSpawnDir()
-	capable, known := m.cachedWorktreeCapability(dir)
+	capable, known := m.freshWorktreeCapability(dir)
 	if !known {
 		return m.formWorktreeProbeCmd(true)
 	}
@@ -620,7 +603,11 @@ func (m *Model) toggleFormWorktree() tea.Cmd {
 }
 
 func (m *Model) cachedWorktreeCapability(dir string) (bool, bool) {
-	return m.ledger.spawner.CachedWorktree(dir, time.Now())
+	return m.ledger.spawner.CachedWorktree(dir)
+}
+
+func (m *Model) freshWorktreeCapability(dir string) (bool, bool) {
+	return m.ledger.spawner.FreshWorktree(dir, time.Now())
 }
 
 func (m *Model) requestDirectoryProbe(target uilaunch.ProbeTarget, generation int, dir string, toggle bool, from bool) tea.Cmd {
@@ -637,15 +624,16 @@ func (m *Model) formWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	if f.Remote.On() {
 		return nil
 	}
-	return m.requestDirectoryProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, m.formSpawnDir(), toggleOn, f.Worktree())
+	dir := m.formSpawnDir()
+	return m.requestDirectoryProbe(uilaunch.ProbeForm, m.formPromptFor().Gen, dir, toggleOn, m.worktreeToggleFrom(uilaunch.ProbeForm, dir))
 }
 
 func (m *Model) quickWorktreeProbeCmd(toggleOn bool) tea.Cmd {
 	if _, remote := m.remoteTarget(); remote {
 		return nil
 	}
-	q := m.quick()
-	return m.requestDirectoryProbe(uilaunch.ProbeQuick, q.Gen, m.quickTargetDir(), toggleOn, q.Worktree())
+	dir := m.quickTargetDir()
+	return m.requestDirectoryProbe(uilaunch.ProbeQuick, m.quick().Gen, dir, toggleOn, m.worktreeToggleFrom(uilaunch.ProbeQuick, dir))
 }
 
 func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) {
@@ -665,6 +653,7 @@ func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) 
 	default:
 		return m, nil
 	}
+	from := m.worktreeToggleFrom(request.Target, request.Dir)
 	m.ledger.spawner.RememberWorktree(request.Dir, msg.Capable, time.Now())
 	if !request.Toggle {
 		return m, nil
@@ -674,18 +663,27 @@ func (m *Model) handleWorktreeProbe(msg uilaunch.ProbeMsg) (tea.Model, tea.Cmd) 
 		return m, nil
 	}
 	m.clearErr()
+	if from != request.From {
+		return m, nil
+	}
 	if request.Target == uilaunch.ProbeForm {
-		if m.form().Worktree() != request.From {
-			return m, nil
-		}
 		m.form().SetWorktree(!request.From)
 	} else {
-		if m.quick().Worktree() != request.From {
-			return m, nil
-		}
 		m.quick().SetWorktree(!request.From)
 	}
 	return m, nil
+}
+
+// worktreeToggleFrom is the state a toggle flips. A directory last seen
+// outside a repo reads unavailable, which counts as off.
+func (m *Model) worktreeToggleFrom(target uilaunch.ProbeTarget, dir string) bool {
+	if capable, known := m.cachedWorktreeCapability(dir); known && !capable {
+		return false
+	}
+	if target == uilaunch.ProbeForm {
+		return m.form().Worktree()
+	}
+	return m.quick().Worktree()
 }
 
 // forgetWorktreeCapability drops the memo so the next look is a fresh one.

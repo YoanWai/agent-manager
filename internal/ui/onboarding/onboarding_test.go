@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/YoanWai/agent-manager/internal/ui/presentation"
+
 	uitheme "github.com/YoanWai/agent-manager/internal/ui/theme"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -202,7 +204,7 @@ func TestHintsFollowTheStep(t *testing.T) {
 	m := New(agents, defaults(), false)
 	labels := func() []string {
 		var out []string
-		for _, hint := range m.Hints() {
+		for _, hint := range m.Hints(presentation.GlyphModeAdvanced) {
 			out = append(out, hint[1])
 		}
 		return out
@@ -239,5 +241,25 @@ func TestEveryAgentHiddenStartsWithAllChecked(t *testing.T) {
 	m := New(agents, Choices{Hidden: hidden, Theme: uitheme.Palettes[0].Name}, false)
 	if len(m.Enabled()) != len(agents) {
 		t.Fatalf("enabled = %v, want every agent", m.Enabled())
+	}
+}
+
+func TestHintsUsePortableDirectionsInCompatible(t *testing.T) {
+	m := New(agents, defaults(), false)
+	for range len(Steps) {
+		advanced, basic := m.Hints(presentation.GlyphModeAdvanced), m.Hints(presentation.GlyphModeBasic)
+		for i, hint := range advanced {
+			want := hint[0]
+			switch want {
+			case "↑↓":
+				want = "up/down"
+			case "←→":
+				want = "left/right"
+			}
+			if basic[i] != [2]string{want, hint[1]} {
+				t.Fatalf("step %v: %v", m.Step(), basic)
+			}
+		}
+		m.Key(press("enter"))
 	}
 }
