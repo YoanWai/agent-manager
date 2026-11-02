@@ -433,6 +433,19 @@ func TestARemoteRefusalReachesTheAgent(t *testing.T) {
 	}
 }
 
+func TestARemoteMoveRefusalReachesTheAgentAndMovesNothingHere(t *testing.T) {
+	f := newRemoteFixture(t, "cafe", func(string, []string) ([]byte, []byte, error) {
+		return nil, []byte("agent-manager: group \"nope\" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it\n"), exitStatus(1)
+	})
+	text, isError := callText(t, f.session, "move_session", map[string]any{"session_id": "gpu::r1", "group": "nope"})
+	if !isError || text != `gpu: group "nope" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it` {
+		t.Fatalf("move_session = %q, error %v", text, isError)
+	}
+	if f.local.movedID != "" {
+		t.Fatalf("a refused remote move also ran locally: %+v", f.local)
+	}
+}
+
 // The host sees every SSH call as one caller with no session, so this side
 // keeps one agent's terminal there out of another agent's reach, and the
 // user's own terminal there, opened with T on the connection row, out of
