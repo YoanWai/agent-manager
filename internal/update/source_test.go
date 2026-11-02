@@ -87,7 +87,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise github backend install dir",
-			path:        "/home/user/.local/share/mise/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump github:wainmann/agent-manager",
 		},
@@ -99,7 +99,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise github backend under the earlier repo",
-			path:        "/home/user/.local/share/mise/installs/github-yoan-wai-agent-manager/0.47.1/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/github-yoan-wai-agent-manager/0.47.1/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump github:YoanWai/agent-manager",
 		},
@@ -138,7 +138,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label: "another github backend tool is direct",
-			path:  "/home/user/.local/share/mise/installs/github-other-user-agent-manager/1.0.0/agent-manager",
+			path:  "/Users/user/.local/share/mise/installs/github-other-user-agent-manager/1.0.0/agent-manager",
 		},
 		{
 			label: "install script dir is direct",
