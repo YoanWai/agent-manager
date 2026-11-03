@@ -89,9 +89,12 @@ scoop install yoanwai/agent-manager
 安装的是该 bucket 中发布的版本，Scoop 会一并安装 psmux。bucket 是单独更新的，所以可能落后于最新发布。更新时先关闭 agent-manager，再运行 `scoop update agent-manager`。全局安装需要在管理员权限的 PowerShell 中运行 `scoop update agent-manager --global`。应用内更新器会显示这些说明，不会替换 Scoop 管理的二进制文件。
 
 <!--
-winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
-(manifest PR 453457 is open), and release publishing is PR #782.
-When a release has published the package, add a winget section here with:
+winget is not listed yet. Each release opens a manifest PR to
+microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
+microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
+Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
+and microsoft/winget-pkgs#469116 (0.47.1).
+When the package is published, add a winget section here with:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -161,7 +164,7 @@ if ($?) {
 
 脚本会把最新版本安装到 `%LOCALAPPDATA%\Programs\agent-manager`，加入你的用户 `Path`，并在缺少 psmux、git 或 PowerShell 7 时提议安装。`AGENT_MANAGER_INSTALL_DEPS=1` 表示同意，`AGENT_MANAGER_INSTALL_DEPS=0` 跳过提示。没有终端时会跳过提示，仍然安装二进制文件。`AGENT_MANAGER_VERIFY_ATTESTATION` 的行为和 shell 脚本中相同。
 
-Arch Linux、mise、`go install`、预编译二进制、Windows（原生和 WSL2）、依赖和更新方法：[docs/install.md](docs/install.md)。
+Arch Linux、mise、`go install`、预编译二进制、Windows（原生和 WSL2）、依赖、更新和卸载方法：[docs/install.md](docs/install.md)。
 
 ## 使用
 
