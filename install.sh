@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="YoanWai/agent-manager"
+REPO="wainmann/agent-manager"
 BINARY="agent-manager"
 
 say() {
@@ -21,7 +21,7 @@ detect_os() {
 	case $(uname -s) in
 	Darwin) echo darwin ;;
 	Linux) echo linux ;;
-	*) err "unsupported operating system: $(uname -s). On Windows, download and read https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1, then run it" ;;
+	*) err "unsupported operating system: $(uname -s). On Windows, download and read https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1, then run it" ;;
 	esac
 }
 
@@ -74,6 +74,9 @@ verify_checksum() {
 # GH_PROMPT_DISABLED keeps a missing login from waiting on a prompt.
 # Any case, so this agrees with install.ps1: its -match folds case, and a
 # set flag must not skip the check on only one of the scripts.
+# Older releases verify only with --owner YoanWai --signer-repo
+# YoanWai/agent-manager, so a failure against REPO retries that way,
+# and the install stops only when both fail.
 verify_attestation() {
 	file=$1
 	case ${AGENT_MANAGER_VERIFY_ATTESTATION:-} in
@@ -81,7 +84,9 @@ verify_attestation() {
 	*) return 0 ;;
 	esac
 	command -v gh >/dev/null 2>&1 || err "AGENT_MANAGER_VERIFY_ATTESTATION is set but gh is not installed"
-	GH_PROMPT_DISABLED=1 gh attestation verify "$file" --repo "$REPO" ||
+	GH_PROMPT_DISABLED=1 gh attestation verify "$file" --repo "$REPO" && return 0
+	printf 'attestation for %s did not verify with --repo %s, trying --owner YoanWai --signer-repo YoanWai/agent-manager\n' "$file" "$REPO" >&2
+	GH_PROMPT_DISABLED=1 gh attestation verify "$file" --owner YoanWai --signer-repo YoanWai/agent-manager ||
 		err "attestation verification failed for ${file}"
 }
 

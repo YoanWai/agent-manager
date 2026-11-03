@@ -1,11 +1,13 @@
 # Installs agent-manager on Windows. Download this file, read it, then:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
 # The release copy is:
-#   https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1
+#   https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1
 # AGENT_MANAGER_VERSION pins a release, AGENT_MANAGER_INSTALL_DIR picks the
 # directory (default %LOCALAPPDATA%\Programs\agent-manager).
 # AGENT_MANAGER_VERIFY_ATTESTATION=1 refuses to install unless
-# `gh attestation verify` accepts the archive.
+# `gh attestation verify` accepts the archive, with --repo
+# wainmann/agent-manager or, for older releases, --owner YoanWai
+# --signer-repo YoanWai/agent-manager.
 
 # `irm | iex` runs in the caller's session, so everything lives in a script
 # block that keeps its preferences and variables out of it, and a failure
@@ -14,7 +16,7 @@
 	$ErrorActionPreference = 'Stop'
 	$ProgressPreference = 'SilentlyContinue'
 
-	$Repo = 'YoanWai/agent-manager'
+	$Repo = 'wainmann/agent-manager'
 	$Binary = 'agent-manager.exe'
 
 	# Windows PowerShell 5.1 does not offer TLS 1.2 by default.
@@ -82,7 +84,13 @@
 		$env:GH_PROMPT_DISABLED = '1'
 		try {
 			& gh attestation verify $path --repo $Repo
-			if ($LASTEXITCODE) { throw "attestation verification failed for $path" }
+			if ($LASTEXITCODE) {
+				# Older releases verify only with --owner YoanWai and
+				# --signer-repo YoanWai/agent-manager.
+				Write-Host "attestation for $path did not verify with --repo $Repo, trying --owner YoanWai --signer-repo YoanWai/agent-manager" -ForegroundColor Yellow
+				& gh attestation verify $path --owner YoanWai --signer-repo YoanWai/agent-manager
+				if ($LASTEXITCODE) { throw "attestation verification failed for $path" }
+			}
 		} finally {
 			$env:GH_PROMPT_DISABLED = $previousPrompt
 		}
