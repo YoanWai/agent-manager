@@ -164,7 +164,7 @@ if ($?) {
 
 脚本会把最新版本安装到 `%LOCALAPPDATA%\Programs\agent-manager`，加入你的用户 `Path`，并在缺少 psmux、git 或 PowerShell 7 时提议安装。`AGENT_MANAGER_INSTALL_DEPS=1` 表示同意，`AGENT_MANAGER_INSTALL_DEPS=0` 跳过提示。没有终端时会跳过提示，仍然安装二进制文件。`AGENT_MANAGER_VERIFY_ATTESTATION` 的行为和 shell 脚本中相同。
 
-Arch Linux、mise、`go install`、预编译二进制、Windows（原生和 WSL2）、依赖和更新方法：[docs/install.md](docs/install.md)。
+Arch Linux、mise、`go install`、预编译二进制、Windows（原生和 WSL2）、依赖、更新和卸载方法：[docs/install.md](docs/install.md)。
 
 ## 使用
 
