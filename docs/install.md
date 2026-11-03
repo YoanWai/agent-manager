@@ -34,7 +34,7 @@ yay -S agent-manager-bin
 ## mise
 
 ```bash
-mise use -g ubi:YoanWai/agent-manager
+mise use -g ubi:wainmann/agent-manager
 ```
 
 Reads the GitHub release directly, so it needs no registry entry. Install tmux and git with your own package manager.
@@ -49,7 +49,7 @@ Requires Go 1.27.3+, tmux 3.1+, and git; installs to `$(go env GOPATH)/bin`.
 
 ## Prebuilt binaries
 
-Download from [Releases](https://github.com/YoanWai/agent-manager/releases) (macOS, Linux and Windows, amd64/arm64), and install tmux (psmux on Windows) and git with your package manager.
+Download from [Releases](https://github.com/wainmann/agent-manager/releases) (macOS, Linux and Windows, amd64/arm64), and install tmux (psmux on Windows) and git with your package manager.
 
 ## Windows
 
@@ -77,7 +77,7 @@ For a fresh install, run these commands in PowerShell on Windows from an empty w
 
 ```powershell
 $ErrorActionPreference = 'Stop'
-$release = Invoke-RestMethod https://api.github.com/repos/YoanWai/agent-manager/releases/latest
+$release = Invoke-RestMethod https://api.github.com/repos/wainmann/agent-manager/releases/latest
 $tag = $release.tag_name
 $version = $tag.TrimStart('v')
 $machineArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
@@ -87,7 +87,7 @@ $arch = switch ($machineArch) {
     default { throw "Unsupported architecture $machineArch" }
 }
 $archive = "agent-manager_${version}_windows_${arch}.zip"
-$baseUrl = "https://github.com/YoanWai/agent-manager/releases/download/$tag"
+$baseUrl = "https://github.com/wainmann/agent-manager/releases/download/$tag"
 Invoke-WebRequest "$baseUrl/$archive" -OutFile $archive -UseBasicParsing
 Invoke-WebRequest "$baseUrl/checksums.txt" -OutFile checksums.txt -UseBasicParsing
 $checksum = @(Get-Content .\checksums.txt | Where-Object {
@@ -99,12 +99,12 @@ $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash
 if ($actual -ne $expected) { throw "Checksum mismatch for $archive" }
 ```
 
-Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify.
+Optionally verify provenance before extracting. This needs a logged-in GitHub CLI with `gh attestation` support. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
 
 ```powershell
 Get-Command gh -ErrorAction Stop | Out-Null
 if ($?) {
-    gh attestation verify $archive --repo YoanWai/agent-manager
+    gh attestation verify $archive --repo wainmann/agent-manager
     if ($LASTEXITCODE -ne 0) { throw 'Attestation verification failed' }
 }
 ```
@@ -132,7 +132,7 @@ The dependency versions and their purpose are listed below. Open a new terminal 
 Download the script, read it, then run it. The installer runs only after that download succeeds. Windows PowerShell 5.1 has no `&&`, so the guard is `if ($?)`. Until the release attaches `install.ps1`, the file to read is the copy on `main`. That copy is not in `checksums.txt`.
 
 ```powershell
-irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 -OutFile install.ps1
 if ($?) {
     Get-Content .\install.ps1
     Unblock-File .\install.ps1
@@ -140,14 +140,14 @@ if ($?) {
 }
 ```
 
-Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
+Once the release attaches `install.ps1` and lists it in `checksums.txt`, download that file instead. Logged in to `gh`, verify it after the download and before the installer. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. A missing `gh` stops the example. PowerShell would otherwise keep the previous `$LASTEXITCODE`, and a `0` from an earlier command would look like a successful verify. That release URL has no file until that tag exists.
 
 ```powershell
-irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
 if ($?) {
     Get-Command gh -ErrorAction Stop | Out-Null
     if ($?) {
-        gh attestation verify .\install.ps1 --repo YoanWai/agent-manager
+        gh attestation verify .\install.ps1 --repo wainmann/agent-manager
         if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
         if ($LASTEXITCODE -eq 0) {
             Get-Content .\install.ps1
@@ -165,10 +165,10 @@ The script installs `agent-manager.exe` to `%LOCALAPPDATA%\Programs\agent-manage
 Short form. Piping into `iex` skips the download-and-read step and does not consult the execution policy.
 
 ```powershell
-irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 | iex
 ```
 
-On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo YoanWai/agent-manager` belongs between the download and `sh install.sh`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh`.
+On macOS and Linux the same choice, until the release attaches `install.sh`, is `curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh`. That copy is not in `checksums.txt`. Once the release attaches it, the checksummed file is `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`, and `gh attestation verify install.sh --repo wainmann/agent-manager` belongs between the download and `sh install.sh`. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`. The short form, with nothing saved to read, is `curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh`.
 
 | Tool | Install |
 | --- | --- |
@@ -191,12 +191,12 @@ agent-manager also still runs inside [WSL2](https://learn.microsoft.com/windows/
 The release workflow attests every digest in `checksums.txt`. That covers the archives, and, from the release that attaches them, `install.ps1` and `install.sh`. `gh` must be logged in, and it has to be a build that provides `gh attestation`. The current upstream release does. An anonymous call stops at `gh auth login`, and the attestation API is rate-limited like the rest of GitHub's API.
 
 ```bash
-gh attestation verify <archive> --repo YoanWai/agent-manager
+gh attestation verify <archive> --repo wainmann/agent-manager
 ```
 
-`<archive>` is the file you downloaded, such as `agent-manager_0.43.0_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them.
+`<archive>` is the file you downloaded, such as `agent-manager_0.47.1_linux_amd64.tar.gz`. The same command checks `install.ps1` or `install.sh` once that release attaches them. Releases before v0.47.1 verify with `--owner YoanWai --signer-repo YoanWai/agent-manager` in place of `--repo wainmann/agent-manager`.
 
-The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They stop if the command fails, and they skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats any failure as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
+The install scripts run this check only when `AGENT_MANAGER_VERIFY_ATTESTATION=1` (also `y`, `yes`, or `true`, in any case). They try `--repo wainmann/agent-manager` first, which releases from v0.47.1 on pass. When that fails they retry with `--owner YoanWai --signer-repo YoanWai/agent-manager`, which earlier releases pass, and they stop only if both fail. They skip it when the variable is unset, including on a machine with no `gh`. `gh` uses one exit status for a rejected attestation, a missing login, and a network error. The script treats a failure of both as fatal when the variable is set, because guessing from the error text would be wrong. The check can be queried once the release workflow's attest step has finished.
 
 ## Updating
 
@@ -212,11 +212,12 @@ The same commands work from a shell:
 brew upgrade agent-manager                                                                # Homebrew formula
 brew upgrade --cask yoanwai/tap/agent-manager                                             # Homebrew cask
 scoop update agent-manager                                                               # Scoop, after closing agent-manager
-curl -fsSL -o install.sh https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh && sh install.sh
-mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise
+curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh && sh install.sh
+mise upgrade --bump ubi:wainmann/agent-manager                                            # mise
+mise upgrade --bump ubi:YoanWai/agent-manager                                             # mise, earlier installs
 go install github.com/YoanWai/agent-manager@latest                                        # Go
 ```
 
-The install script line reads `install.sh` from `main`. The release that first attaches the script lists it in `checksums.txt` at `https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh`. Until that tag exists, the line above is the one that works.
+The install script line reads `install.sh` from `main`. The release that first attaches the script lists it in `checksums.txt` at `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`. Until that tag exists, the line above is the one that works.
 
 Later, `agent-manager update` brings the binary to the newest release without re-running any of these: it hands the update to the package manager that installed it, or downloads and swaps the binary itself.

@@ -15,7 +15,7 @@ const (
 	ConfigNotImported = "config-not-imported"
 )
 
-const RepoURL = "https://github.com/YoanWai/agent-manager"
+const RepoURL = "https://github.com/wainmann/agent-manager"
 
 // Kind groups notices in the list, in the order the groups are shown.
 type Kind uint8

@@ -37,7 +37,7 @@ func runLinkPage(t *testing.T, target, input string) string {
 // a triple-click selection both take exactly the URL.
 func TestLinkPagePrintsTheURLAndCopiesIt(t *testing.T) {
 	copied := stubLinkCopy(t, nil)
-	target := "https://github.com/YoanWai/agent-manager/issues/new?template=bug_report.yml&version=0.38.0"
+	target := "https://github.com/wainmann/agent-manager/issues/new?template=bug_report.yml&version=0.38.0"
 	out := runLinkPage(t, target, "\n")
 	if !slices.Contains(strings.Split(out, "\n"), target) {
 		t.Fatalf("the URL has no row of its own:\n%s", out)

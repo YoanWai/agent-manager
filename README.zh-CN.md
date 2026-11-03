@@ -28,15 +28,15 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/YoanWai/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/YoanWai/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
-  <a href="https://github.com/YoanWai/agent-manager"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FYoanWai%2Fagent-manager%2Fbadges%2Fclones.json&style=for-the-badge&labelColor=1f2328" alt="clones in the last 14 days"></a>
-  <a href="https://github.com/YoanWai/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/YoanWai/agent-manager?style=for-the-badge&label=release&labelColor=1f2328&color=2f5f8f" alt="latest release"></a>
+  <a href="https://github.com/wainmann/agent-manager/stargazers"><img src="https://img.shields.io/github/stars/wainmann/agent-manager?style=for-the-badge&label=stars&labelColor=1f2328&color=96591f" alt="stars"></a>
+  <a href="https://github.com/wainmann/agent-manager"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwainmann%2Fagent-manager%2Fbadges%2Fclones.json&style=for-the-badge&labelColor=1f2328" alt="clones in the last 14 days"></a>
+  <a href="https://github.com/wainmann/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/wainmann/agent-manager?style=for-the-badge&label=release&labelColor=1f2328&color=2f5f8f" alt="latest release"></a>
   <a href="https://discord.gg/ecS88An7pF"><img src="https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1f2328" alt="Discord"></a>
   <br>
-  <a href="https://github.com/YoanWai/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/YoanWai/agent-manager/ci.yml?branch=main&style=for-the-badge&label=build&labelColor=1f2328&color=2f7f62" alt="CI status"></a>
-  <a href="https://app.codecov.io/gh/YoanWai/agent-manager"><img src="https://img.shields.io/codecov/c/github/YoanWai/agent-manager?branch=main&style=for-the-badge&label=coverage&labelColor=1f2328" alt="test coverage"></a>
+  <a href="https://github.com/wainmann/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/wainmann/agent-manager/ci.yml?branch=main&style=for-the-badge&label=build&labelColor=1f2328&color=2f7f62" alt="CI status"></a>
+  <a href="https://app.codecov.io/gh/wainmann/agent-manager"><img src="https://img.shields.io/codecov/c/github/wainmann/agent-manager?branch=main&style=for-the-badge&label=coverage&labelColor=1f2328" alt="test coverage"></a>
   <a href="https://pkg.go.dev/github.com/YoanWai/agent-manager"><img src="https://img.shields.io/badge/go.dev-reference-007d9c?style=for-the-badge&logo=go&logoColor=white" alt="Go package reference"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/YoanWai/agent-manager?style=for-the-badge&label=license&labelColor=1f2328&color=59636e" alt="licence"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/wainmann/agent-manager?style=for-the-badge&label=license&labelColor=1f2328&color=59636e" alt="licence"></a>
 </p>
 
 ![在快速提示栏中依次启动三个智能体，分别运行 Claude Code、Codex 和 Gemini CLI，每次用 tab 选择 CLI，每个新智能体都出现在列表中](docs/demo.gif)
@@ -65,7 +65,7 @@ agent-manager 是你已有 CLI 之上的一层薄壳。每个会话启动的都�
 
 ## 支持的工具
 
-状态检测支持 **Claude Code**、**OpenCode**、**Codex**、**Grok Build**、**Gemini CLI**、**Antigravity CLI**、**Pi**、**Command Code**、**Hermes Agent**、**Muse Code**、**Oh My Pi** 和 **Cursor CLI**。每个工具的启动、恢复、分叉和状态规则都内置在二进制文件中（Hermes、Antigravity、Oh My Pi 和 Cursor CLI 不支持分叉），所以升级一次就能拿到所有工具的最新规则（见 [Configuration](docs/configuration.md#agent-clis)）。想支持列表外的 CLI，请提交 [功能请求](https://github.com/YoanWai/agent-manager/issues/new/choose)。
+状态检测支持 **Claude Code**、**OpenCode**、**Codex**、**Grok Build**、**Gemini CLI**、**Antigravity CLI**、**Pi**、**Command Code**、**Hermes Agent**、**Muse Code**、**Oh My Pi** 和 **Cursor CLI**。每个工具的启动、恢复、分叉和状态规则都内置在二进制文件中（Hermes、Antigravity、Oh My Pi 和 Cursor CLI 不支持分叉），所以升级一次就能拿到所有工具的最新规则（见 [Configuration](docs/configuration.md#agent-clis)）。想支持列表外的 CLI，请提交 [功能请求](https://github.com/wainmann/agent-manager/issues/new/choose)。
 
 ## 安装
 
@@ -100,38 +100,38 @@ winget install --id YoanWai.AgentManager -e
 先下载脚本，阅读后再运行。只有下载成功后才会执行 `sh install.sh`。
 
 ```bash
-curl -fsSL -o install.sh https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh &&
+curl -fsSL -o install.sh https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh &&
 sh install.sh
 ```
 
 这份是 `main` 分支上的脚本，它不在 `checksums.txt` 中。第一个附带 `install.sh` 的发布版本会把该文件列入 `checksums.txt`。之后，请下载发布附带的文件，并在 `gh` 已登录时，在运行脚本前验证它：
 
 ```bash
-curl -fsSL -o install.sh https://github.com/YoanWai/agent-manager/releases/latest/download/install.sh &&
-gh attestation verify install.sh --repo YoanWai/agent-manager &&
+curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh &&
+gh attestation verify install.sh --repo wainmann/agent-manager &&
 sh install.sh
 ```
 
-在那个版本发布之前，上面的发布 URL 没有文件，所以在此之前请使用第一条命令。
+在那个版本发布之前，上面的发布 URL 没有文件，所以在此之前请使用第一条命令。较早的版本请用 `--owner YoanWai --signer-repo YoanWai/agent-manager` 代替 `--repo wainmann/agent-manager` 来验证。
 
-脚本会下载适合你平台的最新版本，按发布的校验和验证后安装到 `~/.local/bin`，然后检查 tmux 3.1+ 和 git。在 macOS 上它会提议使用 Homebrew，缺少 Homebrew 时会先提议安装它。在 Linux 上它会提议使用 apt、dnf、pacman、zypper、apk 或 Homebrew，在桌面环境中还会提议安装剪贴板和通知相关的包。你拒绝时，它会打印对应的命令。没有终端时会跳过提示，仍然安装二进制文件。设置 `AGENT_MANAGER_INSTALL_DIR` 可以换安装目录，`AGENT_MANAGER_VERSION` 可以固定版本，`AGENT_MANAGER_INSTALL_DEPS=1` 可以提前同意安装依赖（`=0` 跳过）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` 会在 `gh attestation verify` 不接受下载的压缩包时拒绝安装。在没有 `gh` 的机器上安装时请不要设置它。`gh` 对证明被拒、未登录和网络错误使用同一个退出码，所以脚本不会区分这几种情况。
+脚本会下载适合你平台的最新版本，按发布的校验和验证后安装到 `~/.local/bin`，然后检查 tmux 3.1+ 和 git。在 macOS 上它会提议使用 Homebrew，缺少 Homebrew 时会先提议安装它。在 Linux 上它会提议使用 apt、dnf、pacman、zypper、apk 或 Homebrew，在桌面环境中还会提议安装剪贴板和通知相关的包。你拒绝时，它会打印对应的命令。没有终端时会跳过提示，仍然安装二进制文件。设置 `AGENT_MANAGER_INSTALL_DIR` 可以换安装目录，`AGENT_MANAGER_VERSION` 可以固定版本，`AGENT_MANAGER_INSTALL_DEPS=1` 可以提前同意安装依赖（`=0` 跳过）。`AGENT_MANAGER_VERIFY_ATTESTATION=1` 会在 `gh attestation verify` 不接受下载的压缩包时拒绝安装。该检查失败时，脚本会用较早版本所需的 `--owner YoanWai --signer-repo YoanWai/agent-manager` 再试一次，两次都失败才会停止。在没有 `gh` 的机器上安装时请不要设置它。`gh` 对证明被拒、未登录和网络错误使用同一个退出码，所以脚本不会区分这几种情况。
 
 不先下载文件阅读，直接运行：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/wainmann/agent-manager/main/install.sh | sh
 ```
 
 ### 经过验证的 zip（Windows）
 
-从同一个 [发布页](https://github.com/YoanWai/agent-manager/releases/latest) 下载对应架构的 Windows zip 和 `checksums.txt`。解压前，把 zip 的 SHA-256 与 `checksums.txt` 中对应的行进行比对。[手动安装 Windows 版](docs/install.md#download-and-verify-the-zip) 给出了 PowerShell 命令、可选的来源证明（provenance）验证和依赖安装方法。
+从同一个 [发布页](https://github.com/wainmann/agent-manager/releases/latest) 下载对应架构的 Windows zip 和 `checksums.txt`。解压前，把 zip 的 SHA-256 与 `checksums.txt` 中对应的行进行比对。[手动安装 Windows 版](docs/install.md#download-and-verify-the-zip) 给出了 PowerShell 命令、可选的来源证明（provenance）验证和依赖安装方法。
 
 ### 安装脚本（Windows）
 
 先下载脚本，阅读后再运行。只有下载成功后才会运行安装程序。Windows PowerShell 5.1 没有 `&&`，所以用 `if ($?)` 作为判断。在发布版本附带 `install.ps1` 之前，要阅读的是 `main` 分支上的那份。那份不在 `checksums.txt` 中。
 
 ```powershell
-irm https://raw.githubusercontent.com/YoanWai/agent-manager/main/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/wainmann/agent-manager/main/install.ps1 -OutFile install.ps1
 if ($?) {
     Get-Content .\install.ps1
     Unblock-File .\install.ps1
@@ -139,14 +139,14 @@ if ($?) {
 }
 ```
 
-一旦发布版本附带了 `install.ps1` 并把它列入 `checksums.txt`，请改为下载那个文件。登录 `gh` 后，在下载之后、运行安装程序之前验证它。缺少 `gh` 时示例会停止：否则 PowerShell 会保留上一个 `$LASTEXITCODE`，之前某条命令返回的 `0` 会看起来像验证成功。在那个版本发布之前，该发布 URL 没有文件。
+一旦发布版本附带了 `install.ps1` 并把它列入 `checksums.txt`，请改为下载那个文件。登录 `gh` 后，在下载之后、运行安装程序之前验证它。较早的版本请用 `--owner YoanWai --signer-repo YoanWai/agent-manager` 代替 `--repo wainmann/agent-manager` 来验证。缺少 `gh` 时示例会停止：否则 PowerShell 会保留上一个 `$LASTEXITCODE`，之前某条命令返回的 `0` 会看起来像验证成功。在那个版本发布之前，该发布 URL 没有文件。
 
 ```powershell
-irm https://github.com/YoanWai/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
+irm https://github.com/wainmann/agent-manager/releases/latest/download/install.ps1 -OutFile install.ps1
 if ($?) {
     Get-Command gh -ErrorAction Stop | Out-Null
     if ($?) {
-        gh attestation verify .\install.ps1 --repo YoanWai/agent-manager
+        gh attestation verify .\install.ps1 --repo wainmann/agent-manager
         if ($LASTEXITCODE -ne 0) { throw 'attestation verification failed' }
         if ($LASTEXITCODE -eq 0) {
             Get-Content .\install.ps1
@@ -218,17 +218,17 @@ CI 运行的检查见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)。如果你让�
 
 ## 社区
 
-加入 Discord 上的 [Agent Manager Community](https://discord.gg/ecS88An7pF)。在 #help 提问和获取安装帮助，在 #workflows 分享你的配置，在 #dev 讨论参与贡献。Bug 和功能请求请提交到 [GitHub issues](https://github.com/YoanWai/agent-manager/issues/new/choose)。
+加入 Discord 上的 [Agent Manager Community](https://discord.gg/ecS88An7pF)。在 #help 提问和获取安装帮助，在 #workflows 分享你的配置，在 #dev 讨论参与贡献。Bug 和功能请求请提交到 [GitHub issues](https://github.com/wainmann/agent-manager/issues/new/choose)。
 
 ## 参与贡献
 
 **欢迎贡献者和协作者。** agent-manager 正在积极寻找一起构建它的人。未被认领的 issue 都可以领取，在 issue 下留言即可认领，长期贡献者会被邀请成为协作者。来 [Discord](https://discord.gg/ecS88An7pF) 的 #dev 打个招呼吧。
 
-欢迎提交 bug 报告、功能想法和 pull request。开发环境和 CI 检查见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)。问题和值得分享的配置请发到 [Discussions](https://github.com/YoanWai/agent-manager/discussions)。安全问题请通过 [私密安全公告](https://github.com/YoanWai/agent-manager/security/advisories/new) 报告，见 [SECURITY.md](.github/SECURITY.md)。
+欢迎提交 bug 报告、功能想法和 pull request。开发环境和 CI 检查见 [CONTRIBUTING.md](.github/CONTRIBUTING.md)。问题和值得分享的配置请发到 [Discussions](https://github.com/wainmann/agent-manager/discussions)。安全问题请通过 [私密安全公告](https://github.com/wainmann/agent-manager/security/advisories/new) 报告，见 [SECURITY.md](.github/SECURITY.md)。
 
 ### 贡献者
 
-<a href="https://github.com/YoanWai/agent-manager/graphs/contributors"><img src="https://raw.githubusercontent.com/YoanWai/agent-manager/badges/contributors.png" alt="Contributors"></a>
+<a href="https://github.com/wainmann/agent-manager/graphs/contributors"><img src="https://raw.githubusercontent.com/wainmann/agent-manager/badges/contributors.png" alt="Contributors"></a>
 
 ## 许可证
 

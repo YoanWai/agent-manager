@@ -3,7 +3,7 @@ name: agent-manager-reference
 description: Query agent-manager.dev's reference API and MCP server for documentation, the coding CLIs it manages, the tools its MCP server exposes, and the current release. Use instead of scraping the website's HTML.
 license: Apache-2.0
 homepage: https://agent-manager.dev/api
-repository: https://github.com/YoanWai/agent-manager
+repository: https://github.com/wainmann/agent-manager
 ---
 
 <!--

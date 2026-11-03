@@ -74,6 +74,18 @@ func TestDetectManager(t *testing.T) {
 			wantCommand: "mise upgrade --bump ubi:YoanWai/agent-manager",
 		},
 		{
+			label:       "mise install dir under the new repo",
+			path:        "/home/user/.local/share/mise/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
+		},
+		{
+			label:       "mise custom data dir under the new repo",
+			path:        "/data/tools/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
+		},
+		{
 			label:       "pacman owned with yay",
 			path:        "/usr/bin/agent-manager",
 			helpers:     map[string]string{"yay": "/usr/bin/yay"},

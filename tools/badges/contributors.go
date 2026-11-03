@@ -49,7 +49,7 @@ var additionalContributors = []contributor{
 
 func refreshContributors() error {
 	var contributors []contributor
-	if err := get("https://api.github.com/repos/"+repo+"/contributors?per_page=100", &contributors); err != nil {
+	if err := get(apiBase+"/repos/"+repo+"/contributors?per_page=100", &contributors); err != nil {
 		fmt.Printf("::warning::contributors were unavailable, so the published image was left alone: %v\n", err)
 		return nil
 	}

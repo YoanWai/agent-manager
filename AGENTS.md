@@ -193,9 +193,11 @@ else's commit. Branch from `origin/main` after a fetch, not from the local
 ## Releases
 
 A push of a `v*` tag runs `.github/workflows/release.yml`: goreleaser on
-Actions with the `RELEASE_TOKEN` and `AUR_KEY` secrets, then build
-provenance attested over `dist/checksums.txt`. Only the admin role can push
-the tag.
+Actions creates the release with the workflow token and pushes the Homebrew
+cask with the `RELEASE_TOKEN` secret (`AUR_KEY`, `SCOOP_TOKEN` and
+`WINGET_TOKEN` cover the other packages), then build provenance is attested
+over `dist/checksums.txt` and `badges.yml` is dispatched. Only the admin role
+can push the tag.
 
 ```bash
 tag=v0.30.0                       # the release being cut
@@ -204,7 +206,8 @@ gh run watch "$(gh run list --workflow release.yml --branch "$tag" --limit 1 --j
 ```
 
 Without `AUR_KEY` the AUR step silently skips and the release still reports
-success while the Arch package goes stale, so the run log must show the
+success while the Arch package goes stale, and without `RELEASE_TOKEN` the
+Homebrew cask skips the same way, so the run log must show the
 release published, the Homebrew cask pushed, and the AUR push. A failed
 run after the release was created is retried from a clean tag. Fix the cause
 on `origin/main`, then `gh release delete "$tag" --cleanup-tag`, which

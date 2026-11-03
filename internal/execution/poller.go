@@ -223,11 +223,12 @@ func (p *Runner) run(ctx context.Context, step func() Result) <-chan Result {
 					}
 				default:
 				}
-				select {
-				case results <- result:
-				case <-ctx.Done():
-					return
-				}
+				// The buffer is empty now, whether this loop or the
+				// subscriber took the unread result, and this loop is its
+				// only sender, so the send cannot block. Racing it against
+				// ctx would let cancellation drop both the unread result
+				// and the newer one and close the channel empty.
+				results <- result
 			}
 			select {
 			case <-ticker.C:

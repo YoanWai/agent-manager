@@ -64,10 +64,10 @@ func TestExtractChangesHumanizesGeneratedNotes(t *testing.T) {
 		"Project introduction",
 		"",
 		"## What's Changed",
-		"* fix(groups): make group creation immediate and reliable by @YoanWai in https://github.com/YoanWai/agent-manager/pull/191",
-		"* feat(config): add Pi as a built-in tool by @steveprentice in https://github.com/YoanWai/agent-manager/pull/201",
-		"* chore(deps): bump gopsutil by @dependabot[bot] in https://github.com/YoanWai/agent-manager/pull/210",
-		"* docs(readme): add a badge by @YoanWai in https://github.com/YoanWai/agent-manager/pull/211",
+		"* fix(groups): make group creation immediate and reliable by @YoanWai in https://github.com/wainmann/agent-manager/pull/191",
+		"* feat(config): add Pi as a built-in tool by @steveprentice in https://github.com/wainmann/agent-manager/pull/201",
+		"* chore(deps): bump gopsutil by @dependabot[bot] in https://github.com/wainmann/agent-manager/pull/210",
+		"* docs(readme): add a badge by @YoanWai in https://github.com/wainmann/agent-manager/pull/211",
 		"- feat(ui): add a [message browser](https://example.com) with `scrolling`",
 		"- feat(mcp-editor): expose tool capabilities",
 		"",
@@ -129,11 +129,11 @@ func TestBetweenReturnsEverySkippedReleaseOldestFirst(t *testing.T) {
 func TestCheckFetchesStableCatalogAndFindsLatest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprint(w, `[
-			{"tag_name":"v0.9.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.9.0","body":"## What's Changed\n* fix(ui): newest","draft":false,"prerelease":false},
-			{"tag_name":"v0.11.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.11.0","body":"## What's Changed\n* feat(ui): actual latest","draft":false,"prerelease":false},
-			{"tag_name":"v0.12.0-rc.1","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.12.0-rc.1","body":"","draft":false,"prerelease":true},
-			{"tag_name":"v99.0.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v99.0.0","body":"","draft":true,"prerelease":false},
-			{"tag_name":"garbage","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/garbage","body":"","draft":false,"prerelease":false}
+			{"tag_name":"v0.9.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.9.0","body":"## What's Changed\n* fix(ui): newest","draft":false,"prerelease":false},
+			{"tag_name":"v0.11.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.11.0","body":"## What's Changed\n* feat(ui): actual latest","draft":false,"prerelease":false},
+			{"tag_name":"v0.12.0-rc.1","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.12.0-rc.1","body":"","draft":false,"prerelease":true},
+			{"tag_name":"v99.0.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v99.0.0","body":"","draft":true,"prerelease":false},
+			{"tag_name":"garbage","html_url":"https://github.com/wainmann/agent-manager/releases/tag/garbage","body":"","draft":false,"prerelease":false}
 		]`)
 	}))
 	defer server.Close()
@@ -153,11 +153,11 @@ func TestCheckFetchesStableCatalogAndFindsLatest(t *testing.T) {
 
 func TestCleanChangeKeepsEveryTypeAndSplitsTheScope(t *testing.T) {
 	cases := map[string]Change{
-		"feat(ui): first-run setup by @YoanWai in https://github.com/YoanWai/agent-manager/pull/919":            {Kind: KindFeature, Scope: "UI", Text: "First-run setup"},
-		"perf(tmux): one spawn per poll by @a in https://github.com/YoanWai/agent-manager/pull/1":               {Kind: KindFix, Scope: "Tmux", Text: "One spawn per poll", Author: "@a"},
-		"test(e2e): await preview redraws by @ribeirojose in https://github.com/YoanWai/agent-manager/pull/862": {Kind: KindOther, Scope: "E2E", Text: "Await preview redraws", Author: "@ribeirojose"},
-		"ci: run staticcheck by @YoanWai in https://github.com/YoanWai/agent-manager/pull/910":                  {Kind: KindOther, Text: "Run staticcheck"},
-		"Untyped line by @b in https://github.com/YoanWai/agent-manager/pull/2":                                 {Kind: KindOther, Text: "Untyped line", Author: "@b"},
+		"feat(ui): first-run setup by @YoanWai in https://github.com/wainmann/agent-manager/pull/919":            {Kind: KindFeature, Scope: "UI", Text: "First-run setup"},
+		"perf(tmux): one spawn per poll by @a in https://github.com/wainmann/agent-manager/pull/1":               {Kind: KindFix, Scope: "Tmux", Text: "One spawn per poll", Author: "@a"},
+		"test(e2e): await preview redraws by @ribeirojose in https://github.com/wainmann/agent-manager/pull/862": {Kind: KindOther, Scope: "E2E", Text: "Await preview redraws", Author: "@ribeirojose"},
+		"ci: run staticcheck by @YoanWai in https://github.com/wainmann/agent-manager/pull/910":                  {Kind: KindOther, Text: "Run staticcheck"},
+		"Untyped line by @b in https://github.com/wainmann/agent-manager/pull/2":                                 {Kind: KindOther, Text: "Untyped line", Author: "@b"},
 	}
 	for bullet, want := range cases {
 		got, ok := cleanChange(bullet)
@@ -169,7 +169,7 @@ func TestCleanChangeKeepsEveryTypeAndSplitsTheScope(t *testing.T) {
 
 func TestFetchCarriesThePublishDate(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `[{"tag_name":"v0.50.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.50.0","body":"","published_at":"2026-10-30T15:55:28Z"}]`)
+		fmt.Fprint(w, `[{"tag_name":"v0.50.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.50.0","body":"","published_at":"2026-10-30T15:55:28Z"}]`)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
@@ -391,7 +391,7 @@ func TestCatalogFromAnotherParserIsRefetchedWithoutItsETag(t *testing.T) {
 		if got := r.Header.Get("If-None-Match"); got != "" {
 			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the other parse", got)
 		}
-		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* fix(ui): reparsed"}]`)
+		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* fix(ui): reparsed"}]`)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
@@ -430,7 +430,7 @@ func TestLegacyCatalogSeedsTheFirstPaint(t *testing.T) {
 		if got := r.Header.Get("If-None-Match"); got != "" {
 			t.Errorf("If-None-Match = %q, want none", got)
 		}
-		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* feat(ui): fetched"}]`)
+		fmt.Fprint(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.40.0","body":"## What's Changed\n* feat(ui): fetched"}]`)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
@@ -485,7 +485,7 @@ func TestParserOneCatalogPaintsUntilItIsRefetched(t *testing.T) {
 		if got := r.Header.Get("If-None-Match"); got != "" {
 			t.Errorf("If-None-Match = %q, want none: a not-modified answer would keep the parser 1 shape", got)
 		}
-		fmt.Fprint(w, `[{"tag_name":"v0.45.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.45.0","body":"## What's Changed\n* feat(ui): reparsed"}]`)
+		fmt.Fprint(w, `[{"tag_name":"v0.45.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.45.0","body":"## What's Changed\n* feat(ui): reparsed"}]`)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
@@ -498,7 +498,7 @@ func TestParserOneCatalogPaintsUntilItIsRefetched(t *testing.T) {
 func testRelease(version string, changes ...string) Release {
 	release := Release{
 		Version:      version,
-		URL:          "https://github.com/YoanWai/agent-manager/releases/tag/" + version,
+		URL:          "https://github.com/wainmann/agent-manager/releases/tag/" + version,
 		TotalChanges: len(changes),
 	}
 	for _, text := range changes {
@@ -546,19 +546,19 @@ func seedFile(t *testing.T, dir, name, content string) {
 const legacyCatalogJSON = `{
 	"checked_at": "2099-01-01T00:00:00Z",
 	"latest": "v0.40.0",
-	"url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
+	"url": "https://github.com/wainmann/agent-manager/releases/tag/v0.40.0",
 	"etag": "\"legacy-1\"",
 	"releases": [
-		{"version": "v0.40.0", "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0",
+		{"version": "v0.40.0", "url": "https://github.com/wainmann/agent-manager/releases/tag/v0.40.0",
 		 "highlights": ["Pickers are here"], "thanks": ["@someone asked (#1)"],
 		 "changes": ["UI: A feature · @someone"], "total_changes": 1},
-		{"version": "v0.39.0", "url": "https://github.com/YoanWai/agent-manager/releases/tag/v0.39.0",
+		{"version": "v0.39.0", "url": "https://github.com/wainmann/agent-manager/releases/tag/v0.39.0",
 		 "changes": ["UI: Older"], "total_changes": 1}
 	]
 }`
 
 const parserOneCatalogJSON = `{"checked_at":"2099-01-01T00:00:00+02:00","parser":1,"etag":"W/\"parser-1\"","releases":[` +
-	`{"version":"v0.45.0","url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.45.0",` +
+	`{"version":"v0.45.0","url":"https://github.com/wainmann/agent-manager/releases/tag/v0.45.0",` +
 	`"headline":"A first-run setup","summary":"A fresh install now opens a short setup.",` +
 	"\"highlights\":[\"`agent-manager export` and `import` move settings to another machine.\"]," +
 	`"thanks":["@subbeh built environment profiles (#832, #834)"],` +
@@ -570,7 +570,7 @@ func releaseServer(t *testing.T, calls *atomic.Int32, version string) *httptest.
 		calls.Add(1)
 		fmt.Fprintf(w, `[{"tag_name":%q,"html_url":%q,"body":"## What's Changed\n* fix(ui): refreshed"}]`,
 			version,
-			"https://github.com/YoanWai/agent-manager/releases/tag/"+version,
+			"https://github.com/wainmann/agent-manager/releases/tag/"+version,
 		)
 	}))
 }
@@ -716,7 +716,7 @@ func TestExtractThanksStopsAtTheCap(t *testing.T) {
 func TestCatalogCarriesHighlightsThroughTheCache(t *testing.T) {
 	body := `## Highlights\n- the list can take the whole terminal\n\n## Thank you\n- @pandysp asked for full screen in #357\n\n## What's Changed\n* feat(ui): full screen sessions mode`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, `[{"tag_name":"v0.34.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.34.0","body":"%s","draft":false,"prerelease":false}]`, body)
+		fmt.Fprintf(w, `[{"tag_name":"v0.34.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.34.0","body":"%s","draft":false,"prerelease":false}]`, body)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
@@ -877,7 +877,7 @@ func TestTruncateCountsVisibleCharacters(t *testing.T) {
 func TestCatalogCarriesTheLeadThroughTheCache(t *testing.T) {
 	body := `## v0.40.0\n**Pickers are here!**\n\nA summary with ` + "`ctrl+x`" + `.\n\n## Highlights\n- a highlight\n\n## What's Changed\n* feat(ui): a feature`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprintf(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/YoanWai/agent-manager/releases/tag/v0.40.0","body":"%s","draft":false,"prerelease":false}]`, body)
+		fmt.Fprintf(w, `[{"tag_name":"v0.40.0","html_url":"https://github.com/wainmann/agent-manager/releases/tag/v0.40.0","body":"%s","draft":false,"prerelease":false}]`, body)
 	}))
 	defer server.Close()
 	defer swapReleasesURL(server.URL)()
