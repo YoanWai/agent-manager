@@ -48,6 +48,77 @@ func TestClaudeQuestionDialogWaits(t *testing.T) {
 	}
 }
 
+// 2026-11-03 real captures, Claude Code 2.1.317 in vim mode: a message typed
+// into a multi-select dialog's free-text row became its answer. That row
+// prefixes the footer with the editor mode, and the Submit row and review
+// screen draw no numbered selected option or no footer at all; only the tab
+// bar a multi-select or multi-question dialog draws stays on every screen.
+func TestClaudeQuestionDialogWaitsOnEveryRow(t *testing.T) {
+	engine := defaultEngine(t)
+	const head = "✻ Churned for 38s\n\n" +
+		"❯ ask me which areas\n\n" +
+		"────\n←  ☐ Areas  ✔ Submit  →\n\nWhich areas?\n\n"
+	const options = "  1. [ ] Docs\n         Documentation files and written guides\n" +
+		"  2. [ ] Tests\n         Test suites and test coverage\n" +
+		"  3. [ ] CI\n         Continuous integration pipelines and config\n"
+	const tail = "────\n  5. Chat about this\n\n"
+	const insertFooter = "-- INSERT -- · Enter to select · ↑/↓ to navigate · ctrl+g to edit in Nvim\n"
+	cases := []struct {
+		name string
+		pane string
+	}{
+		{"free-text row in insert mode", head + options +
+			"❯ 4. [ ] Type something\n     Submit\n" + tail + insertFooter},
+		{"free-text row holding a delivered message", head + options +
+			"❯ 4. [✔] MSG-ONE line\n     Submit\n" + tail + insertFooter},
+		{"submit row", head + options + "  4. [✔] hello there\n❯    Submit\n" + tail +
+			"Enter to select · ↑/↓ to navigate · ctrl+g to edit in Nvim · Esc to cancel\n"},
+		{"review screen", "✻ Churned for 38s\n\n❯ ask me which areas\n\n" +
+			"────\n←  ☒ Areas  ✔ Submit  →\n\nReview your answers\n\n" +
+			" ● Which areas?\n   → hello there\n\nReady to submit your answers?\n\n" +
+			"❯ 1. Submit answers\n  2. Cancel\n"},
+		{"single-select free-text row in insert mode", "✻ Churned for 38s\n\n" +
+			"❯ ask me tabs vs spaces\n\n" +
+			"────\n ☐ Indent\n\nTabs or spaces for indentation?\n\n" +
+			"  1. Spaces\n     Fixed-width indent.\n  2. Tabs\n     One tab per level.\n" +
+			"❯ 3. Type something.\n" + tail + insertFooter},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, matched := engine.Match("claude", tc.pane); got != Waiting || !matched {
+				t.Fatalf("Match() = (%q, %t) want (%q, true)", got, matched, Waiting)
+			}
+			if hold := engine.TypingHold("claude", tc.pane); hold != Waiting {
+				t.Fatalf("TypingHold() = %q want %q", hold, Waiting)
+			}
+		})
+	}
+}
+
+func TestClaudeQuestionDialogReleasesAfterItCloses(t *testing.T) {
+	engine := defaultEngine(t)
+	const dialog = "❯ ask me which areas\n\n" +
+		"────\n←  ☒ Areas  ✔ Submit  →\n\nWhich areas?\n\n" +
+		"  1. [✔] Docs\n❯    Submit\n"
+	const resting = "\n✻ Churned for 12s\n\n" +
+		"────\n❯ \n────\n  ? for shortcuts\n"
+	cases := []struct {
+		name string
+		pane string
+	}{
+		{"old tab bar above a finished turn", "✻ Churned for 38s\n\n" + dialog + resting},
+		{"answered dialog then a resting prompt", "✻ Churned for 38s\n\n" + dialog +
+			"\n● User answered Claude's questions:\n  ⎿  · Which areas? → Docs\n" + resting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if hold := engine.TypingHold("claude", tc.pane); hold != "" {
+				t.Fatalf("TypingHold() = %q want no hold", hold)
+			}
+		})
+	}
+}
+
 func TestOpenCodeDialogRulesDoNotReadOldTranscript(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {

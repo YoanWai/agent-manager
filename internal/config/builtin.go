@@ -51,8 +51,9 @@ blocked_line = "Interrupted ·"
 trailing_note = "^※"
 # a question dialog draws its selected option on the composer's own row
 # ("❯ 1. Spaces"), where a numbered draft would sit; this footer under it
-# is what tells the two apart
-dialog_footer = "(?m)^\\s*Enter to select\\b"
+# is what tells the two apart; on the free-text row vim mode leads it with
+# the editor mode ("-- INSERT -- · Enter to select")
+dialog_footer = "(?m)^(?:.* · )?Enter to select\\b"
 # a permission ask replaces the composer and indents its selected option
 # one column, so the prompt echo stays the newest cutoff and the question
 # sits below it; the trust dialog asks before any composer exists and
@@ -84,6 +85,10 @@ rules = [
   # selection dialogs (trust prompt, permission asks, questions) block on the user
   { state = "waiting", pattern = "Enter to confirm" },
   { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
+  # a multi-select or multi-question dialog keeps this tab bar on every
+  # screen, its Submit row and review screen included, which carry neither
+  # a numbered selected option nor always a footer
+  { state = "waiting", pattern = "(?m)^←  .*✔ Submit  →" },
   # spinner row of an active turn, any duration format:
   # "✳ Drizzling… (6s · thinking)" / "✽ Zigzagging… (3m 18s · ↓ 1.4k tokens)"
   { state = "working", pattern = "(?m)^[✻✳✶✽✢·✦✧+*] \\S+… \\(" },
