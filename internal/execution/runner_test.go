@@ -37,21 +37,31 @@ func TestBlockedSubscriberDoesNotBlockCancellation(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	cancel()
-	select {
-	case <-time.After(time.Second):
-		t.Fatal("runner blocked on an unread result")
-	case result := <-results:
-		if result.Snapshot.Agents.Count < 3 {
-			t.Fatalf("blocked subscriber stopped steps: count=%d", result.Snapshot.Agents.Count)
+	// The unread newest result survives cancellation. A step that finished
+	// before cancel may still land once that one is read, so at most one
+	// newer result follows before the channel closes.
+	last, received := 0, 0
+	for {
+		select {
+		case <-time.After(time.Second):
+			t.Fatal("runner did not close after cancellation")
+		case result, open := <-results:
+			if !open {
+				if received == 0 {
+					t.Fatal("cancellation dropped the unread result")
+				}
+				return
+			}
+			received++
+			count := result.Snapshot.Agents.Count
+			if count < 3 || count <= last {
+				t.Fatalf("result %d after cancellation: count=%d, previous %d", received, count, last)
+			}
+			if received > 2 {
+				t.Fatal("runner kept stepping after cancellation")
+			}
+			last = count
 		}
-	}
-	select {
-	case _, open := <-results:
-		if open {
-			t.Fatal("runner produced another result after cancellation")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("runner did not close after cancellation")
 	}
 }
 
