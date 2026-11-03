@@ -65,9 +65,12 @@ scoop install yoanwai/agent-manager
 Installs the version published in [YoanWai/scoop-bucket](https://github.com/YoanWai/scoop-bucket), and Scoop installs psmux from the main bucket. The bucket is updated on its own, so it can lag the latest release. The zip and install script below install the current release. Install git and PowerShell 7 with `scoop install git pwsh` if they are missing.
 
 <!--
-winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
-(manifest PR 453457 is open), and release publishing is PR #782.
-When a release has published the package, add:
+winget is not listed yet. Each release opens a manifest PR to
+microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
+microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
+Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
+and microsoft/winget-pkgs#469116 (0.47.1).
+When the package is published, add:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -221,3 +224,56 @@ go install github.com/YoanWai/agent-manager@latest                              
 The install script line reads `install.sh` from `main`. The release that first attaches the script lists it in `checksums.txt` at `https://github.com/wainmann/agent-manager/releases/latest/download/install.sh`. Until that tag exists, the line above is the one that works.
 
 Later, `agent-manager update` brings the binary to the newest release without re-running any of these: it hands the update to the package manager that installed it, or downloads and swaps the binary itself.
+
+## Uninstalling
+
+Agent sessions keep running on their own server after the manager quits. Stop them first with `X` in the manager, which kills every live session in view. On macOS and Linux, `tmux -L agentmgr kill-server` ends all of them at once. It touches only the manager's private `agentmgr` server, never your own tmux.
+
+Then remove the binary with the route that installed it:
+
+```bash
+brew uninstall --formula agent-manager                    # Homebrew formula
+brew uninstall --cask agent-manager                       # Homebrew cask
+brew untap yoanwai/tap                                    # Homebrew cask, once nothing else uses the tap
+sudo pacman -Rs agent-manager-bin                         # Arch Linux (AUR)
+mise unuse -g ubi:wainmann/agent-manager                  # mise, removes it from the global config
+mise uninstall --all ubi:wainmann/agent-manager           # mise, removes the installed versions
+rm "$(go env GOPATH)/bin/agent-manager"                   # Go, or "$(go env GOBIN)/agent-manager" when GOBIN is set
+rm ~/.local/bin/agent-manager                             # install script, or the AGENT_MANAGER_INSTALL_DIR you set
+```
+
+For mise, use the backend and slug you installed with. `mise ls` lists them, and an earlier install reads `ubi:YoanWai/agent-manager`. A prebuilt binary from Releases is removed by deleting the file wherever you put it.
+
+On Windows, close agent-manager first. For Scoop:
+
+```powershell
+scoop uninstall agent-manager
+scoop bucket rm yoanwai
+```
+
+For the install script or the zip, delete the install directory and take it off your user `Path`. Use `$env:AGENT_MANAGER_INSTALL_DIR` in place of the default when you set it for the install script.
+
+```powershell
+$installDir = Join-Path $env:LOCALAPPDATA 'Programs\agent-manager'
+Remove-Item -LiteralPath $installDir -Recurse -Force
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$entries = @($userPath -split ';' | Where-Object { $_ -and $_.TrimEnd('\') -ne $installDir.TrimEnd('\') })
+[Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'User')
+```
+
+### Settings and state
+
+Removing the binary keeps your settings, sessions and caches. They live in one directory. It is `AGENT_MANAGER_CONFIG_DIR` when that is set, otherwise `agent-manager` under `XDG_CONFIG_HOME` when that is set, otherwise `agent-manager` under your OS user config directory. It holds `state.db`, the release and message caches, and the generated hook and MCP files the launches load. On macOS it also holds the notification helper app. Delete it to remove everything:
+
+```bash
+rm -rf ~/Library/Application\ Support/agent-manager        # macOS
+rm -rf "${XDG_CONFIG_HOME:-$HOME/.config}/agent-manager"    # Linux
+```
+
+```powershell
+Remove-Item -LiteralPath (Join-Path $env:APPDATA 'agent-manager') -Recurse -Force
+```
+
+On macOS the notification sounds are copied to `~/Library/Sounds` as `agent-manager-*.aiff`. Remove them with `rm ~/Library/Sounds/agent-manager-*.aiff`.
+
+Some agent CLIs keep an `agent-manager` MCP server entry in their own user config, which the manager adds when it first launches them. Grok, Gemini CLI, Command Code, Antigravity and Hermes register it through their own `mcp add` command, so remove it with that CLI's MCP commands. Muse Code keeps it in `muse/settings.json` under `XDG_CONFIG_HOME` (`~/.config` by default), and Cursor CLI in `~/.cursor/mcp.json`. Delete the `agent-manager` entry from those files. The other CLIs load the manager's files from its own directory on each launch, so deleting that directory removes them.

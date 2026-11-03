@@ -88,9 +88,12 @@ scoop install yoanwai/agent-manager
 Installs the version published in that bucket, and Scoop installs psmux with it. The bucket is updated on its own, so it can lag the latest release. To update, close agent-manager and run `scoop update agent-manager`. A global install uses `scoop update agent-manager --global` in an elevated PowerShell. The in-app updater shows those instructions instead of replacing Scoop's binary.
 
 <!--
-winget is not listed: microsoft/winget-pkgs has no YoanWai.AgentManager
-(manifest PR 453457 is open), and release publishing is PR #782.
-When a release has published the package, add a winget section here with:
+winget is not listed yet. Each release opens a manifest PR to
+microsoft/winget-pkgs (the winget block in .goreleaser.yaml), and
+microsoft/winget-pkgs has no YoanWai.AgentManager until one merges.
+Open on 2026-11-03: microsoft/winget-pkgs#453457 (new package, 0.43.1)
+and microsoft/winget-pkgs#469116 (0.47.1).
+When the package is published, add a winget section here with:
 winget install --id YoanWai.AgentManager -e
 -->
 
@@ -160,7 +163,7 @@ On a Windows client with no execution policy set, the effective policy is Restri
 
 Installs the latest release to `%LOCALAPPDATA%\Programs\agent-manager`, adds it to your user `Path`, and offers to install psmux, git, or PowerShell 7 when one is missing. `AGENT_MANAGER_INSTALL_DEPS=1` answers yes. `AGENT_MANAGER_INSTALL_DEPS=0` skips the prompt. With no terminal it skips the prompt and still leaves the binary installed. `AGENT_MANAGER_VERIFY_ATTESTATION` behaves as it does on the shell script.
 
-Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, and updating: [docs/install.md](docs/install.md).
+Arch Linux, mise, `go install`, prebuilt binaries, Windows (native and WSL2), dependencies, updating, and uninstalling: [docs/install.md](docs/install.md).
 
 ## Usage
 
