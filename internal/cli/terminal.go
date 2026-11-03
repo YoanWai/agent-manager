@@ -10,7 +10,7 @@ import (
 
 const (
 	usageTerminalList   = "terminal list [--json]"
-	usageTerminalCreate = "terminal create [--group <path>] [--directory <path>] [--nest=false] [--json]"
+	usageTerminalCreate = "terminal create [--name <name>] [--group <path>] [--directory <path>] [--nest=false] [--json]"
 	usageTerminalSend   = `terminal send <terminal-id> --command "<text>" | --keys <key,key> [--json]`
 	usageTerminalRead   = "terminal read <terminal-id> [--styled] [--json]"
 	usageTerminalClose  = "terminal close <terminal-id>"
@@ -65,11 +65,12 @@ func runTerminalCreate(out io.Writer, terminals terminalCommands, args []string,
 	group := set.String("group", "", "existing group path to open it in; pass an empty string for the root group")
 	directory := set.String("directory", "", "existing directory to open; defaults to yours, or to the group's inherited path")
 	nest := set.Bool("nest", true, "hang the terminal under this session, the default when run from one; pass --nest=false to leave it loose or to open it in another group")
+	name := set.String("name", "", "kebab-case name for the work it will do; the terminal names itself after this session when this is empty")
 	asJSON := jsonFlag(set)
 	if _, err := parseCommand(out, set, args, 0, 0); err != nil {
 		return err
 	}
-	opts := sessioncmd.CreateTerminalOptions{Directory: *directory}
+	opts := sessioncmd.CreateTerminalOptions{Directory: *directory, Name: *name}
 	// An omitted group inherits this session's, and an omitted nest depends
 	// on whether there is a session to nest under, so only a flag the
 	// caller actually typed is passed on.

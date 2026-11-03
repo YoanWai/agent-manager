@@ -177,6 +177,9 @@ func (c *Client) CreateTerminal(ctx context.Context, host string, opts sessioncm
 	if opts.Nest != nil {
 		args = append(args, "--nest="+strconv.FormatBool(*opts.Nest))
 	}
+	if opts.Name != "" {
+		args = append(args, "--name="+opts.Name)
+	}
 	var created sessioncmd.Terminal
 	if err := c.decode(ctx, host, createTimeout, &created, args...); err != nil {
 		return created, err
