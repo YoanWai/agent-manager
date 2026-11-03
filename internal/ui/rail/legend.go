@@ -111,7 +111,7 @@ func (m Model) RowLegend(ctx LegendContext) Legend {
 	if ctx.ArrowStep {
 		pairs = append(pairs, [2]string{k(keybind.StepIn), "focus"})
 	}
-	if session.Status == "finished" && !session.Archived {
+	if (session.Status == "finished" || session.Status == "waiting") && !session.Archived {
 		pairs = append(pairs, [2]string{k(keybind.MarkIdle), "mark idle"})
 	}
 	if session.AfterTurn != "" {

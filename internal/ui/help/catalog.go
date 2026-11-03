@@ -80,7 +80,7 @@ func sessionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2]st
 	h.action("focus it: keys reach the agent, the list stays on screen", keybind.Open)
 	h.action("attach it: the pane takes the whole terminal", keybind.Attach)
 	h.fixed("", "settings swap what the two do")
-	h.action("mark it idle when it is finished, without entering it", keybind.MarkIdle)
+	h.action("mark it idle when it is finished or waiting, without entering it", keybind.MarkIdle)
 	h.action("quick prompt mode: answer the session without attaching", keybind.Prompt)
 	h.action("copy its newest reply to the clipboard", keybind.CopyReply)
 	h.action("review its diff", keybind.Review)

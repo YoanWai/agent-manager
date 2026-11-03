@@ -71,6 +71,28 @@ func TestUpdateStatus(t *testing.T) {
 	}
 }
 
+func TestAcknowledgeTakesFinishedAndWaitingOnly(t *testing.T) {
+	st := newTestStore(t)
+	for _, tc := range []struct{ from, want string }{
+		{"finished", "idle"}, {"waiting", "idle"}, {"working", "working"},
+	} {
+		st.CreateSession(sample(tc.from, "g1"))
+		if err := st.UpdateStatus(tc.from, tc.from); err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		if err := st.Acknowledge(tc.from); err != nil {
+			t.Fatalf("acknowledge %s: %v", tc.from, err)
+		}
+		got, err := st.Get(tc.from)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		if got.Status != tc.want || got.Acked != (tc.want == "idle") {
+			t.Fatalf("%s acknowledged = %q acked=%v, want %q", tc.from, got.Status, got.Acked, tc.want)
+		}
+	}
+}
+
 func TestUpdateTool(t *testing.T) {
 	st := newTestStore(t)
 	sess := sample("a", "g1")

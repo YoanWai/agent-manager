@@ -29,7 +29,26 @@ import (
 // A missing prior hash (first observation, or post-resize rebaseline)
 // never invents working and never collapses finished/waiting to the tool
 // default: the stored status holds until the next poll has a baseline.
+//
+// Waiting can be acknowledged too, for a prompt the user means to leave or
+// a screen the rules misread: the acked session reads idle while the pane
+// still shows the screen it was waiting on, and any change to that screen
+// reads as waiting again, so a later prompt is never swallowed.
 func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
+	newStatus, err := p.paneVerdict(sess, pane, agentAlive, paneHashes)
+	if err != nil || newStatus != status.Waiting {
+		delete(p.waitingScreens, sess.ID)
+		return newStatus, err
+	}
+	screen := hashString(p.engine.Plain(sess.Tool, pane))
+	if held, ok := p.waitingScreens[sess.ID]; ok && held == screen && sess.Acked {
+		return status.Idle, nil
+	}
+	p.waitingScreens[sess.ID] = screen
+	return newStatus, nil
+}
+
+func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, paneHashes map[string]uint64) (string, error) {
 	text := ansi.Strip(pane)
 	region, hasRegion := p.engine.ActivityRegion(sess.Tool, text)
 	var regionHash uint64
