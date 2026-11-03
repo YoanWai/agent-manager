@@ -95,6 +95,7 @@ func TestResultsAreCleaned(t *testing.T) {
 		"kill":    func(c *Client) (sessioncmd.Session, error) { return c.Kill(ctx, ref) },
 		"revive":  func(c *Client) (sessioncmd.Session, error) { return c.Revive(ctx, ref) },
 		"archive": func(c *Client) (sessioncmd.Session, error) { return c.Archive(ctx, ref, false) },
+		"move":    func(c *Client) (sessioncmd.Session, error) { return c.Move(ctx, ref, "work") },
 	}
 	for name, run := range lifecycles {
 		c, _ := recorder(t, session)

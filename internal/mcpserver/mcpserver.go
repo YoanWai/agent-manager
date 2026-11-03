@@ -374,7 +374,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"These are separate CLI processes running on the user's machine, each with its own context and its own conversation, and any CLI the user configured: Claude Code, Codex, Gemini and others, not only Claude. " +
 			"They are not this conversation's subagents, they outlive this conversation, and the user watches them all in one list; nothing else this session can call reports them. " +
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session. " +
-			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session and archive_session take as they are.",
+			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session, archive_session and move_session take as they are.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
 		listed, err := sessions.List(sessionID)
@@ -580,10 +580,11 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Only where the row is filed changes; the agent keeps running.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args moveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
-		if err := localOnly("move_session", args.SessionID); err != nil {
-			return nil, sessioncmd.Session{}, err
+		move := func() (sessioncmd.Session, error) { return sessions.Move(sessionID, args.SessionID, args.Group) }
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			move = func() (sessioncmd.Session, error) { return remotes.move(ctx, ref, args.Group) }
 		}
-		moved, err := sessions.Move(sessionID, args.SessionID, args.Group)
+		moved, err := move()
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}

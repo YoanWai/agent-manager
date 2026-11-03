@@ -388,6 +388,14 @@ func (h *remoteHosts) archive(ctx context.Context, ref remote.Ref, archived bool
 	return qualifySession(ref.Host, updated), err
 }
 
+func (h *remoteHosts) move(ctx context.Context, ref remote.Ref, group string) (sessioncmd.Session, error) {
+	if _, err := h.ready(); err != nil {
+		return sessioncmd.Session{}, err
+	}
+	moved, err := h.client.Move(ctx, ref, group)
+	return qualifySession(ref.Host, moved), err
+}
+
 func (h *remoteHosts) spawn(ctx context.Context, host string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error) {
 	if _, err := h.ready(); err != nil {
 		return sessioncmd.Session{}, err

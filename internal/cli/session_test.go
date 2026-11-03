@@ -2,14 +2,43 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote"
+	"github.com/YoanWai/agent-manager/internal/remote/remotetest"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
+
+type exitStatus int
+
+func (e exitStatus) Error() string { return "exit status " + strconv.Itoa(int(e)) }
+func (e exitStatus) ExitCode() int { return int(e) }
+
+// gpuMove is a move layer whose one SSH connection, gpu, answers through
+// answer and records the words each call ran there.
+func gpuMove(t *testing.T, local *fakeSessions, answer func(words []string) ([]byte, []byte, error)) (moveLayer, *[][]string) {
+	t.Helper()
+	var calls [][]string
+	client := remote.New(t.TempDir(), remote.WithRunner(func(_ context.Context, argv []string) ([]byte, []byte, error) {
+		words, err := remotetest.Words(argv)
+		if err != nil || words[0] != "agent-manager" {
+			t.Fatalf("remote command %q: %v", argv, err)
+		}
+		calls = append(calls, words[1:])
+		stdout, stderr, err := answer(words[1:])
+		return remotetest.Answer(stdout), stderr, err
+	}))
+	client.SetConnections([]remote.Connection{{Name: "gpu", Destination: "me@gpu"}})
+	return moveLayer{sessionCommands: local, hosts: func() (*remote.Client, error) { return client, nil }}, &calls
+}
 
 func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 	cases := []struct {
@@ -71,7 +100,7 @@ func TestSessionCommandsParseArgumentsAndPrintSentences(t *testing.T) {
 		{
 			name: "move files the session under the group",
 			run: func(out *bytes.Buffer, f *fakeSessions, args []string) error {
-				return runMove(out, f, args, "cafe0001")
+				return runMove(out, moveLayer{sessionCommands: f}, args, "cafe0001")
 			},
 			args: []string{"beef1234", "api/web"},
 			want: "moved api-worker (id beef1234) running claude in api/web",
@@ -378,5 +407,87 @@ func TestSpawnAcceptsSessionPreset(t *testing.T) {
 	}
 	if !strings.Contains(usageSpawn, "[--saved <name>]") || !strings.Contains(Help("test", false), "[--saved <name>]") {
 		t.Fatalf("spawn usage omits preset: %s", usageSpawn)
+	}
+}
+
+func TestMoveRunsAHostIDOnThatHost(t *testing.T) {
+	local := &fakeSessions{session: sampleSession()}
+	layer, calls := gpuMove(t, local, func([]string) ([]byte, []byte, error) {
+		return []byte(`{"id":"r1","name":"remote-worker","tool":"claude","group":"work","directory":"/srv","running":true}`), nil, nil
+	})
+	var out bytes.Buffer
+	if err := runMove(&out, layer, []string{"gpu::r1", "work"}, "cafe0001"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*calls) != 1 || !slices.Equal((*calls)[0], []string{"move", "--json", "--", "r1", "work"}) {
+		t.Fatalf("remote calls = %q", *calls)
+	}
+	if got := out.String(); !strings.HasPrefix(got, "moved remote-worker (id gpu::r1) running claude in work") {
+		t.Fatalf("output = %q", got)
+	}
+	if local.targetID != "" {
+		t.Fatalf("a remote move also ran here: %+v", local)
+	}
+}
+
+func TestARemoteMoveRefusalNamesTheHostAndMovesNothingHere(t *testing.T) {
+	local := &fakeSessions{session: sampleSession()}
+	layer, _ := gpuMove(t, local, func([]string) ([]byte, []byte, error) {
+		return nil, []byte("agent-manager: group \"nope\" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it\n"), exitStatus(1)
+	})
+	err := runMove(&bytes.Buffer{}, layer, []string{"gpu::r1", "nope"}, "cafe0001")
+	if err == nil || err.Error() != `gpu: group "nope" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it` {
+		t.Fatalf("err = %v", err)
+	}
+	if local.targetID != "" {
+		t.Fatalf("a refused remote move ran here: %+v", local)
+	}
+}
+
+func TestAMoveToAnUnknownConnectionNeverReachesSSH(t *testing.T) {
+	layer, calls := gpuMove(t, &fakeSessions{session: sampleSession()}, func([]string) ([]byte, []byte, error) {
+		t.Error("an unknown connection reached ssh")
+		return nil, nil, nil
+	})
+	err := runMove(&bytes.Buffer{}, layer, []string{"box::r1", "work"}, "cafe0001")
+	if err == nil || !strings.Contains(err.Error(), "no connection has that name") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("remote calls = %q", *calls)
+	}
+}
+
+func TestStoredHostsReadsTheConnectionsSavedInTheManager(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.Open(filepath.Join(dir, "state.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddConnection(store.Connection{Name: "gpu", Destination: "me@gpu", Binary: "~/bin/agent-manager"}); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	client, err := storedHosts(dir)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []remote.Connection{{Name: "gpu", Destination: "me@gpu", Binary: "~/bin/agent-manager"}}
+	if got := client.Connections(); !slices.Equal(got, want) {
+		t.Fatalf("connections = %+v, want %+v", got, want)
+	}
+}
+
+func TestARemoteMoveNeedsACallerInsideAgentManager(t *testing.T) {
+	layer, calls := gpuMove(t, &fakeSessions{session: sampleSession()}, func([]string) ([]byte, []byte, error) {
+		t.Error("a caller outside Agent Manager reached ssh")
+		return nil, nil, nil
+	})
+	err := runMove(&bytes.Buffer{}, layer, []string{"gpu::r1", "work"}, "")
+	if err == nil || !strings.HasPrefix(err.Error(), "not inside an Agent Manager session or terminal") {
+		t.Fatalf("err = %v", err)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("remote calls = %q", *calls)
 	}
 }
