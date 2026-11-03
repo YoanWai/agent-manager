@@ -148,7 +148,9 @@ func (s *Sessions) Create(sessionID string, opts CreateSessionOptions) (Session,
 	if err != nil {
 		return Session{}, err
 	}
-	return runtime.sessionInfo(launched.Session, true, false), nil
+	created := runtime.sessionInfo(launched.Session, true, false)
+	created.Warning = launched.Warning
+	return created, nil
 }
 
 type resumeRequest struct {

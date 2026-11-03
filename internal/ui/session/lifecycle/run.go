@@ -3,6 +3,7 @@ package lifecycle
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -155,9 +156,7 @@ func Run(services Services, request Request) (Result, error) {
 					}
 					if err == nil {
 						result.Launches = append(result.Launches, Relaunch{sess.ID, launched})
-						if launched.LabelError != nil {
-							result.Warning = launched.LabelError
-						}
+						result.Warning = addCaveat(result.Warning, launched.Caveat())
 					}
 				}
 				if err != nil {
@@ -465,3 +464,17 @@ func RunAttach(services Services, request AttachRequest) (AttachResult, error) {
 // DegradedResumeText says a revive fell back to the working directory's most
 // recent conversation because its own conversation id was never captured.
 func DegradedResumeText(name string) string { return uisession.DegradedResumeText(name) }
+
+// addCaveat keeps every relaunch's caveat for the one status line. Sessions
+// of one tool that time out in the same batch report the same text, once.
+func addCaveat(warning, caveat error) error {
+	switch {
+	case caveat == nil:
+		return warning
+	case warning == nil:
+		return caveat
+	case strings.Contains(warning.Error(), caveat.Error()):
+		return warning
+	}
+	return fmt.Errorf("%w; %w", warning, caveat)
+}

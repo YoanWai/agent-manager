@@ -162,7 +162,7 @@ func Run(services Services, request Request) (Result, error) {
 		return result, err
 	}
 	result.Session = launched.Session
-	result.Label = launched.LabelError
+	result.Label = launched.Caveat()
 	return result, nil
 }
 

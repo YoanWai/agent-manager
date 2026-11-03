@@ -6,6 +6,7 @@
 package launch
 
 import (
+	"errors"
 	"maps"
 	"os"
 	"os/exec"
@@ -213,22 +214,25 @@ func Variables(profile map[string]string, tool config.Tool) map[string]string {
 // starts. Tools backed by hooks additionally get the generated settings file
 // and their status-file path, plus a clean slate from any earlier files under
 // the same id. profile is the session's environment profile, under the
-// manager's own variables so it cannot unhook the session.
-func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time, profile map[string]string) (string, map[string]string, error) {
+// manager's own variables so it cannot unhook the session. The warning is
+// empty unless the tool's MCP registration timed out; the session then
+// starts without the agent-manager tools.
+func Environment(manager *hooks.Manager, toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time, profile map[string]string) (string, map[string]string, string, error) {
+	var warning string
 	if err := config.CheckSupported(toolName); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := config.CheckInstalled(baseCommand); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := config.CheckVersion(tool); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := manager.RemoveName(id); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := manager.SweepNameResults(time.Now()); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	stamp := store.LaunchStamp(launchedAt)
 	launch := strconv.FormatInt(stamp, 10)
@@ -237,7 +241,7 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	if toolName == "grok" {
 		// Grok's terminal theme leaves row backgrounds unpainted, and only its config file selects it.
 		if err := ensureGrokTerminalTheme(); err != nil {
-			return "", nil, err
+			return "", nil, "", err
 		}
 		// A shared leader runs every session's shell under the environment of the session that started it.
 		baseCommand += " --no-leader"
@@ -246,27 +250,35 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 		// Exporting into a shell launch replaces tmux's login shell with a
 		// non-login one, worth it only to carry a profile.
 		if len(profile) == 0 {
-			return "", nil, nil
+			return "", nil, "", nil
 		}
-		return "", env, nil
+		return "", env, "", nil
 	}
 	if err := os.MkdirAll(manager.Dir(), 0o755); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	command, err := mcpreg.Apply(mcpreg.Style(toolName, tool.MCP), Executable(), manager.Dir(), agentCommand(baseCommand), env)
+	var timedOut *mcpreg.TimeoutError
+	if errors.As(err, &timedOut) {
+		// A CLI that stops answering must not keep the session from
+		// starting. It starts without the agent-manager tools, and no marker
+		// was written, so the next launch registers again.
+		command, err = agentCommand(baseCommand), nil
+		warning = timedOut.Error() + ": started without the agent-manager tools, will try again next time"
+	}
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if tracksConversations {
 		target := sessionreport.Target{Exe: Executable(), HooksDir: manager.Dir(), TelemetryFile: manager.TelemetryFile(id, stamp), Cwd: cwd}
 		command, err = sessionreport.Apply(tool.SessionReport, target, command, env)
 		if err != nil {
-			return "", nil, err
+			return "", nil, "", err
 		}
 	}
 	agentFile := manager.AgentFile(id)
 	if tool.StatusSource != hooks.StatusSourceClaude {
-		return asAgentProcess(agentFile, stamp, command), env, nil
+		return asAgentProcess(agentFile, stamp, command), env, warning, nil
 	}
 	trackCommand := ""
 	if tracksConversations && tool.SessionReport == sessionreport.StyleClaude {
@@ -274,13 +286,13 @@ func Environment(manager *hooks.Manager, toolName string, tool config.Tool, base
 	}
 	settingsPath, err := manager.WriteSettings(id, launch, trackCommand)
 	if err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	if err := manager.Remove(id); err != nil {
-		return "", nil, err
+		return "", nil, "", err
 	}
 	env[hooks.EnvStatusFile] = manager.StatusFile(id)
-	return asAgentProcess(agentFile, stamp, command+" --settings "+tmux.ShellQuote(settingsPath)), env, nil
+	return asAgentProcess(agentFile, stamp, command+" --settings "+tmux.ShellQuote(settingsPath)), env, warning, nil
 }
 
 // executablePath is settled as the process starts, while the binary it

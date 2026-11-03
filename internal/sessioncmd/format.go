@@ -54,6 +54,9 @@ func FormatSession(session Session) string {
 	if session.AgentSessionID != "" {
 		line += " on conversation " + session.AgentSessionID
 	}
+	if session.Warning != "" {
+		line += "\nwarning: " + session.Warning
+	}
 	return line
 }
 

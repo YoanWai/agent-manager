@@ -1,6 +1,7 @@
 package lifecycle
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -94,8 +95,18 @@ func Changes(request Request, result Result, err error) Change {
 	}
 	change.Launches = result.Launches
 
-	if result.Notice != "" {
-		change.Notices = append(change.Notices, result.Notice)
+	notice := result.Notice
+	if result.Warning != nil && err != nil {
+		// A failure must not hide that a session that did start runs without
+		// the agent-manager tools.
+		if notice != "" && request.Target.Batch {
+			// A batch with a notice reports it instead of the error.
+			notice += "; " + result.Warning.Error()
+		}
+		err = fmt.Errorf("%w; %w", err, result.Warning)
+	}
+	if notice != "" {
+		change.Notices = append(change.Notices, notice)
 	}
 	if result.Deleted.Notice != "" {
 		change.Notices = append(change.Notices, result.Deleted.Notice)

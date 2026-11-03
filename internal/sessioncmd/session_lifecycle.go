@@ -72,7 +72,9 @@ func (s *Sessions) Revive(sessionID, targetID string) (Session, error) {
 	if err != nil {
 		return Session{}, err
 	}
-	return runtime.sessionInfo(revived.Session, true, false), nil
+	result := runtime.sessionInfo(revived.Session, true, false)
+	result.Warning = revived.Warning
+	return result, nil
 }
 
 // Archive parks a session out of the active list, or restores it. A live

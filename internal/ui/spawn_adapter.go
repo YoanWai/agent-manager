@@ -466,7 +466,7 @@ func (m *Model) applySpawn(request uilaunch.Request, result uilaunch.Result, err
 	if err == nil {
 		m.commitSpawn(request, result.Session)
 		if result.Label != nil {
-			m.reportErr(result.Label.Error())
+			m.reportWarn(result.Label.Error())
 		}
 		return m.refreshCmd()
 	}
