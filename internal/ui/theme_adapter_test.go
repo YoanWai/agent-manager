@@ -52,6 +52,22 @@ func TestAgentPaneTheme(t *testing.T) {
 	}
 }
 
+// The 16 standard colors are the host's under every theme, since the host
+// draws captured rows in its own palette.
+func TestAgentPaneThemeKeepsTheHostPalette(t *testing.T) {
+	t.Cleanup(func() { applyTheme(uitheme.Palettes[0]) })
+	t.Cleanup(func() { SetHostPalette(nil) })
+	host := make([]string, 16)
+	host[1] = "#cc241d"
+	SetHostPalette(host)
+	for _, name := range []string{"catppuccin latte", "tokyo night"} {
+		applyTheme(uitheme.Palettes[uitheme.Index(name)])
+		if got := paneTheme().Palette; !reflect.DeepEqual(got, host) {
+			t.Errorf("%s: pane palette = %q, want the host's %q", name, got, host)
+		}
+	}
+}
+
 // Agents resolve their own palette against the pane background, so a theme
 // switch has to reach the tmux server as well as the manager's own frame.
 func TestThemeSwitchPushesPaneBackground(t *testing.T) {
