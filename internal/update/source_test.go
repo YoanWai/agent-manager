@@ -63,7 +63,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise install dir",
-			path:        "/home/user/.local/share/mise/installs/ubi-yoan-wai-agent-manager/0.19.0/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/ubi-yoan-wai-agent-manager/0.19.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:YoanWai/agent-manager",
 		},
@@ -75,7 +75,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise install dir under the new repo",
-			path:        "/home/user/.local/share/mise/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
 		},
@@ -134,7 +134,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label: "another ubi tool is direct",
-			path:  "/home/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
+			path:  "/Users/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
 		},
 		{
 			label: "another github backend tool is direct",
@@ -142,11 +142,11 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label: "install script dir is direct",
-			path:  "/home/user/.local/bin/agent-manager",
+			path:  "/Users/user/.local/bin/agent-manager",
 		},
 		{
 			label: "gopath is direct",
-			path:  "/home/user/go/bin/agent-manager",
+			path:  "/Users/user/go/bin/agent-manager",
 		},
 		{
 			label: "manual opt prefix is direct",
