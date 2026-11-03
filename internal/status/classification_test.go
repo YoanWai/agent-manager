@@ -95,6 +95,30 @@ func TestClaudeQuestionDialogWaitsOnEveryRow(t *testing.T) {
 	}
 }
 
+func TestClaudeQuestionDialogReleasesAfterItCloses(t *testing.T) {
+	engine := defaultEngine(t)
+	const dialog = "❯ ask me which areas\n\n" +
+		"────\n←  ☒ Areas  ✔ Submit  →\n\nWhich areas?\n\n" +
+		"  1. [✔] Docs\n❯    Submit\n"
+	const resting = "\n✻ Churned for 12s\n\n" +
+		"────\n❯ \n────\n  ? for shortcuts\n"
+	cases := []struct {
+		name string
+		pane string
+	}{
+		{"old tab bar above a finished turn", "✻ Churned for 38s\n\n" + dialog + resting},
+		{"answered dialog then a resting prompt", "✻ Churned for 38s\n\n" + dialog +
+			"\n● User answered Claude's questions:\n  ⎿  · Which areas? → Docs\n" + resting},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if hold := engine.TypingHold("claude", tc.pane); hold != "" {
+				t.Fatalf("TypingHold() = %q want no hold", hold)
+			}
+		})
+	}
+}
+
 func TestOpenCodeDialogRulesDoNotReadOldTranscript(t *testing.T) {
 	engine := defaultEngine(t)
 	cases := []struct {
