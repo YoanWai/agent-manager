@@ -786,6 +786,148 @@ func TestSpinnerAnimatingBelowTheRegionStaysWorking(t *testing.T) {
 	}
 }
 
+func setStuckEndGrace(t *testing.T, grace time.Duration) {
+	t.Helper()
+	prev := stuckEndGrace
+	stuckEndGrace = grace
+	t.Cleanup(func() { stuckEndGrace = prev })
+}
+
+func expireQuietTimer(t *testing.T, m *harness, sess store.Session) {
+	t.Helper()
+	timer, ok := m.poller.quietSince[sess.ID]
+	if !ok {
+		t.Fatal("the stuck grace should be running")
+	}
+	timer.since = timer.since.Add(-2 * stuckEndGrace)
+	m.poller.quietSince[sess.ID] = timer
+}
+
+func turnEndedState(t *testing.T, m *harness, tool, pane string) string {
+	t.Helper()
+	region, ok := m.poller.engine.ActivityRegion(tool, ansi.Strip(pane))
+	if !ok {
+		t.Fatalf("%s pane should have an activity region", tool)
+	}
+	return m.poller.engine.TurnEndedState(tool, region)
+}
+
+// A cut codex status row hides its timer, so only the shimmer's colours move.
+func TestCodexCutOffRowShimmerStaysWorkingPastStuckGrace(t *testing.T) {
+	setStuckEndGrace(t, time.Minute)
+	m := buildModel(t)
+	defaultEngine(t, m)
+	turn := "› fix the flaky scheduler test\n\n• Running make test-all\n  └ === RUN   TestIntegration\n\n"
+	composer := "\n› Ask Codex to do anything\n\n  GPT-5.6-Sol default · ~/src/scheduler\n"
+	frames := []string{
+		turn + "\x1b[1m• \x1b[22m\x1b[38;5;255mWork\x1b[38;5;245ming\x1b[39m (13m 05s • es…\n" + composer,
+		turn + "\x1b[1m• \x1b[22m\x1b[38;5;245mWork\x1b[38;5;255ming\x1b[39m (13m 05s • es…\n" + composer,
+	}
+	if ansi.Strip(frames[0]) != ansi.Strip(frames[1]) {
+		t.Fatal("the shimmer frames should differ only in colour")
+	}
+
+	shimmering := store.Session{ID: "codex-shimmer", Tool: "codex", Status: status.Working}
+	seedRegionHash(t, m, shimmering, frames[0])
+	if got := deriveStatus(t, m, shimmering, frames[0], true); got != status.Working {
+		t.Fatalf("a matched cut status row should read working, got %q", got)
+	}
+	for poll := 1; poll <= 4; poll++ {
+		expireQuietTimer(t, m, shimmering)
+		if got := deriveStatus(t, m, shimmering, frames[poll%2], true); got != status.Working {
+			t.Fatalf("poll %d: a shimmering status row past the stuck grace should stay working, got %q", poll, got)
+		}
+	}
+
+	frozen := store.Session{ID: "codex-frozen", Tool: "codex", Status: status.Working}
+	seedRegionHash(t, m, frozen, frames[0])
+	if got := deriveStatus(t, m, frozen, frames[0], true); got != status.Working {
+		t.Fatalf("a matched cut status row should read working, got %q", got)
+	}
+	expireQuietTimer(t, m, frozen)
+	want := turnEndedState(t, m, "codex", frames[0])
+	if got := deriveStatus(t, m, frozen, frames[0], true); got != want {
+		t.Fatalf("a status row frozen in text and colour past the stuck grace should end the turn as %q, got %q", want, got)
+	}
+}
+
+func declaresWorking(tool config.Tool) bool {
+	if tool.BusyLine != "" {
+		return true
+	}
+	for _, rule := range tool.Rules {
+		if rule.State == status.Working {
+			return true
+		}
+	}
+	return false
+}
+
+func TestStuckGraceAcrossBuiltinTools(t *testing.T) {
+	setStuckEndGrace(t, time.Minute)
+	cfg, err := config.Default()
+	if err != nil {
+		t.Fatalf("default config: %v", err)
+	}
+	workingPanes := map[string]string{
+		"claude":   "❯ list the files\n\n✻ Thinking… (3s · esc to interrupt)\n\n❯ \n",
+		"opencode": "⠋ Thinking\n┃\n╹▀▀▀▀\n■■■⬝⬝⬝⬝⬝  esc interrupt\n",
+		"codex":    "› fix the flaky scheduler test\n\n• Running make test-all\n\n• Working (13m 05s • es…\n\n› Ask Codex to do anything\n\n  GPT-5.6-Sol default · ~/src/scheduler\n",
+		"muse":     "❯ hello\n◇ Thinking (12s · esc to interrupt)\n── Voice input (⌥ + v to start) ────────────\n❯\n────────────────\n  echo · /work · Auto-review\n",
+		"grok": "    ⠴ Waiting for response… 1.8s                            1.8s ⇣15.4k [stop]\n" +
+			"  ╭────────────────────────────╮\n  │ ❯                        │\n  ╰──────────── Grok 4.5 (high) ─╯\n  Shift+Tab:mode  │  Ctrl+x:shortcuts\n",
+		"gemini":       "completed output\n> \nesc to cancel\n",
+		"antigravity":  "> list the files\n\n⠋ Generating\n\n> \n",
+		"hermes":       "  ◇ cogitating...  (  4.2s)\n  ⚕ hermes-4 │ ctx -- │ ⏱ 4s\n────────────────────────\n⚕ ❯ msg=interrupt · /queue · /bg · /steer · Ctrl+C cancel\n",
+		"pi":           "── ⠋ Working ─────────────────\n──────────────────────────────\n~/dev/project (main)\n↑116 ↓26k $2.862 (sub) 6.2%/1.0M (auto)\n",
+		"omp":          "please go slow\n\n  ⠋ Working…   Hello from the fake model\n ⠋ 4s > Local Model > ~/project\n╰─\n",
+		"command-code": " ✧ Thinking… esc to interrupt • 3s\n❯ \n",
+		"cursor":       "  Reply with the single word pong.\n\n ⠘⠆ Working\n\n  → Plan, search, build anything\n\n  Auto\n  ~/project\n",
+	}
+	shimmer := func(pane string, frame int) string {
+		return fmt.Sprintf("\x1b[38;5;%dm", 245+frame) + pane + "\x1b[39m"
+	}
+	for name, tool := range cfg.Tools {
+		t.Run(name, func(t *testing.T) {
+			pane, ok := workingPanes[name]
+			if !ok {
+				if declaresWorking(tool) {
+					t.Fatalf("%s declares a working rule; add a pane it matches", name)
+				}
+				t.Skipf("%s declares no working rule, so no pane reaches the stuck grace", name)
+			}
+			m := buildModel(t)
+			defaultEngine(t, m)
+			if got, matched := m.poller.engine.Match(name, pane); !matched || got != status.Working {
+				t.Fatalf("sample pane should match working, got %q matched=%v", got, matched)
+			}
+
+			frozen := store.Session{ID: "frozen-" + name, Tool: name, Status: status.Working}
+			seedRegionHash(t, m, frozen, pane)
+			if got := deriveStatus(t, m, frozen, shimmer(pane, 0), true); got != status.Working {
+				t.Fatalf("a matched working pane within the grace should stay working, got %q", got)
+			}
+			expireQuietTimer(t, m, frozen)
+			want := turnEndedState(t, m, name, pane)
+			if got := deriveStatus(t, m, frozen, shimmer(pane, 0), true); got != want {
+				t.Fatalf("a pane frozen in text and colour past the grace should end the turn as %q, got %q", want, got)
+			}
+
+			shimmering := store.Session{ID: "shimmer-" + name, Tool: name, Status: status.Working}
+			seedRegionHash(t, m, shimmering, pane)
+			if got := deriveStatus(t, m, shimmering, shimmer(pane, 0), true); got != status.Working {
+				t.Fatalf("a matched working pane within the grace should stay working, got %q", got)
+			}
+			for poll := 1; poll <= 4; poll++ {
+				expireQuietTimer(t, m, shimmering)
+				if got := deriveStatus(t, m, shimmering, shimmer(pane, poll%2), true); got != status.Working {
+					t.Fatalf("poll %d: a pane changing only colour past the grace should stay working, got %q", poll, got)
+				}
+			}
+		})
+	}
+}
+
 // A live agent animates its pane every poll or two; a changing region must
 // keep a rule-matched working verdict working no matter how long it runs.
 func TestAnimatedMatchedWorkingStaysWorking(t *testing.T) {

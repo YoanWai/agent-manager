@@ -133,7 +133,7 @@ var stuckEndGrace = 15 * time.Second
 type quietTimer struct {
 	since time.Time
 	stuck bool
-	// pane hashes the whole pane while stuck: pi animates its spinner below the activity region.
+	// pane hashes the raw pane while stuck: pi animates below the region, a cut codex row only in colour.
 	pane uint64
 }
 

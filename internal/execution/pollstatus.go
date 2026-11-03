@@ -71,7 +71,7 @@ func (p *Runner) derivePaneStatus(sess store.Session, pane string, agentAlive bo
 					var paneHash uint64
 					if stuck {
 						grace = stuckEndGrace
-						paneHash = hashString(text)
+						paneHash = hashString(pane)
 					}
 					now := time.Now()
 					timer, ok := p.quietSince[sess.ID]

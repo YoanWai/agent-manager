@@ -223,9 +223,8 @@ rules = [
   { state = "waiting", pattern = "(?m)^[ \\t]*enter [a-z]+(?: [a-z]+)* · esc [a-z][^\\n]*\\s*\\z" },
   { state = "waiting", pattern = "(?m)^[ \\t]*Hooks need review\\b" },
   { state = "waiting", pattern = "(?m)^[ \\t]*enter(?:/esc)? (?:confirm|continue)\\b[^\\n]*\\s*\\z" },
-  # active status row is the final row above the input box; anchoring its full
-  # shape keeps an answer that quotes "esc to interrupt" from looking active
-  { state = "working", pattern = "(?m)^[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)?(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied )[^\\n]*\\n)*[ \\t\\n]*\\z" },
+  # A cut status row keeps its spinner or timer prefix above the composer.
+  { state = "working", pattern = "(?m)^(?:[ \\t]*(?:• )?[^\\n]*\\([\\dhms. ]+ [•·] esc to interrupt\\)(?: · [^\\n]*)?|[ \\t]*[^\\n]*\\(\\d[\\dhms. ]*(?: [•·][^\\n]*)?…|[•◦] [^\\n]*…)[ \\t]*\\n(?:[ \\t]+└[^\\n]*\\n(?:[ \\t]{4}[^\\n]*\\n)*)*(?:[ \\t]*\\n|[ \\t]+(?:⚠|↓|Tip: |Copied |\\d+ background terminals? running · )[^\\n]*\\n|• (?:Queued(?: |\\n[ \\t]+)follow-up|Messages(?: |\\n[ \\t]+)to)\\b[^\\n]*\\n(?:[ \\t]+[^\\n]*\\n)*)*[ \\t\\n]*\\z" },
   { state = "errored", pattern = "(?im)^\\s*■.*\\berror\\b" },
 ]
 
