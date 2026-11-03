@@ -32,6 +32,7 @@
   <a href="https://github.com/wainmann/agent-manager"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fwainmann%2Fagent-manager%2Fbadges%2Fclones.json&style=for-the-badge&labelColor=1f2328" alt="clones in the last 14 days"></a>
   <a href="https://github.com/wainmann/agent-manager/releases/latest"><img src="https://img.shields.io/github/v/release/wainmann/agent-manager?style=for-the-badge&label=release&labelColor=1f2328&color=2f5f8f" alt="latest release"></a>
   <a href="https://discord.gg/ecS88An7pF"><img src="https://img.shields.io/badge/discord-join-5865F2?style=for-the-badge&logo=discord&logoColor=white&labelColor=1f2328" alt="Discord"></a>
+  <a href="https://github.com/sponsors/YoanWai"><img src="https://img.shields.io/badge/sponsor-%E2%99%A5-bf4b78?style=for-the-badge&logo=githubsponsors&logoColor=white&labelColor=1f2328" alt="Sponsor on GitHub"></a>
   <br>
   <a href="https://github.com/wainmann/agent-manager/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/wainmann/agent-manager/ci.yml?branch=main&style=for-the-badge&label=build&labelColor=1f2328&color=2f7f62" alt="CI status"></a>
   <a href="https://app.codecov.io/gh/wainmann/agent-manager"><img src="https://img.shields.io/codecov/c/github/wainmann/agent-manager?branch=main&style=for-the-badge&label=coverage&labelColor=1f2328" alt="test coverage"></a>
