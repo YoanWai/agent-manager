@@ -39,11 +39,11 @@ type Frame struct {
 	Writes  uint64
 }
 
-// Sink receives what the watcher pushes: frames, and the loss of a client
-// it was serving. Either call may block, the way a Bubble Tea send does.
+// Sink callbacks receive watcher events and may block.
 type Sink struct {
-	Frame func(Frame)
-	Lost  func(error)
+	Frame     func(Frame)
+	Lost      func(error)
+	Clipboard func(sessionID, text string)
 }
 
 // frameBudget spaces captures that change the preview, so a stream
@@ -398,6 +398,15 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 		w.mu.Unlock()
 	}()
 	target := tmux.PaneTarget(id)
+	callCtx, cancelCall := context.WithTimeout(ctx, controlCallTimeout)
+	paneID, err := control.CommandContext(callCtx, `display-message -p -t `+target+` "#{pane_id}"`)
+	cancelCall()
+	if err != nil {
+		w.clearIfCurrent(id, stop)
+		w.report(stop, fmt.Errorf("clipboard pane for %s: %w", id, err))
+		return
+	}
+	clipboardWrites := control.WatchClipboard(strings.TrimSpace(paneID))
 	capture := func() (string, bool) {
 		callCtx, cancelCall := context.WithTimeout(ctx, controlCallTimeout)
 		pane, err := control.CommandContext(callCtx, "capture-pane -p -e -t "+target)
@@ -449,6 +458,9 @@ func (w *Watcher) watch(ctx context.Context, id string, stop <-chan struct{}, in
 			w.report(stop, lost)
 			return
 		case <-control.Events():
+		case write := <-clipboardWrites:
+			w.passClipboard(ctx, control, id, stop, write)
+			continue
 		case <-input:
 			inputUntil = time.Now().Add(frameBudget)
 			continue
@@ -594,6 +606,25 @@ func (w *Watcher) push(stop <-chan struct{}, msg Frame) bool {
 	}
 	w.sink.Frame(msg)
 	return true
+}
+
+func (w *Watcher) passClipboard(ctx context.Context, control *tmux.Control, id string, stop <-chan struct{}, write tmux.ClipboardWrite) {
+	callCtx, cancelCall := context.WithTimeout(ctx, controlCallTimeout)
+	state, err := control.CommandContext(callCtx, `display-message -p -t `+tmux.PaneTarget(id)+` "#{pane_id} #{set-clipboard}"`)
+	cancelCall()
+	if err != nil {
+		w.report(stop, fmt.Errorf("clipboard copy from %s: %w", id, err))
+		return
+	}
+	if strings.TrimSpace(state) != write.PaneID+" on" {
+		return
+	}
+	select {
+	case <-stop:
+		return
+	default:
+	}
+	w.sink.Clipboard(id, write.Text)
 }
 
 // report surfaces a client the watcher lost, so the preview dropping to

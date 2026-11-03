@@ -80,11 +80,17 @@ func skipControlMode(t *testing.T) {
 // lostMsg is a lost client as newTestWatcher delivers it.
 type lostMsg struct{ err error }
 
+// clipboardMsg is a clipboard write as newTestWatcher delivers it.
+type clipboardMsg struct{ sessionID, text string }
+
 // newTestWatcher delivers frames and lost clients through one send, the way
 // the root UI receives them as messages.
 func newTestWatcher(driver *tmux.Driver, send func(any)) *Watcher {
 	return New(driver, 300*time.Millisecond, Sink{
 		Frame: func(frame Frame) { send(frame) },
 		Lost:  func(err error) { send(lostMsg{err}) },
+		Clipboard: func(sessionID, text string) {
+			send(clipboardMsg{sessionID, text})
+		},
 	})
 }

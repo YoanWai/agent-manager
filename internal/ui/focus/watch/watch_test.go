@@ -700,3 +700,104 @@ func TestFocusWatchCountsWritesToThePolledPane(t *testing.T) {
 		t.Fatal("a frame taken once the write landed was not caught up")
 	}
 }
+
+func TestFocusWatchPassesTheWatchedSessionsClipboard(t *testing.T) {
+	skipControlMode(t)
+	driver := requireDriver(t)
+	if out, err := tmuxCmd("set-option", "-g", "set-clipboard", "on").CombinedOutput(); err != nil {
+		t.Fatalf("set-clipboard on: %v: %s", err, out)
+	}
+	t.Cleanup(func() { tmuxCmd("set-option", "-gu", "set-clipboard").Run() })
+	copies := make(chan clipboardMsg, 8)
+	watch := newTestWatcher(driver, func(msg any) {
+		if copied, ok := msg.(clipboardMsg); ok {
+			copies <- copied
+		}
+	})
+	t.Cleanup(watch.Close)
+
+	stamp := strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	focused, background := "clipfocus"+stamp, "clipbg"+stamp
+	for _, id := range []string{focused, background} {
+		if err := driver.Create(id, os.TempDir(), "", nil, 80, 24); err != nil {
+			t.Fatalf("Create %s: %v", id, err)
+		}
+		t.Cleanup(func() { driver.Kill(id) })
+	}
+	watch.SetFocus(focused)
+	deadline := time.Now().Add(5 * time.Second)
+	for !watch.Serving(focused) {
+		if time.Now().After(deadline) {
+			t.Fatal("control client never served the session")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	copyText := func(id, text string) {
+		t.Helper()
+		if err := driver.SendText(id, `printf '\033]52;c;%s\a' "$(printf `+text+` | base64)"`); err != nil {
+			t.Fatalf("SendText: %v", err)
+		}
+	}
+
+	copyText(background, "background")
+	select {
+	case got := <-copies:
+		t.Fatalf("passed on %+v from a session out of focus", got)
+	case <-time.After(time.Second):
+	}
+	copyText(focused, "hello")
+	select {
+	case got := <-copies:
+		if got != (clipboardMsg{focused, "hello"}) {
+			t.Fatalf("clipboard = %+v, want the focused session's hello", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the focused session's copy was not passed on")
+	}
+
+	if out, err := tmuxCmd("split-window", "-d", "-t", tmux.PaneTarget(focused), "/bin/sh").CombinedOutput(); err != nil {
+		t.Fatalf("split-window: %v: %s", err, out)
+	}
+	splitTarget := strings.TrimSuffix(tmux.PaneTarget(focused), ".0") + ".1"
+	if out, err := tmuxCmd("send-keys", "-t", splitTarget, `printf '\033]52;c;c3BsaXQ=\a'`, "Enter").CombinedOutput(); err != nil {
+		t.Fatalf("split copy: %v: %s", err, out)
+	}
+	select {
+	case got := <-copies:
+		t.Fatalf("passed on %+v from another pane", got)
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	for _, setting := range []string{"external", "off"} {
+		if out, err := tmuxCmd("set-option", "-g", "set-clipboard", setting).CombinedOutput(); err != nil {
+			t.Fatalf("set-clipboard %s: %v: %s", setting, err, out)
+		}
+		copyText(focused, "ignored")
+		select {
+		case got := <-copies:
+			t.Fatalf("passed on %+v under set-clipboard %s", got, setting)
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	if out, err := tmuxCmd("set-option", "-g", "set-clipboard", "on").CombinedOutput(); err != nil {
+		t.Fatalf("set-clipboard on: %v: %s", err, out)
+	}
+	watch.SetFocus(background)
+	deadline = time.Now().Add(5 * time.Second)
+	for !watch.Serving(background) {
+		if time.Now().After(deadline) {
+			t.Fatal("control client never served the new session")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	copyText(focused, "oldfocus")
+	copyText(background, "newfocus")
+	select {
+	case got := <-copies:
+		if got != (clipboardMsg{background, "newfocus"}) {
+			t.Fatalf("clipboard after switching focus = %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the new focused session's copy was not passed on")
+	}
+}

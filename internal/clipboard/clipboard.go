@@ -465,6 +465,11 @@ func forwardedDisplay() bool {
 	return display != "" && !strings.HasPrefix(display, ":")
 }
 
+// WriteTerminal sends text to the host terminal clipboard with OSC 52.
+func WriteTerminal(text string) error {
+	return writeTextOSC52(text)
+}
+
 // osc52Limit caps the base64 payload, matching xterm's own OSC 52 ceiling.
 // Past it a terminal drops the sequence, so a copy that would be silently
 // lost is reported instead.
