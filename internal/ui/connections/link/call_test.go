@@ -6,6 +6,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 )
 
 func TestRunTurnsEachCallIntoItsHostCommand(t *testing.T) {
@@ -60,7 +61,7 @@ func TestAFailedCallReportsAndPicksTheHostBackUp(t *testing.T) {
 	state := listedState(t, fake)
 	root := &recorder{}
 	failed := &remote.Error{Host: "box", Err: context.DeadlineExceeded}
-	call := Call{Op: Type, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Draft: "hello", ComposerGen: 3}
+	call := Call{Op: Type, Host: "box", Ref: remote.Ref{Host: "box", ID: "s1"}, Name: "api", Submission: spawn.Submission{ID: 1, Draft: "hello"}, ComposerGen: 3}
 	if cmd := state.ApplyCall(root, call, Result{}, failed); cmd == nil {
 		t.Fatal("a failed call did not pick the host back up")
 	}
@@ -77,7 +78,7 @@ func TestASpawnFromTheFormClosesItAndAQuickSpawnClearsTheBar(t *testing.T) {
 		t.Fatalf("closed = %v, want the form", root.closed)
 	}
 	root = &recorder{}
-	state.ApplyCall(root, Call{Op: Spawn, Host: "box", ComposerGen: 5, Draft: "go"}, Result{Session: sessioncmd.Session{Name: "fresh"}}, nil)
+	state.ApplyCall(root, Call{Op: Spawn, Host: "box", ComposerGen: 5, Submission: spawn.Submission{ID: 1, Draft: "go"}}, Result{Session: sessioncmd.Session{Name: "fresh"}}, nil)
 	if root.cleared != 1 || len(root.closed) != 0 {
 		t.Fatalf("cleared %d, closed %v", root.cleared, root.closed)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	"github.com/YoanWai/agent-manager/internal/ui/pathcomplete"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 )
 
 // Kind says which surface asked for the spawn: the form, the quick bar, or
@@ -48,6 +49,7 @@ type Request struct {
 	DraftName    string
 	DraftDir     string
 	Draft        string
+	Submission   spawn.Submission
 	RawDir       string
 	DirFallbacks []string
 	WantWorktree bool

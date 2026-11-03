@@ -1444,14 +1444,14 @@ func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T
 	if first == nil {
 		t.Fatal("first send did not activate its effect")
 	}
-	if _, duplicate := m.submitQuick(); duplicate != nil || m.errBar.text != "this prompt is already being sent" {
-		t.Fatalf("duplicate accepted: cmd=%v err=%q", duplicate != nil, m.errBar.text)
+	if _, duplicate := m.submitQuick(); duplicate != nil || len(m.effects.Main.Pending) != 0 {
+		t.Fatalf("an Enter on the emptied bar queued a send: cmd=%v pending=%d", duplicate != nil, len(m.effects.Main.Pending))
 	}
-	m.openQuickMode()
 	m.quick().Input.SetValue("second")
 	if _, second := m.submitQuick(); second != nil || len(m.effects.Main.Pending) != 1 {
 		t.Fatalf("second send did not queue behind the first: cmd=%v pending=%d", second != nil, len(m.effects.Main.Pending))
 	}
+	m.quick().Input.SetValue("still typing")
 
 	completed := make(chan tea.Msg, 1)
 	go func() { completed <- first() }()
@@ -1469,7 +1469,7 @@ func TestBlockedQuickSendsKeepUpdateResponsiveRunFIFOAndDrainOnQuit(t *testing.T
 	msg := <-completed
 	updated, _ = m.Update(msg)
 	m = updated.(*Model)
-	if got := m.quick().Input.Value(); got != "second" {
+	if got := m.quick().Input.Value(); got != "still typing" {
 		t.Fatalf("first completion replaced newer composer: %q", got)
 	}
 	if m.effects.Main.Active == nil {
@@ -1801,7 +1801,7 @@ func TestClearingQuickPromptDebouncesEmptyEnter(t *testing.T) {
 	m.openQuickMode()
 	q := m.quick()
 	q.Input.SetValue("ship it")
-	m.clearAccepted(q.Gen, "ship it", false)
+	m.acceptQuick(q.Submission())
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if q, ok := surfaceOf[*uiquick.Surface](m); !ok || q.Input.Value() != "" {
 		t.Fatal("Enter just after clearing should leave the empty prompt open")

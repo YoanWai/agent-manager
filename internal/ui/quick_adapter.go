@@ -7,7 +7,6 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
-	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uiframe "github.com/YoanWai/agent-manager/internal/ui/frame"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uipreview "github.com/YoanWai/agent-manager/internal/ui/preview"
@@ -235,11 +234,11 @@ func (m *Model) quickAnswerRow(entry treeRow, name string, width int) string {
 // quickSendRoot is the root as a finished send reaches it.
 type quickSendRoot struct{ m *Model }
 
-func (r quickSendRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bool) {
-	r.m.clearAccepted(composerGen, draft, closeAfterSend)
+func (r quickSendRoot) SettleAccepted(request uiquicksend.SendRequest) {
+	r.m.settleAccepted(request.ComposerGen, request.Submission.ID, request.CloseAfterSend)
 }
 
-func (r quickSendRoot) RestoreImages(request uiquicksend.SendRequest) tea.Cmd {
+func (r quickSendRoot) ReturnRefused(request uiquicksend.SendRequest) tea.Cmd {
 	return r.m.returnQuickSendImages(request)
 }
 
@@ -258,41 +257,35 @@ func (r quickSendRoot) MarkSent(session store.Session, text string) {
 
 var _ uiquicksend.Root = quickSendRoot{}
 
-func (m *Model) dispatchQuickSend(request uiquicksend.SendRequest) bool {
-	jobs := append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...)
-	for _, job := range jobs {
-		if job == nil {
-			continue
-		}
-		pending, ok := job.Request.(uiquicksend.SendRequest)
-		if ok && pending.ComposerGen == request.ComposerGen {
-			m.reportErr("this prompt is already being sent")
-			return false
-		}
-	}
-	request.Images = slices.Clone(request.Images)
-	m.quick().Attachments = nil
+func (m *Model) dispatchQuickSend(request uiquicksend.SendRequest) {
+	q := m.quick()
+	request.Submission = q.Submission()
+	request.Images = slices.Clone(q.Attachments)
 	m.enqueueEffect(request, 0, false)
-	return true
+	m.acceptQuick(request.Submission)
 }
 
-// clearAccepted empties the bar a confirmed send came from, unless its
-// prompt has changed since, and closes it when the setting asks.
-func (m *Model) clearAccepted(composerGen int, draft string, closeAfterSend bool) {
-	if !m.quickHolds(composerGen, draft) {
-		return
-	}
+func (m *Model) acceptQuick(submission spawn.Submission) {
 	q := m.quick()
-	q.Input.SetValue("")
+	q.Accept(submission)
 	q.ResetEnterDebounce()
-	q.Saved = nil
-	if closeAfterSend {
+}
+
+func (m *Model) settleAccepted(composerGen int, submitted uint64, closeAfterSend bool) {
+	if q, ok := m.quickFor(composerGen); ok && closeAfterSend && q.Untouched(submitted) {
 		m.closeQuick()
 	}
 }
 
+func (m *Model) restoreRefused(composerGen int, submission spawn.Submission) bool {
+	q, ok := m.quickFor(composerGen)
+	return ok && q.Restore(submission)
+}
+
+// A bar that moved on keeps its own prompt, so the refused images leave.
 func (m *Model) returnQuickSendImages(request uiquicksend.SendRequest) tea.Cmd {
-	if q, ok := m.quickFor(request.ComposerGen); ok {
+	if m.restoreRefused(request.ComposerGen, request.Submission) {
+		q := m.quick()
 		q.Attachments = append(request.Images, q.Attachments...)
 		return nil
 	}
@@ -352,11 +345,9 @@ func (m *Model) quickFor(composerGen int) (*uiquick.Surface, bool) {
 	return q, q != nil && q.Gen == composerGen
 }
 
-// quickHolds is whether the bar composerGen came from still shows draft
-// and no image: a send or spawn of exactly that prompt may clear it.
-func (m *Model) quickHolds(composerGen int, draft string) bool {
+func (m *Model) quickUntouched(composerGen int, submitted uint64) bool {
 	q, ok := m.quickFor(composerGen)
-	return ok && q.Input.Value() == draft && len(q.Attachments) == 0
+	return ok && q.Untouched(submitted)
 }
 
 // closeQuick takes the bar off the stack wherever it sits: a send can

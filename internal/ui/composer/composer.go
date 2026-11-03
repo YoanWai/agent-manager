@@ -41,6 +41,8 @@ type Composer struct {
 	// a form and opening another is fast enough to beat one home; without
 	// an identity, that read would type into a box its user never pasted in.
 	Gen int
+	// submitted is the ID of the last Submission the box accepted.
+	submitted uint64
 }
 
 // Attachment is one pasted image: the id its token carries, and the temp

@@ -76,8 +76,6 @@ func QuickRequest(request spawn.Request, prompt *composer.Composer, defaults Def
 		Environment:  env,
 		Pane:         defaults.Pane,
 		ComposerGen:  prompt.Gen,
-		Images:       prompt.Attachments,
-		Draft:        prompt.Input.Value(),
 		RawDir:       defaults.GroupDir,
 		DirFallbacks: defaults.Fallbacks,
 		WantWorktree: request.Worktree,

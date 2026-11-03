@@ -12,6 +12,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/ui/composer"
 	uieffects "github.com/YoanWai/agent-manager/internal/ui/effects"
 	uisession "github.com/YoanWai/agent-manager/internal/ui/session"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -30,7 +31,7 @@ const (
 type SendRequest struct {
 	Session        store.Session
 	ComposerGen    int
-	Draft          string
+	Submission     spawn.Submission
 	Text           string
 	CloseAfterSend bool
 	Images         []composer.Attachment
@@ -42,6 +43,7 @@ func (r SendRequest) EffectCopy() uieffects.Request {
 	r.Session.PendingInputs = slices.Clone(r.Session.PendingInputs)
 	r.Session.RelaunchSnapshot = maps.Clone(r.Session.RelaunchSnapshot)
 	r.Images = slices.Clone(r.Images)
+	r.Submission.Saved = slices.Clone(r.Submission.Saved)
 	return r
 }
 
@@ -106,21 +108,22 @@ func SameTarget(current, captured store.Session) bool {
 		current.TmuxSocket == captured.TmuxSocket
 }
 
-// Root is what a finished send asks of the manager: the bar a confirmed
-// send clears and the status bar it reports on.
+// Root is what a finished send asks of the manager: the bar a delivered
+// send may close, the bar a refused one goes back to, and the status bar it
+// reports on.
 type Root interface {
-	ClearAccepted(composerGen int, draft string, closeAfterSend bool)
-	RestoreImages(request SendRequest) tea.Cmd
+	SettleAccepted(request SendRequest)
+	ReturnRefused(request SendRequest) tea.Cmd
 	ReportErr(text string)
 	ClearErr()
 	MarkSent(session store.Session, text string)
 }
 
-// Apply applies a finished send: a refused one gives its images back, a
-// confirmed one clears the bar it came from and marks the row.
+// Apply applies a finished send: a refused one gives its prompt back, a
+// delivered one settles the bar it came from and marks the row.
 func Apply(root Root, request SendRequest, result SendResult, err error) tea.Cmd {
 	if err != nil || result.Outcome == SendRefused {
-		cleanup := root.RestoreImages(request)
+		cleanup := root.ReturnRefused(request)
 		if err != nil {
 			root.ReportErr(err.Error())
 		} else {
@@ -129,7 +132,7 @@ func Apply(root Root, request SendRequest, result SendResult, err error) tea.Cmd
 		return cleanup
 	}
 
-	root.ClearAccepted(request.ComposerGen, request.Draft, request.CloseAfterSend)
+	root.SettleAccepted(request)
 	// Once paste may have started, the pane may still need image paths from
 	// the accepted text. They remain owned by that delivery, never by a retry.
 	if result.Outcome == SendUncertain {
