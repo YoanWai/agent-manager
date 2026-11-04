@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -125,9 +126,24 @@ func PaneTarget(id string) string {
 	return windowTarget(id) + ".0"
 }
 
-// tmux requires -L <socket> before the command word.
+// ConfigFile replaces the user's tmux.conf for every server this process
+// starts when set. Only tests set it: a plugin-loading config costs seconds
+// per server, and the suite starts hundreds. psmux is left on its own config.
+var ConfigFile string
+
+// SocketArgs prefixes a to address the named server, the way every Driver
+// call does; tests that run the binary themselves build their commands
+// with it. tmux requires -L <socket> before the command word.
+func SocketArgs(socket string, a ...string) []string {
+	args := []string{"-L", socket}
+	if ConfigFile != "" && runtime.GOOS != "windows" {
+		args = append(args, "-f", ConfigFile)
+	}
+	return append(args, a...)
+}
+
 func (d *Driver) args(a ...string) []string {
-	return append([]string{"-L", d.socket}, a...)
+	return SocketArgs(d.socket, a...)
 }
 
 // command builds one invocation of the multiplexer on this driver's socket.

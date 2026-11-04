@@ -24,6 +24,11 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
+
 func prepareMainProcess() bool {
 	if os.Getenv("AGENT_MANAGER_MAIN_TEST") != "1" {
 		return false
