@@ -206,11 +206,11 @@ func preparedView(m *Model) string {
 func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
 	m := &Model{
 		layout:  layoutState{width: 120},
-		release: uirelease.State{Latest: "v0.9.0"},
+		release: uirelease.State{Version: "0.8.1", Latest: "v0.9.0"},
 	}
 	header := ansi.Strip(m.viewHeaderRows()[0])
-	if !strings.Contains(header, "v0.9.0") || !strings.Contains(header, "available") {
-		t.Errorf("header missing update badge: %q", header)
+	if !strings.Contains(header, " v0.8.1  ↑ v0.9.0 available") {
+		t.Errorf("header missing running version and update badge: %q", header)
 	}
 	if strings.Index(header, "available") > strings.Index(header, "agents") {
 		t.Errorf("badge should sit left, by the wordmark: %q", header)
@@ -218,6 +218,10 @@ func TestHeaderShowsUpdateBadgeBesideWordmark(t *testing.T) {
 	m.release.Latest = ""
 	if header := ansi.Strip(m.viewHeaderRows()[0]); strings.Contains(header, "available") {
 		t.Errorf("header should have no badge when up to date: %q", header)
+	}
+	m.release.Version = "dev"
+	if header := ansi.Strip(m.viewHeaderRows()[0]); !strings.Contains(header, " dev") || strings.Contains(header, "vdev") {
+		t.Errorf("dev build should read dev: %q", header)
 	}
 }
 
