@@ -82,9 +82,11 @@ user_echo = "^❯ "
 # wording reads back as a typed draft
 input_placeholder = "^Press up to (?:edit queued messages|select a queued message)"
 rules = [
-  # selection dialogs (trust prompt, permission asks, questions) block on the user
-  { state = "waiting", pattern = "Enter to confirm" },
-  { state = "waiting", pattern = "(?m)^[ \\x{A0}]*❯[ \\x{A0}]+\\d+\\." },
+  # selection dialogs (trust prompt, permission asks, questions) block on the
+  # user; a live one draws at column 0 or 1, while dialog text quoted in a
+  # message or tool result sits indented under its bullet
+  { state = "waiting", pattern = "(?m)^[ \\x{A0}]?Enter to confirm" },
+  { state = "waiting", pattern = "(?m)^[ \\x{A0}]?❯[ \\x{A0}]+\\d+\\." },
   # a multi-select or multi-question dialog keeps this tab bar on every
   # screen, its Submit row and review screen included, which carry neither
   # a numbered selected option nor always a footer

@@ -779,6 +779,20 @@ func TestQuotedSignalsDoNotTrigger(t *testing.T) {
 		{"claude quoting menu text then real question", "claude",
 			"  We match \" ❯ 1.\" for dialogs. Should I apply it?\n" +
 				"✻ Crunched for 1m 5s\n────\n❯ \n────", Waiting},
+		// #981: a diff of the dialog rules quotes both under its tool result
+		{"claude quoting dialog rules in a running turn", "claude",
+			"● Update(internal/config/builtin.go)\n" +
+				"  ⎿  Added 5 lines, removed 3 lines\n" +
+				"      83  rules = [\n" +
+				"      85 -  { state = \"waiting\", pattern = \"Enter to confirm\" },\n" +
+				"      86 -  { state = \"waiting\", pattern = \"(?m)^[ \\\\x{A0}]*❯[ \\\\x{A0}]+\\\\d+\\\\.\" },\n\n" +
+				"✢ Hashing… (4m 31s · ↓ 16.6k tokens)\n\n" +
+				"────\n❯ \n────", Working},
+		{"claude quoting an indented option in a running turn", "claude",
+			"⏺ The dialog draws:\n" +
+				"    ❯ 1. Yes\n      2. No\n\n" +
+				"✢ Hashing… (12s · ↓ 1.2k tokens)\n\n" +
+				"────\n❯ \n────", Working},
 		{"claude real spinner during turn still working", "claude",
 			"  old output\n✻ Crunched for 2m 2s\n  streaming new answer\n✳ Drizzling… (6s · thinking)\n────\n❯ ", Working},
 		{"codex marker-less turn quoting interrupt hint", "codex",
