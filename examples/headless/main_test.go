@@ -19,6 +19,11 @@ import (
 	"path/filepath"
 )
 
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
+
 type cancelWriter struct {
 	bytes.Buffer
 	cancel context.CancelFunc

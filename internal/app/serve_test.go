@@ -17,6 +17,11 @@ import (
 	"github.com/google/uuid"
 )
 
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
+
 type recordedStart struct {
 	calls   int
 	args    []string
