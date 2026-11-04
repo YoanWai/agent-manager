@@ -499,3 +499,73 @@ func TestActionIsCleanedAndBounded(t *testing.T) {
 		t.Errorf("action = %q, want %d x runes with no escape", got[0].Action, maxActionLen)
 	}
 }
+
+// A feed entry carries a URL the panel hands to the OS opener, so only an
+// https URL with a host is allowed to reach it: a http or javascript URL in
+// a remote feed must not open anything.
+func TestSafeURLAllowsOnlyHTTPS(t *testing.T) {
+	for _, raw := range []string{
+		"javascript:alert(1)",
+		"http://evil.example/x",
+		"file:///etc/passwd",
+		"https://",
+		"://missing-scheme",
+		"",
+	} {
+		if safeURL(raw) {
+			t.Errorf("safeURL(%q) = true, want false", raw)
+		}
+	}
+	for _, raw := range []string{
+		"https://github.com/YoanWai/agent-manager/issues/200",
+		"https://example.com",
+	} {
+		if !safeURL(raw) {
+			t.Errorf("safeURL(%q) = false, want true", raw)
+		}
+	}
+}
+
+// cleanText feeds terminal rows, so every control character is dropped,
+// DEL included: a raw DEL byte would erase a cell instead of printing.
+func TestCleanTextDropsEveryControlCharacter(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "DEL", in: "a\x7fb", want: "ab"},
+		{name: "NUL", in: "a\x00b", want: "ab"},
+		{name: "ANSI escape", in: "a\x1b[31mred", want: "ared"},
+		{name: "tab and newline", in: "a\tb\nc", want: "abc"},
+		{name: "printable kept", in: "keep me", want: "keep me"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cleanText(tc.in, 100); got != tc.want {
+				t.Fatalf("cleanText(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// A server that answers anything but 200 and not-modified has to surface as
+// an error. The body is a perfectly good feed, so only the status check can
+// reject it: without it the answer would be cached as if it were fresh.
+func TestFetchReportsANonOKAnswer(t *testing.T) {
+	for _, status := range []int{http.StatusInternalServerError, http.StatusNotFound, http.StatusForbidden} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				w.Write([]byte(`[{"id":"one","banner":"x","title":"x"}]`))
+			}))
+			t.Cleanup(server.Close)
+			old := feedURL
+			feedURL = server.URL
+			t.Cleanup(func() { feedURL = old })
+
+			if _, err := Fetch(t.Context(), t.TempDir(), "v0.14.2"); err == nil {
+				t.Fatalf("a %d answer carrying a valid feed body must still be an error", status)
+			}
+		})
+	}
+}
