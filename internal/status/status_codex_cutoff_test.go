@@ -151,3 +151,23 @@ func TestCodexRestingTurnWithCutTextIsNotWorking(t *testing.T) {
 		}
 	}
 }
+
+// A short reply that ends on an ellipsis right above the composer reads the
+// same as a reasoning header cut by a narrow pane, since the header's bold
+// styling is gone once the pane is stripped. The rule keeps reading it as
+// working; the poller's stuck grace settles a static pane within 15s. Codex
+// prints a "Worked for" row when a turn ends, so a finished turn normally
+// matches turn_end instead.
+func TestCodexShortReplyEndingInEllipsisReadsAsWorking(t *testing.T) {
+	engine := defaultEngine(t)
+	reply := "• Sure, starting with the retry loop…\n"
+	cases := map[string]string{
+		"bare reply":       reply + codexComposer,
+		"reply after turn": codexTurn + reply + codexComposer,
+	}
+	for name, pane := range cases {
+		if got, ok := engine.Match("codex", pane); !ok || got != Working {
+			t.Errorf("%s: Match = %q, %v; want working", name, got, ok)
+		}
+	}
+}
