@@ -35,7 +35,7 @@ Tell your agent what you want to review in Agent Manager. Your agent will set up
 | `[…]` / right click | The row's actions |
 | click the list / mouse back | Focused: back to the list |
 | `A` | Attach session full screen (Settings can swap it with `enter`) |
-| `.` | Mark a finished session idle without entering it |
+| `.` | Mark a finished or waiting session idle without entering it |
 | `ctrl+q` / `ctrl+\` | Inside a session: back to the manager when the terminal and tmux leave the key available. `ctrl+r`, `F3` and this pair move in the **keybindings** row of Settings, and so does every key of the list itself (see [Key bindings](configuration.md#key-bindings)) |
 | tmux prefix, then `d` | Inside a full-screen attach: back to the manager when the prefix reaches the inner tmux |
 | `F3` | Inside a session: open its directory in your editor |
@@ -444,7 +444,7 @@ Each session's tmux pane is polled (default every 2s) to derive a status:
 | Advanced | Compatible | Status | Meaning |
 |----------|------------|--------|---------|
 | `◐` | `*` | `working` | The agent is busy on a turn |
-| `◆` | `?` | `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question |
+| `◆` | `?` | `waiting` | Blocked on you: a dialog, a permission ask, or a plain-text question. `.` marks it idle until the screen changes |
 | `●` | `+` | `finished` | Turn ended — an alert that clears to `idle` once you enter the session, or on `.` |
 | `✕` | `x` | `errored` | The tool reported an error |
 | `○` | `.` | `idle` | Nothing running |
