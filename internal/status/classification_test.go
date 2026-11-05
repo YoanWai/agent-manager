@@ -470,3 +470,34 @@ func TestAntigravityPanes(t *testing.T) {
 		})
 	}
 }
+
+// 2026-11-03 real capture: a session editing these very rules shows the
+// rule text in a diff above the composer, indented under its tool result.
+// The unanchored rule read that diff as a live dialog, and a waiting pane
+// verdict overrides the hook's working, so the row sat on waiting.
+func TestClaudeQuotedDialogTextIsNotADialog(t *testing.T) {
+	engine := defaultEngine(t)
+	transcript := "● Update(internal/config/builtin.go)\n" +
+		"  ⎿  Added 5 lines, removed 3 lines\n" +
+		"      83  rules = [\n" +
+		"      84 -  # selection dialogs (trust prompt, permission asks, questions) block on the user\n" +
+		"      85 -  { state = \"waiting\", pattern = \"Enter to confirm\" },\n" +
+		"      86 -  { state = \"waiting\", pattern = \"(?m)^[ \\\\x{A0}]*❯[ \\\\x{A0}]+\\\\d+\\\\.\" },\n" +
+		"      87 +  { state = \"waiting\", pattern = \"(?m)^ ?Enter to confirm\" },\n\n" +
+		"  Ran 1 shell command\n\n" +
+		"❯ the current session is marked as \"waiting\" as well which is false\n\n" +
+		"● That's a live stuck frame. Capturing this session's own pane now.\n\n"
+	composer := "────\n❯ \n────\n  <project> ❯ Opus 5.5 (high) • 104k (10%)\n  -- INSERT -- ⏵⏵ auto mode on (shift+tab to cycle)\n"
+	cases := []struct {
+		name, pane, want string
+	}{
+		{"mid-turn", transcript + "✢ Hashing… (4m 31s · ↓ 16.6k tokens)\n\n" + composer, Working},
+		{"short turn without a summary", transcript + composer, Idle},
+		{"quoted menu option", "● A dialog draws:\n\n  ❯ 1. Yes\n    2. No\n\n" + composer, Idle},
+	}
+	for _, tc := range cases {
+		if got, _ := engine.Match("claude", tc.pane); got != tc.want {
+			t.Errorf("%s: Match() = %q want %q", tc.name, got, tc.want)
+		}
+	}
+}
