@@ -186,6 +186,10 @@ Two clauses are worth knowing as a contributor. Section 3 licenses the patent cl
 
 Collaborators may merge a pull request once @YoanWai has approved it. GitHub enforces this with a required code-owner review. [CODEOWNERS](CODEOWNERS) is `* @YoanWai`. One approving code-owner review is required. A push after approval needs a fresh approval. The required checks must pass, and conversations must be resolved. Expect a first response within a few days.
 
+## Governance
+
+Roles, how decisions are made, and how the roadmap is edited are in [GOVERNANCE.md](../GOVERNANCE.md). The current project lead, maintainers, and triagers are listed in [MAINTAINERS.md](../MAINTAINERS.md).
+
 ## Code of Conduct
 
 Participation is covered by the [Code of Conduct](CODE_OF_CONDUCT.md).
