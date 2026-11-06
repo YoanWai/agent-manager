@@ -51,8 +51,27 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 	case focusruntime.FrameMsg:
 		return routed(m, m.focus.pane.ApplyFrame(uifocus.FrameMessage(msg), focusFrameHost{m}))
+
+	case uifocus.ExtendedKeyMsg:
+		return routed(m, m.forwardExtendedKey(msg))
 	}
 	return nil, nil, false
+}
+
+// ReadExtendedKey is the program filter that lets a modified key such as
+// Shift+Enter reach Update, where Bubble Tea would hand over an unknown CSI
+// sequence.
+func ReadExtendedKey(msg tea.Msg) tea.Msg { return uifocus.ExtendedKey(msg) }
+
+// forwardExtendedKey sends a modified key to the focused pane while focus
+// holds the keyboard. Anywhere else it is dropped, as Bubble Tea drops it.
+func (m *Model) forwardExtendedKey(msg uifocus.ExtendedKeyMsg) tea.Cmd {
+	top, _ := m.top()
+	if _, focusOnTop := top.(*uifocus.Surface); !focusOnTop || m.effects.Quitting {
+		return nil
+	}
+	m.takeForeground()
+	return m.focus.pane.ExtendedKeyPress(focusHost{m}, msg)
 }
 
 // focusSelected enters focus mode: keys go to the selected session's pane

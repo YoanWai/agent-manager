@@ -319,6 +319,35 @@ func TestCreateDeliversShiftEnterToAnAgentThatAsksForExtendedKeys(t *testing.T) 
 	}
 }
 
+// Focus mode replays a modified key by its tmux name, so each name it sends
+// has to reach an agent that asked for extended keys as the CSI u it came in as.
+func TestModifiedKeyNamesReachAnAgentThatAsksForExtendedKeys(t *testing.T) {
+	driver := requireTmux(t)
+	requireTmuxAtLeast(t, 3, 2)
+	for name, want := range map[string]string{
+		"S-Enter":     "\x1b[13;2u",
+		"C-M-S-Enter": "\x1b[13;8u",
+		"S-Tab":       "\x1b[9;2u",
+		"C-BSpace":    "\x1b[127;5u",
+		"S-Escape":    "\x1b[27;2u",
+		"M-Space":     "\x1b[32;3u",
+	} {
+		id := "xname" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+		received := filepath.Join(t.TempDir(), "keys")
+		if err := driver.Create(id, "/tmp", `printf '\033[>4;2m'; exec head -n 1 > `+ShellQuote(received), nil, 80, 24); err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		t.Cleanup(func() { driver.Kill(id) })
+		waitForForegroundCommand(t, id, "head")
+		if out, err := tmuxCmd("send-keys", "-t", "am_"+id, name, "Enter").CombinedOutput(); err != nil {
+			t.Fatalf("send-keys %s: %v: %s", name, err, out)
+		}
+		if got := strings.TrimSuffix(waitForFile(t, driver, id, received), "\n"); got != want {
+			t.Errorf("%s reached the agent as %q, want %q", name, got, want)
+		}
+	}
+}
+
 // A session outside the am_ namespace is one the user started on this
 // server themselves, not a managed session the CLI may act as.
 func TestSessionOfPaneIgnoresAnUnmanagedSession(t *testing.T) {

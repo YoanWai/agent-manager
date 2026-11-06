@@ -364,7 +364,7 @@ func run() (resultErr error) {
 			case tea.QuitMsg, tea.InterruptMsg:
 				ui.ResetPointer()
 			}
-			return msg
+			return ui.ReadExtendedKey(msg)
 		}),
 	)
 	if err := ui.DisableAlternateScroll(); err != nil {

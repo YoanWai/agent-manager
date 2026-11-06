@@ -318,6 +318,52 @@ func TestFocusedCtrlCReachesTheAgent(t *testing.T) {
 	}
 }
 
+func TestFocusedShiftEnterReachesTheAgentAsANewline(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	createSession(t, m, "focus-newline", t.TempDir(), "")
+	m.selectSessionRow(t, "focus-newline")
+
+	updated, _ := m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) {
+		t.Fatal("Shift+Enter on the list reached a pane")
+	}
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	*m = *updated.(*Model)
+	m.drainEffects(t)
+	if !m.focused() {
+		t.Fatalf("after enter, screen = %v, err = %q", m.screenID(), m.errBar.text)
+	}
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	want := "send-keys -t " + tmux.PaneTarget(railSelectedSession(m).ID) + " S-Enter"
+	request, ok := focusruntime.InputRequest{}, false
+	if job := m.effects.Input.Active; job != nil {
+		request, ok = job.Request.(focusruntime.InputRequest)
+	}
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want {
+		t.Fatalf("Shift+Enter command = %q, want %q", request.Value.Command, want)
+	}
+	if request.Value.Submit {
+		t.Fatal("Shift+Enter counted as a submit")
+	}
+	m.drainEffects(t)
+
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlBackslash})
+	m.drainEffects(t)
+	*m = *updated.(*Model)
+	if !m.onList() {
+		t.Fatalf("ctrl+\\ left screen = %v", m.screenID())
+	}
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) {
+		t.Fatal("Shift+Enter after leaving focus reached the pane")
+	}
+}
+
 func TestFocusModeForwardsArrowKeys(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)

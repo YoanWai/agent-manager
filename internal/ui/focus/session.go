@@ -123,6 +123,17 @@ func (s *Model) KeyPress(h KeyHost, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return nil, tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Raw: raw, Name: name, Submit: result.Submit, Echo: true}))
 }
 
+// ExtendedKeyPress forwards a modified key to the pane. It never submits:
+// Shift+Enter is the agent's newline.
+func (s *Model) ExtendedKeyPress(h KeyHost, msg ExtendedKeyMsg) tea.Cmd {
+	id, ok := h.Session()
+	if !ok {
+		return h.Leave()
+	}
+	resume := h.Region(s.resumeLive(id, h.PaneRows()))
+	return tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Name: msg.Name, Echo: true}))
+}
+
 func (s *Model) MouseUnder(h MouseHost, msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	id, ok := h.Session()
 	if !ok {
