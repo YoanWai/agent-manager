@@ -320,6 +320,17 @@ func sessionFromAncestry() (id string, seen bool) {
 	return id, seen
 }
 
+// programFilter resets the pointer while the screen that showed the hand is
+// still up, since kitty keeps one per screen and an interrupt skips Update,
+// and reads the modified keys Bubble Tea leaves undecoded.
+func programFilter(_ tea.Model, msg tea.Msg) tea.Msg {
+	switch msg.(type) {
+	case tea.QuitMsg, tea.InterruptMsg:
+		ui.ResetPointer()
+	}
+	return ui.ReadExtendedKey(msg)
+}
+
 func run() (resultErr error) {
 	dir, err := config.Dir()
 	if err != nil {
@@ -357,15 +368,7 @@ func run() (resultErr error) {
 		tea.WithFPS(120),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(model.CursorOutput(os.Stdout)),
-		// The pointer resets while the screen that showed the hand is still
-		// up, since kitty keeps one per screen and an interrupt skips Update.
-		tea.WithFilter(func(_ tea.Model, msg tea.Msg) tea.Msg {
-			switch msg.(type) {
-			case tea.QuitMsg, tea.InterruptMsg:
-				ui.ResetPointer()
-			}
-			return msg
-		}),
+		tea.WithFilter(programFilter),
 	)
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err

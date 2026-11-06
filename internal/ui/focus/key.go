@@ -59,16 +59,22 @@ func (m *Model) Key(msg tea.KeyMsg, ctx KeyContext) KeyResult {
 		return m.leaveResult()
 	}
 
-	m.cursorOn = true
-	result := KeyResult{
+	return KeyResult{
 		Action: ForwardKey,
 		Submit: msg.Type == tea.KeyEnter && !msg.Alt,
+		Region: m.resumeLive(ctx.SessionID, ctx.Rows),
 	}
-	if m.scroll != 0 {
-		m.scroll = 0
-		result.Region = m.requestRegion(ctx.SessionID, ctx.Rows)
+}
+
+// resumeLive shows the caret and brings a scrolled pane back to its live
+// screen, as every key the agent reads does.
+func (m *Model) resumeLive(sessionID string, rows int) *RegionRequest {
+	m.cursorOn = true
+	if m.scroll == 0 {
+		return nil
 	}
-	return result
+	m.scroll = 0
+	return m.requestRegion(sessionID, rows)
 }
 
 func (m *Model) leaveResult() KeyResult {

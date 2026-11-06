@@ -8,6 +8,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,6 +23,8 @@ import (
 	"github.com/YoanWai/agent-manager/internal/hooks"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/tmux"
+	uifocus "github.com/YoanWai/agent-manager/internal/ui/focus"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestMain(m *testing.M) {
@@ -361,6 +364,74 @@ func TestStartupClaimsMouse(t *testing.T) {
 	})
 	if !found {
 		t.Fatal("the program starts without mouse reporting")
+	}
+}
+
+type extendedKeyRecorder struct {
+	got []uifocus.ExtendedKeyMsg
+}
+
+func (r *extendedKeyRecorder) Init() tea.Cmd { return nil }
+
+func (r *extendedKeyRecorder) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(uifocus.ExtendedKeyMsg); ok {
+		r.got = append(r.got, key)
+		return r, tea.Quit
+	}
+	return r, nil
+}
+
+func (r *extendedKeyRecorder) View() string { return "" }
+
+// Bubble Tea hands Shift+Enter over as a sequence it cannot read, so the
+// program's filter is what turns it into a key focus mode forwards.
+func TestStartupFilterReadsShiftEnter(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse main.go: %v", err)
+	}
+	wired := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if selector, ok := call.Fun.(*ast.SelectorExpr); !ok || selector.Sel.Name != "NewProgram" {
+			return true
+		}
+		for _, arg := range call.Args {
+			option, ok := arg.(*ast.CallExpr)
+			if !ok || len(option.Args) != 1 {
+				continue
+			}
+			name, ok := option.Fun.(*ast.SelectorExpr)
+			filter, isIdent := option.Args[0].(*ast.Ident)
+			if ok && name.Sel.Name == "WithFilter" && isIdent && filter.Name == "programFilter" {
+				wired = true
+			}
+		}
+		return true
+	})
+	if !wired {
+		t.Fatal("the program starts without programFilter")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	recorder := &extendedKeyRecorder{}
+	program := tea.NewProgram(recorder,
+		tea.WithContext(ctx),
+		tea.WithInput(strings.NewReader("\x1b[13;2u")),
+		tea.WithOutput(io.Discard),
+		tea.WithoutRenderer(),
+		tea.WithoutSignalHandler(),
+		tea.WithFilter(programFilter),
+	)
+	if _, err := program.Run(); err != nil {
+		t.Fatalf("Run: %v, got %v", err, recorder.got)
+	}
+	if len(recorder.got) != 1 || recorder.got[0].Name != "S-Enter" {
+		t.Fatalf("program read %v, want S-Enter", recorder.got)
 	}
 }
 

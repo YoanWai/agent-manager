@@ -2391,7 +2391,7 @@ func TestGuardedMouseCommandKeepsControlRepliesAligned(t *testing.T) {
 	expectAligned := func(state string) {
 		t.Helper()
 		command, _ := tmux.GuardedMouseReport(tmux.PaneTarget(sessID), "\x1b[<64;7;3M")
-		if err := control.SendBlocks(command, tmux.GuardedMouseReplies); err != nil {
+		if err := control.SendBlocks(command, tmux.GuardedReplies); err != nil {
 			t.Fatalf("guarded send while %s: %v", state, err)
 		}
 		for _, marker := range []string{"first", "second"} {

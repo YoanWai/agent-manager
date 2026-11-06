@@ -26,18 +26,29 @@ func hexBytes(s string) string {
 }
 
 // GuardedMouseReport sends a report only while the pane still tracks the
-// mouse. The branch for a pane that has stopped tracking runs a command with
-// no effect, so tmux answers the guard with GuardedMouseReplies blocks
-// whichever way it goes. command rides the control pipe; args are the same
-// command for a forked tmux, whose nested send has to stay one argument.
+// mouse. command rides the control pipe; args are the same command for a
+// forked tmux, whose nested send has to stay one argument.
 func GuardedMouseReport(target, report string) (command string, args []string) {
-	const condition = "#{mouse_any_flag}"
+	return guarded(target, "#{mouse_any_flag}", SendKeysHex(target, []byte(report)))
+}
+
+// GuardedExtendedKey presses a modified key only while the pane has asked for
+// extended keys. Any other pane would get the bare key or its name typed out,
+// such as Enter for S-Enter, and tmux before 3.5 has no pane_key_mode, so the
+// key is dropped there.
+func GuardedExtendedKey(target, name string) (command string, args []string) {
+	return guarded(target, "#{m:Ext *,#{pane_key_mode}}", SendKeyName(target, name))
+}
+
+// guarded runs send only while condition holds on target. The branch for a
+// false condition runs a command with no effect, so tmux answers the guard
+// with GuardedReplies blocks whichever way it goes.
+func guarded(target, condition, send string) (command string, args []string) {
 	const drop = "display-message -p"
-	send := SendKeysHex(target, []byte(report))
 	command = "if-shell -F -t " + target + " '" + condition + "' '" + send + "' '" + drop + "'"
 	return command, []string{"if-shell", "-F", "-t", target, condition, send, drop}
 }
 
-// GuardedMouseReplies is the reply blocks a guarded report costs on the
-// control pipe: one for if-shell, one for the branch it ran.
-const GuardedMouseReplies = 2
+// GuardedReplies is the reply blocks a guarded send costs on the control
+// pipe: one for if-shell, one for the branch it ran.
+const GuardedReplies = 2

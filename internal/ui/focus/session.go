@@ -73,6 +73,8 @@ type Write struct {
 	Text    string
 	Submit  bool
 	Echo    bool
+	// ExtendedOnly drops a key name unless the pane asked for extended keys.
+	ExtendedOnly bool
 }
 
 // Key is one key press: the pane's, or one of the manager's. The host
@@ -121,6 +123,25 @@ func (s *Model) KeyPress(h KeyHost, msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return nil, resume
 	}
 	return nil, tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Raw: raw, Name: name, Submit: result.Submit, Echo: true}))
+}
+
+// ExtendedKeyPress forwards a modified key to the pane. It never submits:
+// Shift+Enter is the agent's newline. A key a manager binding takes runs the
+// binding instead, as it does when the terminal sends its legacy form.
+func (s *Model) ExtendedKeyPress(h KeyHost, msg ExtendedKeyMsg) tea.Cmd {
+	id, ok := h.Session()
+	if !ok {
+		return h.Leave()
+	}
+	if keyType, ok := bindableExtendedKeys[msg.Name]; ok {
+		key := tea.KeyMsg{Type: keyType}
+		if keys := h.Bindings(key.String()); keys.Saved || keys.Detach || keys.Editor || keys.Review {
+			_, cmd := s.KeyPress(h, key)
+			return cmd
+		}
+	}
+	resume := h.Region(s.resumeLive(id, h.PaneRows()))
+	return tea.Batch(resume, h.Queued(id, Write{Kind: WriteKeys, Name: msg.Name, Echo: true, ExtendedOnly: !reachesLegacyPane(msg.Name)}))
 }
 
 func (s *Model) MouseUnder(h MouseHost, msg tea.MouseMsg) (tea.Model, tea.Cmd) {

@@ -124,21 +124,22 @@ func (w Writer) send(current store.Session, request Request) error {
 		w.echoed(current.ID, request, err)
 		return err
 	}
+	// Args is set only on a guarded send, which tmux answers with one block
+	// for if-shell and one for whichever branch it ran.
+	guarded := len(request.Args) > 0
 	blocks := 1
-	if request.Kind == Mouse {
-		// The guarded report answers with one block for if-shell and one for
-		// whichever branch it ran.
-		blocks = tmux.GuardedMouseReplies
+	if guarded {
+		blocks = tmux.GuardedReplies
 	}
 	available, err := w.forward(request, blocks)
 	if available && err != nil {
 		err = fmt.Errorf("%w: %w", ErrUnreplayed, err)
 	}
 	if !available {
-		if request.Kind == Keys {
-			err = w.Driver.SendRaw(request.Command)
-		} else {
+		if guarded {
 			err = w.Driver.SendCommand(request.Args...)
+		} else {
+			err = w.Driver.SendRaw(request.Command)
 		}
 	}
 	w.echoed(current.ID, request, err)
