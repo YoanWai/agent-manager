@@ -653,6 +653,7 @@ chrome_line = "^─{8,}$|^\\S[^·\\n]* · [^·\\n]+ · \\S+ \\d+%|^▸ Credits: 
 rules = [
   { state = "waiting", pattern = "(?m)^ Trust this workspace\\?[ \\t]*\\n(?:[^\\n]*\\n){1,24}? esc to exit · ↑↓ to navigate · ↵ to select[ \\t]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
   { state = "waiting", pattern = "(?m)^ [^\\n]*\\S requires approval[ \\t]*\\n(?:[^\\n]*\\n){1,16}? esc to close · ↑↓ to navigate · ↵ to select[^\\n]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
+  { state = "waiting", pattern = "(?m)^ /sessions[ \\t]*\\n(?:[^\\n]*\\n)*? ↑↓ to navigate · ↵ to select · ctrl\\+p to preview · \\+ to view all controls[ \\t]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
   { state = "working", pattern = "(?m)^›[ \\t]+Kiro is working · [^\\n]*(?:\\n(?:[^›\\n][^\\n]*)?)*\\z" },
 ]
 `

@@ -29,6 +29,8 @@ func TestKiroPanes(t *testing.T) {
 		{"working", Working},
 		{"working-thinking", Working},
 		{"approval", Waiting},
+		{"picker", Waiting},
+		{"resume-picker", Waiting},
 		{"finished", Idle},
 		{"positional-done", Idle},
 		{"resumed", Idle},
@@ -43,7 +45,7 @@ func TestKiroPanes(t *testing.T) {
 
 func TestKiroDialogsHoldTyping(t *testing.T) {
 	engine := defaultEngine(t)
-	for frame, want := range map[string]string{"startup": Waiting, "approval": Waiting, "working": Working, "idle": "", "finished": ""} {
+	for frame, want := range map[string]string{"startup": Waiting, "approval": Waiting, "picker": Waiting, "resume-picker": Waiting, "working": Working, "idle": "", "finished": ""} {
 		if got := engine.TypingHold("kiro", kiroFrame(t, frame)); got != want {
 			t.Fatalf("TypingHold(%s) = %q want %q", frame, got, want)
 		}
@@ -97,10 +99,31 @@ func TestKiroQuotedDialogsAndBusyRowStayIdle(t *testing.T) {
 		" Trust this workspace?\n ❯ Trust, continue\n esc to exit · ↑↓ to navigate · ↵ to select",
 		" Run ls requires approval\n ❯ Allow once\n esc to close · ↑↓ to navigate · ↵ to select · Tab to edit",
 		"›  Kiro is working · 3s · Type to steer · Ctrl+S to queue",
+		" ↑↓ to navigate · ↵ to select · ctrl+p to preview · + to view all controls",
 	} {
 		pane := strings.Replace(finished, "• README.md\n", quote+"\n", 1)
 		if got, _ := engine.Match("kiro", pane); got != Idle {
 			t.Fatalf("quote %q = %q want idle", quote, got)
 		}
+	}
+}
+
+func TestKiroQuotedPickersStayFinished(t *testing.T) {
+	engine := defaultEngine(t)
+	for _, frame := range []string{"picker", "resume-picker"} {
+		t.Run(frame, func(t *testing.T) {
+			quote := "• Here is a quoted picker:\n" + kiroFrame(t, frame)
+			pane := strings.Replace(kiroFrame(t, "finished"), "• README.md\n", quote, 1)
+			if got, _ := engine.Match("kiro", pane); got != Idle {
+				t.Fatalf("quoted picker = %q want idle", got)
+			}
+			if got := engine.TypingHold("kiro", pane); got != "" {
+				t.Fatalf("quoted picker typing hold = %q want none", got)
+			}
+			region, ok := engine.ActivityRegion("kiro", pane)
+			if !ok || engine.TurnEndedState("kiro", region) != Finished {
+				t.Fatal("quoted picker did not settle finished")
+			}
+		})
 	}
 }
