@@ -338,18 +338,47 @@ func TestFocusedShiftEnterReachesTheAgentAsANewline(t *testing.T) {
 	}
 	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
 	*m = *updated.(*Model)
-	want := "send-keys -t " + tmux.PaneTarget(railSelectedSession(m).ID) + " S-Enter"
+	want, _ := tmux.GuardedExtendedKey(tmux.PaneTarget(railSelectedSession(m).ID), "S-Enter")
 	request, ok := focusruntime.InputRequest{}, false
 	if job := m.effects.Input.Active; job != nil {
 		request, ok = job.Request.(focusruntime.InputRequest)
 	}
-	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want {
-		t.Fatalf("Shift+Enter command = %q, want %q", request.Value.Command, want)
+	if !ok || request.Value.Kind != focusruntime.Keys || request.Value.Command != want || len(request.Value.Args) == 0 {
+		t.Fatalf("Shift+Enter command = %q, args %q, want %q", request.Value.Command, request.Value.Args, want)
 	}
 	if request.Value.Submit {
 		t.Fatal("Shift+Enter counted as a submit")
 	}
 	m.drainEffects(t)
+
+	focusOnTop := func() bool {
+		top, _ := m.top()
+		_, ok := top.(*uifocus.Surface)
+		return ok
+	}
+	m.openFocusSaved()
+	if focusOnTop() {
+		t.Fatal("saved prompts did not open over focus")
+	}
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) {
+		t.Fatal("Shift+Enter under a card reached the pane")
+	}
+	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	*m = *updated.(*Model)
+	if !focusOnTop() {
+		t.Fatalf("esc left the card open, screen = %v", m.screenID())
+	}
+
+	m.effects.Quitting = true
+	foreground := m.gens.foreground
+	updated, _ = m.Update(uifocus.ExtendedKeyMsg{Name: "S-Enter"})
+	*m = *updated.(*Model)
+	if focusInputQueued(m) || m.gens.foreground != foreground {
+		t.Fatal("Shift+Enter while quitting was taken as input")
+	}
+	m.effects.Quitting = false
 
 	updated, _ = m.handleKey(tea.KeyMsg{Type: tea.KeyCtrlBackslash})
 	m.drainEffects(t)

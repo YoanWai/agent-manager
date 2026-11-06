@@ -108,3 +108,31 @@ func TestExtendedKeyPassesOtherMessagesThrough(t *testing.T) {
 		t.Fatalf("ExtendedKey(%#v) = %#v", size, got)
 	}
 }
+
+// Measured on tmux 3.1c, 3.2a, 3.3a and 3.5a: a pane that never asked for
+// extended keys gets Alt alone as an ESC prefix on the bare key, and any other
+// modified key as the bare key, its name typed out, or nothing.
+func TestReachesLegacyPane(t *testing.T) {
+	for name, want := range map[string]bool{
+		"M-Enter":     true,
+		"M-Tab":       true,
+		"M-BSpace":    true,
+		"M-Escape":    true,
+		"M-Space":     true,
+		"S-Enter":     false,
+		"C-Enter":     false,
+		"C-S-Enter":   false,
+		"M-S-Enter":   false,
+		"C-M-Enter":   false,
+		"C-M-S-Enter": false,
+		"S-Tab":       false,
+		"C-BSpace":    false,
+		"C-Escape":    false,
+		"S-Space":     false,
+		"C-Space":     false,
+	} {
+		if got := reachesLegacyPane(name); got != want {
+			t.Errorf("reachesLegacyPane(%q) = %t, want %t", name, got, want)
+		}
+	}
+}

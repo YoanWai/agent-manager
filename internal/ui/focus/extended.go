@@ -28,6 +28,22 @@ const (
 	ctrlBit
 )
 
+// bindableExtendedKeys are the decoded keys a manager binding can name, as
+// Bubble Tea reads their legacy form.
+var bindableExtendedKeys = map[string]tea.KeyType{
+	"S-Tab":   tea.KeyShiftTab,
+	"C-Space": tea.KeyCtrlAt,
+}
+
+// reachesLegacyPane reports whether tmux delivers name intact to a pane that
+// never asked for extended keys. Alt alone arrives there as an ESC prefix on
+// the bare key. tmux 3.1 to 3.5 turn any other modified key into the bare key,
+// such as Enter for S-Enter, its name typed out, or nothing.
+func reachesLegacyPane(name string) bool {
+	key, alt := strings.CutPrefix(name, "M-")
+	return alt && !strings.Contains(key, "-")
+}
+
 const teaPackage = "github.com/charmbracelet/bubbletea"
 
 // ExtendedKey turns the unknown CSI sequence Bubble Tea hands the program into
