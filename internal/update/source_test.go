@@ -63,7 +63,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise install dir",
-			path:        "/home/user/.local/share/mise/installs/ubi-yoan-wai-agent-manager/0.19.0/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/ubi-yoan-wai-agent-manager/0.19.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:YoanWai/agent-manager",
 		},
@@ -75,7 +75,7 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label:       "mise install dir under the new repo",
-			path:        "/home/user/.local/share/mise/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
+			path:        "/Users/user/.local/share/mise/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
 		},
@@ -84,6 +84,24 @@ func TestDetectManager(t *testing.T) {
 			path:        "/data/tools/installs/ubi-wainmann-agent-manager/0.46.0/agent-manager",
 			wantName:    "mise",
 			wantCommand: "mise upgrade --bump ubi:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend install dir",
+			path:        "/Users/user/.local/share/mise/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend custom data dir",
+			path:        "/data/tools/installs/github-wainmann-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:wainmann/agent-manager",
+		},
+		{
+			label:       "mise github backend under the earlier repo",
+			path:        "/Users/user/.local/share/mise/installs/github-yoan-wai-agent-manager/0.47.1/agent-manager",
+			wantName:    "mise",
+			wantCommand: "mise upgrade --bump github:YoanWai/agent-manager",
 		},
 		{
 			label:       "pacman owned with yay",
@@ -116,15 +134,19 @@ func TestDetectManager(t *testing.T) {
 		},
 		{
 			label: "another ubi tool is direct",
-			path:  "/home/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
+			path:  "/Users/user/.local/share/mise/installs/ubi-other-user-agent-manager/1.0.0/agent-manager",
+		},
+		{
+			label: "another github backend tool is direct",
+			path:  "/Users/user/.local/share/mise/installs/github-other-user-agent-manager/1.0.0/agent-manager",
 		},
 		{
 			label: "install script dir is direct",
-			path:  "/home/user/.local/bin/agent-manager",
+			path:  "/Users/user/.local/bin/agent-manager",
 		},
 		{
 			label: "gopath is direct",
-			path:  "/home/user/go/bin/agent-manager",
+			path:  "/Users/user/go/bin/agent-manager",
 		},
 		{
 			label: "manual opt prefix is direct",

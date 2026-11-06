@@ -55,7 +55,7 @@ release:
     # macOS / Linux
     brew install agent-manager
     curl -fsSL -o install.sh https://github.com/wainmann/agent-manager/releases/latest/download/install.sh && sh install.sh
-    mise use -g ubi:wainmann/agent-manager
+    mise use -g github:wainmann/agent-manager
     go install github.com/YoanWai/agent-manager@latest
 
     # Arch Linux

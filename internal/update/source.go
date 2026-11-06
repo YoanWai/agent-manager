@@ -118,16 +118,19 @@ func homebrewTree(slashPath string) string {
 	return ""
 }
 
-// miseSlugs maps mise's install dir name to the ubi slug it was installed
-// as. mise keys an install by the slug it was first registered under, so
-// each dir upgrades through its own slug.
+// miseSlugs maps mise's install dir name to the slug it was installed as.
+// mise keys an install by the slug it was first registered under, so each
+// dir upgrades through its own slug. The docs install through the github
+// backend; the ubi dirs cover earlier installs.
 var miseSlugs = map[string]string{
-	"ubi-yoan-wai-agent-manager": "ubi:YoanWai/agent-manager",
-	"ubi-wainmann-agent-manager": "ubi:wainmann/agent-manager",
+	"github-wainmann-agent-manager": "github:wainmann/agent-manager",
+	"github-yoan-wai-agent-manager": "github:YoanWai/agent-manager",
+	"ubi-yoan-wai-agent-manager":    "ubi:YoanWai/agent-manager",
+	"ubi-wainmann-agent-manager":    "ubi:wainmann/agent-manager",
 }
 
 // miseManaged matches mise's install layout regardless of MISE_DATA_DIR,
-// .../installs/<dir>/<version>/agent-manager, and returns the ubi slug the
+// .../installs/<dir>/<version>/agent-manager, and returns the mise slug the
 // dir belongs to, or "" when the path is not a mise install.
 func miseManaged(slashPath string) string {
 	parts := strings.Split(slashPath, "/")
