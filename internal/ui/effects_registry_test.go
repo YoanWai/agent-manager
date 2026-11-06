@@ -42,9 +42,9 @@ var effectPairs = []effectPair{
 	{remoteRequest{}, remoteEffectResult{}},
 }
 
-// A choice save carries nothing back to the model, so only its error is
-// reported, by the default branch of handleEffectCompleted.
-var resultsAppliedByDefault = []string{"choiceSaveResult"}
+// handleEffectCompleted now applies choiceSaveResult, so no result is
+// applied by its default branch.
+var resultsAppliedByDefault = []string{}
 
 func TestEveryEffectRequestIsKnownToAllThreeRegistries(t *testing.T) {
 	declared := parseEffectDeclarations(t)

@@ -393,9 +393,7 @@ func (m *Model) viewForm() string {
 func (m *Model) rememberSpawnPick(tool string, worktree bool) {
 	m.ledger.lastSpawnTool = tool
 	m.ledger.lastSpawnWorktree = worktree
-	if m.settings.cache.value(uisettings.DefaultToolSetting) != tool {
-		m.saveChoiceSetting(uisettings.DefaultToolSetting, tool)
-	}
+	m.saveChoiceSetting(uisettings.DefaultToolSetting, tool)
 }
 
 func (m *Model) buildLaunch(toolName string, tool config.Tool, baseCommand, id, cwd string, launchedAt time.Time) (string, map[string]string, error) {

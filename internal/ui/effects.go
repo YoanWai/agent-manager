@@ -446,6 +446,8 @@ func (m *Model) handleEffectCompleted(msg effectCompletedMsg) (tea.Model, tea.Cm
 		command = m.applyConnectionEffect(job.request.(connectionRequest), result, msg.err)
 	case remoteEffectResult:
 		command = m.applyRemoteEffect(job.request.(remoteRequest), result, msg.err)
+	case choiceSaveResult:
+		m.applyChoiceSave(job.request.(choiceSaveRequest), result, msg.err)
 	default:
 		if msg.err != nil {
 			m.reportErr(msg.err.Error())

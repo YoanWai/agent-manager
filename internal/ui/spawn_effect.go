@@ -399,15 +399,38 @@ type choiceSaveRequest struct {
 
 func (choiceSaveRequest) effectRequest() {}
 
-type choiceSaveResult struct{}
+// choiceSaveResult carries the stored value back when the write failed, so
+// the completion can undo the optimistic cache entry.
+type choiceSaveResult struct {
+	stored string
+}
 
 func (choiceSaveResult) effectResult() {}
 
 func (s effectServices) runChoiceSave(request choiceSaveRequest) (effectResult, error) {
-	if err := s.store.SetSetting(request.key, request.value); err != nil {
+	_, err := s.store.SetSettingIfChanged(request.key, request.value)
+	if err == nil {
+		// A concurrent writer already holds this value; the cached one agrees.
+		return choiceSaveResult{}, nil
+	}
+	stored, readErr := s.store.Setting(request.key)
+	if readErr != nil {
 		return choiceSaveResult{}, fmt.Errorf("saving %s: %w", request.key, err)
 	}
-	return choiceSaveResult{}, nil
+	return choiceSaveResult{stored: stored}, fmt.Errorf("saving %s: %w", request.key, err)
+}
+
+// applyChoiceSave releases the pending fence a saveChoiceSetting held
+// against settings loads, and on a failed write reconciles the cache to the
+// stored value so the UI shows what a restart will read back.
+func (m *Model) applyChoiceSave(request choiceSaveRequest, result choiceSaveResult, err error) {
+	if m.settings.pending > 0 {
+		m.settings.pending--
+	}
+	if err != nil {
+		m.settings.cache.applyValues([]settingValue{{Key: request.key, Value: result.stored}})
+		m.reportErr(err.Error())
+	}
 }
 
 // directoryPreflight is the read-only filesystem/repository seam captured by

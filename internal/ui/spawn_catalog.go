@@ -126,7 +126,11 @@ func (m *Model) fitChoices() {
 
 func (m *Model) saveChoiceSetting(key, value string) {
 	m.settings.cache.applyValues([]settingValue{{Key: key, Value: value}})
-	m.enqueueEffect(choiceSaveRequest{key: key, value: value}, 0, false)
+	m.settings.pending++
+	// first lets the save ride a quit drain: a spawn completing while the
+	// manager exits still persists its pick. runChoiceSave skips unchanged
+	// values, so repeating the pick costs no write.
+	m.enqueueEffect(choiceSaveRequest{key: key, value: value}, 0, m.effects.quitting)
 }
 
 func (m *Model) choiceSettingKeys() []string {

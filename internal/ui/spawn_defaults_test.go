@@ -395,3 +395,32 @@ func TestLastSpawnToolBecomesSettingsDefault(t *testing.T) {
 		t.Fatalf("form tool = %q, want the default changed in settings after the spawn", got)
 	}
 }
+
+// A spawn accepted right before a quit completes during the drain and its
+// pick must still reach the store; a save enqueued then is the quit's
+// causal followup, not user work a drain refuses.
+func TestQuitDrainsTheSpawnedDefaultToolSave(t *testing.T) {
+	t.Parallel()
+	m := buildModel(t)
+	m.openForm()
+	pickFormTool(t, m, "ready-tool")
+	m.form.SetName("first")
+	m.form.SetDir(t.TempDir())
+	// The submit command runs the queued spawn, so the test leaves it
+	// unrun and the quit below drains a spawn in flight.
+	m.submitForm()
+	if m.effects.main.active == nil {
+		t.Fatal("the spawn is not on the lane")
+	}
+	m.requestQuit()
+	m.drainEffects(t)
+	if len(m.effects.main.pending) != 0 {
+		t.Fatal("quit accepted new user work")
+	}
+	if _, ok := m.nextEffectCmd()().(tea.QuitMsg); !ok {
+		t.Fatal("drained queue did not quit")
+	}
+	if tool, err := m.services.store.DefaultTool(); err != nil || tool != "ready-tool" {
+		t.Fatalf("stored default tool after quit = %q, %v; want the completed spawn, ready-tool", tool, err)
+	}
+}
