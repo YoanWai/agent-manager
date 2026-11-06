@@ -92,11 +92,21 @@ func focusedKeysRead(t *testing.T, mode paneKeyMode) string {
 	toolName := string(mode) + "-keys"
 	dir := t.TempDir()
 	keys := filepath.Join(dir, "keys")
-	m.services.cfg.Tools[toolName] = config.Tool{Command: "sh -c " + tmux.ShellQuote(request+"exec head -n 1 > "+tmux.ShellQuote(keys)), DefaultStatus: status.Idle}
+	m.services.cfg.Tools[toolName] = config.Tool{Command: `sh -c '` + request + `: > ready; exec head -n 1 > keys'`, DefaultStatus: status.Idle}
 	createSessionOn(t, m, toolName, toolName, dir)
 	m.selectSessionRow(t, toolName)
 	sessID := railSelectedSession(m).ID
-	waitForPaneChild(t, m, sessID, "head")
+	// A ready file, not waitForPaneChild: on Windows the pane's child stays
+	// sh while head runs beneath it.
+	ready := filepath.Join(dir, "ready")
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the pane never started its key reader")
+		}
+	}
 	if mode == extendedKeys && tmuxAtLeast(t, 3, 5) {
 		deadline := time.Now().Add(10 * time.Second)
 		var keyMode string
