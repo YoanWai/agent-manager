@@ -36,6 +36,7 @@ var packaged = map[string]string{
 	"frame":        "the frame adapter: card chrome, the header band, the legend painters, the IME cursor and the list frame",
 	"geometry":     "pane sizing, layout widths and the split ratio: the adapter, its effects and the resize surface",
 	"help":         "the Help adapter: the context and root reads the key map paints from",
+	"inbox":        "the inbox adapter: the card's opener, its log loads through sessioncmd and the reload on a queue change",
 	"launchhint":   "the launch fix adapter, its copy and the CLI install effect",
 	"notices":      "the notices adapter",
 	"onboarding":   "the first-run setup adapter, live preview and import effects",

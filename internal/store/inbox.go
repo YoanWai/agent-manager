@@ -18,6 +18,7 @@ type InboxMessage struct {
 	SessionID   string
 	SenderID    string
 	SenderName  string
+	Subject     string
 	Body        string
 	Fingerprint string
 	SentAt      time.Time
@@ -141,8 +142,8 @@ func (s *Store) Enqueue(msg InboxMessage, limits InboxLimits) (int64, error) {
 	dedupeFrom := encodeTime(msg.SentAt.Add(-limits.DedupeWindow))
 	pairFrom := encodeTime(msg.SentAt.Add(-limits.PairWindow))
 	res, err := s.db.Exec(`
-INSERT INTO session_inbox (session_id, sender_id, sender_name, body, fingerprint, sent_at)
-SELECT ?, ?, ?, ?, ?, ?
+INSERT INTO session_inbox (session_id, sender_id, sender_name, subject, body, fingerprint, sent_at)
+SELECT ?, ?, ?, ?, ?, ?, ?
 WHERE (SELECT COUNT(*) FROM session_inbox WHERE session_id = ? AND delivered_at = 0) < ?
   AND (SELECT COUNT(*) FROM session_inbox WHERE session_id = ? AND sender_id = ? AND sent_at >= ?) < ?
   AND NOT EXISTS (
@@ -154,7 +155,7 @@ WHERE (SELECT COUNT(*) FROM session_inbox WHERE session_id = ? AND delivered_at 
      WHERE sent_at >= ?
        AND ((session_id = ? AND sender_id = ?) OR (session_id = ? AND sender_id = ?))
   ) < ?)`,
-		msg.SessionID, msg.SenderID, msg.SenderName, msg.Body, msg.Fingerprint, sentAt,
+		msg.SessionID, msg.SenderID, msg.SenderName, msg.Subject, msg.Body, msg.Fingerprint, sentAt,
 		msg.SessionID, limits.QueueCap,
 		msg.SessionID, msg.SenderID, rateFrom, limits.RateCap,
 		msg.SessionID, msg.SenderID, msg.Fingerprint, dedupeFrom,

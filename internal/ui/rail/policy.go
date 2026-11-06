@@ -270,6 +270,8 @@ func (m *Model) action(action string, ctx KeyContext) Decision {
 		return m.intent(MoveToGroup)
 	case keybind.Messages:
 		return m.intent(OpenMessages)
+	case keybind.Inbox:
+		return m.intent(OpenInbox)
 	case keybind.Help:
 		return m.intent(OpenHelp)
 	case keybind.Review:

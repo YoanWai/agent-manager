@@ -336,7 +336,9 @@ func (m *Model) routeRefreshMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 		m.workspace.leadingManager = msg.leadingManager
 		m.workspace.panes = msg.panes
 		m.workspace.agents = msg.agents
+		previousQueue := m.workspace.queuedMessages
 		m.workspace.queuedMessages = msg.queuedMessages
+		m.followInbox(previousQueue)
 		if m.workspace.paneLines == nil {
 			m.workspace.paneLines = map[string]string{}
 		}

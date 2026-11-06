@@ -2113,7 +2113,8 @@ var mouseOpeners = map[string]func(t *testing.T, m *Model){
 	"dialogs.LaunchHintSurface": func(t *testing.T, m *Model) {
 		m.openLaunchHint(uiinstall.Fix{Text: "tool is missing", Command: "true", Binary: "tool"})
 	},
-	"help.Surface": func(t *testing.T, m *Model) { m.openHelp() },
+	"help.Surface":  func(t *testing.T, m *Model) { m.openHelp() },
+	"inbox.Surface": func(t *testing.T, m *Model) { m.Update(key("i")) },
 	"notices.Surface": func(t *testing.T, m *Model) {
 		m.release.Feed = []feed.Message{{ID: noticeTip, Title: "A tip"}}
 		m.Update(key("M"))

@@ -1,6 +1,9 @@
 package sessioncmd
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func assertFormatted(t *testing.T, got, want string) {
 	t.Helper()
@@ -62,6 +65,24 @@ func TestFormatSessionResults(t *testing.T) {
 	assertFormatted(t, FormatMessageState(MessageState{
 		MessageID: 8, SessionID: "def456", State: "held", Reason: "approval dialog",
 	}), "message 8 to session def456 is held: approval dialog")
+
+	now := time.Date(2026, 11, 6, 15, 0, 0, 0, time.Local)
+	today := now.Add(-time.Hour).Format(time.RFC3339)
+	yesterday := now.Add(-26 * time.Hour).Format(time.RFC3339)
+	held := MessageEntry{MessageID: 42, FromSessionID: "ab12cd", FromName: "reviewer", ToSessionID: "ef34gh", ToName: "worker",
+		SentAt: today, Subject: "review report", State: "held", Reason: "session ef34gh is archived", QueuePosition: 1}
+	delivered := MessageEntry{MessageID: 41, FromName: "laptop agent", ToSessionID: "ef34gh", ToName: "worker",
+		SentAt: yesterday, DeliveredAt: today, Subject: "hello", State: "delivered", Body: "hello there"}
+	assertFormatted(t, formatMessageList(nil, now), "no messages in the log")
+	assertFormatted(t, formatMessageList([]MessageEntry{delivered, held}, now),
+		`- 41 "laptop agent" (another machine) -> "worker" (ef34gh) `+now.Add(-26*time.Hour).Format("2006-01-02 15:04")+` delivered: hello`+"\n"+
+			`- 42 "reviewer" (ab12cd) -> "worker" (ef34gh) 14:00 held at position 1: review report`+"\n"+
+			`    session ef34gh is archived`)
+	assertFormatted(t, formatMessage(delivered, now),
+		`message 41 from "laptop agent" (another machine) to "worker" (ef34gh)`+"\n"+
+			"sent "+now.Add(-26*time.Hour).Format("2006-01-02 15:04")+", delivered 14:00\n"+
+			"state: delivered\n"+
+			"subject: hello\n\nhello there")
 
 	dead := session
 	dead.Status = "dead"

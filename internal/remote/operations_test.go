@@ -60,9 +60,13 @@ func TestOperationArgv(t *testing.T) {
 			return err
 		}, []string{"terminal", "read", "--styled", "--json", "--", "a1b2c3d4"}},
 		{"send", func(ctx context.Context, c *Client) error {
-			_, err := c.Send(ctx, ref, text, "laptop agent")
+			_, err := c.Send(ctx, ref, text, "laptop agent", "")
 			return err
 		}, []string{"send", "--from=laptop agent", "--json", "--", "a1b2c3d4", text}},
+		{"send with subject", func(ctx context.Context, c *Client) error {
+			_, err := c.Send(ctx, ref, text, "laptop agent", "review report")
+			return err
+		}, []string{"send", "--from=laptop agent", "--subject=review report", "--json", "--", "a1b2c3d4", text}},
 		{"type", func(ctx context.Context, c *Client) error {
 			_, err := c.Type(ctx, ref, text)
 			return err
@@ -162,7 +166,7 @@ func TestUnsafeIDsNeverReachSSH(t *testing.T) {
 	errs = append(errs, err)
 	_, err = c.ReadTerminal(ctx, bad)
 	errs = append(errs, err)
-	_, err = c.Send(ctx, bad, "hi", "me")
+	_, err = c.Send(ctx, bad, "hi", "me", "")
 	errs = append(errs, err)
 	_, err = c.Type(ctx, bad, "hi")
 	errs = append(errs, err)
@@ -206,7 +210,7 @@ func TestOperationsDecodeTheRemoteJSON(t *testing.T) {
 		t.Fatal("ReadSession accepted a row with an unsafe id")
 	}
 	c, _ = recorder(t, `{"message_id":7,"queue_position":2,"manager_awake":true}`)
-	if got, err := c.Send(ctx, ref, "hi", "me"); err != nil || got != (sessioncmd.SendResult{MessageID: 7, QueuePosition: 2, ManagerAwake: true}) {
+	if got, err := c.Send(ctx, ref, "hi", "me", ""); err != nil || got != (sessioncmd.SendResult{MessageID: 7, QueuePosition: 2, ManagerAwake: true}) {
 		t.Fatalf("Send = %+v, %v", got, err)
 	}
 	c, _ = recorder(t, `{"started":true,"pid":4242}`)

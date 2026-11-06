@@ -99,12 +99,18 @@ func (c *Client) ReadTerminal(ctx context.Context, ref Ref) (sessioncmd.Terminal
 
 // Send queues text for the agent at ref, from a sender with no session on
 // that host.
-func (c *Client) Send(ctx context.Context, ref Ref, text, from string) (sessioncmd.SendResult, error) {
+func (c *Client) Send(ctx context.Context, ref Ref, text, from, subject string) (sessioncmd.SendResult, error) {
 	var result sessioncmd.SendResult
 	if err := validRef(ref); err != nil {
 		return result, err
 	}
-	err := c.decode(ctx, ref.Host, callTimeout, &result, "send", "--from="+from, "--json", "--", ref.ID, text)
+	args := []string{"send", "--from=" + from}
+	// Without a subject the argv stays what a host on an older release takes.
+	if subject != "" {
+		args = append(args, "--subject="+subject)
+	}
+	args = append(args, "--json", "--", ref.ID, text)
+	err := c.decode(ctx, ref.Host, callTimeout, &result, args...)
 	return result, err
 }
 

@@ -55,6 +55,7 @@ prebuilt binary from the releases page.
 | `ctrl+r` | Opens a full-screen whole-file diff whose line comments go back to the agent as one review prompt. |
 | `v` | Revives a dead session on the conversation it held. |
 | `y` | Copies the selected session's newest reply to the system clipboard, without attaching. |
+| `i` | Opens the selected session's inbox: the messages waiting for it, then the latest to or from it. A click on its `✉` badge does the same. |
 
 ## Status colours
 
@@ -70,7 +71,8 @@ outside that list is a feature request, and the `CLIs` row in Settings ends with
 
 Sessions of MCP-capable CLIs carry agent-manager's own MCP server over stdio, so an agent can
 `create_session` to spawn a peer, `send_session` to message one, `wait_for_session` to block
-on one, `task` to claim shared work, and `reserve_files` to declare what it is editing.
+on one, `list_messages` and `read_message` to see who messaged whom and what still waits,
+`task` to claim shared work, and `reserve_files` to declare what it is editing.
 
 ## Reference
 

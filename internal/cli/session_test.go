@@ -354,6 +354,97 @@ func TestSendFromReachesTheLayerOnlyWhenGiven(t *testing.T) {
 	}
 }
 
+func TestSendSubjectReachesTheLayer(t *testing.T) {
+	plain := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, plain, []string{"beef1234", "ship it", "--subject", "release"}, "cafe0001"); err != nil {
+		t.Fatalf("send --subject: %v", err)
+	}
+	if plain.subject != "release" || plain.message != "ship it" {
+		t.Fatalf("send --subject reached the layer as subject=%q message=%q", plain.subject, plain.message)
+	}
+	routed := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, routed, []string{"--from=laptop-agent", "--subject=release", "--json", "--", "beef1234", "ship it"}, ""); err != nil {
+		t.Fatalf("send --from --subject: %v", err)
+	}
+	if routed.from == nil || routed.subject != "release" || routed.message != "ship it" {
+		t.Fatalf("send --from --subject reached the layer as from=%v subject=%q message=%q", routed.from, routed.subject, routed.message)
+	}
+	bare := &fakeSessions{}
+	if err := runSend(&bytes.Buffer{}, bare, []string{"beef1234", "ship it"}, "cafe0001"); err != nil || bare.subject != "" {
+		t.Fatalf("a send without --subject went out with %q (%v)", bare.subject, err)
+	}
+}
+
+func sampleEntries() []sessioncmd.MessageEntry {
+	return []sessioncmd.MessageEntry{{
+		MessageID: 42, FromSessionID: "cafe0001", FromName: "lead", ToSessionID: "beef1234", ToName: "api-worker",
+		SentAt: "2026-09-28T12:00:00Z", Subject: "review report", State: "held", Reason: "session beef1234 is sitting on a dialog", QueuePosition: 1,
+		Body: "two findings",
+	}}
+}
+
+func TestMessagesListsTheLog(t *testing.T) {
+	fake := &fakeSessions{entries: sampleEntries()}
+	out := &bytes.Buffer{}
+	if err := runMessages(out, fake, []string{"beef1234", "--queued", "--limit", "5"}, "cafe0001"); err != nil {
+		t.Fatalf("messages: %v", err)
+	}
+	if fake.listed != (sessioncmd.MessagesOptions{Session: "beef1234", QueuedOnly: true, Limit: 5}) || fake.callerID != "cafe0001" {
+		t.Fatalf("messages reached the layer as %+v caller %q", fake.listed, fake.callerID)
+	}
+	if want := sessioncmd.FormatMessageList(fake.entries) + "\n"; out.String() != want {
+		t.Fatalf("messages printed %q, want %q", out.String(), want)
+	}
+	if !strings.Contains(out.String(), `"lead" (cafe0001) -> "api-worker" (beef1234)`) || !strings.Contains(out.String(), "\n    session beef1234 is sitting on a dialog") {
+		t.Fatalf("messages line = %q", out.String())
+	}
+
+	every := &fakeSessions{}
+	if err := runMessages(&bytes.Buffer{}, every, nil, ""); err != nil {
+		t.Fatalf("messages with no caller: %v", err)
+	}
+	if every.listed != (sessioncmd.MessagesOptions{Limit: sessioncmd.DefaultMessagesLimit}) {
+		t.Fatalf("bare messages reached the layer as %+v", every.listed)
+	}
+
+	asJSON := &bytes.Buffer{}
+	if err := runMessages(asJSON, &fakeSessions{entries: sampleEntries()}, []string{"--json"}, ""); err != nil {
+		t.Fatalf("messages --json: %v", err)
+	}
+	var entries []sessioncmd.MessageEntry
+	if err := json.Unmarshal(asJSON.Bytes(), &entries); err != nil || len(entries) != 1 || entries[0].MessageID != 42 || entries[0].QueuePosition != 1 {
+		t.Fatalf("messages --json = %q (%v)", asJSON.String(), err)
+	}
+	if !strings.Contains(asJSON.String(), `"from_session_id"`) || !strings.Contains(asJSON.String(), `"queue_position"`) {
+		t.Fatalf("messages --json names its fields differently: %q", asJSON.String())
+	}
+}
+
+func TestReadMessagePrintsTheWholeMessage(t *testing.T) {
+	fake := &fakeSessions{entries: sampleEntries()}
+	out := &bytes.Buffer{}
+	if err := runReadMessage(out, fake, []string{"42"}, ""); err != nil {
+		t.Fatalf("read-message: %v", err)
+	}
+	if fake.messageID != 42 {
+		t.Fatalf("read-message reached the layer with id %d", fake.messageID)
+	}
+	if !strings.HasPrefix(out.String(), `message 42 from "lead" (cafe0001) to "api-worker" (beef1234)`) || !strings.HasSuffix(out.String(), "\n\ntwo findings\n") {
+		t.Fatalf("read-message printed %q", out.String())
+	}
+	asJSON := &bytes.Buffer{}
+	if err := runReadMessage(asJSON, fake, []string{"42", "--json"}, ""); err != nil {
+		t.Fatalf("read-message --json: %v", err)
+	}
+	var entry sessioncmd.MessageEntry
+	if err := json.Unmarshal(asJSON.Bytes(), &entry); err != nil || entry.Body != "two findings" {
+		t.Fatalf("read-message --json = %q (%v)", asJSON.String(), err)
+	}
+	if err := runReadMessage(&bytes.Buffer{}, fake, []string{"forty"}, ""); err == nil || !strings.Contains(err.Error(), "agent-manager messages lists the ids") {
+		t.Fatalf("a non-numeric id = %v", err)
+	}
+}
+
 // The SSH client's form: flags first, then the id and the prompt after a
 // bare --, so a prompt that starts with a dash stays the prompt.
 func TestTypeReachesTheLayerWithItsPrompt(t *testing.T) {

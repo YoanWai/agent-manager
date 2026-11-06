@@ -213,7 +213,7 @@ func TestWaitLooksPastTheRestItsOwnQueuedMessageIsAboutToEnd(t *testing.T) {
 	if err := h.store.UpdateStatus(worker.ID, status.Finished); err != nil {
 		t.Fatal(err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "run the migration")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "run the migration")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestWaitTakesTheRestAfterItsOwnMessageWasDropped(t *testing.T) {
 	if err := h.store.UpdateStatus(worker.ID, status.Finished); err != nil {
 		t.Fatal(err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "run the migration")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "run the migration")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestWaitTakesTheDialogThatHoldsItsOwnMessage(t *testing.T) {
 	if err := h.store.UpdateStatus(worker.ID, status.Waiting); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "run the migration"); err != nil {
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "", "run the migration"); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 

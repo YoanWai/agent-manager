@@ -85,8 +85,11 @@ type fakeSessionCommands struct {
 	createdOpts   sessioncmd.CreateSessionOptions
 	sentID        string
 	sentMessage   string
+	sentSubject   string
 	readID        string
 	statusID      int64
+	listedOpts    sessioncmd.MessagesOptions
+	readMessageID int64
 	waitedID      string
 	waitedUntil   []string
 	waitedTimeout time.Duration
@@ -122,10 +125,23 @@ func (f *fakeSessionCommands) Create(_ string, opts sessioncmd.CreateSessionOpti
 	return f.created, f.err
 }
 
-func (f *fakeSessionCommands) Send(_ string, id, message string) (sessioncmd.SendResult, error) {
+func (f *fakeSessionCommands) Send(_ string, id, subject, message string) (sessioncmd.SendResult, error) {
 	f.sentID = id
+	f.sentSubject = subject
 	f.sentMessage = message
 	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.err
+}
+
+func (f *fakeSessionCommands) Messages(_ string, opts sessioncmd.MessagesOptions) ([]sessioncmd.MessageEntry, error) {
+	f.listedOpts = opts
+	return []sessioncmd.MessageEntry{{MessageID: 7, FromSessionID: "a1b2c3d4", FromName: "lead", ToSessionID: "e5f6a7b8", ToName: "worker",
+		SentAt: "2026-09-28T12:00:00Z", Subject: "rebase", State: "held", Reason: "sitting on a dialog", QueuePosition: 1}}, f.err
+}
+
+func (f *fakeSessionCommands) ReadMessage(_ string, messageID int64) (sessioncmd.MessageEntry, error) {
+	f.readMessageID = messageID
+	return sessioncmd.MessageEntry{MessageID: messageID, FromSessionID: "a1b2c3d4", FromName: "lead", ToSessionID: "e5f6a7b8", ToName: "worker",
+		SentAt: "2026-09-28T12:00:00Z", Subject: "rebase", State: "delivered", Body: "rebase on main"}, f.err
 }
 
 func (f *fakeSessionCommands) ExpandSaved(name, text string) (string, error) {
@@ -773,7 +789,7 @@ func TestListsFleetTools(t *testing.T) {
 	for _, want := range []string{
 		"list_sessions", "create_session", "read_session", "send_session",
 		"revive_session", "kill_session", "archive_session", "move_session", "archive_self", "kill_self",
-		"list_groups", "create_group", "delete_group", "message_status", "wait_for_session",
+		"list_groups", "create_group", "delete_group", "message_status", "list_messages", "read_message", "wait_for_session",
 		"task",
 		"reserve_files", "release_files", "list_reservations",
 	} {

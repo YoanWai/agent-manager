@@ -19,11 +19,13 @@ const (
 	usageSessions      = "sessions [--json]"
 	usageSnapshot      = "snapshot --json"
 	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--env <name>] [--group <path>] [--directory <path>] [--worktree] [--resume <id>] [--json]"
-	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--from <name>] [--json]`
+	usageSend          = `send <session-id> ["<message>"] [--subject <text>] [--saved <name>] [--from <name>] [--json]`
 	usageType          = `type <session-id> "<prompt>" [--json]`
 	usageRead          = "read <session-id> [--styled] [--json]"
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
 	usageMessageStatus = "message-status <message-id> [--json]"
+	usageMessages      = "messages [<session-id>] [--queued] [--limit <n>] [--json]"
+	usageReadMessage   = "read-message <message-id> [--json]"
 	usageKill          = "kill <session-id> [--json]"
 	usageRevive        = "revive <session-id> [--json]"
 	usageArchive       = "archive <session-id> [--restore] [--json]"
@@ -39,14 +41,16 @@ type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
 	Snapshot(sessionID string) (sessioncmd.Snapshot, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
-	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
-	SendFrom(sessionID, senderName, targetID, message string) (sessioncmd.SendResult, error)
+	Send(sessionID, targetID, subject, message string) (sessioncmd.SendResult, error)
+	SendFrom(sessionID, senderName, targetID, subject, message string) (sessioncmd.SendResult, error)
 	Type(sessionID, targetID, prompt string) (sessioncmd.Session, error)
 	ExpandSaved(name, text string) (string, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	ReadStyled(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
+	Messages(sessionID string, opts sessioncmd.MessagesOptions) ([]sessioncmd.MessageEntry, error)
+	ReadMessage(sessionID string, messageID int64) (sessioncmd.MessageEntry, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Archive(sessionID, targetID string, archived bool) (sessioncmd.Session, error)
@@ -106,6 +110,8 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "read", usage: usageRead, about: "read what another agent's screen currently shows", run: bind(open, runRead)},
 			{name: "wait", usage: usageWait, about: "park until another session stops working, instead of reading its screen in a loop; exits non-zero when it timed out", run: bind(open, runWait)},
 			{name: "message-status", usage: usageMessageStatus, about: "check whether a message you sent is queued, held, delivered, dropped or answered", run: bind(open, runMessageStatus)},
+			{name: "messages", usage: usageMessages, about: "list who messaged whom, when, about what and where each message stands, for one session or all of them; --queued shows what is still waiting, next first", run: bind(open, runMessages)},
+			{name: "read-message", usage: usageReadMessage, about: "print one message from the log in full, whoever sent it", run: bind(open, runReadMessage)},
 			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(open, runKill)},
 			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(open, runRevive)},
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(open, runArchive)},
@@ -198,6 +204,7 @@ func runSpawn(out io.Writer, sessions sessionCommands, args []string, sessionID 
 
 func runSend(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageSend)
+	subject := set.String("subject", "", "one short line saying what the message is about, which the user sees in the message log; the recipient's prompt gets only the message")
 	saved := set.String("saved", "", "saved prompt to put in front of the message; the message can be omitted when this is set")
 	from := set.String("from", "", "name to send as when this runs outside any session on this machine, as an agent on another machine does over SSH; the message says no reply can reach it")
 	asJSON := jsonFlag(set)
@@ -220,9 +227,9 @@ func runSend(out io.Writer, sessions sessionCommands, args []string, sessionID s
 	set.Visit(func(given *flag.Flag) { fromGiven = fromGiven || given.Name == "from" })
 	var result sessioncmd.SendResult
 	if fromGiven {
-		result, err = sessions.SendFrom(sessionID, *from, operands[0], text)
+		result, err = sessions.SendFrom(sessionID, *from, operands[0], *subject, text)
 	} else {
-		result, err = sessions.Send(sessionID, operands[0], text)
+		result, err = sessions.Send(sessionID, operands[0], *subject, text)
 	}
 	if err != nil {
 		return err
@@ -308,6 +315,44 @@ func runMessageStatus(out io.Writer, sessions sessionCommands, args []string, se
 		return err
 	}
 	return emit(out, *asJSON, state, sessioncmd.FormatMessageState(state))
+}
+
+func runMessages(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageMessages)
+	queued := set.Bool("queued", false, "only the messages still waiting to be typed in, in the order they will be")
+	limit := set.Int("limit", sessioncmd.DefaultMessagesLimit, "how many messages to list; the log keeps a delivered message for a day")
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 0, 1)
+	if err != nil {
+		return err
+	}
+	opts := sessioncmd.MessagesOptions{QueuedOnly: *queued, Limit: *limit}
+	if len(operands) == 1 {
+		opts.Session = operands[0]
+	}
+	entries, err := sessions.Messages(sessionID, opts)
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, entries, sessioncmd.FormatMessageList(entries))
+}
+
+func runReadMessage(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+	set := newFlagSet(usageReadMessage)
+	asJSON := jsonFlag(set)
+	operands, err := parseCommand(out, set, args, 1, 1)
+	if err != nil {
+		return err
+	}
+	messageID, err := strconv.ParseInt(operands[0], 10, 64)
+	if err != nil {
+		return fmt.Errorf("message id %q is not a number; agent-manager messages lists the ids", operands[0])
+	}
+	entry, err := sessions.ReadMessage(sessionID, messageID)
+	if err != nil {
+		return err
+	}
+	return emit(out, *asJSON, entry, sessioncmd.FormatMessage(entry))
 }
 
 func runKill(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {

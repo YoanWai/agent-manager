@@ -23,7 +23,7 @@ func TestGlyphHandleGeometry(t *testing.T) {
 								row.kind = GroupRow
 								row.group = "界e\u0301=group " + g.ReorderGrip
 							}
-							r := renderer{model: Model{rows: []treeRow{row}}, ctx: RenderContext{GlyphMode: mode, Width: width, ComfortableRows: comfortable}, palette: newPalette(theme.Palettes[0]), frame: Frame{Handles: map[string]int{}}}
+							r := renderer{model: Model{rows: []treeRow{row}}, ctx: RenderContext{GlyphMode: mode, Width: width, ComfortableRows: comfortable}, palette: newPalette(theme.Palettes[0]), frame: Frame{Handles: map[string]int{}, Inboxes: map[string]Span{}}}
 							lines := r.entryRowLines(row, 0, "")
 							if x, ok := r.frame.Handles[row.key()]; ok {
 								if got := ansi.Strip(ansi.Cut(lines[0].Text, x-1, x)); got != g.ReorderGrip {
@@ -55,7 +55,7 @@ func TestHiddenGlyphHandlesAndRenamedGroups(t *testing.T) {
 				g := presentation.GlyphsFor(mode)
 				row := treeRow{kind: GroupRow, group: group}
 				model := Model{rows: []treeRow{row}, collapsed: map[string]bool{group: collapsed}}
-				r := renderer{model: model, ctx: RenderContext{GlyphMode: mode, Width: 80}, palette: newPalette(theme.Palettes[0]), frame: Frame{Handles: map[string]int{}}}
+				r := renderer{model: model, ctx: RenderContext{GlyphMode: mode, Width: 80}, palette: newPalette(theme.Palettes[0]), frame: Frame{Handles: map[string]int{}, Inboxes: map[string]Span{}}}
 				before := r.renderTreeRow(row, true, 80, 0, "")
 				r.ctx.Rename = Rename{Target: row.selection(), View: "rename " + g.ReorderGrip + " = 界"}
 				after := r.renderTreeRow(row, true, 80, 0, "")
@@ -99,13 +99,13 @@ func TestPortableGlyphsPreserveUserTextAndSpinnerGeometry(t *testing.T) {
 		for _, mode := range []presentation.GlyphMode{presentation.GlyphModeBasic, presentation.GlyphModeAdvanced} {
 			g := presentation.GlyphsFor(mode)
 			working := treeRow{kind: SessionRow, sess: Session{ID: "one", Name: text, Status: "working", Queued: 12}}
-			r := renderer{model: Model{rows: []treeRow{working}}, ctx: RenderContext{GlyphMode: mode, Width: width}, palette: newPalette(palette), frame: Frame{Handles: map[string]int{}}}
+			r := renderer{model: Model{rows: []treeRow{working}}, ctx: RenderContext{GlyphMode: mode, Width: width}, palette: newPalette(palette), frame: Frame{Handles: map[string]int{}, Inboxes: map[string]Span{}}}
 			if head := strings.TrimSpace(ansi.Strip(r.entryRowLines(working, 0, "")[0].Text)); !strings.HasPrefix(head, g.WorkingGlyph+" "+g.ReorderGrip+" ") {
 				t.Fatalf("%s/%s row lost its state mark or handle: %q", palette.Name, mode, head)
 			}
 			for _, comfortable := range []bool{false, true} {
 				row := treeRow{kind: SessionRow, sess: Session{ID: "one", Name: text, Prompt: "prompt " + text, PaneLine: "reply " + text, Status: "starting", Queued: 12}}
-				r := renderer{model: Model{rows: []treeRow{row}}, ctx: RenderContext{GlyphMode: mode, Width: width, ComfortableRows: comfortable}, palette: newPalette(palette), frame: Frame{Handles: map[string]int{}}}
+				r := renderer{model: Model{rows: []treeRow{row}}, ctx: RenderContext{GlyphMode: mode, Width: width, ComfortableRows: comfortable}, palette: newPalette(palette), frame: Frame{Handles: map[string]int{}, Inboxes: map[string]Span{}}}
 				want := []string{text}
 				if comfortable {
 					want = append(want, "prompt "+text, "reply "+text)
@@ -150,7 +150,7 @@ func TestNavigationRailOverflowPreservesTargets(t *testing.T) {
 		for i := 0; i < 20; i++ {
 			rows = append(rows, treeRow{kind: SessionRow, sess: Session{ID: fmt.Sprint(i), Name: "literal ↑↓←→", Status: "idle"}})
 		}
-		r := renderer{model: Model{rows: rows, cursor: 8}, ctx: RenderContext{GlyphMode: mode, Width: 80, ComfortableRows: true}, palette: newPalette(theme.Palettes[0]), previous: Frame{Window: Range{Start: 7}}, frame: Frame{Handles: map[string]int{}, visible: map[string]bool{}}}
+		r := renderer{model: Model{rows: rows, cursor: 8}, ctx: RenderContext{GlyphMode: mode, Width: 80, ComfortableRows: true}, palette: newPalette(theme.Palettes[0]), previous: Frame{Window: Range{Start: 7}}, frame: Frame{Handles: map[string]int{}, Inboxes: map[string]Span{}, visible: map[string]bool{}}}
 		lines := r.entryLines(8)
 		first, last := lines[0], lines[len(lines)-1]
 		if !first.HitOK || first.Hit != rows[r.frame.Window.Start].selection() || !last.HitOK || last.Hit != rows[r.frame.Window.End].selection() {

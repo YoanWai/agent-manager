@@ -121,7 +121,7 @@ func (m Model) RowLegend(ctx LegendContext) Legend {
 	// o sits outside the conversation keys: a shell's directory is worth
 	// opening as much as an agent's.
 	pairs = append(pairs, [][2]string{
-		{k(keybind.Editor), "editor"}, {k(keybind.Rename), "rename"}, {k(keybind.Move), "move"},
+		{k(keybind.Editor), "editor"}, {k(keybind.Rename), "rename"}, {k(keybind.Move), "move"}, {k(keybind.Inbox), "inbox"},
 		ctx.pair(keybind.Kill, "kill", keybind.KillAll, "all"), ctx.pair(keybind.Revive, "revive", keybind.ReviveAll, "all"), {k(keybind.Restart), "restart"},
 		m.archiveRestoreLegend(ctx), {k(keybind.Delete), "delete"},
 	}...)

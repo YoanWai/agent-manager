@@ -376,6 +376,8 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 			[]string{"spawn", "--json", "--prompt=saved:reviewer\n\nfix it"}, "created remote-worker (id gpu::r1)"},
 		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "saved": "reviewer"},
 			[]string{"send", from, "--json", "--", "r1", "saved:reviewer\n\nrebase on main"}, "queued a message for session gpu::r1"},
+		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "subject": "rebase"},
+			[]string{"send", from, "--subject=rebase", "--json", "--", "r1", "rebase on main"}, "queued a message for session gpu::r1"},
 		{"create_group", map[string]any{"host": "gpu", "path": "work", "directory": "/srv"}, []string{"create-group", "--json", "--directory=/srv", "--", "work"}, "created group work on gpu"},
 		{"delete_group", map[string]any{"host": "gpu", "path": "work"}, []string{"delete-group", "--json", "--", "work"}, "deleted work; 1 session(s) moved to the root group: gpu::r1 on gpu"},
 	} {

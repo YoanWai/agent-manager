@@ -283,7 +283,7 @@ func (h *remoteHosts) readTerminal(ctx context.Context, ref remote.Ref) (session
 	return screen, nil
 }
 
-func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, message string) (string, sessioncmd.SendResult, error) {
+func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, subject, message string) (string, sessioncmd.SendResult, error) {
 	if _, err := h.ready(); err != nil {
 		return "", sessioncmd.SendResult{}, err
 	}
@@ -291,7 +291,7 @@ func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, message string) 
 	if err != nil {
 		return "", sessioncmd.SendResult{}, err
 	}
-	result, err := h.client.Send(ctx, ref, message, from)
+	result, err := h.client.Send(ctx, ref, message, from, subject)
 	if err != nil {
 		return "", sessioncmd.SendResult{}, err
 	}

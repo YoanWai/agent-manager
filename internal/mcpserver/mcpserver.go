@@ -80,6 +80,7 @@ type sendSessionArgs struct {
 	SessionID string `json:"session_id" jsonschema:"session id returned by list_sessions or create_session"`
 	Message   string `json:"message,omitempty" jsonschema:"message typed into that agent's prompt as its next turn; write it as a full instruction, since the other agent does not see this conversation; omit it to send only the saved prompt"`
 	Saved     string `json:"saved,omitempty" jsonschema:"name of a saved prompt from Settings; resolved when sending and placed in front of message; omit for none; a missing name refuses the send"`
+	Subject   string `json:"subject,omitempty" jsonschema:"one short line saying what the message is about, at most 100 bytes, which the user sees in the message log; the recipient's prompt gets only the message; omit it and the log shows the message's first line"`
 }
 
 type archiveSessionArgs struct {
@@ -168,10 +169,6 @@ type waitSessionArgs struct {
 	TimeoutS  int      `json:"timeout_s,omitempty" jsonschema:"seconds to wait before giving up, default 50, maximum 300; your own client may cut the call short before this"`
 }
 
-type messageStatusArgs struct {
-	MessageID int64 `json:"message_id" jsonschema:"message id returned by send_session"`
-}
-
 type reportIssueArgs struct {
 	Kind      string `json:"kind" jsonschema:"bug for something the manager does wrong, feature for something it should do"`
 	Title     string `json:"title" jsonschema:"one-line issue title naming the behaviour, as the user would search for it"`
@@ -195,10 +192,12 @@ type issueReporter interface {
 type sessionCommands interface {
 	List(sessionID string) ([]sessioncmd.Session, error)
 	Create(sessionID string, opts sessioncmd.CreateSessionOptions) (sessioncmd.Session, error)
-	Send(sessionID, targetID, message string) (sessioncmd.SendResult, error)
+	Send(sessionID, targetID, subject, message string) (sessioncmd.SendResult, error)
 	ExpandSaved(name, text string) (string, error)
 	Wait(ctx context.Context, sessionID, targetID string, until []string, timeout time.Duration) (sessioncmd.WaitResult, error)
 	MessageStatus(sessionID string, messageID int64) (sessioncmd.MessageState, error)
+	Messages(sessionID string, opts sessioncmd.MessagesOptions) ([]sessioncmd.MessageEntry, error)
+	ReadMessage(sessionID string, messageID int64) (sessioncmd.MessageEntry, error)
 	Read(sessionID, targetID string) (sessioncmd.SessionScreen, error)
 	Revive(sessionID, targetID string) (sessioncmd.Session, error)
 	Kill(sessionID, targetID string) (sessioncmd.Session, error)
@@ -467,13 +466,13 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			return nil, sessioncmd.SendResult{}, err
 		}
 		if ref, ok := remote.ParseRef(args.SessionID); ok {
-			text, result, err := remotes.send(ctx, ref, message)
+			text, result, err := remotes.send(ctx, ref, args.Subject, message)
 			if err != nil {
 				return nil, sessioncmd.SendResult{}, err
 			}
 			return textContent(text), result, nil
 		}
-		result, err := sessions.Send(sessionID, args.SessionID, message)
+		result, err := sessions.Send(sessionID, args.SessionID, args.Subject, message)
 		if err != nil {
 			return nil, sessioncmd.SendResult{}, err
 		}
@@ -494,6 +493,8 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		}
 		return textContent(sessioncmd.FormatMessageState(state)), state, nil
 	})
+
+	addMessageLogTools(server, noCaller, sessions, sessionID)
 
 	addTool(server, noCaller, &mcp.Tool{
 		Name: "wait_for_session",

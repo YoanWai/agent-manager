@@ -49,6 +49,11 @@ type Rect struct {
 	Left, Top, Width, Height int
 }
 
+// Span is a run of columns on one row.
+type Span struct {
+	X, Width int
+}
+
 type RenderContext struct {
 	GlyphMode       presentation.GlyphMode
 	Width           int
@@ -75,6 +80,7 @@ type Frame struct {
 	Window    Range
 	Width     int
 	Handles   map[string]int
+	Inboxes   map[string]Span
 	Menu      []string
 	MenuRect  Rect
 	FootStart int

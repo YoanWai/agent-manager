@@ -3,6 +3,7 @@ package sessioncmd
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -134,6 +135,79 @@ func FormatMessageState(state MessageState) string {
 		text += ": " + state.Reason
 	}
 	return text
+}
+
+func FormatMessageList(entries []MessageEntry) string {
+	return formatMessageList(entries, time.Now())
+}
+
+func formatMessageList(entries []MessageEntry, now time.Time) string {
+	if len(entries) == 0 {
+		return "no messages in the log"
+	}
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		line := fmt.Sprintf("- %d %s -> %s %s %s", entry.MessageID, messageSender(entry), messageParty(entry.ToName, entry.ToSessionID), messageClock(entry.SentAt, now), messageStanding(entry))
+		if entry.Subject != "" {
+			line += ": " + entry.Subject
+		}
+		if entry.Reason != "" {
+			line += "\n    " + entry.Reason
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func FormatMessage(entry MessageEntry) string {
+	return formatMessage(entry, time.Now())
+}
+
+func formatMessage(entry MessageEntry, now time.Time) string {
+	lines := []string{
+		fmt.Sprintf("message %d from %s to %s", entry.MessageID, messageSender(entry), messageParty(entry.ToName, entry.ToSessionID)),
+		"sent " + messageClock(entry.SentAt, now),
+		"state: " + messageStanding(entry),
+	}
+	if entry.DeliveredAt != "" {
+		lines[1] += ", delivered " + messageClock(entry.DeliveredAt, now)
+	}
+	if entry.Reason != "" {
+		lines[2] += ": " + entry.Reason
+	}
+	if entry.Subject != "" {
+		lines = append(lines, "subject: "+entry.Subject)
+	}
+	return strings.Join(lines, "\n") + "\n\n" + entry.Body
+}
+
+func messageSender(entry MessageEntry) string {
+	if entry.FromSessionID == "" {
+		return fmt.Sprintf("%q (another machine)", entry.FromName)
+	}
+	return messageParty(entry.FromName, entry.FromSessionID)
+}
+
+func messageParty(name, id string) string { return fmt.Sprintf("%q (%s)", name, id) }
+
+func messageStanding(entry MessageEntry) string {
+	if entry.QueuePosition > 0 {
+		return fmt.Sprintf("%s at position %d", entry.State, entry.QueuePosition)
+	}
+	return entry.State
+}
+
+// messageClock is a stamp in local time, dated when it is not today.
+func messageClock(stamp string, now time.Time) string {
+	at, err := time.Parse(time.RFC3339, stamp)
+	if err != nil {
+		return stamp
+	}
+	at, now = at.Local(), now.Local()
+	if at.Year() == now.Year() && at.YearDay() == now.YearDay() {
+		return at.Format("15:04")
+	}
+	return at.Format("2006-01-02 15:04")
 }
 
 func FormatWaitResult(result WaitResult) string {
