@@ -397,6 +397,28 @@ func TestTheEnvelopeSpellsTheReplyInTheRecipientsOwnFront(t *testing.T) {
 	}
 }
 
+// A subject is for the person watching; the recipient's pane gets the same
+// envelope a message without one gets.
+func TestTheEnvelopeLeavesTheSubjectOut(t *testing.T) {
+	fencePattern := regexp.MustCompile(`-{4}CROSS-SESSION-MESSAGE-payments-fix-sender01-[A-Z2-7]{8}-{4}`)
+	plain := store.InboxMessage{
+		SenderID:   "sender01",
+		SenderName: "payments-fix",
+		Body:       "rebase on main",
+		SentAt:     time.Date(2026, 8, 13, 9, 30, 0, 0, time.Local),
+	}
+	withSubject := plain
+	withSubject.Subject = "rebase request"
+	got := fencePattern.ReplaceAllString(inboxEnvelope(withSubject, "claude", false), "FENCE")
+	want := fencePattern.ReplaceAllString(inboxEnvelope(plain, "claude", false), "FENCE")
+	if got != want {
+		t.Fatalf("a subject changed the envelope:\n got %q\nwant %q", got, want)
+	}
+	if strings.Contains(got, "rebase request") {
+		t.Fatalf("the subject reached the recipient's pane: %q", got)
+	}
+}
+
 func TestTheEnvelopeTreatsAPeerSendAsTheOperatorsInstruction(t *testing.T) {
 	msg := store.InboxMessage{
 		SenderID:   "sender01",

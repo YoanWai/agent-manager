@@ -517,6 +517,8 @@ func (m *Model) runRailIntent(intent uirail.Intent) (tea.Model, tea.Cmd) {
 		m.openMove()
 	case uirail.OpenMessages:
 		m.openNotices("")
+	case uirail.OpenInbox:
+		m.openInbox(intent.Target)
 	case uirail.OpenHelp:
 		m.openHelp()
 	case uirail.OpenReview:

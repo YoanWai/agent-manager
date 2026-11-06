@@ -25,7 +25,10 @@ type fakeSessions struct {
 	callerID  string
 	targetID  string
 	message   string
+	subject   string
 	from      *string
+	listed    sessioncmd.MessagesOptions
+	entries   []sessioncmd.MessageEntry
 	opts      sessioncmd.CreateSessionOptions
 	until     []string
 	timeout   time.Duration
@@ -71,14 +74,27 @@ func (f *fakeSessions) Create(sessionID string, opts sessioncmd.CreateSessionOpt
 	return f.session, f.failWith
 }
 
-func (f *fakeSessions) Send(sessionID, targetID, message string) (sessioncmd.SendResult, error) {
-	f.callerID, f.targetID, f.message = sessionID, targetID, message
+func (f *fakeSessions) Send(sessionID, targetID, subject, message string) (sessioncmd.SendResult, error) {
+	f.callerID, f.targetID, f.subject, f.message = sessionID, targetID, subject, message
 	return sessioncmd.SendResult{MessageID: 7, QueuePosition: 1, ManagerAwake: true}, f.failWith
 }
 
-func (f *fakeSessions) SendFrom(sessionID, senderName, targetID, message string) (sessioncmd.SendResult, error) {
-	f.callerID, f.from, f.targetID, f.message = sessionID, &senderName, targetID, message
+func (f *fakeSessions) SendFrom(sessionID, senderName, targetID, subject, message string) (sessioncmd.SendResult, error) {
+	f.callerID, f.from, f.targetID, f.subject, f.message = sessionID, &senderName, targetID, subject, message
 	return sessioncmd.SendResult{MessageID: 8, QueuePosition: 2}, f.failWith
+}
+
+func (f *fakeSessions) Messages(sessionID string, opts sessioncmd.MessagesOptions) ([]sessioncmd.MessageEntry, error) {
+	f.callerID, f.listed = sessionID, opts
+	return f.entries, f.failWith
+}
+
+func (f *fakeSessions) ReadMessage(sessionID string, messageID int64) (sessioncmd.MessageEntry, error) {
+	f.callerID, f.messageID = sessionID, messageID
+	if len(f.entries) == 0 {
+		return sessioncmd.MessageEntry{}, f.failWith
+	}
+	return f.entries[0], f.failWith
 }
 
 func (f *fakeSessions) Type(sessionID, targetID, prompt string) (sessioncmd.Session, error) {
@@ -288,6 +304,8 @@ func TestALayerFailureReachesTheCaller(t *testing.T) {
 		{"read", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRead(out, sessions, args, "cafe0001") }},
 		{"wait", []string{"beef1234"}, func(out io.Writer, args []string) error { return runWait(out, sessions, args, "cafe0001") }},
 		{"message-status", []string{"7"}, func(out io.Writer, args []string) error { return runMessageStatus(out, sessions, args, "cafe0001") }},
+		{"messages", nil, func(out io.Writer, args []string) error { return runMessages(out, sessions, args, "cafe0001") }},
+		{"read-message", []string{"7"}, func(out io.Writer, args []string) error { return runReadMessage(out, sessions, args, "") }},
 		{"kill", []string{"beef1234"}, func(out io.Writer, args []string) error { return runKill(out, sessions, args, "cafe0001") }},
 		{"revive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runRevive(out, sessions, args, "cafe0001") }},
 		{"archive", []string{"beef1234"}, func(out io.Writer, args []string) error { return runArchive(out, sessions, args, "cafe0001") }},
@@ -558,7 +576,7 @@ func TestCommandsThatActAsNoSessionNeverResolveACaller(t *testing.T) {
 func TestCommandsAndHelpCoverEverySection(t *testing.T) {
 	table := Commands("dev", sampleSpecs)
 	registered := []string{
-		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "kill", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
+		"sessions", "snapshot", "spawn", "send", "type", "read", "wait", "message-status", "messages", "read-message", "kill", "revive", "archive", "move", "archive-self", "kill-self", "prompts", "env",
 		"groups", "create-group", "delete-group", "task", "reserve", "release-files", "reservations", "terminal",
 		"rename", "review-repo", "review-base", "review-mode", "review-comment", "issue", "feature", "settings", "export", "import", "update",
 	}

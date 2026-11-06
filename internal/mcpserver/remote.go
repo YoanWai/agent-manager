@@ -283,7 +283,7 @@ func (h *remoteHosts) readTerminal(ctx context.Context, ref remote.Ref) (session
 	return screen, nil
 }
 
-func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, message string) (string, sessioncmd.SendResult, error) {
+func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, subject, message string) (string, sessioncmd.SendResult, error) {
 	if _, err := h.ready(); err != nil {
 		return "", sessioncmd.SendResult{}, err
 	}
@@ -291,7 +291,7 @@ func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, message string) 
 	if err != nil {
 		return "", sessioncmd.SendResult{}, err
 	}
-	result, err := h.client.Send(ctx, ref, message, from)
+	result, subjectKept, err := h.client.Send(ctx, ref, message, from, subject)
 	if err != nil {
 		return "", sessioncmd.SendResult{}, err
 	}
@@ -301,6 +301,9 @@ func (h *remoteHosts) send(ctx context.Context, ref remote.Ref, message string) 
 	text := fmt.Sprintf("queued a message for session %s at position %d", ref, result.QueuePosition)
 	if !result.ManagerAwake {
 		text += "; no manager is running on " + ref.Host + " yet, so it waits until one starts"
+	}
+	if subject != "" && !subjectKept {
+		text += "; agent-manager on " + ref.Host + " predates subjects, so it went without one"
 	}
 	text += "; message_status follows messages to this host's sessions only, so call read_session on " + ref.String() + " to see what the agent did with it"
 	return text, result, nil

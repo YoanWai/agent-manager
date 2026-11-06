@@ -87,6 +87,13 @@ func (m *Model) mousePress(msg tea.MouseMsg, frame Frame, ctx MouseContext) Deci
 		m.enterReorder(key)
 		return previewSelectionDecision(previous != index, selection)
 	}
+	if m.onInbox(msg.X, localY, selection, frame) {
+		m.cursor = index
+		m.listClickAt = time.Time{}
+		decision := previewSelectionDecision(previous != index, selection)
+		decision.Intent = Intent{Kind: OpenInbox, Target: selection}
+		return decision
+	}
 	if m.onMenuButton(msg.X, localY, selection, frame) {
 		m.listClickAt = time.Time{}
 		return m.openMenu(selection, msg.X, msg.Y, true)
@@ -163,6 +170,11 @@ func (m Model) onRowHead(localY int, selection Selection, frame Frame) bool {
 func (m Model) onHandle(x, localY int, selection Selection, frame Frame) bool {
 	handle, ok := frame.Handles[selection.key()]
 	return ok && x >= handle-1 && x <= handle+1 && m.onRowHead(localY, selection, frame)
+}
+
+func (m Model) onInbox(x, localY int, selection Selection, frame Frame) bool {
+	badge, ok := frame.Inboxes[selection.key()]
+	return ok && x >= badge.X && x < badge.X+badge.Width && m.onRowHead(localY, selection, frame)
 }
 
 func (m Model) onMenuButton(x, localY int, selection Selection, frame Frame) bool {

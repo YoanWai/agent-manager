@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 )
@@ -98,14 +99,33 @@ func (c *Client) ReadTerminal(ctx context.Context, ref Ref) (sessioncmd.Terminal
 }
 
 // Send queues text for the agent at ref, from a sender with no session on
-// that host.
-func (c *Client) Send(ctx context.Context, ref Ref, text, from string) (sessioncmd.SendResult, error) {
-	var result sessioncmd.SendResult
+// that host. A host on a release before subjects refuses the flag before it
+// queues anything, so the send is made once more without it, and subjectKept
+// says whether the subject reached the host.
+func (c *Client) Send(ctx context.Context, ref Ref, text, from, subject string) (result sessioncmd.SendResult, subjectKept bool, err error) {
 	if err := validRef(ref); err != nil {
-		return result, err
+		return result, false, err
 	}
-	err := c.decode(ctx, ref.Host, callTimeout, &result, "send", "--from="+from, "--json", "--", ref.ID, text)
-	return result, err
+	send := func(subject string) error {
+		args := []string{"send", "--from=" + from}
+		if subject != "" {
+			args = append(args, "--subject="+subject)
+		}
+		args = append(args, "--json", "--", ref.ID, text)
+		return c.decode(ctx, ref.Host, callTimeout, &result, args...)
+	}
+	err = send(subject)
+	if subject != "" && subjectUnknown(err) {
+		return result, false, send("")
+	}
+	return result, subject != "" && err == nil, err
+}
+
+// subjectUnknown is the refusal Go's flag package gives a release that
+// predates --subject.
+func subjectUnknown(err error) bool {
+	var failed *Error
+	return errors.As(err, &failed) && strings.Contains(failed.Err.Error(), "flag provided but not defined: -subject")
 }
 
 // Type submits prompt in the pane of the agent at ref now, as the user's

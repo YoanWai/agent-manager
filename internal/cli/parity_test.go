@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
@@ -239,6 +241,59 @@ func TestTheTwoFrontsRefuseTheSameOutOfRangeTTL(t *testing.T) {
 	})
 	if isError {
 		t.Fatalf("the MCP front refused a ttl inside the bound: %q", granted)
+	}
+}
+
+// The message log reads the same from both fronts, and a subject either
+// front refuses is refused in the same words.
+func TestTheTwoFrontsReadOneMessageLog(t *testing.T) {
+	w := newParityWorkspace(t)
+	st, err := store.Open(filepath.Join(w.configDir, "state.db"))
+	if err != nil {
+		t.Fatalf("store open: %v", err)
+	}
+	id, err := st.Enqueue(store.InboxMessage{SessionID: w.worker.ID, SenderID: w.lead.ID, SenderName: w.lead.Name,
+		Subject: "review report", Body: "two findings", Fingerprint: "two findings", SentAt: time.Now()}, store.DefaultInboxLimits)
+	st.Close()
+	if err != nil {
+		t.Fatalf("Enqueue: %v", err)
+	}
+	sessions := sessioncmd.NewSessions(w.configDir, sessioncmd.CLIVocabulary())
+
+	fromCLI := cliText(t, func(out *bytes.Buffer) error { return runMessages(out, sessions, []string{w.worker.ID}, w.lead.ID) })
+	fromMCP, isError := w.mcpText(t, w.lead.ID, "list_messages", map[string]any{"session_id": w.worker.ID})
+	cliLine, cliReason, _ := strings.Cut(strings.TrimSpace(fromCLI), "\n")
+	mcpLine, mcpReason, _ := strings.Cut(fromMCP, "\n")
+	if isError || cliLine != mcpLine {
+		t.Fatalf("the fronts list one log differently:\ncli: %q\nmcp: %q (error %v)", fromCLI, fromMCP, isError)
+	}
+	// The hold names the next step in the words of the front that asked.
+	if !strings.Contains(cliReason, "agent-manager revive") || !strings.Contains(mcpReason, "revive_session") {
+		t.Fatalf("the hold reasons do not speak their front:\ncli: %q\nmcp: %q", cliReason, mcpReason)
+	}
+	if !strings.Contains(fromCLI, "review report") || !strings.Contains(fromCLI, "held at position 1") {
+		t.Fatalf("the log line = %q", fromCLI)
+	}
+
+	readCLI := cliText(t, func(out *bytes.Buffer) error {
+		return runReadMessage(out, sessions, []string{strconv.FormatInt(id, 10)}, w.worker.ID)
+	})
+	readMCP, isError := w.mcpText(t, w.worker.ID, "read_message", map[string]any{"message_id": id})
+	spokenAsMCP := strings.ReplaceAll(strings.TrimSpace(readCLI), "agent-manager revive", "revive_session")
+	if isError || spokenAsMCP != readMCP || !strings.HasSuffix(readMCP, "two findings") {
+		t.Fatalf("the fronts read one message differently:\ncli: %q\nmcp: %q (error %v)", readCLI, readMCP, isError)
+	}
+
+	cliRefusal := runSend(&bytes.Buffer{}, sessions, []string{w.worker.ID, "hello", "--subject", "two\nlines"}, w.lead.ID)
+	mcpRefusal, isError := w.mcpText(t, w.lead.ID, "send_session", map[string]any{"session_id": w.worker.ID, "message": "hello", "subject": "two\nlines"})
+	if cliRefusal == nil || !isError || cliRefusal.Error() != mcpRefusal || !strings.Contains(mcpRefusal, "line break") {
+		t.Fatalf("the fronts refuse a subject differently:\ncli: %v\nmcp: %q", cliRefusal, mcpRefusal)
+	}
+	long := strings.Repeat("s", 101)
+	cliRefusal = runSend(&bytes.Buffer{}, sessions, []string{w.worker.ID, "hello", "--subject", long}, w.lead.ID)
+	mcpRefusal, isError = w.mcpText(t, w.lead.ID, "send_session", map[string]any{"session_id": w.worker.ID, "message": "hello", "subject": long})
+	if cliRefusal == nil || !isError || cliRefusal.Error() != mcpRefusal || !strings.Contains(mcpRefusal, "100 byte limit") {
+		t.Fatalf("the fronts refuse a long subject differently:\ncli: %v\nmcp: %q", cliRefusal, mcpRefusal)
 	}
 }
 

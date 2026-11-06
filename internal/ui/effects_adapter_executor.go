@@ -19,6 +19,7 @@ import (
 	focusruntime "github.com/YoanWai/agent-manager/internal/ui/focus/runtime"
 	focuswatch "github.com/YoanWai/agent-manager/internal/ui/focus/watch"
 	uigeometrypanes "github.com/YoanWai/agent-manager/internal/ui/geometry/panes"
+	uiinbox "github.com/YoanWai/agent-manager/internal/ui/inbox"
 	uiinstall "github.com/YoanWai/agent-manager/internal/ui/launchhint/install"
 	uinotices "github.com/YoanWai/agent-manager/internal/ui/notices"
 	onboardingruntime "github.com/YoanWai/agent-manager/internal/ui/onboarding/runtime"
@@ -73,6 +74,7 @@ func (m *Model) bindEffect(request uieffects.Request) func() (uieffects.Result, 
 		uieffects.Binder(func() uilifecycle.Services { return capture().lifecycleServices() }),
 		uieffects.Binder(func() uilaunch.Services { return capture().launchServices() }),
 		uieffects.Binder(func() uiquicksend.Services { return capture().quickServices() }),
+		uieffects.Binder(func() uiinbox.Services { return capture().inboxServices() }),
 	}
 	for _, bind := range binders {
 		if work, ok := bind(request); ok {
@@ -147,6 +149,12 @@ func (m *Model) applyEffect(job *uieffects.Job, result uieffects.Result, err err
 		return nil
 	case uinotices.DismissRequest:
 		m.applyNoticeDismiss(job, err)
+		return nil
+	case uiinbox.LoadRequest:
+		m.applyInboxLoad(request, as[uiinbox.Log](result), err)
+		return nil
+	case uiinbox.ReadRequest:
+		m.applyInboxRead(request, as[string](result), err)
 		return nil
 	case uinotices.SeenRequest:
 		if err != nil {

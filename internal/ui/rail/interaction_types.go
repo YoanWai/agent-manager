@@ -93,6 +93,7 @@ const (
 	OpenReview
 	CancelEnd
 	NewConnection
+	OpenInbox
 )
 
 type Intent struct {

@@ -376,6 +376,8 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 			[]string{"spawn", "--json", "--prompt=saved:reviewer\n\nfix it"}, "created remote-worker (id gpu::r1)"},
 		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "saved": "reviewer"},
 			[]string{"send", from, "--json", "--", "r1", "saved:reviewer\n\nrebase on main"}, "queued a message for session gpu::r1"},
+		{"send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "subject": "rebase"},
+			[]string{"send", from, "--subject=rebase", "--json", "--", "r1", "rebase on main"}, "queued a message for session gpu::r1"},
 		{"create_group", map[string]any{"host": "gpu", "path": "work", "directory": "/srv"}, []string{"create-group", "--json", "--directory=/srv", "--", "work"}, "created group work on gpu"},
 		{"delete_group", map[string]any{"host": "gpu", "path": "work"}, []string{"delete-group", "--json", "--", "work"}, "deleted work; 1 session(s) moved to the root group: gpu::r1 on gpu"},
 	} {
@@ -395,6 +397,24 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		f.local.groupPath != "" || f.local.createdOpts.Name != "" ||
 		f.terminals.readID != "" || f.terminals.sentID != "" || f.terminals.closedID != "" || f.terminals.createdOpts.Directory != "" {
 		t.Fatalf("a routed call also ran locally: sessions %+v terminals %+v", f.local, f.terminals)
+	}
+}
+
+func TestRemoteSendToAnOlderHostGoesWithoutItsSubject(t *testing.T) {
+	var sends [][]string
+	f := newRemoteFixture(t, "cafe", func(_ string, words []string) ([]byte, []byte, error) {
+		sends = append(sends, words)
+		if slices.Contains(words, "--subject=rebase") {
+			return nil, []byte("agent-manager: flag provided but not defined: -subject; usage: agent-manager send <session-id>\n"), exitStatus(1)
+		}
+		return mustJSON(t, sessioncmd.SendResult{MessageID: 3, QueuePosition: 1, ManagerAwake: true}), nil, nil
+	})
+	text, isError := callText(t, f.session, "send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "subject": "rebase"})
+	if isError || len(sends) != 2 || slices.Contains(sends[1], "--subject=rebase") {
+		t.Fatalf("send_session = %q (error %v) after %q", text, isError, sends)
+	}
+	if !strings.Contains(text, "agent-manager on gpu predates subjects, so it went without one") {
+		t.Fatalf("send_session did not say the subject was left behind: %q", text)
 	}
 }
 

@@ -27,6 +27,7 @@ func (m Model) Render(ctx RenderContext, previous Frame) Frame {
 		frame: Frame{
 			Width:   ctx.Width,
 			Handles: map[string]int{},
+			Inboxes: map[string]Span{},
 			visible: map[string]bool{},
 		},
 	}
@@ -304,6 +305,9 @@ func (r *renderer) entryRowLines(row treeRow, index int, tone string) []Line {
 	if rendered.handleX >= 0 {
 		r.frame.Handles[row.key()] = 1 + rendered.handleX
 	}
+	if rendered.inbox.Width > 0 {
+		r.frame.Inboxes[row.key()] = Span{X: 1 + rendered.inbox.X, Width: rendered.inbox.Width}
+	}
 	var lines []Line
 	for lineIndex, text := range splitLines(rendered.text) {
 		if button && lineIndex == 0 {
@@ -452,9 +456,10 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if selected && r.ctx.Focused {
 		focus = " " + r.palette.focusBadge.Render(" FOCUS ")
 	}
-	badges := ""
+	badges, inbox := "", ""
 	if session.Queued > 0 {
-		badges = " " + r.palette.inbox(r.glyphs(), session.Queued)
+		inbox = r.palette.inbox(r.glyphs(), session.Queued)
+		badges = " " + inbox
 	}
 	if session.AfterTurn != "" {
 		badges += " " + r.palette.inboxBadge.Render(session.AfterTurnGlyph)
@@ -491,11 +496,26 @@ func (r renderer) renderSession(row treeRow, selected bool, width int, pad, guid
 	if !activity.IsZero() {
 		meta += metaStyle.Render(" · " + relSince(activity) + elsewhere)
 	}
+	inboxX := ansi.StringWidth(head) - ansi.StringWidth(badges) + 1
 	if r.ctx.ComfortableRows {
 		indent := pad + trail + "  " + strings.Repeat(" ", ansi.StringWidth(handle))
-		return withRowHandle(r.tallRow(session, head, meta, indent, selected, width, background), lead, handle)
+		return withInbox(withRowHandle(r.tallRow(session, head, meta, indent, selected, width, background), lead, handle), inbox, inboxX)
 	}
-	return withRowHandle(r.compactRow(session, head, meta, selected, width, background), lead, handle)
+	return withInbox(withRowHandle(r.compactRow(session, head, meta, selected, width, background), lead, handle), inbox, inboxX)
+}
+
+// withInbox records where the row's ✉N badge landed, so a click on it opens
+// the session's messages. A narrow row may have clipped it off.
+func withInbox(row renderedTreeRow, badge string, x int) renderedTreeRow {
+	if badge == "" {
+		return row
+	}
+	head, _, _ := strings.Cut(row.text, "\n")
+	shown := ansi.Strip(badge)
+	if ansi.Strip(ansi.Cut(head, x, x+ansi.StringWidth(shown))) == shown {
+		row.inbox = Span{X: x, Width: ansi.StringWidth(shown)}
+	}
+	return row
 }
 
 func (r renderer) compactRow(session Session, head, meta string, selected bool, width int, background string) string {
@@ -618,6 +638,7 @@ func (r renderer) groupGlyph(row treeRow) string {
 type renderedTreeRow struct {
 	text    string
 	handleX int
+	inbox   Span
 }
 
 func withRowHandle(text, lead, handle string) renderedTreeRow {

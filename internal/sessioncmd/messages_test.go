@@ -18,7 +18,7 @@ func TestSessionsSendAndReadReachTheTargetPane(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, created.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -41,21 +41,21 @@ func TestSessionsSendAndReadReachTheTargetPane(t *testing.T) {
 	if state.State != "queued" {
 		t.Fatalf("message state = %+v", state)
 	}
-	if _, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err == nil {
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "", "rebase on main"); err == nil {
 		t.Fatal("an identical message should be refused as a duplicate")
 	}
-	if _, err := h.sessions.Send(h.caller.ID, h.caller.ID, "talking to myself"); err == nil {
+	if _, err := h.sessions.Send(h.caller.ID, h.caller.ID, "", "talking to myself"); err == nil {
 		t.Fatal("a session should not message itself")
 	}
 
-	if _, err := h.sessions.Send(h.caller.ID, created.ID, "   "); err == nil {
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "", "   "); err == nil {
 		t.Fatal("an empty message should be refused")
 	}
 	terminal, err := h.terminals.Create(h.caller.ID, CreateTerminalOptions{})
 	if err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
-	if _, err := h.sessions.Send(h.caller.ID, terminal.ID, "ls"); err == nil ||
+	if _, err := h.sessions.Send(h.caller.ID, terminal.ID, "", "ls"); err == nil ||
 		!strings.Contains(err.Error(), "terminal, not an agent") {
 		t.Fatalf("sending to a terminal error = %v", err)
 	}
@@ -72,7 +72,7 @@ func TestSendAndWaitRefuseATargetTheManagerNoLongerPolls(t *testing.T) {
 	}
 	// The pane is still alive, so nothing else would catch this: an archived
 	// row is skipped by the poller, and the message would queue forever.
-	if _, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err == nil ||
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "", "rebase on main"); err == nil ||
 		!strings.Contains(err.Error(), "archived") {
 		t.Fatalf("send to an archived session = %v", err)
 	}
@@ -88,7 +88,7 @@ func TestSendRefusesAToolTheManagerCannotReadReadinessFrom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := h.sessions.Send(h.caller.ID, created.ID, "rebase on main"); err == nil ||
+	if _, err := h.sessions.Send(h.caller.ID, created.ID, "", "rebase on main"); err == nil ||
 		!strings.Contains(err.Error(), "marks no input box") {
 		t.Fatalf("send to a tool with no readiness marker = %v", err)
 	}
@@ -107,7 +107,7 @@ func TestAnUnreadableHeartbeatIsReportedRatherThanReadAsAClosedManager(t *testin
 	if err := h.store.SetSetting(store.PollerHeartbeatKey, "just now"); err != nil {
 		t.Fatalf("SetSetting: %v", err)
 	}
-	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main"); err == nil ||
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main"); err == nil ||
 		!strings.Contains(err.Error(), "poller heartbeat") {
 		t.Fatalf("Send with a corrupt heartbeat = %v", err)
 	}
@@ -123,7 +123,7 @@ func TestASenderSeesItsMessageDeliveredThenAnswered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -157,7 +157,7 @@ func TestASenderSeesItsMessageDeliveredThenAnswered(t *testing.T) {
 		t.Fatalf("delivered state = %+v", state)
 	}
 
-	if _, err := h.sessions.Send(worker.ID, h.caller.ID, "rebased, tests pass"); err != nil {
+	if _, err := h.sessions.Send(worker.ID, h.caller.ID, "", "rebased, tests pass"); err != nil {
 		t.Fatalf("reply: %v", err)
 	}
 	state, err = h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
@@ -184,7 +184,7 @@ func TestASenderIsToldWhenItsMessageWasDropped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestASenderIsToldWhenItsMessageWasDropped(t *testing.T) {
 		t.Fatalf("a dropped message does not say what to do about it: %+v", state)
 	}
 	// A reply must not turn a message that never arrived into an answered one.
-	if _, err := h.sessions.Send(worker.ID, h.caller.ID, "rebased, tests pass"); err != nil {
+	if _, err := h.sessions.Send(worker.ID, h.caller.ID, "", "rebased, tests pass"); err != nil {
 		t.Fatalf("reply: %v", err)
 	}
 	state, err = h.sessions.MessageStatus(h.caller.ID, sent.MessageID)
@@ -225,7 +225,7 @@ func TestASenderSeesAMessageHeldByARecipientOnADialog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -248,7 +248,7 @@ func TestASenderSeesAMessageHeldByARecipientOnADialog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	restingSend, err := h.sessions.Send(h.caller.ID, resting.ID, "rebase on main")
+	restingSend, err := h.sessions.Send(h.caller.ID, resting.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -271,7 +271,7 @@ func TestASenderSeesAMessageHeldWhenTheDialogReplacesTheComposer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestASenderIsToldWhenItsRecipientLeftTheManagersReach(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -338,7 +338,7 @@ func TestASenderIsToldWhenItsRecipientErrored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestASenderIsToldWhenTheRecipientsToolIsOneThisBuildDoesNotShip(t *testing.
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "rebase on main")
+	sent, err := h.sessions.Send(h.caller.ID, worker.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -397,14 +397,14 @@ func TestSendRefusesAMessageTooLargeToPasteIntoAPrompt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := h.sessions.Send(h.caller.ID, worker.ID, strings.Repeat("x", maxMessageBytes+1)); err == nil ||
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "", strings.Repeat("x", maxMessageBytes+1)); err == nil ||
 		!strings.Contains(err.Error(), "byte limit") {
 		t.Fatalf("an oversized message was answered with %v", err)
 	}
 	if queued, err := h.store.QueuedCount(worker.ID); err != nil || queued != 0 {
 		t.Fatalf("queued = %d, %v: the refusal still cost the recipient a slot", queued, err)
 	}
-	if _, err := h.sessions.Send(h.caller.ID, worker.ID, strings.Repeat("x", maxMessageBytes)); err != nil {
+	if _, err := h.sessions.Send(h.caller.ID, worker.ID, "", strings.Repeat("x", maxMessageBytes)); err != nil {
 		t.Fatalf("a message at the limit was refused: %v", err)
 	}
 }
@@ -416,14 +416,14 @@ func TestSendLetsAPairKeepTalkingUnderTheSenderLimit(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	for i := range 5 {
-		if _, err := h.sessions.Send(h.caller.ID, worker.ID, fmt.Sprintf("from-caller-%d", i)); err != nil {
+		if _, err := h.sessions.Send(h.caller.ID, worker.ID, "", fmt.Sprintf("from-caller-%d", i)); err != nil {
 			t.Fatalf("caller -> worker %d: %v", i, err)
 		}
-		if _, err := h.sessions.Send(worker.ID, h.caller.ID, fmt.Sprintf("from-worker-%d", i)); err != nil {
+		if _, err := h.sessions.Send(worker.ID, h.caller.ID, "", fmt.Sprintf("from-worker-%d", i)); err != nil {
 			t.Fatalf("worker -> caller %d: %v", i, err)
 		}
 	}
-	_, err = h.sessions.Send(h.caller.ID, worker.ID, "sixth from the caller")
+	_, err = h.sessions.Send(h.caller.ID, worker.ID, "", "sixth from the caller")
 	if !errors.Is(err, store.ErrInboxRateLimited) {
 		t.Fatalf("a sixth send inside a minute = %v, want ErrInboxRateLimited", err)
 	}

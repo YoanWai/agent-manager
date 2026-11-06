@@ -13,7 +13,7 @@ import (
 // says no reply can reach it.
 func TestSendFromQueuesUnderTheGivenNameWithNoSenderSession(t *testing.T) {
 	h := newSessionHarness(t)
-	sent, err := h.sessions.SendFrom("", "laptop-agent", h.caller.ID, "rebase on main")
+	sent, err := h.sessions.SendFrom("", "laptop-agent", h.caller.ID, "", "rebase on main")
 	if err != nil {
 		t.Fatalf("SendFrom: %v", err)
 	}
@@ -27,10 +27,10 @@ func TestSendFromQueuesUnderTheGivenNameWithNoSenderSession(t *testing.T) {
 	if head.ID != sent.MessageID || head.SenderID != "" || head.SenderName != "laptop-agent" || head.Body != "rebase on main" {
 		t.Fatalf("queued row = %+v", head)
 	}
-	if _, err := h.sessions.SendFrom("", "laptop-agent", h.caller.ID, "rebase on main"); !errors.Is(err, store.ErrInboxDuplicate) {
+	if _, err := h.sessions.SendFrom("", "laptop-agent", h.caller.ID, "", "rebase on main"); !errors.Is(err, store.ErrInboxDuplicate) {
 		t.Fatalf("a repeated message = %v, want the duplicate refused", err)
 	}
-	if _, err := h.sessions.SendFrom("", strings.Repeat("n", maxSenderNameBytes), h.caller.ID, "a name at the limit"); err != nil {
+	if _, err := h.sessions.SendFrom("", strings.Repeat("n", maxSenderNameBytes), h.caller.ID, "", "a name at the limit"); err != nil {
 		t.Fatalf("a name at the limit: %v", err)
 	}
 }
@@ -38,12 +38,12 @@ func TestSendFromQueuesUnderTheGivenNameWithNoSenderSession(t *testing.T) {
 func TestSendFromRefusesACallingSessionAndAnUnusableName(t *testing.T) {
 	h := newSessionHarness(t)
 	worker := h.addSessionRow(t, "worker")
-	if _, err := h.sessions.SendFrom(worker, "laptop-agent", h.caller.ID, "rebase on main"); err == nil ||
+	if _, err := h.sessions.SendFrom(worker, "laptop-agent", h.caller.ID, "", "rebase on main"); err == nil ||
 		!strings.Contains(err.Error(), "session "+worker) {
 		t.Fatalf("--from from inside a session = %v, want the calling session named", err)
 	}
 	for _, name := range []string{"", "   ", strings.Repeat("n", maxSenderNameBytes+1), "two\nlines", "bell\a", "esc\x1b[31m", "del\x7f", "c1\u0085"} {
-		if _, err := h.sessions.SendFrom("", name, h.caller.ID, "rebase on main"); err == nil {
+		if _, err := h.sessions.SendFrom("", name, h.caller.ID, "", "rebase on main"); err == nil {
 			t.Fatalf("sender name %q was accepted", name)
 		}
 	}

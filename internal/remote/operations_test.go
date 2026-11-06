@@ -60,9 +60,13 @@ func TestOperationArgv(t *testing.T) {
 			return err
 		}, []string{"terminal", "read", "--styled", "--json", "--", "a1b2c3d4"}},
 		{"send", func(ctx context.Context, c *Client) error {
-			_, err := c.Send(ctx, ref, text, "laptop agent")
+			_, _, err := c.Send(ctx, ref, text, "laptop agent", "")
 			return err
 		}, []string{"send", "--from=laptop agent", "--json", "--", "a1b2c3d4", text}},
+		{"send with subject", func(ctx context.Context, c *Client) error {
+			_, _, err := c.Send(ctx, ref, text, "laptop agent", "review report")
+			return err
+		}, []string{"send", "--from=laptop agent", "--subject=review report", "--json", "--", "a1b2c3d4", text}},
 		{"type", func(ctx context.Context, c *Client) error {
 			_, err := c.Type(ctx, ref, text)
 			return err
@@ -162,7 +166,7 @@ func TestUnsafeIDsNeverReachSSH(t *testing.T) {
 	errs = append(errs, err)
 	_, err = c.ReadTerminal(ctx, bad)
 	errs = append(errs, err)
-	_, err = c.Send(ctx, bad, "hi", "me")
+	_, _, err = c.Send(ctx, bad, "hi", "me", "")
 	errs = append(errs, err)
 	_, err = c.Type(ctx, bad, "hi")
 	errs = append(errs, err)
@@ -206,7 +210,7 @@ func TestOperationsDecodeTheRemoteJSON(t *testing.T) {
 		t.Fatal("ReadSession accepted a row with an unsafe id")
 	}
 	c, _ = recorder(t, `{"message_id":7,"queue_position":2,"manager_awake":true}`)
-	if got, err := c.Send(ctx, ref, "hi", "me"); err != nil || got != (sessioncmd.SendResult{MessageID: 7, QueuePosition: 2, ManagerAwake: true}) {
+	if got, _, err := c.Send(ctx, ref, "hi", "me", ""); err != nil || got != (sessioncmd.SendResult{MessageID: 7, QueuePosition: 2, ManagerAwake: true}) {
 		t.Fatalf("Send = %+v, %v", got, err)
 	}
 	c, _ = recorder(t, `{"started":true,"pid":4242}`)
@@ -382,5 +386,50 @@ func TestReadScreenFallsBackToPlainOnAnOlderHost(t *testing.T) {
 	got, err := c.ReadScreen(context.Background(), Ref{Host: "gpu", ID: "a1"}, false)
 	if err != nil || got != "red" || len(calls) != 2 {
 		t.Fatalf("ReadScreen = %q, %v after %d calls", got, err, len(calls))
+	}
+}
+
+func TestSendRetriesWithoutASubjectAHostPredates(t *testing.T) {
+	ref := Ref{Host: "gpu", ID: "a1b2c3d4"}
+	old := "agent-manager: flag provided but not defined: -subject; usage: agent-manager send <session-id> [\"<message>\"] [--saved <name>] [--from <name>] [--json]\n"
+	cases := []struct {
+		name     string
+		stderr   string
+		calls    int
+		kept     bool
+		failText string
+	}{
+		{"older host", old, 2, false, ""},
+		{"other refusal", "agent-manager: session a1b2c3d4 is not running\n", 1, false, "gpu: session a1b2c3d4 is not running"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls [][]string
+			c := newTestClient(t, func(_ context.Context, argv []string) ([]byte, []byte, error) {
+				words := remoteWords(t, argv)
+				calls = append(calls, words)
+				if slices.Contains(words, "--subject=review report") {
+					return nil, []byte(tc.stderr), exitStatus(1)
+				}
+				return []byte(`{"message_id":7,"queue_position":1,"manager_awake":true}`), nil, nil
+			})
+			result, kept, err := c.Send(context.Background(), ref, "rebase on main", "laptop agent", "review report")
+			if len(calls) != tc.calls {
+				t.Fatalf("ran %d calls %q, want %d", len(calls), calls, tc.calls)
+			}
+			if tc.failText != "" {
+				if err == nil || err.Error() != tc.failText {
+					t.Fatalf("err = %v, want %q", err, tc.failText)
+				}
+				return
+			}
+			if err != nil || kept != tc.kept || result.QueuePosition != 1 {
+				t.Fatalf("Send = %+v, kept %v, %v", result, kept, err)
+			}
+			want := []string{"send", "--from=laptop agent", "--json", "--", "a1b2c3d4", "rebase on main"}
+			if !reflect.DeepEqual(calls[1][1:], want) {
+				t.Fatalf("retry ran %q, want %q", calls[1][1:], want)
+			}
+		})
 	}
 }

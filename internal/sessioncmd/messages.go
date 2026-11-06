@@ -84,8 +84,8 @@ func savedText(st *store.Store, name, text string) (string, error) {
 // into the pane here: several tools keep their input line drawn under an
 // approval dialog, so a message sent the moment it is written would answer
 // that dialog. The manager's poller types it in once the target is at rest.
-func (s *Sessions) Send(sessionID, targetID, message string) (SendResult, error) {
-	return s.send(targetID, message, func(runtime *runtime) (store.Session, error) {
+func (s *Sessions) Send(sessionID, targetID, subject, message string) (SendResult, error) {
+	return s.send(targetID, subject, message, func(runtime *runtime) (store.Session, error) {
 		return runtime.caller(sessionID)
 	})
 }
@@ -97,14 +97,14 @@ const maxSenderNameBytes = 64
 // SendFrom queues a message from a caller with no session on this machine,
 // such as an agent on another one, under the name it gives. Nothing here
 // can carry a reply back, and the envelope says so.
-func (s *Sessions) SendFrom(sessionID, senderName, targetID, message string) (SendResult, error) {
+func (s *Sessions) SendFrom(sessionID, senderName, targetID, subject, message string) (SendResult, error) {
 	if sessionID != "" {
 		return SendResult{}, fmt.Errorf("a sender name is for a caller with no session on this machine; this runs as session %s, which is the sender", sessionID)
 	}
 	if err := validSenderName(senderName); err != nil {
 		return SendResult{}, err
 	}
-	return s.send(targetID, message, func(*runtime) (store.Session, error) {
+	return s.send(targetID, subject, message, func(*runtime) (store.Session, error) {
 		return store.Session{Name: senderName}, nil
 	})
 }
@@ -173,13 +173,17 @@ func validSenderName(name string) error {
 
 // send queues a message from the sender its caller resolves. A sender with
 // no ID has no session here to refuse as the target or to mark as answered.
-func (s *Sessions) send(targetID, message string, resolveSender func(*runtime) (store.Session, error)) (SendResult, error) {
+func (s *Sessions) send(targetID, subject, message string, resolveSender func(*runtime) (store.Session, error)) (SendResult, error) {
 	message = strings.TrimSpace(message)
 	if message == "" {
 		return SendResult{}, errors.New("message is empty")
 	}
 	if len(message) > maxMessageBytes {
 		return SendResult{}, fmt.Errorf("message is %d bytes, over the %d byte limit; shorten it to the instruction and point the agent at a file or a task for the detail", len(message), maxMessageBytes)
+	}
+	subject, err := validSubject(subject)
+	if err != nil {
+		return SendResult{}, err
 	}
 	runtime, err := s.open()
 	if err != nil {
@@ -205,6 +209,7 @@ func (s *Sessions) send(targetID, message string, resolveSender func(*runtime) (
 		SessionID:   target.ID,
 		SenderID:    sender.ID,
 		SenderName:  sender.Name,
+		Subject:     subject,
 		Body:        message,
 		Fingerprint: fingerprint(message),
 		SentAt:      now,
@@ -248,35 +253,18 @@ func (s *Sessions) MessageStatus(sessionID string, messageID int64) (MessageStat
 	if err != nil {
 		return MessageState{}, err
 	}
-	state := MessageState{
-		MessageID: msg.ID,
-		SessionID: msg.SessionID,
-		Body:      msg.Body,
+	outcome, err := outcomeOf(msg, runtime.heldReason)
+	if err != nil {
+		return MessageState{}, err
 	}
-	switch {
-	// A drop stamps the delivery column as well, so that a message nothing
-	// will ever type leaves the queue, and is read first for that reason.
-	case !msg.DroppedAt.IsZero():
-		state.State = "dropped"
-		state.Reason = "Agent Manager could not type it into the pane, and never retries a message; send it again"
-	case !msg.ReadAt.IsZero():
-		state.State = "answered"
-		state.DeliveredAt = msg.DeliveredAt.Format(time.RFC3339)
-	case !msg.DeliveredAt.IsZero():
-		state.State = "delivered"
-		state.DeliveredAt = msg.DeliveredAt.Format(time.RFC3339)
-	default:
-		state.State = "queued"
-		held, err := runtime.heldReason(msg.SessionID)
-		if err != nil {
-			return MessageState{}, err
-		}
-		if held != "" {
-			state.State = "held"
-			state.Reason = held
-		}
-	}
-	return state, nil
+	return MessageState{
+		MessageID:   msg.ID,
+		SessionID:   msg.SessionID,
+		Body:        msg.Body,
+		State:       outcome.State,
+		DeliveredAt: outcome.DeliveredAt,
+		Reason:      outcome.Reason,
+	}, nil
 }
 
 // heldReason names why a queued message is not moving when the recipient is

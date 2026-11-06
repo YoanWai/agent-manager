@@ -27,6 +27,8 @@ func TestServerWithNoCallerKeepsTheWorkspaceClosed(t *testing.T) {
 		{"send_session", map[string]any{"session_id": "a1", "message": "hi"}},
 		{"send_session", map[string]any{"session_id": "box::a1", "message": "hi"}},
 		{"message_status", map[string]any{"message_id": 7}},
+		{"list_messages", map[string]any{}},
+		{"read_message", map[string]any{"message_id": 7}},
 		{"wait_for_session", map[string]any{"session_id": "a1"}},
 		{"revive_session", map[string]any{"session_id": "a1"}},
 		{"revive_session", map[string]any{"session_id": "box::a1"}},

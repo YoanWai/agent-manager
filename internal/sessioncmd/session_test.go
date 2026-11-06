@@ -322,7 +322,7 @@ func TestSessionsWithNoCallerListAndReadButStillRefuseToMessage(t *testing.T) {
 	if _, err := h.sessions.Read("", h.caller.ID); err != nil {
 		t.Fatalf("Read with no caller: %v", err)
 	}
-	if _, err := h.sessions.Send("", h.caller.ID, "hello"); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
+	if _, err := h.sessions.Send("", h.caller.ID, "", "hello"); err == nil || !strings.Contains(err.Error(), "not inside an Agent Manager session") {
 		t.Fatalf("Send with no caller = %v, want the missing caller named", err)
 	}
 }

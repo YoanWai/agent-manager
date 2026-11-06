@@ -87,6 +87,7 @@ func sessionRowHelpRows(list keybind.Table, mode presentation.GlyphMode) [][2]st
 	h.action("fork it into a new session in the same group", keybind.Fork)
 	h.action("rename it, and re-pick its tool", keybind.Rename)
 	h.action("move it to a group, or a terminal into a session", keybind.Move)
+	h.action("its inbox: messages waiting for it, then the latest to or from it", keybind.Inbox)
 	h.action("open its working directory in your editor", keybind.Editor)
 	h.action("restart it on an empty context (same name, group, dir, tool)", keybind.Restart)
 	h.action("kill it / kill every live session (frees their RAM)", keybind.Kill, keybind.KillAll)
@@ -107,7 +108,7 @@ func markHelpRows(list keybind.Table, glyphs Glyphs) [][2]string {
 		{g.IdleGlyph + " idle", "nothing running"},
 		{g.ErroredGlyph + " errored", "the tool reported an error, or the session is dead"},
 		{g.StartingGlyph + " starting", "the pane is still launching; its row mark spins"},
-		{g.InboxGlyph + "N", "messages from another agent, held until this one is at rest"},
+		{g.InboxGlyph + "N", "another agent's messages, held until it rests; click for the inbox"},
 		{g.ReorderGrip, "drag handle; click, then use arrows to move, enter to drop"},
 		{g.BranchGlyph, "worktree branch or conversation fork"},
 		{g.GroupClosedGlyph + " / " + g.GroupOpenGlyph, "collapsed / expanded group"},
@@ -196,6 +197,11 @@ func helpSections(ctx Context) []helpSection {
 			{"r", "refresh releases and messages"},
 			{"x", "dismiss it for good"},
 			{"esc", "close"},
+		}},
+		{title: titledWith("inbox", list, mode, keybind.Inbox), rows: [][2]string{
+			{presentation.NavigationLabel(mode, "↑↓ / wheel"), "pick a message"},
+			{"↵ / click", "read the whole message"},
+			{"esc", "back to the list, or close"},
 		}},
 		{title: titledWith("settings", list, mode, keybind.Settings), rows: [][2]string{
 			{presentation.NavigationLabel(mode, "↑↓ / wheel"), "pick a field"},
