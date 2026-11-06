@@ -869,7 +869,7 @@ func TestSessionDescriptionsTeachWhenAndHowToChainTools(t *testing.T) {
 		"list_sessions":    {"Call first", "create_session"},
 		"create_session":   {"without waiting for the user", "worktree", "cannot see this conversation", "read_session"},
 		"read_session":     {"after create_session", "current screen"},
-		"send_session":     {"self-contained instruction", "read_session", "at rest", "ordinary work", "eight messages"},
+		"send_session":     {"self-contained instruction", "read_session", "at rest", "ordinary work", "five messages a minute"},
 		"message_status":   {"delivered", "queued"},
 		"wait_for_session": {"instead of calling read_session in a loop", "timeout is a normal answer", "reached false"},
 		"revive_session":   {"dead session"},
