@@ -27,7 +27,7 @@ func TestPanesOnAServerWithNoSessionsIsEmpty(t *testing.T) {
 	killServer := func() { exec.Command("tmux", "-L", socket, "kill-server").Run() }
 	killServer()
 	t.Cleanup(killServer)
-	if out, err := exec.Command("tmux", "-L", socket, "start-server", ";", "set-option", "-g", "exit-empty", "off").CombinedOutput(); err != nil {
+	if out, err := exec.Command("tmux", SocketArgs(socket, "start-server", ";", "set-option", "-g", "exit-empty", "off")...).CombinedOutput(); err != nil {
 		t.Fatalf("start an empty server: %v: %s", err, out)
 	}
 	panes, err := driver.Panes()

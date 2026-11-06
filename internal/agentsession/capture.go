@@ -1,7 +1,7 @@
 // Package agentsession reads back the conversation id an agent CLI minted
 // for a session the manager launched, for tools that do not accept a
 // chosen id at launch (codex, opencode, gemini, hermes, command-code, muse,
-// antigravity, omp, cursor).
+// antigravity, omp, cursor, kiro).
 // Revive resumes that exact id instead of the working directory's most recent
 // conversation, which is the wrong one whenever sessions share a directory.
 package agentsession
@@ -51,7 +51,7 @@ func resolvePath(p string) string {
 // Capture returns the conversation id a tool wrote for a session launched
 // in cwd at or after launchedAt. sessionStore selects the on-disk format
 // ("codex", "opencode", "gemini", "hermes", "command-code", "muse",
-// "antigravity", "omp" or "cursor"). claimed holds ids already bound to other sessions,
+// "antigravity", "omp", "cursor" or "kiro"). claimed holds ids already bound to other sessions,
 // so two sessions started in one directory do not capture the same
 // conversation. terminal is the tty device of the session's pane: omp
 // records which session each terminal runs, which tells sessions sharing a
@@ -78,6 +78,8 @@ func Capture(sessionStore, cwd string, launchedAt time.Time, claimed map[string]
 		return captureOmp(ompRoot(managerEnv), cwd, terminal, launchedAt, claimed)
 	case "cursor":
 		return captureCursor(cursorConfigDir(managerEnv), cwd, launchedAt, claimed)
+	case "kiro":
+		return captureKiro(cwd, launchedAt, claimed)
 	default:
 		return "", false
 	}
@@ -113,6 +115,8 @@ func snapshotUnder(sessionStore, cwd, profile string, env Env) (map[string]int64
 		return snapshotOmp(ompRoot(env), cwd)
 	case "cursor":
 		return snapshotCursor(cursorConfigDir(env), cwd)
+	case "kiro":
+		return snapshotKiro(cwd, env)
 	default:
 		return nil, false
 	}
@@ -149,6 +153,8 @@ func Recapture(sessionStore, cwd string, snapshot map[string]int64, claimed map[
 		cands = recaptureOmp(ompRoot(managerEnv), cwd, snapshot, claimed)
 	case "cursor":
 		cands = recaptureCursor(cursorConfigDir(managerEnv), cwd, snapshot, claimed)
+	case "kiro":
+		cands = recaptureKiro(cwd, snapshot, claimed)
 	default:
 		return "", false
 	}

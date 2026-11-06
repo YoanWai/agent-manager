@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func TestWriteFileCreatesAndReplacesAtomically(t *testing.T) {
@@ -117,5 +118,45 @@ func TestWriteFileRemovesAStagingFileAfterFailure(t *testing.T) {
 				t.Fatalf("failed write left files behind: %v", names)
 			}
 		})
+	}
+}
+
+// WriteIfChanged is what keeps concurrent launches from rewriting a generated
+// file a reader is looking at, so an unchanged write must not touch the file.
+func TestWriteIfChangedLeavesAnIdenticalFileAlone(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "cache.json")
+	if err := WriteIfChanged(path, []byte("same"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if err := WriteIfChanged(path, []byte("same"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("an identical write rewrote the file: %v -> %v", before.ModTime(), after.ModTime())
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "same" {
+		t.Fatalf("content = %q, err = %v", got, err)
+	}
+}
+
+func TestWriteIfChangedRewritesChangedContent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cache.json")
+	if err := WriteIfChanged(path, []byte("first"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteIfChanged(path, []byte("second"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(path); err != nil || string(got) != "second" {
+		t.Fatalf("content = %q, err = %v", got, err)
 	}
 }

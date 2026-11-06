@@ -173,3 +173,46 @@ func FuzzMountEntry(f *testing.F) {
 		_ = underMount(parsed.point, parsed.point)
 	})
 }
+
+// A truncated or malformed table line must come back as "not a mount" rather
+// than reading fields that are not there: the guards in mountEntry are what
+// keeps a bad line from panicking the whole manager.
+func TestMountEntryRejectsLinesItCannotRead(t *testing.T) {
+	for _, line := range []string{
+		"1 2 3 - 9p drvfs x",
+		"1 2 - 9p drvfs rw",
+		"1 2 3 4 - 9p",
+		"1 2 3 4 5 -",
+		"1 2 3 4 5 -  rw",
+		"-",
+		"",
+	} {
+		if parsed, ok := mountEntry(line); ok {
+			t.Errorf("mountEntry(%q) = %+v, true; want false", line, parsed)
+		}
+	}
+}
+
+// An octal escape has to hold three digits. A backslash with fewer bytes left
+// is a literal backslash, not a slice past the end of the field.
+func TestUnescapeMountKeepsAnIncompleteEscape(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "escaped space", in: `my\040drive`, want: "my drive"},
+		{name: "escaped backslash", in: `C:\134`, want: `C:\`},
+		{name: "trailing backslash", in: `C:\`, want: `C:\`},
+		{name: "one digit left", in: `a\4`, want: `a\4`},
+		{name: "two digits left", in: `a\40`, want: `a\40`},
+		{name: "non-octal digits", in: `a\9zz`, want: `a\9zz`},
+		{name: "nothing to escape", in: "/mnt/c", want: "/mnt/c"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := unescapeMount(tc.in); got != tc.want {
+				t.Fatalf("unescapeMount(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}

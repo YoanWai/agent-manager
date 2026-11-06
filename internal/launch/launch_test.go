@@ -21,6 +21,11 @@ import (
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
 
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
+
 func TestPromptInjectsDirectiveOnlyForAutoNamedWithPrompt(t *testing.T) {
 	withDirective := Prompt("", "build the api", true)
 	if !strings.HasPrefix(withDirective, RenameDirective+"\n\n") || !strings.HasSuffix(withDirective, "build the api") {

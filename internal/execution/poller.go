@@ -87,6 +87,9 @@ type Runner struct {
 	// flag travels with the timer so a rule classification change restarts
 	// the grace instead of inheriting the previous one.
 	quietSince map[string]quietTimer
+	// waitingScreens is the screen each session last derived waiting on,
+	// which an acknowledgement holds idle until the screen changes.
+	waitingScreens map[string]uint64
 	// heartbeatAt is when this manager last tried to claim the store and
 	// stamp its liveness row.
 	heartbeatAt time.Time

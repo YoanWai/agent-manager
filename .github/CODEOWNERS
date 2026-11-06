@@ -1,1 +1,16 @@
-* @YoanWai
+# Default: maintainer or any collaborator.
+* @YoanWai @wainmann/collaborators
+
+# Maintainer-only: everything under .github (workflows, this file, templates),
+# security, governance, installers, Go modules, license, and release publishing.
+/.github/ @YoanWai
+/SECURITY.md @YoanWai
+/GOVERNANCE.md @YoanWai
+/MAINTAINERS.md @YoanWai
+/.goreleaser.yaml @YoanWai
+/install.sh @YoanWai
+/install.ps1 @YoanWai
+/go.mod @YoanWai
+/go.sum @YoanWai
+/LICENSE @YoanWai
+/NOTICE @YoanWai

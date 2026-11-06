@@ -362,6 +362,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 		{"revive_session", map[string]any{"session_id": "gpu::r1"}, []string{"revive", "--json", "--", "r1"}, "revived remote-worker (id gpu::r1)"},
 		{"archive_session", map[string]any{"session_id": "gpu::r1"}, []string{"archive", "--json", "--", "r1"}, "(id gpu::r1)"},
 		{"archive_session", map[string]any{"session_id": "gpu::r1", "archived": false}, []string{"archive", "--restore", "--json", "--", "r1"}, "restored remote-worker (id gpu::r1)"},
+		{"move_session", map[string]any{"session_id": "gpu::r1", "group": "work"}, []string{"move", "--json", "--", "r1", "work"}, "moved remote-worker (id gpu::r1)"},
 		// The terminal tools below drive the one this session opens here.
 		{"create_terminal", map[string]any{"host": "gpu", "directory": "/srv"}, []string{"terminal", "create", "--json", "--directory=/srv"}, "created shell (id gpu::t1)"},
 		{"read_terminal", map[string]any{"terminal_id": "gpu::t1"}, []string{"terminal", "read", "--json", "--", "t1"}, "$ ls"},
@@ -390,7 +391,7 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 			}
 		})
 	}
-	if f.local.readID != "" || f.local.sentID != "" || f.local.killedID != "" || f.local.revivedID != "" || f.local.archivedID != "" ||
+	if f.local.readID != "" || f.local.sentID != "" || f.local.killedID != "" || f.local.revivedID != "" || f.local.archivedID != "" || f.local.movedID != "" ||
 		f.local.groupPath != "" || f.local.createdOpts.Name != "" ||
 		f.terminals.readID != "" || f.terminals.sentID != "" || f.terminals.closedID != "" || f.terminals.createdOpts.Directory != "" {
 		t.Fatalf("a routed call also ran locally: sessions %+v terminals %+v", f.local, f.terminals)
@@ -429,6 +430,19 @@ func TestARemoteRefusalReachesTheAgent(t *testing.T) {
 	text, isError := callText(t, f.session, "send_terminal", map[string]any{"terminal_id": "gpu::t1", "command": "ls"})
 	if !isError || text != "gpu: terminal t1 is nested under remote-worker; only that session drives it" {
 		t.Fatalf("send_terminal = %q, error %v", text, isError)
+	}
+}
+
+func TestARemoteMoveRefusalReachesTheAgentAndMovesNothingHere(t *testing.T) {
+	f := newRemoteFixture(t, "cafe", func(string, []string) ([]byte, []byte, error) {
+		return nil, []byte("agent-manager: group \"nope\" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it\n"), exitStatus(1)
+	})
+	text, isError := callText(t, f.session, "move_session", map[string]any{"session_id": "gpu::r1", "group": "nope"})
+	if !isError || text != `gpu: group "nope" does not exist; call agent-manager groups for the existing ones or agent-manager create-group to add it` {
+		t.Fatalf("move_session = %q, error %v", text, isError)
+	}
+	if f.local.movedID != "" {
+		t.Fatalf("a refused remote move also ran locally: %+v", f.local)
 	}
 }
 
@@ -510,7 +524,6 @@ func TestLocalOnlyToolsRefuseQualifiedIDsWithoutIO(t *testing.T) {
 		args map[string]any
 	}{
 		{"wait_for_session", map[string]any{"session_id": "gpu::r1"}},
-		{"move_session", map[string]any{"session_id": "gpu::r1", "group": "work"}},
 		{"task", map[string]any{"action": "claim", "task_id": "gpu::7"}},
 		{"task", map[string]any{"action": "create", "title": "t", "body": "b", "depends_on": []string{"gpu::7"}}},
 		{"review_comment", map[string]any{"comment_id": "gpu::0123456789abcdef"}},
@@ -520,7 +533,7 @@ func TestLocalOnlyToolsRefuseQualifiedIDsWithoutIO(t *testing.T) {
 			t.Errorf("%s = %q, error %v", tc.tool, text, isError)
 		}
 	}
-	if f.local.waitedID != "" || f.local.movedID != "" || f.local.claimedTaskID != "" || f.local.taskTitle != "" || f.reads != 0 {
+	if f.local.waitedID != "" || f.local.claimedTaskID != "" || f.local.taskTitle != "" || f.reads != 0 {
 		t.Fatalf("a refused call did work: sessions %+v, connection reads %d", f.local, f.reads)
 	}
 }

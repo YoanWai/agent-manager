@@ -29,7 +29,7 @@ import (
 const testSocket = "amexectest"
 
 func tmuxCmd(args ...string) *exec.Cmd {
-	cmd := exec.Command(tmux.Binary, append([]string{"-L", testSocket}, args...)...)
+	cmd := exec.Command(tmux.Binary, tmux.SocketArgs(testSocket, args...)...)
 	if runtime.GOOS == "windows" {
 		cmd.Env = append(os.Environ(), "PSMUX_NO_WARM=1")
 	}
@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	tmux.ConfigFile = os.DevNull
 	// An inherited GIT_DIR points the temp repos these tests build at the
 	// repo running them.
 	if err := testenv.IsolateGit(); err != nil {

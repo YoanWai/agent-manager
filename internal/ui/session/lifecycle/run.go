@@ -448,7 +448,7 @@ func RunAttach(services Services, request AttachRequest) (AttachResult, error) {
 			return
 		}
 		if sess.Status == status.Finished {
-			if ackErr := services.Store.AcknowledgeFinished(request.ID); ackErr != nil {
+			if ackErr := services.Store.Acknowledge(request.ID); ackErr != nil {
 				result.Fatal = ackErr
 				return
 			}

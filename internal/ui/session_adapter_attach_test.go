@@ -108,7 +108,7 @@ func TestAttachAcknowledgesFinished(t *testing.T) {
 	}
 }
 
-func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
+func TestDotAcknowledgesOnlyCurrentFinishedOrWaitingStatus(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name       string
@@ -119,6 +119,7 @@ func TestDotAcknowledgesOnlyCurrentFinishedStatus(t *testing.T) {
 		wantOffer  bool
 	}{
 		{name: "finished", listed: status.Finished, stored: status.Finished, wantStatus: status.Idle, wantAcked: true, wantOffer: true},
+		{name: "waiting", listed: status.Waiting, stored: status.Waiting, wantStatus: status.Idle, wantAcked: true, wantOffer: true},
 		{name: "stale snapshot", listed: status.Finished, stored: status.Working, wantStatus: status.Working, wantOffer: true},
 		{name: "working", listed: status.Working, stored: status.Working, wantStatus: status.Working},
 	}

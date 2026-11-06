@@ -872,7 +872,7 @@ case "$*" in
 	echo leaving >> CALLS
 	released leave
 	echo left >> CALLS ;;
-*) echo "$3" >> CALLS ;;
+*) [ "$3" = -f ] && shift 2; echo "$3" >> CALLS ;;
 esac
 `)
 	stub := filepath.Join(dir, "tmux")

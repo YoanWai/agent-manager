@@ -1,11 +1,17 @@
 package runtime
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
+
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
 
 // A probe of a window tmux does not hold refuses the entry, which is the only
 // way the person is told to revive or restart the row.

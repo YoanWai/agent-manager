@@ -356,12 +356,13 @@ func (s *Store) UpdateStatusOnSocket(id, newStatus, socket string) (written, cha
 	return true, previous != newStatus, tx.Commit()
 }
 
-// AcknowledgeFinished atomically marks a session idle and acked if its stored
-// status is still finished. A newer status makes the operation a no-op.
-func (s *Store) AcknowledgeFinished(id string) error {
+// Acknowledge atomically marks a session idle and acked if its stored
+// status is still finished or waiting. A newer status makes the operation a
+// no-op.
+func (s *Store) Acknowledge(id string) error {
 	res, err := s.db.Exec(
-		`UPDATE sessions SET status = ?, acked = 1, last_status_at = ? WHERE id = ? AND status = ?`,
-		status.Idle, encodeTime(time.Now()), id, status.Finished)
+		`UPDATE sessions SET status = ?, acked = 1, last_status_at = ? WHERE id = ? AND status IN (?, ?)`,
+		status.Idle, encodeTime(time.Now()), id, status.Finished, status.Waiting)
 	if err != nil {
 		return err
 	}

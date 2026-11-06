@@ -46,7 +46,7 @@ release:
     - glob: ./install.ps1
     - glob: ./install.sh
   header: |
-    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, and Cursor CLI run side by side, each in its own tmux session, with live status, a project tree, quick prompt mode, and full-file diff review. Runs on macOS, Linux and Windows (with psmux), and inside WSL2. [See it running](https://github.com/wainmann/agent-manager#agent-manager).
+    Run every AI coding agent from one terminal. Claude Code, Codex, OpenCode, Grok Build, Gemini CLI, Antigravity CLI, Pi, Command Code, Hermes Agent, Muse Code, Oh My Pi, Cursor CLI, and Kiro CLI run side by side, each in its own tmux session, with live status, a project tree, quick prompt mode, and full-file diff review. Runs on macOS, Linux and Windows (with psmux), and inside WSL2. [See it running](https://github.com/wainmann/agent-manager#agent-manager).
 
   footer: |
     ## Install

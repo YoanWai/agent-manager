@@ -466,6 +466,7 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 		"gemini": "Gemini CLI", "antigravity": "Antigravity CLI", "pi": "Pi", "hermes": "Hermes Agent", "command-code": "Command Code", "muse": "Muse Code",
 		"omp":      "Oh My Pi",
 		"cursor":   "Cursor CLI",
+		"kiro":     "Kiro CLI",
 		"my-agent": "Not tool specific",
 	} {
 		if got := toolLabel(tool); got != want {
@@ -478,7 +479,7 @@ func TestToolLabelsMatchTheFormDropdown(t *testing.T) {
 	}
 	// A Windows checkout with core.autocrlf holds the form with CRLF endings.
 	options := strings.ReplaceAll(string(form), "\r\n", "\n")
-	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Antigravity CLI", "Pi", "Hermes Agent", "Command Code", "Cursor CLI", "Not tool specific"} {
+	for _, label := range []string{"Claude Code", "Codex", "OpenCode", "Grok Build", "Gemini CLI", "Antigravity CLI", "Pi", "Hermes Agent", "Command Code", "Cursor CLI", "Kiro CLI", "Not tool specific"} {
 		if !strings.Contains(options, "- "+label+"\n") {
 			t.Errorf("the bug form's dropdown has no %q option", label)
 		}
