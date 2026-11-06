@@ -142,7 +142,7 @@ func TestHintOnWindowsAvoidsUnixInstallers(t *testing.T) {
 	if got, want := hint("windows", "git"), "install it with: scoop install git"; got != want {
 		t.Fatalf("hint = %q, want %q", got, want)
 	}
-	for _, tool := range []string{"claude", "codex", "gemini", "grok", "hermes", "muse", "opencode", "pi", "agy", "omp"} {
+	for _, tool := range []string{"claude", "codex", "gemini", "grok", "hermes", "muse", "opencode", "pi", "agy", "omp", "kiro-cli"} {
 		if got := hint("windows", tool); strings.Contains(got, "curl") {
 			t.Fatalf("hint for %s = %q, want no Unix installer", tool, got)
 		}
@@ -154,7 +154,7 @@ func TestHintOnWindowsAvoidsUnixInstallers(t *testing.T) {
 // the plain-shell rows are not agent CLIs; cmd is documented as unsupported
 // on native Windows.
 func TestEveryBuiltinAgentHasAWindowsInstall(t *testing.T) {
-	agents := []string{"claude", "codex", "gemini", "grok", "hermes", "muse", "opencode", "pi", "agy", "omp"}
+	agents := []string{"claude", "codex", "gemini", "grok", "hermes", "muse", "opencode", "pi", "agy", "omp", "kiro-cli"}
 	for _, tool := range agents {
 		if got := installers("windows")[tool]; got == "" {
 			t.Errorf("%s has no Windows install", tool)
