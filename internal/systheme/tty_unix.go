@@ -20,6 +20,14 @@ const queryDeadline = 200 * time.Millisecond
 // device attributes reply.
 const paletteReplyLimit = 1024
 
+// paletteReplyCeiling bounds the palette read once the host has started
+// answering. tmux 3.6 and later forward an unset color to its client and
+// hold the device attributes reply behind it for up to 500 ms, and a slow
+// link delivers the rest after the first bytes: waiting for the closing
+// reply keeps those bytes out of the TUI, which would read them as keys.
+// A host that answers nothing still costs only queryDeadline.
+const paletteReplyCeiling = time.Second
+
 var deviceAttributesReply = regexp.MustCompile(`\x1b\[\?[0-9;]*c`)
 
 // queryTerminalBg asks the terminal for its background color (OSC 11) on
@@ -35,7 +43,8 @@ func queryTerminalBg() (r, g, b int, ok bool) {
 
 // QueryPalette asks the terminal for its 16 standard colors (OSC 4) the
 // same way, before the TUI owns the terminal. Index i holds color i as
-// "#rrggbb", empty where the terminal gave no answer.
+// "#rrggbb", empty where the terminal gave no answer. A tty that cannot be
+// opened answers nothing, the same as a silent host.
 func QueryPalette() []string {
 	palette := make([]string, paletteSize)
 	withRawTTY(func(fd int) {
@@ -82,7 +91,10 @@ func queryTerminalBgFD(fd int, deadline time.Time) (r, g, b int, ok bool) {
 // queryPaletteFD sends one query per color, since tmux 3.3 to 3.5 answers
 // only the first color of a query that lists several. A terminal answers
 // the closing device attributes request after any color it answers, so
-// that reply ends the wait well before the deadline.
+// that reply ends the wait well before the deadline. Once any reply has
+// arrived the wait for it stretches to paletteReplyCeiling, and whatever
+// the tty still holds afterwards is discarded rather than handed to the
+// TUI as keystrokes.
 func queryPaletteFD(fd int, deadline time.Time, palette []string) {
 	var query strings.Builder
 	for index := range palette {
@@ -92,11 +104,18 @@ func queryPaletteFD(fd int, deadline time.Time, palette []string) {
 	if _, err := unix.Write(fd, []byte(query.String())); err != nil {
 		return
 	}
-	response, _ := readReply(fd, deadline, paletteReplyLimit, endsWithDeviceAttributes)
+	response, complete := readReply(fd, deadline, paletteReplyLimit, hasDeviceAttributes)
+	if !complete && response != "" && len(response) <= paletteReplyLimit {
+		rest, _ := readReply(fd, deadline.Add(paletteReplyCeiling-queryDeadline), paletteReplyLimit-len(response), func(more string) bool {
+			return hasDeviceAttributes(response + more)
+		})
+		response += rest
+	}
+	discardInput(fd)
 	parseOSC4(response, palette)
 }
 
-func endsWithDeviceAttributes(response string) bool {
+func hasDeviceAttributes(response string) bool {
 	return deviceAttributesReply.MatchString(response)
 }
 

@@ -283,6 +283,38 @@ func TestQueryPaletteFD(t *testing.T) {
 	}
 }
 
+// A host that starts answering before the deadline and finishes after it,
+// as tmux 3.6 does while it holds the device attributes reply behind a
+// forwarded color, or a slow link does, is read to the end: the late colors
+// are kept and no reply is left on the tty for the TUI to take as keys.
+func TestQueryPaletteFDWaitsForAHostThatStartedAnswering(t *testing.T) {
+	query, terminal := terminalPair(t)
+	const deadline = 100 * time.Millisecond
+	exchange := answerPaletteQuery(terminal, "\x1b]4;1;rgb:cccc/2424/1d1d\x1b\\")
+	late := make(chan error, 1)
+	go func() {
+		if err := <-exchange; err != nil {
+			late <- err
+			return
+		}
+		time.Sleep(3 * deadline)
+		_, err := io.WriteString(terminal, "\x1b]4;9;rgb:fbfb/4949/3434\x1b\\\x1b[?62c")
+		late <- err
+	}()
+
+	palette := make([]string, paletteSize)
+	queryPaletteFD(int(query.Fd()), time.Now().Add(deadline), palette)
+	if err := <-late; err != nil {
+		t.Fatal(err)
+	}
+	if palette[1] != "#cc241d" || palette[9] != "#fb4934" {
+		t.Errorf("palette[1], palette[9] = %q, %q, want the early and the late answer", palette[1], palette[9])
+	}
+	if leftover, _ := readReply(int(query.Fd()), time.Now().Add(50*time.Millisecond), paletteReplyLimit, func(string) bool { return false }); leftover != "" {
+		t.Errorf("left %q on the tty for the TUI", leftover)
+	}
+}
+
 func TestQueryPaletteFDRejectsInvalidDescriptor(t *testing.T) {
 	palette := make([]string, paletteSize)
 	queryPaletteFD(-1, time.Now().Add(time.Second), palette)
