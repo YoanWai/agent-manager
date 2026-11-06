@@ -18,15 +18,21 @@ import (
 // changed: the poller's live preview cadence.
 const liveTick = 300 * time.Millisecond
 
-// Sink receives what the watcher pushes: pane frames, and the loss of a
-// client it was serving.
+// Sink receives frames, clipboard writes, and control-client failures.
 type Sink struct {
-	Frame func(watch.Frame)
-	Lost  func(error)
+	Frame     func(watch.Frame)
+	Lost      func(error)
+	Clipboard func(sessionID, text string)
 }
 
 func NewWatcher(driver *tmux.Driver, sink Sink) *watch.Watcher {
-	return watch.New(driver, liveTick, watch.Sink{Frame: sink.Frame, Lost: sink.Lost})
+	return watch.New(driver, liveTick, watch.Sink{Frame: sink.Frame, Lost: sink.Lost, Clipboard: sink.Clipboard})
+}
+
+// ClipboardMsg carries a clipboard write from the watched session.
+type ClipboardMsg struct {
+	SessionID string
+	Text      string
 }
 
 // FrameMsg carries a pane snapshot pushed by the watcher, with the pane's

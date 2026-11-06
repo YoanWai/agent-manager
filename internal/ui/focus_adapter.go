@@ -51,6 +51,9 @@ func (m *Model) routeFocusMsg(msg tea.Msg) (tea.Model, tea.Cmd, bool) {
 
 	case focusruntime.FrameMsg:
 		return routed(m, m.focus.pane.ApplyFrame(uifocus.FrameMessage(msg), focusFrameHost{m}))
+
+	case focusruntime.ClipboardMsg:
+		return routed(m, m.passFocusedClipboard(msg))
 	}
 	return nil, nil, false
 }
@@ -266,6 +269,19 @@ func (m *Model) focusRegionRequestCmd(request uifocus.RegionRequest) tea.Cmd {
 	}
 }
 
+func (m *Model) passFocusedClipboard(msg focusruntime.ClipboardMsg) tea.Cmd {
+	sess, ok := m.selected()
+	if !m.focused() || !ok || sess.ID != msg.SessionID {
+		return nil
+	}
+	return func() tea.Msg {
+		if err := clipboard.WriteTerminal(msg.Text); err != nil {
+			return errMsg{err}
+		}
+		return nil
+	}
+}
+
 func copyTextCmd(text string, done func(chars int) tea.Msg) tea.Cmd {
 	return func() tea.Msg {
 		if err := clipboard.WriteText(text); err != nil {
@@ -381,6 +397,9 @@ func newFocusWatch(driver *tmux.Driver, send func(tea.Msg)) *focuswatch.Watcher 
 	return focusruntime.NewWatcher(driver, focusruntime.Sink{
 		Frame: func(frame focuswatch.Frame) { send(focusruntime.FrameMessage(frame)) },
 		Lost:  func(err error) { send(errMsg{err}) },
+		Clipboard: func(sessionID, text string) {
+			send(focusruntime.ClipboardMsg{SessionID: sessionID, Text: text})
+		},
 	})
 }
 

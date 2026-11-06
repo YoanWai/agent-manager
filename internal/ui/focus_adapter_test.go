@@ -409,3 +409,32 @@ func TestFailedChildDeleteRestoresSurvivingParentWatcher(t *testing.T) {
 		t.Fatalf("watching=%q, want surviving %q", got, parent.ID)
 	}
 }
+
+func TestFocusedClipboardWriteReachesTheTerminal(t *testing.T) {
+	t.Setenv("TMUX", "")
+	var terminal strings.Builder
+	saved := termseq.Out
+	termseq.Out = &terminal
+	t.Cleanup(func() { termseq.Out = saved })
+
+	m := shotModel()
+	sess, ok := m.selected()
+	if !ok {
+		t.Fatal("test setup: no selected session")
+	}
+	if cmd := m.passFocusedClipboard(focusruntime.ClipboardMsg{SessionID: sess.ID, Text: "hello"}); cmd != nil {
+		t.Fatal("passed on a copy while no session was focused")
+	}
+	m.push(newFocusSurface(m))
+	if cmd := m.passFocusedClipboard(focusruntime.ClipboardMsg{SessionID: "another", Text: "other"}); cmd != nil {
+		t.Fatal("passed on a copy from a session out of focus")
+	}
+	_, cmd := m.Update(focusruntime.ClipboardMsg{SessionID: sess.ID, Text: "hello"})
+	if cmd == nil {
+		t.Fatal("the focused session's copy was dropped")
+	}
+	m.applyTestMsg(t, cmd())
+	if got, want := terminal.String(), "\x1b]52;c;aGVsbG8=\a"; got != want {
+		t.Fatalf("terminal got %q, want %q", got, want)
+	}
+}
