@@ -184,7 +184,7 @@ Two clauses are worth knowing as a contributor. Section 3 licenses the patent cl
 
 [REVIEW.md](../REVIEW.md) states what a review here covers, so you can see what a finding will be about before you open the PR. CodeRabbit reviews every pull request automatically, usually within minutes. Work through its findings first: fix what it got right, and reply on the comment when you disagree, so the thread records why. Maintainer review starts once the CodeRabbit round is handled; a PR with open, unanswered findings waits.
 
-Any collaborator may merge a pull request once another collaborator or the maintainer has approved it. Nobody approves their own pull request. GitHub enforces this with a required code-owner review. [CODEOWNERS](CODEOWNERS) lists `@YoanWai` and `@wainmann/collaborators` as default owners, with maintainer-only paths for workflows, security, governance, and release publishing. One approving code-owner review is required. A push after approval needs a fresh approval. The required checks must pass, and conversations must be resolved. Expect a first response within a few days.
+Any collaborator may merge a pull request once another collaborator or the maintainer has approved it. Nobody approves their own pull request. GitHub enforces this with a required code-owner review. [CODEOWNERS](CODEOWNERS) lists `@YoanWai` and `@wainmann/collaborators` as default owners, with maintainer-only paths for workflows, the CODEOWNERS file, security, governance, and release publishing. One approving code-owner review is required. A push after approval needs a fresh approval. The required checks must pass, and conversations must be resolved. Expect a first response within a few days.
 
 ## Governance
 

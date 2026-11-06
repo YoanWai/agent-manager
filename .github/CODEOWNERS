@@ -1,8 +1,9 @@
 # Default: maintainer or any collaborator.
 * @YoanWai @wainmann/collaborators
 
-# Maintainer-only: workflows, access rules, security, governance, and release publishing.
-/.github/ @YoanWai
+# Maintainer-only: workflows, this file, security, governance, and release publishing.
+/.github/workflows/ @YoanWai
+/.github/CODEOWNERS @YoanWai
 /SECURITY.md @YoanWai
 /GOVERNANCE.md @YoanWai
 /MAINTAINERS.md @YoanWai
