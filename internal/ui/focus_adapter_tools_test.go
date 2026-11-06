@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,7 +69,6 @@ func TestFocusedModifiedEnterFollowsEachToolsKeyMode(t *testing.T) {
 	readable := tmuxAtLeast(t, 3, 5)
 	for _, mode := range []paneKeyMode{extendedKeys, legacyKeys} {
 		t.Run(string(mode), func(t *testing.T) {
-			t.Parallel()
 			want := "typed"
 			if mode == extendedKeys && readable {
 				want = "\x1b[13;2u\x1b[13;5utyped"
@@ -90,10 +90,31 @@ func focusedKeysRead(t *testing.T, mode paneKeyMode) string {
 		request = `printf "\033[>4;2m"; `
 	}
 	toolName := string(mode) + "-keys"
-	m.services.cfg.Tools[toolName] = config.Tool{Command: `sh -c '` + request + `exec head -n 1 > keys'`, DefaultStatus: status.Idle}
 	dir := t.TempDir()
+	keys := filepath.Join(dir, "keys")
+	m.services.cfg.Tools[toolName] = config.Tool{Command: "sh -c " + tmux.ShellQuote(request+"exec head -n 1 > "+tmux.ShellQuote(keys)), DefaultStatus: status.Idle}
 	createSessionOn(t, m, toolName, toolName, dir)
 	m.selectSessionRow(t, toolName)
+	sessID := railSelectedSession(m).ID
+	waitForPaneChild(t, m, sessID, "head")
+	if mode == extendedKeys && tmuxAtLeast(t, 3, 5) {
+		deadline := time.Now().Add(10 * time.Second)
+		var keyMode string
+		for time.Now().Before(deadline) {
+			out, err := tmuxCmd(t, "display-message", "-p", "-t", tmux.PaneTarget(sessID), "#{pane_key_mode}").Output()
+			if err != nil {
+				t.Fatalf("read pane key mode: %v", err)
+			}
+			keyMode = strings.TrimSpace(string(out))
+			if strings.HasPrefix(keyMode, "Ext ") {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		if !strings.HasPrefix(keyMode, "Ext ") {
+			t.Fatalf("pane key mode = %q, want Ext", keyMode)
+		}
+	}
 	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
 	*m = *updated.(*Model)
 	m.drainEffects(t)
@@ -110,8 +131,7 @@ func focusedKeysRead(t *testing.T, mode paneKeyMode) string {
 		*m = *updated.(*Model)
 		m.drainEffects(t)
 	}
-	keys := filepath.Join(dir, "keys")
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if data, err := os.ReadFile(keys); err == nil && len(data) > 0 {
 			return string(data[:len(data)-1])
