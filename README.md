@@ -226,7 +226,7 @@ Join the [Agent Manager Community](https://discord.gg/ecS88An7pF) on Discord. As
 
 **Contributors and collaborators wanted.** agent-manager is actively looking for people to help build it. Unassigned issues are free to take, comment on one to claim it, and regular contributors get invited as collaborators. Say hi in #dev on [Discord](https://discord.gg/ecS88An7pF).
 
-Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Questions and setups worth sharing go in [Discussions](https://github.com/wainmann/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/wainmann/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
+Bug reports, feature ideas, and pull requests are welcome. See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for setup and the checks CI runs. Project roles and how decisions are made are in [GOVERNANCE.md](GOVERNANCE.md), with the current roster in [MAINTAINERS.md](MAINTAINERS.md). Questions and setups worth sharing go in [Discussions](https://github.com/wainmann/agent-manager/discussions). Security reports go through a [private advisory](https://github.com/wainmann/agent-manager/security/advisories/new); see [SECURITY.md](.github/SECURITY.md).
 
 ### Contributors
 
