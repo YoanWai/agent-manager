@@ -883,6 +883,7 @@ func TestStuckGraceAcrossBuiltinTools(t *testing.T) {
 		"omp":          "please go slow\n\n  ⠋ Working…   Hello from the fake model\n ⠋ 4s > Local Model > ~/project\n╰─\n",
 		"command-code": " ✧ Thinking… esc to interrupt • 3s\n❯ \n",
 		"cursor":       "  Reply with the single word pong.\n\n ⠘⠆ Working\n\n  → Plan, search, build anything\n\n  Auto\n  ~/project\n",
+		"kiro":         "  › Run the shell command: ls\n◦ Thinking... (esc to cancel)\n────────────────\nDefault · auto · ◔ 1%    ~/project\n›  Kiro is working · 1s · Type to steer · Ctrl+S to queue\n",
 	}
 	shimmer := func(pane string, frame int) string {
 		return fmt.Sprintf("\x1b[38;5;%dm", 245+frame) + pane + "\x1b[39m"
