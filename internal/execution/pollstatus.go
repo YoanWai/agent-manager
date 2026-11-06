@@ -90,7 +90,7 @@ func (p *Runner) paneVerdict(sess store.Session, pane string, agentAlive bool, p
 					var paneHash uint64
 					if stuck {
 						grace = stuckEndGrace
-						paneHash = hashString(text)
+						paneHash = hashString(pane)
 					}
 					now := time.Now()
 					timer, ok := p.quietSince[sess.ID]
