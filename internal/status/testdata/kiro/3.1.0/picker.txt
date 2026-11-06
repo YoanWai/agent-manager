@@ -1,0 +1,30 @@
+ /sessions
+ ────────────────────────────────────────────────────────────────────────────────
+ search   filter   sort   group                              tab to switch panels
+ no active filter · none in this directory
+ type to search by title, prompt, or tag
+ ────────────────────────────────────────────────────────────────────────────────
+   Session Name                                       Msgs Last Used Status
+ ──────────────────────────────────────────────────────────────────────────────
+  All sessions (4)
+ ❯ Remember the word pelican. Reply only ok. Do not…     2       19s ● active
+   ok                                                    1        1h ○ idle
+   Acknowledge Simple User Request                       1        1h ○ idle
+   List Directory Contents                               1        1h ○ idle
+────────────────────────────────────────────────────────────────────────────────
+ Showing 1–4 of 4 sessions
+ ↑↓ to navigate · ↵ to select · ctrl+p to preview · + to view all controls
+
+
+
+
+
+
+
+
+
+
+
+
+
+

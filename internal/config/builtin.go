@@ -627,4 +627,33 @@ rules = [
   { state = "working", pattern = "(?m)^[ \\t]*│[ \\t]*⏳ Trusting workspace" },
   { state = "working", pattern = "(?m)(?:^[ \\t]*\\p{Braille}{2}\\s+(?:Working|Running)\\b|^[ \\t]*→ [^\\n]*ctrl\\+c to stop)(?:\\n[^\\n]*){0,16}(?:\\n[ \\t]*)*\\z" },
 ]
+
+[tools.kiro]
+command = "kiro-cli chat"
+# 3.x runs the V3 terminal UI these rules read.
+minimum_version = "3.1.0"
+session_report = "none"
+# Kiro mints the session id. The capturer reads it from --list-sessions.
+session_store = "kiro"
+resume_by_id_command = "kiro-cli chat --resume-id {id}"
+resume_picker_command = "kiro-cli chat --resume-picker"
+revive_command = "kiro-cli chat --resume"
+mcp = "kiro"
+# The busy timer lives on the composer row, which a turn_end scope would
+# cut from what the rules read, so a closed turn rests on the default.
+default_status = "idle"
+activity_cutoff = "(?m)^› "
+input_placeholder = "^(?:ask a question or describe a task ↵|Kiro is working · .+)$"
+message_start = "^• "
+user_echo = "^  › (.+)$"
+# rules, the status bar, the credits row closing a turn, the banner and the hint row
+chrome_line = "^─{8,}$|^\\S[^·\\n]* · [^·\\n]+ · \\S+ \\d+%|^▸ Credits: .+ \\| Time: .+$|^[ \\t]*\\p{Braille}{2,}|^[ \\t]*(?:Welcome to Kiro CLI V\\d+|Learn more: https://kiro\\.dev/\\S*|kiro-cli --v2 +Launch the previous experience instead)$|^KIRO$|^▸ What's new(?:[ \\t]+ctrl\\+o to expand)?$|^[ \\t]+/sessions to resume · /copy to clipboard$"
+# The dialogs replace the composer, so a live one has no composer row and
+# no column-zero rule below its footer. A quoted one always has both.
+rules = [
+  { state = "waiting", pattern = "(?m)^ Trust this workspace\\?[ \\t]*\\n(?:[^\\n]*\\n){1,24}? esc to exit · ↑↓ to navigate · ↵ to select[ \\t]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
+  { state = "waiting", pattern = "(?m)^ [^\\n]*\\S requires approval[ \\t]*\\n(?:[^\\n]*\\n){1,16}? esc to close · ↑↓ to navigate · ↵ to select[^\\n]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
+  { state = "waiting", pattern = "(?m)^ /sessions[ \\t]*\\n(?:[^\\n]*\\n)*? ↑↓ to navigate · ↵ to select · ctrl\\+p to preview · \\+ to view all controls[ \\t]*(?:\\n(?:[^─›\\n][^\\n]*)?)*\\z" },
+  { state = "working", pattern = "(?m)^›[ \\t]+Kiro is working · [^\\n]*(?:\\n(?:[^›\\n][^\\n]*)?)*\\z" },
+]
 `

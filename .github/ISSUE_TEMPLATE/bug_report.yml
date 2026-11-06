@@ -62,6 +62,7 @@ body:
         - Muse Code
         - Oh My Pi
         - Cursor CLI
+        - Kiro CLI
         - Not tool specific
 
   - type: input

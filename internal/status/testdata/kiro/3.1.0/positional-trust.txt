@@ -1,0 +1,40 @@
+      ⣀⣀
+   ⣠⣾⣿⣿⣿⣿⣷⣦⡀
+  ⢀⣿⣿⣿⡿⣿⣿⡿⣿⣿    Welcome to Kiro CLI V3
+  ⢸⣿⣿⣿⡀⣸⣿⡀⣸⣿⡇   Learn more: https://kiro.dev/docs/cli/v3/
+  ⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇
+ ⠰⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠁   kiro-cli --v2   Launch the previous experience instead
+   ⢸⣿⣿⣿⢿⣿⣿⠟⠁
+
+
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Trust this workspace?
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ /home/user/src/demo-project2
+
+ This folder can contain hooks, agents, MCP servers and workflows that run commands on your machine. Only trust folders
+ you know.
+
+ Trusting lets Kiro use this workspace's configuration. Kiro will be able to read, edit, and execute files here.
+
+ ❯ Trust, continue
+   Don't trust, exit
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ esc to exit · ↑↓ to navigate · ↵ to select
+
+ Revoke later by removing workspaceTrusted from
+ /home/user/.kiro/workspace-roots/380ceafb1dab8278/permissions.yaml
+
+
+
+
+
+
+
+
+
+
+
+
+
+
