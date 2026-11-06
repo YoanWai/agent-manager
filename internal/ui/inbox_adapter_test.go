@@ -91,26 +91,41 @@ func TestClickingTheInboxBadgeOpensThatRowsMessages(t *testing.T) {
 	}
 }
 
-func TestTheOpenInboxReloadsWhenItsQueueMoves(t *testing.T) {
+func TestTheOpenInboxFollowsADeliveryWhileAnotherMessageArrives(t *testing.T) {
 	t.Parallel()
 	m := buildModel(t)
 	createSession(t, m, "alpha", t.TempDir(), "")
 	createSession(t, m, "beta", t.TempDir(), "")
 	alpha, beta := sessionRow(t, m, "alpha").sess, sessionRow(t, m, "beta").sess
+	queueFor(t, m, alpha, beta, "first news", "first news body")
+	m.workspace.queuedMessages = map[string]int{alpha.ID: 1}
 	m.selectSessionRow(t, "alpha")
 	m.Update(key("i"))
 	m.drainEffects(t)
-	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "No messages to or from this session") {
-		t.Fatalf("an empty inbox shows:\n%s", view)
+	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "Waiting (1)") || !strings.Contains(view, "first news") {
+		t.Fatalf("the open inbox does not show the queued message:\n%s", view)
 	}
 
-	queueFor(t, m, alpha, beta, "fresh news", "fresh news body")
-	previous := m.workspace.queuedMessages
-	m.workspace.queuedMessages = map[string]int{alpha.ID: 1}
-	m.followInbox(previous)
+	head, queued, err := m.services.store.HeadMessage(alpha.ID)
+	if err != nil || !queued {
+		t.Fatalf("HeadMessage = %v, %v", queued, err)
+	}
+	if err := m.services.store.MarkDelivered(head.ID, time.Now()); err != nil {
+		t.Fatalf("MarkDelivered: %v", err)
+	}
+	queueFor(t, m, alpha, beta, "second news", "second news body")
+	m.followInbox()
 	m.drainEffects(t)
-	if view := ansi.Strip(preparedView(m)); !strings.Contains(view, "fresh news") {
-		t.Fatalf("a new queued message did not reach the open inbox:\n%s", view)
+
+	view := ansi.Strip(preparedView(m))
+	order := []string{"Waiting (1)", "second news", "Recent (1)", "first news"}
+	at := -1
+	for _, want := range order {
+		next := strings.Index(view, want)
+		if next <= at {
+			t.Fatalf("after one delivery and one arrival the queue count is unchanged, yet the inbox must show %q in order %q:\n%s", want, order, view)
+		}
+		at = next
 	}
 }
 

@@ -190,3 +190,34 @@ func TestSplitKeepsWaitingMessagesOutOfRecent(t *testing.T) {
 		t.Fatalf("split = %+v", log)
 	}
 }
+
+func TestInboxRefreshWaitsForTheLoadInFlight(t *testing.T) {
+	s, root, _ := openSurface(t, 100)
+	for range 5 {
+		s.Refresh()
+	}
+	if len(root.loads) != 1 {
+		t.Fatalf("five refreshes during the first load asked for %d loads, want 1", len(root.loads))
+	}
+	s.Loaded(root.loads[0], sampleLog(), nil)
+	s.Refresh()
+	if len(root.loads) != 2 {
+		t.Fatalf("a refresh after the load landed asked for %d loads in all, want 2", len(root.loads))
+	}
+}
+
+func TestInboxCursorStaysOnTheMessageAReloadMoves(t *testing.T) {
+	s, root, h := openSurface(t, 100)
+	s.Loaded(root.loads[0], sampleLog(), nil)
+	moved := sampleLog()
+	delivered := moved.Queued[0]
+	delivered.State, delivered.Reason, delivered.Position = "delivered", "", 0
+	moved.Queued = []Entry{{ID: 43, From: "reviewer", To: "worker", SentAt: noon, Subject: "next task", State: "queued", Position: 1}}
+	moved.Recent = append(moved.Recent, delivered)
+	s.Refresh()
+	s.Loaded(root.loads[len(root.loads)-1], moved, nil)
+	press(t, s, h, tea.KeyMsg{Type: tea.KeyEnter})
+	if len(root.reads) != 1 || root.reads[0] != 42 {
+		t.Fatalf("enter after the reload read %v, want the message the cursor was on (42)", root.reads)
+	}
+}

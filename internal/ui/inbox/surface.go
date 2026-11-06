@@ -28,6 +28,7 @@ type Surface struct {
 	now       func() time.Time
 
 	loadGen uint64
+	loading bool
 	loaded  bool
 	failed  string
 	log     Log
@@ -56,21 +57,42 @@ func (s *Surface) SessionID() string { return s.sessionID }
 // Reload asks for the log again, keeping what shows until it lands.
 func (s *Surface) Reload() {
 	s.loadGen++
+	s.loading = true
 	s.root.LoadInbox(s.sessionID, s.loadGen)
 }
 
-// Loaded takes a load the card asked for; a stale one is dropped.
+// Refresh reloads unless a load is already on its way, so a card left open
+// across many polls never stacks them up.
+func (s *Surface) Refresh() {
+	if !s.loading {
+		s.Reload()
+	}
+}
+
+// Loaded takes a load the card asked for; a stale one is dropped. The
+// cursor stays on the message it was on, which a delivery moves from the
+// queue to the recent list.
 func (s *Surface) Loaded(gen uint64, log Log, err error) {
 	if gen != s.loadGen {
 		return
 	}
-	s.loaded = true
+	s.loading, s.loaded = false, true
 	if err != nil {
 		s.failed = err.Error()
 		return
 	}
+	picked := s.log.entries()
 	s.failed, s.log = "", log
-	s.cursor = min(s.cursor, max(len(log.entries())-1, 0))
+	entries := log.entries()
+	if s.cursor < len(picked) {
+		for index, entry := range entries {
+			if entry.ID == picked[s.cursor].ID {
+				s.cursor = index
+				return
+			}
+		}
+	}
+	s.cursor = min(s.cursor, max(len(entries)-1, 0))
 }
 
 // BodyRead takes the text of the message being read.

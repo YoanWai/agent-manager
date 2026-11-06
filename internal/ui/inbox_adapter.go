@@ -41,12 +41,12 @@ func (m *Model) applyInboxRead(request uiinbox.ReadRequest, body string, err err
 	}
 }
 
-// followInbox reloads the open inbox when its session's queue count moved
-// on a refresh: a message arrived, or one went in.
-func (m *Model) followInbox(previous map[string]int) {
-	s, ok := surfaceOf[*uiinbox.Surface](m)
-	if ok && previous[s.SessionID()] != m.workspace.queuedMessages[s.SessionID()] {
-		s.Reload()
+// followInbox reloads the open inbox on every workspace refresh. A queue
+// count is not enough to go on: one message going in while another arrives
+// leaves it unchanged, and a hold reason changes with the recipient's screen.
+func (m *Model) followInbox() {
+	if s, ok := surfaceOf[*uiinbox.Surface](m); ok {
+		s.Refresh()
 	}
 }
 
