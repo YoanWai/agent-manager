@@ -1,6 +1,8 @@
 package tmux
 
 import (
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +15,7 @@ func clearPaneTheme(t *testing.T) {
 	t.Helper()
 	tmuxCmd("set-option", "-gu", "window-style").Run()
 	tmuxCmd("set-environment", "-gu", "COLORFGBG").Run()
+	tmuxCmd("set-option", "-gu", "pane-colours").Run()
 }
 
 func globalWindowStyle(t *testing.T) string {
@@ -124,5 +127,101 @@ func TestCreateSerializesWithPushPaneTheme(t *testing.T) {
 
 	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg="+newer; got != want {
 		t.Fatalf("window-style = %q, want the newer pushed theme %q", got, want)
+	}
+}
+
+func hostPalette(colors map[int]string) []string {
+	palette := make([]string, 16)
+	for index, color := range colors {
+		palette[index] = color
+	}
+	return palette
+}
+
+// The host's answered colors go into pane-colours after a clear, and a host
+// that was never asked leaves the option alone.
+func TestPaneThemeArgsDeclaresTheHostPalette(t *testing.T) {
+	base := []string{
+		"set-option", "-g", "window-style", "fg=#cdd6f4,bg=#1e1e2e", ";",
+		"set-environment", "-g", "COLORFGBG", "15;0",
+	}
+	for _, tt := range []struct {
+		name    string
+		palette []string
+		want    []string
+	}{
+		{"never asked", nil, base},
+		{"no answers", hostPalette(nil), append(slices.Clone(base), ";", "set-option", "-q", "-gu", "pane-colours")},
+		{
+			"some answers",
+			hostPalette(map[int]string{1: "#cc241d", 15: "#fbf1c7"}),
+			append(slices.Clone(base),
+				";", "set-option", "-q", "-gu", "pane-colours",
+				";", "set-option", "-q", "-g", "pane-colours[1]", "#cc241d",
+				";", "set-option", "-q", "-g", "pane-colours[15]", "#fbf1c7"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := paneThemeArgs(PaneTheme{Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0", Palette: tt.palette})
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("paneThemeArgs = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Every supported tmux opens a session with the host palette in the theme,
+// including those before 3.3 that have no pane-colours to set.
+func TestCreateWithHostPaletteOnAnyTmux(t *testing.T) {
+	driver := requireTmux(t)
+	t.Cleanup(func() { clearPaneTheme(t) })
+	driver.PublishPaneTheme(PaneTheme{
+		Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0",
+		Palette: hostPalette(map[int]string{1: "#cc241d"}),
+	})
+
+	id := "pal" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	if got, want := globalWindowStyle(t), "fg=#cdd6f4,bg=#1e1e2e"; got != want {
+		t.Fatalf("window-style = %q, want %q", got, want)
+	}
+}
+
+// A color the current host leaves unanswered drops the value an earlier
+// push declared for it.
+func TestPushPaneThemeClearsColorsTheHostNoLongerAnswers(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("psmux has no pane-colours option")
+	}
+	driver := requireTmux(t)
+	requireTmuxAtLeast(t, 3, 3)
+	t.Cleanup(func() { clearPaneTheme(t) })
+	driver.PublishPaneTheme(PaneTheme{
+		Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0",
+		Palette: hostPalette(map[int]string{1: "#cc241d", 4: "#458588"}),
+	})
+	id := "palclr" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
+	if err := driver.Create(id, paneDir(), "", nil, 0, 0); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { driver.Kill(id) })
+
+	driver.PublishPaneTheme(PaneTheme{
+		Foreground: "#cdd6f4", Background: "#1e1e2e", ColorFgBg: "15;0",
+		Palette: hostPalette(map[int]string{4: "#458588"}),
+	})
+	if err := driver.PushPaneTheme(); err != nil {
+		t.Fatalf("PushPaneTheme: %v", err)
+	}
+	out, err := tmuxCmd("show-options", "-g", "pane-colours").CombinedOutput()
+	if err != nil {
+		t.Fatalf("show-options pane-colours: %v: %s", err, out)
+	}
+	if got, want := strings.TrimSpace(string(out)), "pane-colours[4] #458588"; got != want {
+		t.Fatalf("pane-colours = %q, want %q", got, want)
 	}
 }

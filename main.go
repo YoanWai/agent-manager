@@ -24,6 +24,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/mcpserver"
 	"github.com/YoanWai/agent-manager/internal/notify"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/systheme"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/YoanWai/agent-manager/internal/ui"
 	"github.com/YoanWai/agent-manager/internal/update"
@@ -370,6 +371,7 @@ func run() (resultErr error) {
 	if err := ui.DisableAlternateScroll(); err != nil {
 		return err
 	}
+	ui.SetHostPalette(systheme.QueryPalette())
 	// The terminal's own text and background colors follow the theme while
 	// the manager runs, so window padding outside the cell grid matches the
 	// frame — through tmux's passthrough envelope when a multiplexer is

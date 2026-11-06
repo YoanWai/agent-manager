@@ -2,6 +2,7 @@ package tmux
 
 import (
 	"fmt"
+	"strconv"
 )
 
 // PaneTheme is the text and background colors agent panes are rendered on.
@@ -16,17 +17,36 @@ type PaneTheme struct {
 	Foreground string // "#rrggbb"; tmux answers pane OSC 10 queries with it
 	Background string // "#rrggbb"; tmux answers pane OSC 11 queries with it
 	ColorFgBg  string // "fg;bg" color indexes for agents reading COLORFGBG
+	// Palette is the host terminal's colors 0 to 15 as "#rrggbb", empty
+	// where the host gave no answer, nil when the host was never asked, as
+	// on Windows, which leaves pane-colours alone.
+	// tmux answers pane OSC 4 queries with it, since captured rows keep
+	// their color indexes and the host draws them in its own palette.
+	Palette []string
 }
 
-// paneThemeArgs is the option pair as a tmux command list. window-style and
-// the environment are both server-global: every managed session lives on
-// this socket and wants the same answer, and a global option also reaches
-// windows a user opens inside a session later.
+// paneThemeArgs is the pane options as a tmux command list. window-style,
+// pane-colours and the environment are all server-global: every managed
+// session lives on this socket and wants the same answer, and a global
+// option also reaches windows a user opens inside a session later.
+// pane-colours is cleared before the answered colors go in, so a color the
+// current host left unanswered drops what an earlier host declared. -q skips
+// it on tmux before 3.3, which lacks the option.
 func paneThemeArgs(t PaneTheme) []string {
-	return []string{
+	args := []string{
 		"set-option", "-g", "window-style", "fg=" + t.Foreground + ",bg=" + t.Background, ";",
 		"set-environment", "-g", "COLORFGBG", t.ColorFgBg,
 	}
+	if t.Palette == nil {
+		return args
+	}
+	args = append(args, ";", "set-option", "-q", "-gu", "pane-colours")
+	for index, color := range t.Palette {
+		if color != "" {
+			args = append(args, ";", "set-option", "-q", "-g", "pane-colours["+strconv.Itoa(index)+"]", color)
+		}
+	}
+	return args
 }
 
 // PublishPaneTheme records the pane colors so Create hands them to new

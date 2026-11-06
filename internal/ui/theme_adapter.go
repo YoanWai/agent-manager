@@ -13,17 +13,25 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// hostPalette is the host terminal's 16 standard colors, read once at
+// startup before the TUI owns the terminal.
+var hostPalette []string
+
+// SetHostPalette records the host terminal's 16 standard colors for every
+// pane theme published after it.
+func SetHostPalette(palette []string) { hostPalette = palette }
+
 // paneTheme is the backdrop and text color an agent pane sits on: the
 // theme's own, the same colors the terminal is set to and the capture is
 // drawn over. Agents that auto-detect follow it, so a light theme hosts
-// light agents.
+// light agents. The 16 standard colors stay the host's.
 func paneTheme() tmux.PaneTheme {
 	current := uitheme.Current()
 	fgbg := "15;0"
 	if current.LightBackdrop() {
 		fgbg = "0;15"
 	}
-	return tmux.PaneTheme{Foreground: current.Text, Background: current.Bg, ColorFgBg: fgbg}
+	return tmux.PaneTheme{Foreground: current.Text, Background: current.Bg, ColorFgBg: fgbg, Palette: hostPalette}
 }
 
 // applyTheme publishes the styles for a token set; a theme switch repaints

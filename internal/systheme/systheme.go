@@ -8,6 +8,7 @@ package systheme
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -168,15 +169,53 @@ func colorFgBgScheme(value string) Scheme {
 }
 
 // parseOSC11 extracts the color from a "\x1b]11;rgb:RRRR/GGGG/BBBB"
-// reply, scaling each channel down from however many hex digits the
-// terminal chose to answer with.
+// reply.
 func parseOSC11(response string) (r, g, b int, ok bool) {
 	start := strings.Index(response, "]11;")
 	if start < 0 {
 		return 0, 0, 0, false
 	}
 	spec := response[start+len("]11;"):]
-	spec = strings.TrimSuffix(strings.TrimSuffix(spec, "\a"), "\x1b\\")
+	return parseRGB(strings.TrimSuffix(strings.TrimSuffix(spec, "\a"), "\x1b\\"))
+}
+
+// paletteSize is the 16 standard colors, the ones a pane's own palette
+// declares.
+const paletteSize = 16
+
+// parseOSC4 fills palette from every "\x1b]4;<index>;rgb:RRRR/GGGG/BBBB"
+// reply in response, as "#rrggbb". An index the response carries no valid
+// reply for keeps its value.
+func parseOSC4(response string, palette []string) {
+	const introducer = "\x1b]4;"
+	for {
+		start := strings.Index(response, introducer)
+		if start < 0 {
+			return
+		}
+		response = response[start+len(introducer):]
+		end := strings.IndexAny(response, "\a\x1b")
+		if end < 0 {
+			return
+		}
+		fields := strings.Split(response[:end], ";")
+		response = response[end:]
+		if len(fields) != 2 {
+			continue
+		}
+		index, err := strconv.Atoi(fields[0])
+		if err != nil || index < 0 || index >= len(palette) {
+			continue
+		}
+		if r, g, b, ok := parseRGB(fields[1]); ok {
+			palette[index] = fmt.Sprintf("#%02x%02x%02x", r, g, b)
+		}
+	}
+}
+
+// parseRGB reads an "rgb:RRRR/GGGG/BBBB" color, scaling each channel down
+// from however many hex digits the terminal chose to answer with.
+func parseRGB(spec string) (r, g, b int, ok bool) {
 	spec = strings.TrimPrefix(strings.TrimSpace(spec), "rgb:")
 	channels := strings.Split(spec, "/")
 	if len(channels) != 3 {
