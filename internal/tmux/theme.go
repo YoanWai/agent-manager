@@ -18,7 +18,8 @@ type PaneTheme struct {
 	Background string // "#rrggbb"; tmux answers pane OSC 11 queries with it
 	ColorFgBg  string // "fg;bg" color indexes for agents reading COLORFGBG
 	// Palette is the host terminal's colors 0 to 15 as "#rrggbb", empty
-	// where the host gave no answer, nil when the host was never asked.
+	// where the host gave no answer, nil when the host was never asked, as
+	// on Windows, which leaves pane-colours alone.
 	// tmux answers pane OSC 4 queries with it, since captured rows keep
 	// their color indexes and the host draws them in its own palette.
 	Palette []string

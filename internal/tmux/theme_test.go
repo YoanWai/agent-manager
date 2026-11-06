@@ -195,7 +195,7 @@ func TestCreateWithHostPaletteOnAnyTmux(t *testing.T) {
 // push declared for it.
 func TestPushPaneThemeClearsColorsTheHostNoLongerAnswers(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("psmux has no pane-colours option; it answers palette queries from the attached client's colors")
+		t.Skip("psmux has no pane-colours option")
 	}
 	driver := requireTmux(t)
 	requireTmuxAtLeast(t, 3, 3)

@@ -102,7 +102,7 @@ func TestCreateAnswersPaletteQueries(t *testing.T) {
 	}
 	t.Cleanup(func() { driver.Kill(id) })
 
-	got := waitForReply(t, driver, id, reply, "c")
+	got := waitForReply(t, driver, id, reply, deviceAttributesReply)
 	// tmux 3.6 and later name the color in its answer, 3.3 to 3.5 leave it out.
 	want := regexp.MustCompile(`^\x1b\]4;(1;)?rgb:cccc/2424/1d1d(\x07|\x1b\\)\x1b\]4;(4;)?rgb:4545/8585/8888(\x07|\x1b\\)\x1b\[\?[0-9;]*c$`)
 	if !want.MatchString(got) {
@@ -110,19 +110,24 @@ func TestCreateAnswersPaletteQueries(t *testing.T) {
 	}
 }
 
-// waitForReply waits for the pane to have written path up to suffix.
-func waitForReply(t *testing.T, driver *Driver, id, path, suffix string) string {
+// deviceAttributesReply is the answer to the "\e[c" a pane sends last, so
+// a reply file that ends in it holds every answer before it. A bare "c"
+// suffix would also match a read cut inside "rgb:cccc".
+var deviceAttributesReply = regexp.MustCompile(`\x1b\[\?[0-9;]*c$`)
+
+// waitForReply waits for the pane to have written path up to a match of end.
+func waitForReply(t *testing.T, driver *Driver, id, path string, end *regexp.Regexp) string {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if data, err := os.ReadFile(path); err == nil && strings.HasSuffix(string(data), suffix) {
+		if data, err := os.ReadFile(path); err == nil && end.Match(data) {
 			return string(data)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
 	data, _ := os.ReadFile(path)
 	pane, _ := driver.CapturePane(id)
-	t.Fatalf("pane wrote %q to %s, want it to end in %q; pane:\n%s", data, path, suffix, pane)
+	t.Fatalf("pane wrote %q to %s, want it to end in a match of %s; pane:\n%s", data, path, end, pane)
 	return ""
 }
 
