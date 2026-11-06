@@ -1,15 +1,31 @@
 # Maintainers
 
-| GitHub | Role | Areas |
-| --- | --- | --- |
-| [@YoanWai](https://github.com/YoanWai) | Project lead | TBD |
-| [@ribeirojose](https://github.com/ribeirojose) | Maintainer | UI, remote |
-| [@ipl31](https://github.com/ipl31) | Maintainer | UI, terminal |
-| [@subbeh](https://github.com/subbeh) | Maintainer | MCP, sessions |
-| [@nirtuttnauer](https://github.com/nirtuttnauer) | Triager | Quick prompt |
+Focus areas describe where someone usually works, not ownership.
 
-Areas come from merged pull request `area:*` labels where the signal is clear. Otherwise the cell is TBD.
+## Maintainer
+
+| GitHub | Focus areas |
+| --- | --- |
+| [@YoanWai](https://github.com/YoanWai) | TBD |
+
+## Collaborators
+
+Team [@wainmann/collaborators](https://github.com/orgs/wainmann/teams/collaborators).
+
+| GitHub | Focus areas |
+| --- | --- |
+| [@ribeirojose](https://github.com/ribeirojose) | UI, remote |
+| [@ipl31](https://github.com/ipl31) | UI, terminal |
+| [@subbeh](https://github.com/subbeh) | MCP, sessions |
+
+## Triager
+
+Team [@wainmann/triage](https://github.com/orgs/wainmann/teams/triage).
+
+| GitHub | Focus areas |
+| --- | --- |
+| [@nirtuttnauer](https://github.com/nirtuttnauer) | Quick prompt |
 
 ## Emeritus
 
-_None yet._
+None yet.

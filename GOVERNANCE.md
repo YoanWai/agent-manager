@@ -1,30 +1,48 @@
 # Governance
 
-agent-manager currently has a single project lead. [@YoanWai](https://github.com/YoanWai) is the project lead for now and has final say on project direction, merges, and releases.
+[@YoanWai](https://github.com/YoanWai) is the maintainer of agent-manager. Roles, merges, the roadmap, and how decisions are recorded are described below.
 
-## Roles
+## 1. Roles
 
-| Role | What they do |
-| --- | --- |
-| Contributor | Opens issues, Discussions, and pull requests. Anyone can contribute. |
-| Triager | Labels, closes, reopens, and assigns issues and pull requests. Moves Discussions. Does not push to the repo. |
-| Maintainer | Reviews pull requests, triages work, edits roadmap cards in Next and Later, and helps newcomers. |
-| Project lead | Confirms roadmap moves into Now and Done, decides disagreements, merges as code owner, and cuts releases. |
+| Role | Who | What they do |
+| --- | --- | --- |
+| Maintainer | [@YoanWai](https://github.com/YoanWai) | Reviews and merges, runs the roadmap, cuts releases, and holds the reserved powers in section 3. |
+| Collaborator | [@wainmann/collaborators](https://github.com/orgs/wainmann/teams/collaborators) (Write access) | Reviews and merges pull requests, edits the roadmap board, and helps newcomers. Current members are listed in [MAINTAINERS.md](MAINTAINERS.md). |
+| Triager | [@wainmann/triage](https://github.com/orgs/wainmann/teams/triage) | Labels, closes, reopens, and assigns issues and pull requests. No push access and no roadmap edits. |
+| Contributor | Anyone | Opens issues, Discussions, and pull requests. |
 
-## Becoming a triager or maintainer
+## 2. Merging
 
-A maintainer nominates the person. The nomination stands when the project lead raises no objection.
+Any collaborator can merge a pull request once another collaborator or the maintainer has approved it. Nobody approves their own pull request.
 
-## Inactivity
+Code-owner review is enforced by [CODEOWNERS](.github/CODEOWNERS) and branch protection (one approval, a code-owner review, and approval of the last push).
 
-Someone who is inactive for six months moves to emeritus. Emeritus people are listed in [MAINTAINERS.md](MAINTAINERS.md) and can return through the same nomination path.
+## 3. Reserved for the maintainer
 
-## Decisions
+Only the maintainer:
 
-**Small changes** (bug fixes, docs, refactors) go through a pull request. A code owner must approve before merge. See [CODEOWNERS](.github/CODEOWNERS) and [CONTRIBUTING.md](.github/CONTRIBUTING.md).
+- Cuts releases and tags
+- Changes repo settings, rulesets, and access
+- Handles security fixes and advisories
+- Adds or removes collaborators
+- Holds a veto on breaking changes and project direction
 
-**Bigger changes** (new features, UX or config changes, breaking changes, new dependencies) start as a GitHub Discussion in the [Ideas](https://github.com/wainmann/agent-manager/discussions/categories/ideas) category. Maintainers seek lazy consensus for 72 hours. On disagreement, the project lead decides and writes the outcome in the thread.
+## 4. Roadmap
 
-**Roadmap.** Themes live on the public org board [agent-manager roadmap](https://github.com/orgs/wainmann/projects/1). Maintainers add and edit cards in Next and Later. The project lead confirms moves into Now and Done.
+The maintainer and collaborators run the public roadmap board [agent-manager roadmap](https://github.com/orgs/wainmann/projects/1) together, across every column.
 
-**Record.** Decisions made outside GitHub are written up on GitHub within a day, on the Discussion, issue, pull request, or roadmap card they belong to.
+New themes or big changes start as a Discussion in the [Ideas](https://github.com/wainmann/agent-manager/discussions/categories/ideas) category. A proposal is accepted after 72 hours with no objection, subject to the maintainer's veto.
+
+## 5. Triagers and becoming a collaborator
+
+Triagers only label, close, reopen, and assign issues and pull requests. They do not edit the roadmap and they do not push.
+
+A collaborator can nominate a triager for promotion, or a triager can ask once they have proven themselves. The maintainer decides, and can also promote someone directly.
+
+## 6. Inactivity
+
+After six months with no activity, a collaborator moves to emeritus in [MAINTAINERS.md](MAINTAINERS.md). An emeritus collaborator can return anytime.
+
+## 7. Write decisions down
+
+Talk anywhere (in chat, on Discord, or on a call). A decision made there is written up on the GitHub issue or Discussion it belongs to within a day.
