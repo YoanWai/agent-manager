@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -116,30 +117,35 @@ func pairMessage(from, to, body string, at time.Time) InboxMessage {
 	}
 }
 
-func TestEnqueueGuardsAPingPongBetweenAPair(t *testing.T) {
+func TestEnqueueLetsAPairKeepTalkingUnderTheSenderLimits(t *testing.T) {
 	st := newTestStore(t)
-	now := time.Now()
-	ping := func(from, to string, n int) InboxMessage {
-		body := from + "->" + to + ":" + string(rune('a'+n))
-		return pairMessage(from, to, body, now)
-	}
-	for i := range 4 {
-		if _, err := st.Enqueue(ping("sessA", "sessB", i), DefaultInboxLimits); err != nil {
-			t.Fatalf("A->B %d: %v", i, err)
+	start := time.Now()
+	var last InboxMessage
+	for turn := range 40 {
+		from, to := "sessA", "sessB"
+		if turn%2 == 1 {
+			from, to = to, from
 		}
-		if _, err := st.Enqueue(ping("sessB", "sessA", i), DefaultInboxLimits); err != nil {
-			t.Fatalf("B->A %d: %v", i, err)
+		last = pairMessage(from, to, fmt.Sprintf("%s->%s turn %d", from, to, turn), start.Add(time.Duration(turn)*15*time.Second))
+		id, err := st.Enqueue(last, DefaultInboxLimits)
+		if err != nil {
+			t.Fatalf("turn %d %s->%s within ten minutes: %v", turn, from, to, err)
+		}
+		if err := st.MarkDelivered(id, last.SentAt); err != nil {
+			t.Fatalf("MarkDelivered turn %d: %v", turn, err)
 		}
 	}
-	if _, err := st.Enqueue(ping("sessA", "sessB", 4), DefaultInboxLimits); !errors.Is(err, ErrInboxPairLimited) {
-		t.Fatalf("9th between the pair = %v, want ErrInboxPairLimited", err)
+
+	if _, err := st.Enqueue(last, DefaultInboxLimits); !errors.Is(err, ErrInboxDuplicate) {
+		t.Fatalf("a repeat of the last turn = %v, want ErrInboxDuplicate", err)
 	}
-	if _, err := st.Enqueue(ping("sessA", "sessC", 0), DefaultInboxLimits); err != nil {
-		t.Fatalf("A->C should not count against A<->B: %v", err)
+	burst := last.SentAt.Add(time.Second)
+	var err error
+	for n := 0; n <= DefaultInboxLimits.RateCap && err == nil; n++ {
+		_, err = st.Enqueue(pairMessage(last.SenderID, last.SessionID, fmt.Sprintf("burst %d", n), burst), DefaultInboxLimits)
 	}
-	later := pairMessage("sessA", "sessB", "after-window", now.Add(11*time.Minute))
-	if _, err := st.Enqueue(later, DefaultInboxLimits); err != nil {
-		t.Fatalf("after the pair window: %v", err)
+	if !errors.Is(err, ErrInboxRateLimited) {
+		t.Fatalf("a burst past the sender limit = %v, want ErrInboxRateLimited", err)
 	}
 }
 

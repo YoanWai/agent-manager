@@ -409,13 +409,13 @@ func TestSendRefusesAMessageTooLargeToPasteIntoAPrompt(t *testing.T) {
 	}
 }
 
-func TestSendRefusesAPingPongBetweenAPair(t *testing.T) {
+func TestSendLetsAPairKeepTalkingUnderTheSenderLimit(t *testing.T) {
 	h := newSessionHarness(t)
 	worker, err := h.sessions.Create(h.caller.ID, CreateSessionOptions{Name: "worker"})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	for i := range 4 {
+	for i := range 5 {
 		if _, err := h.sessions.Send(h.caller.ID, worker.ID, fmt.Sprintf("from-caller-%d", i)); err != nil {
 			t.Fatalf("caller -> worker %d: %v", i, err)
 		}
@@ -423,8 +423,8 @@ func TestSendRefusesAPingPongBetweenAPair(t *testing.T) {
 			t.Fatalf("worker -> caller %d: %v", i, err)
 		}
 	}
-	_, err = h.sessions.Send(h.caller.ID, worker.ID, "ninth")
-	if !errors.Is(err, store.ErrInboxPairLimited) {
-		t.Fatalf("9th between the pair = %v, want ErrInboxPairLimited", err)
+	_, err = h.sessions.Send(h.caller.ID, worker.ID, "sixth from the caller")
+	if !errors.Is(err, store.ErrInboxRateLimited) {
+		t.Fatalf("a sixth send inside a minute = %v, want ErrInboxRateLimited", err)
 	}
 }
