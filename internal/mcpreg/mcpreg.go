@@ -130,7 +130,7 @@ func Apply(style, exe, hooksDir, command string, env map[string]string) (string,
 		overrides := []string{
 			fmt.Sprintf(`mcp_servers.%s.command=%q`, serverName, exe),
 			fmt.Sprintf(`mcp_servers.%s.args=["mcp"]`, serverName),
-			fmt.Sprintf(`mcp_servers.%s.env_vars=[%q]`, serverName, hooks.EnvSessionID),
+			fmt.Sprintf(`mcp_servers.%s.env_vars=[%q,"HTTP_PROXY","http_proxy","HTTPS_PROXY","https_proxy","ALL_PROXY","all_proxy","NO_PROXY","no_proxy"]`, serverName, hooks.EnvSessionID),
 		}
 		for _, override := range overrides {
 			command += " -c " + tmux.ShellQuote(override)

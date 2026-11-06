@@ -102,7 +102,7 @@ func TestApplyCodexAppendsOverrides(t *testing.T) {
 	for _, want := range []string{
 		`mcp_servers.agent-manager.command="/opt/bin/agent-manager"`,
 		`mcp_servers.agent-manager.args=["mcp"]`,
-		`mcp_servers.agent-manager.env_vars=["AGENT_MANAGER_SESSION_ID"]`,
+		`mcp_servers.agent-manager.env_vars=["AGENT_MANAGER_SESSION_ID","HTTP_PROXY","http_proxy","HTTPS_PROXY","https_proxy","ALL_PROXY","all_proxy","NO_PROXY","no_proxy"]`,
 	} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("command %q missing %q", command, want)
