@@ -31,7 +31,7 @@ Only the maintainer:
 
 The maintainer and collaborators run the public roadmap board [agent-manager roadmap](https://github.com/orgs/wainmann/projects/1) together, across every column.
 
-New themes or big changes start as a Discussion in the [Ideas](https://github.com/wainmann/agent-manager/discussions/categories/ideas) category. A proposal is accepted after 72 hours with no objection, subject to the maintainer's veto.
+New themes or big changes start as a Discussion in the [Ideas](https://github.com/wainmann/agent-manager/discussions/categories/ideas) category.
 
 ## 5. Triagers and becoming a collaborator
 
