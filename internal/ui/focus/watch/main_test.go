@@ -29,6 +29,7 @@ func TestMain(m *testing.M) {
 }
 
 func runTests(m *testing.M) int {
+	tmux.ConfigFile = os.DevNull
 	cleanup, err := testfixture.Prepare(testSocket)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -49,7 +50,7 @@ func runTests(m *testing.M) int {
 }
 
 func tmuxCmd(args ...string) *exec.Cmd {
-	cmd := exec.Command(tmux.Binary, append([]string{"-L", testSocket}, args...)...)
+	cmd := exec.Command(tmux.Binary, tmux.SocketArgs(testSocket, args...)...)
 	if runtime.GOOS == "windows" {
 		cmd.Env = append(os.Environ(), "PSMUX_NO_WARM=1")
 	}

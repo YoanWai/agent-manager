@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
 	"github.com/YoanWai/agent-manager/internal/store"
 )
@@ -64,6 +66,34 @@ func sessionSection() section {
 	return sessionSectionWith(newSessions)
 }
 
+// moveLayer reaches this host's sessions and, for a host::id, the SSH
+// connection it names.
+type moveLayer struct {
+	sessionCommands
+	hosts func() (*remote.Client, error)
+}
+
+func storedHosts(configDir string) func() (*remote.Client, error) {
+	return func() (*remote.Client, error) {
+		st, err := store.Open(filepath.Join(configDir, "state.db"))
+		if err != nil {
+			return nil, err
+		}
+		defer st.Close()
+		stored, err := st.Connections()
+		if err != nil {
+			return nil, err
+		}
+		connections := make([]remote.Connection, len(stored))
+		for i, conn := range stored {
+			connections[i] = remote.Connection(conn)
+		}
+		client := remote.New(configDir)
+		client.SetConnections(connections)
+		return client, nil
+	}
+}
+
 func sessionSectionWith(open func(string) sessionCommands) section {
 	return section{
 		title: "Agent sessions",
@@ -79,7 +109,7 @@ func sessionSectionWith(open func(string) sessionCommands) section {
 			{name: "kill", usage: usageKill, about: "stop another agent's process, ending whatever it is doing; its row keeps the last screen", run: bind(open, runKill)},
 			{name: "revive", usage: usageRevive, about: "bring a dead session back on its old row, resuming the conversation it held; an agent that quit inside a live pane comes back there", run: bind(open, runRevive)},
 			{name: "archive", usage: usageArchive, about: "file a finished session out of the active list, or restore it with --restore", run: bind(open, runArchive)},
-			{name: "move", usage: usageMove, about: "file a session under another existing group, the way the move key does; an empty group is the root", run: bind(open, runMove)},
+			{name: "move", usage: usageMove, about: "file a session under another existing group, the way the move key does; an empty group is the root, and a host::id moves it on that SSH connection", run: bind(func(configDir string) moveLayer { return moveLayer{open(configDir), storedHosts(configDir)} }, runMove)},
 			{name: "archive-self", usage: usageArchiveSelf, about: "archive this session once the current turn ends, the way the archive key does; --cancel withdraws a pending archive or kill", run: bind(open, runArchiveSelf)},
 			{name: "kill-self", usage: usageKillSelf, about: "stop this session's agent once the current turn ends, keeping its row for revive; --cancel withdraws a pending archive or kill", run: bind(open, runKillSelf)},
 			{name: "groups", usage: usageGroups, about: "list the groups sessions and terminals are filed under", run: bind(open, runGroups)},
@@ -323,18 +353,41 @@ func runArchive(out io.Writer, sessions sessionCommands, args []string, sessionI
 	return emit(out, *asJSON, updated, sessioncmd.FormatArchiveState(updated))
 }
 
-func runMove(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
+func runMove(out io.Writer, layer moveLayer, args []string, sessionID string) error {
 	set := newFlagSet(usageMove)
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 2, 2)
 	if err != nil {
 		return err
 	}
-	moved, err := sessions.Move(sessionID, operands[0], operands[1])
+	var moved sessioncmd.Session
+	if ref, ok := remote.ParseRef(operands[0]); ok {
+		moved, err = moveOnHost(layer, ref, operands[1], sessionID)
+	} else {
+		moved, err = layer.Move(sessionID, operands[0], operands[1])
+	}
 	if err != nil {
 		return err
 	}
 	return emit(out, *asJSON, moved, "moved "+sessioncmd.FormatSession(moved))
+}
+
+// moveOnHost runs the host's own move, which checks the group there. Like
+// the MCP tools, it reaches a host only for a caller inside Agent Manager.
+func moveOnHost(layer moveLayer, ref remote.Ref, group, sessionID string) (sessioncmd.Session, error) {
+	if err := sessioncmd.RequireCaller(sessionID); err != nil {
+		return sessioncmd.Session{}, err
+	}
+	client, err := layer.hosts()
+	if err != nil {
+		return sessioncmd.Session{}, err
+	}
+	moved, err := client.Move(context.Background(), ref, group)
+	if err != nil {
+		return sessioncmd.Session{}, err
+	}
+	moved.ID = remote.Ref{Host: ref.Host, ID: moved.ID}.String()
+	return moved, nil
 }
 
 func runArchiveSelf(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {

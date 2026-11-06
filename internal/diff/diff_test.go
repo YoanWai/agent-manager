@@ -454,3 +454,12 @@ func TestBuildSetCommitScope(t *testing.T) {
 		t.Fatal("a commit that does not resolve must fail")
 	}
 }
+
+func TestLoadFileRejectsAnIndexOutsideTheSet(t *testing.T) {
+	set := Set{}
+	for _, index := range []int{-1, 0, 1} {
+		if got := LoadFile(nil, set, index); got.File.Path != "" || got.IsLoaded || got.Err != nil {
+			t.Errorf("LoadFile(nil, empty set, %d) = %+v, want the zero FileDiff", index, got)
+		}
+	}
+}
