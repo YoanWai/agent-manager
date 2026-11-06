@@ -27,12 +27,12 @@ func (p Prober) Probe(sessionID string) error {
 		return uisession.DeadError(sess.Archived, keys)
 	}
 	if sess.Status == status.Finished {
-		return p.Store.AcknowledgeFinished(sessionID)
+		return p.Store.Acknowledge(sessionID)
 	}
 	return nil
 }
 
-func (p Prober) Ack(sessionID string) error { return p.Store.AcknowledgeFinished(sessionID) }
+func (p Prober) Ack(sessionID string) error { return p.Store.Acknowledge(sessionID) }
 
 type Detach struct {
 	// Request is the marker the session wrote, empty when it wrote none.

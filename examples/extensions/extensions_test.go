@@ -3,6 +3,7 @@ package extensions
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
@@ -16,6 +17,11 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 )
+
+func TestMain(m *testing.M) {
+	tmux.ConfigFile = os.DevNull
+	os.Exit(m.Run())
+}
 
 func TestBacklogReadsDeliveredReplacementInsteadOfRetainingOldBadge(t *testing.T) {
 	sessions := []store.Session{{ID: "target", Name: "worker"}}

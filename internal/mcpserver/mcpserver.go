@@ -41,6 +41,7 @@ type createTerminalArgs struct {
 	Directory string  `json:"directory,omitempty" jsonschema:"existing directory to open; defaults to the selected group's inherited path, then this agent's current directory"`
 	Nest      *bool   `json:"nest,omitempty" jsonschema:"when true or omitted, nest under this session, or beside it under the same parent when this session is itself a terminal; false places an un-nested terminal in group"`
 	Host      string  `json:"host,omitempty" jsonschema:"SSH connection to open the terminal on, the host list_terminals reports; omit for this machine. There it is un-nested and only this session can send to or close it; group defaults to the root and directory to the remote user's home"`
+	Name      string  `json:"name,omitempty" jsonschema:"descriptive name for the terminal, such as cu-1234-api, applied at creation; omit to name it after the session it hangs under"`
 }
 
 type sendTerminalArgs struct {
@@ -373,7 +374,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"These are separate CLI processes running on the user's machine, each with its own context and its own conversation, and any CLI the user configured: Claude Code, Codex, Gemini and others, not only Claude. " +
 			"They are not this conversation's subagents, they outlive this conversation, and the user watches them all in one list; nothing else this session can call reports them. " +
 			"Reuse a relevant idle session instead of creating another; otherwise call create_session. " +
-			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session and archive_session take as they are.",
+			"Sessions on the user's SSH connections follow this machine's, with host set and ids written host::id, which read_session, send_session, kill_session, revive_session, archive_session and move_session take as they are.",
 		Annotations: toolAnnotations(true, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args listSessionsArgs) (*mcp.CallToolResult, listSessionsOutput, error) {
 		listed, err := sessions.List(sessionID)
@@ -579,10 +580,11 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			"Only where the row is filed changes; the agent keeps running.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args moveSessionArgs) (*mcp.CallToolResult, sessioncmd.Session, error) {
-		if err := localOnly("move_session", args.SessionID); err != nil {
-			return nil, sessioncmd.Session{}, err
+		move := func() (sessioncmd.Session, error) { return sessions.Move(sessionID, args.SessionID, args.Group) }
+		if ref, ok := remote.ParseRef(args.SessionID); ok {
+			move = func() (sessioncmd.Session, error) { return remotes.move(ctx, ref, args.Group) }
 		}
-		moved, err := sessions.Move(sessionID, args.SessionID, args.Group)
+		moved, err := move()
 		if err != nil {
 			return nil, sessioncmd.Session{}, err
 		}
@@ -799,6 +801,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 		Name: "create_terminal",
 		Description: "Create a managed terminal for human-visible work such as SSH, not for one-shot local commands or other internal work. " +
 			"It nests under this session unless nest is false, which a group other than this session's needs; a terminal created from a terminal joins it as a sibling under the same agent. The group supplies the inherited directory, and directory set explicitly wins. " +
+			"Pass a descriptive name for a long-running job, as spawn takes one, so the row reads for its work instead of the session it hangs under. " +
 			"Then call send_terminal with the returned id; use create_session instead for another agent CLI. Call close_terminal when the job is finished and the terminal is not being left for the user.",
 		Annotations: toolAnnotations(false, false, false),
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args createTerminalArgs) (*mcp.CallToolResult, sessioncmd.Terminal, error) {
@@ -806,6 +809,7 @@ func newServerWithMailbox(sessionID, version string, proactive bool, terminals t
 			Group:     args.Group,
 			Directory: args.Directory,
 			Nest:      args.Nest,
+			Name:      args.Name,
 		}
 		create := func() (sessioncmd.Terminal, error) { return terminals.Create(sessionID, opts) }
 		if args.Host != "" {

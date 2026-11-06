@@ -484,12 +484,15 @@ func TestTerminalToolsExposeStructuredResultsAndForwardArguments(t *testing.T) {
 		t.Fatalf("list text = %q", text)
 	}
 
-	created := callTool(t, session, "create_terminal", map[string]any{"group": group, "directory": "/tmp"})
+	created := callTool(t, session, "create_terminal", map[string]any{"group": group, "directory": "/tmp", "name": "cu-1234-api"})
 	if created.IsError || created.StructuredContent == nil {
 		t.Fatalf("create_terminal = %+v", created)
 	}
 	if fake.createdOpts.Group == nil || *fake.createdOpts.Group != group || fake.createdOpts.Directory != "/tmp" {
 		t.Fatalf("create args = %+v", fake.createdOpts)
+	}
+	if fake.createdOpts.Name != "cu-1234-api" {
+		t.Fatalf("create name = %q, want cu-1234-api", fake.createdOpts.Name)
 	}
 
 	if text, isError := callText(t, session, "send_terminal", map[string]any{

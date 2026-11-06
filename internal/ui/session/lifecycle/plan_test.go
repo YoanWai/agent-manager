@@ -105,10 +105,12 @@ func TestAcknowledgeKeepsAnArchivedRowsPreservedStatus(t *testing.T) {
 		t.Fatal("an archived row keeps its preserved status")
 	}
 	if _, ok := Acknowledge(store.Session{ID: "a", Status: "working"}, true); ok {
-		t.Fatal("only a finished row is acknowledged")
+		t.Fatal("only a finished or waiting row is acknowledged")
 	}
-	if id, ok := Acknowledge(store.Session{ID: "a", Status: "finished"}, true); !ok || id != "a" {
-		t.Fatalf("acknowledge = %q %v, want the finished row", id, ok)
+	for _, st := range []string{"finished", "waiting"} {
+		if id, ok := Acknowledge(store.Session{ID: "a", Status: st}, true); !ok || id != "a" {
+			t.Fatalf("acknowledge %s = %q %v, want the row", st, id, ok)
+		}
 	}
 }
 

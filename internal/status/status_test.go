@@ -195,6 +195,8 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 			"✻ Cooked for 13s\n────\n❯ \n────\n  ⏵⏵ bypass permissions on", Finished},
 		{"claude trust dialog", "claude",
 			" ❯ 1. Yes, I trust this folder\n   2. No, exit\n Enter to confirm · Esc to cancel", Waiting},
+		{"claude dialog footer after nbsp", "claude",
+			"Review your answers\n\u00a0Enter to confirm · Esc to cancel", Waiting},
 		{"claude permission ask", "claude",
 			"Do you want to proceed?\n ❯ 1. Yes\n   2. No, and tell Claude what to do differently", Waiting},
 		{"claude done with ghost suggestion in prompt", "claude",

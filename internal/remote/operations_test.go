@@ -91,6 +91,10 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.CreateTerminal(ctx, "gpu", sessioncmd.CreateTerminalOptions{Group: &root, Directory: "/srv", Nest: &no})
 			return err
 		}, []string{"terminal", "create", "--json", "--group=", "--directory=/srv", "--nest=false"}},
+		{"terminal create named", func(ctx context.Context, c *Client) error {
+			_, err := c.CreateTerminal(ctx, "gpu", sessioncmd.CreateTerminalOptions{Name: `cu 1234 "api"`})
+			return err
+		}, []string{"terminal", "create", "--json", `--name=cu 1234 "api"`}},
 		{"terminal send command", func(ctx context.Context, c *Client) error {
 			_, err := c.TerminalSend(ctx, ref, "ls -la; echo '$x'", nil)
 			return err
@@ -118,6 +122,10 @@ func TestOperationArgv(t *testing.T) {
 			_, err := c.Archive(ctx, ref, true)
 			return err
 		}, []string{"archive", "--restore", "--json", "--", "a1b2c3d4"}},
+		{"move", func(ctx context.Context, c *Client) error {
+			_, err := c.Move(ctx, ref, "-team/a b")
+			return err
+		}, []string{"move", "--json", "--", "a1b2c3d4", "-team/a b"}},
 		{"create group", func(ctx context.Context, c *Client) error {
 			_, err := c.CreateGroup(ctx, "gpu", "-team/a", "/srv/team")
 			return err
@@ -166,6 +174,8 @@ func TestUnsafeIDsNeverReachSSH(t *testing.T) {
 	_, err = c.Revive(ctx, bad)
 	errs = append(errs, err)
 	_, err = c.Archive(ctx, bad, true)
+	errs = append(errs, err)
+	_, err = c.Move(ctx, bad, "work")
 	errs = append(errs, err)
 	for i, err := range errs {
 		if err == nil {

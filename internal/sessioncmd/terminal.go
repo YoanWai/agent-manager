@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/status"
@@ -44,6 +46,9 @@ type CreateTerminalOptions struct {
 	Group     *string
 	Directory string
 	Nest      *bool
+	// Name names the terminal at creation, the way spawn names a session.
+	// Empty keeps the name derived from the session it hangs under.
+	Name string
 }
 
 type Terminals struct {
@@ -226,9 +231,18 @@ func (t *Terminals) Create(sessionID string, opts CreateTerminalOptions) (Termin
 			parentID = caller.ParentID
 		}
 	}
-	name, err := runtime.shellName(toolName, parentID)
-	if err != nil {
-		return Terminal{}, err
+	name := strings.TrimSpace(opts.Name)
+	if name != "" && (strings.IndexFunc(name, unicode.IsControl) >= 0 || !utf8.ValidString(name)) {
+		// A name reaches the list, the picker and the JSON output: a control
+		// character there moves the cursor instead of reading as text. Same
+		// rule connection names already follow.
+		return Terminal{}, fmt.Errorf("a terminal name cannot contain control characters")
+	}
+	if name == "" {
+		name, err = runtime.shellName(toolName, parentID)
+		if err != nil {
+			return Terminal{}, err
+		}
 	}
 	environment, err := runtime.environmentFor(caller, group, nil)
 	if err != nil {

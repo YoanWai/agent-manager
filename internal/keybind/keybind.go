@@ -307,7 +307,7 @@ var listActions = []Action{
 	{Prompt, "quick prompt mode", keys("space")},
 	{CopyReply, "copy the session's newest reply to the clipboard", keys("y")},
 	{Review, "review the session's diff", keys("ctrl+r")},
-	{MarkIdle, "mark a finished session idle", keys(".")},
+	{MarkIdle, "mark a finished or waiting session idle", keys(".")},
 	{Rename, "rename the session, edit the group", keys("r")},
 	{Move, "move the row to another group", keys("m")},
 	{Editor, "open the directory in your editor", keys("o")},

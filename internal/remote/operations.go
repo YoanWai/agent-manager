@@ -177,6 +177,9 @@ func (c *Client) CreateTerminal(ctx context.Context, host string, opts sessioncm
 	if opts.Nest != nil {
 		args = append(args, "--nest="+strconv.FormatBool(*opts.Nest))
 	}
+	if opts.Name != "" {
+		args = append(args, "--name="+opts.Name)
+	}
 	var created sessioncmd.Terminal
 	if err := c.decode(ctx, host, createTimeout, &created, args...); err != nil {
 		return created, err
@@ -219,27 +222,32 @@ func (c *Client) TerminalClose(ctx context.Context, ref Ref) error {
 }
 
 func (c *Client) Kill(ctx context.Context, ref Ref) (sessioncmd.Session, error) {
-	return c.lifecycle(ctx, ref, "kill", "--json")
+	return c.lifecycle(ctx, ref, []string{"kill", "--json"})
 }
 
 func (c *Client) Revive(ctx context.Context, ref Ref) (sessioncmd.Session, error) {
-	return c.lifecycle(ctx, ref, "revive", "--json")
+	return c.lifecycle(ctx, ref, []string{"revive", "--json"})
 }
 
 // Archive files the session out of the active list, or back with restore.
 func (c *Client) Archive(ctx context.Context, ref Ref, restore bool) (sessioncmd.Session, error) {
 	if restore {
-		return c.lifecycle(ctx, ref, "archive", "--restore", "--json")
+		return c.lifecycle(ctx, ref, []string{"archive", "--restore", "--json"})
 	}
-	return c.lifecycle(ctx, ref, "archive", "--json")
+	return c.lifecycle(ctx, ref, []string{"archive", "--json"})
 }
 
-func (c *Client) lifecycle(ctx context.Context, ref Ref, args ...string) (sessioncmd.Session, error) {
+// Move files the session under group on its host, which checks the group.
+func (c *Client) Move(ctx context.Context, ref Ref, group string) (sessioncmd.Session, error) {
+	return c.lifecycle(ctx, ref, []string{"move", "--json"}, group)
+}
+
+func (c *Client) lifecycle(ctx context.Context, ref Ref, args []string, operands ...string) (sessioncmd.Session, error) {
 	var session sessioncmd.Session
 	if err := validRef(ref); err != nil {
 		return session, err
 	}
-	if err := c.decode(ctx, ref.Host, callTimeout, &session, append(args, "--", ref.ID)...); err != nil {
+	if err := c.decode(ctx, ref.Host, callTimeout, &session, append(append(args, "--", ref.ID), operands...)...); err != nil {
 		return session, err
 	}
 	session, err := cleanSession(session)
