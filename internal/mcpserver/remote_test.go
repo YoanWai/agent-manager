@@ -400,6 +400,24 @@ func TestQualifiedIDsRouteToTheirHost(t *testing.T) {
 	}
 }
 
+func TestRemoteSendToAnOlderHostGoesWithoutItsSubject(t *testing.T) {
+	var sends [][]string
+	f := newRemoteFixture(t, "cafe", func(_ string, words []string) ([]byte, []byte, error) {
+		sends = append(sends, words)
+		if slices.Contains(words, "--subject=rebase") {
+			return nil, []byte("agent-manager: flag provided but not defined: -subject; usage: agent-manager send <session-id>\n"), exitStatus(1)
+		}
+		return mustJSON(t, sessioncmd.SendResult{MessageID: 3, QueuePosition: 1, ManagerAwake: true}), nil, nil
+	})
+	text, isError := callText(t, f.session, "send_session", map[string]any{"session_id": "gpu::r1", "message": "rebase on main", "subject": "rebase"})
+	if isError || len(sends) != 2 || slices.Contains(sends[1], "--subject=rebase") {
+		t.Fatalf("send_session = %q (error %v) after %q", text, isError, sends)
+	}
+	if !strings.Contains(text, "agent-manager on gpu predates subjects, so it went without one") {
+		t.Fatalf("send_session did not say the subject was left behind: %q", text)
+	}
+}
+
 // A read answers with the row the host reports, not one cached by an
 // earlier listing in this process, so a server that has listed nothing yet
 // still reports whether the session runs.
