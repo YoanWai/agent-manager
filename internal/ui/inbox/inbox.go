@@ -88,8 +88,8 @@ func listLines(log Log, cursor, width int, now time.Time, mode presentation.Glyp
 		add(uitheme.SectionStyle().Render(fmt.Sprintf("%s (%d)", title, len(entries))), -1)
 		for _, entry := range entries {
 			add(entryLine(entry, index == cursor, now, mode), index)
-			if entry.Reason != "" {
-				add("    "+uitheme.SubtleStyle().Render(entry.Reason), index)
+			for _, line := range reasonLines(entry.Reason, width) {
+				add(line, index)
 			}
 			index++
 		}
@@ -97,6 +97,29 @@ func listLines(log Log, cursor, width int, now time.Time, mode presentation.Glyp
 	section("Waiting", log.Queued)
 	section("Recent", log.Recent)
 	return lines, owners
+}
+
+// reasonLines wraps a hold or drop reason under its message at spaces only,
+// so the command that clears it stays whole on a narrow card.
+func reasonLines(reason string, width int) []string {
+	const indent = "    "
+	limit := max(width-len(indent), 1)
+	var lines []string
+	line := ""
+	for _, word := range strings.Fields(reason) {
+		if line != "" && ansi.StringWidth(line)+1+ansi.StringWidth(word) > limit {
+			lines = append(lines, indent+uitheme.SubtleStyle().Render(line))
+			line = ""
+		}
+		if line != "" {
+			line += " "
+		}
+		line += word
+	}
+	if line != "" {
+		lines = append(lines, indent+uitheme.SubtleStyle().Render(line))
+	}
+	return lines
 }
 
 func entryLine(entry Entry, selected bool, now time.Time, mode presentation.GlyphMode) string {

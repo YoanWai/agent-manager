@@ -221,3 +221,22 @@ func TestInboxCursorStaysOnTheMessageAReloadMoves(t *testing.T) {
 		t.Fatalf("enter after the reload read %v, want the message the cursor was on (42)", root.reads)
 	}
 }
+
+func TestInboxWrapsALongHoldReasonSoItsCommandStaysVisible(t *testing.T) {
+	for _, width := range []int{30, 60, 100} {
+		s, root, h := openSurface(t, width)
+		log := sampleLog()
+		log.Queued[0].Reason = "session f9baee84 is not running, so nothing will type this in; revive it with agent-manager revive"
+		s.Loaded(root.loads[0], log, nil)
+		shown := view(s, h)
+		joined := strings.Join(strings.Fields(shown), " ")
+		if !strings.Contains(joined, "revive it with agent-manager revive") {
+			t.Fatalf("at %d columns the hold reason lost its command:\n%s", width, shown)
+		}
+		for _, line := range strings.Split(h.body, "\n") {
+			if lineWidth := ansi.StringWidth(line); lineWidth > innerWidth(h.width) {
+				t.Fatalf("at %d columns a line is %d wide: %q", width, lineWidth, ansi.Strip(line))
+			}
+		}
+	}
+}
