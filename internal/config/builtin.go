@@ -66,8 +66,10 @@ dialog_question = "(?m)^ (?:Quick safety check: )?((?:Do you want|Is this a proj
 # monitors can outlive their use, so they do not count, and neither does a
 # mixed "· 2 background tasks still running", which names no kind.
 busy_line = "^[✻✳✶✽✢·✦✧+*] (?:Waiting for \\d+ (?:background agents?(?: and \\d+ dynamic workflows?)?|dynamic workflows?) to finish|.* · \\d+ MCP tasks? still running)"
-# a usage/rate-limit banner sits above the turn-end summary
-limit_line = "(?m)You've hit your .+limit"
+# a usage/rate-limit banner sits above the turn-end summary, and so does
+# the signed-out reply; a narrow pane draws the signed-out footer notice
+# above the composer
+limit_line = "(?m)You've hit your .+limit|^\\s*⎿[\\s\\x{A0}]+Not logged in · Please run /login$|^\\s+Not logged in · Run /login$"
 # every message and tool call opens on a bullet at the left edge; the
 # glyph is ⏺ on current Claude Code and ● on older releases
 message_start = "^[●⏺] "

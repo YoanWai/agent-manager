@@ -76,11 +76,6 @@ type settingsFile struct {
 // block, so the matcher names the two that do.
 const blockingNotifications = "permission_prompt|elicitation_dialog"
 
-// limitStopFailures are the StopFailure error types that mean the account
-// hit a usage or rate limit. The pane also classifies those as errored;
-// the hook write covers the turn before the banner is visible.
-const limitStopFailures = "rate_limit"
-
 func settingsContent(sessionID, launch, statusFile, trackCommand string) ([]byte, error) {
 	report := func(matcher, state string) []hookMatcher {
 		return []hookMatcher{{Matcher: matcher, Hooks: []hookCommand{{Type: "command", Command: statusCommand(state)}}}}
@@ -94,7 +89,8 @@ func settingsContent(sessionID, launch, statusFile, trackCommand string) ([]byte
 			"PostToolUse":      report("*", status.Working),
 			"Notification":     report(blockingNotifications, status.Waiting),
 			"Stop":             report("", status.Finished),
-			"StopFailure":      report(limitStopFailures, status.Errored),
+			// every error type ends the turn without Stop: a usage limit, a signed-out or unpaid account, a failed request
+			"StopFailure": report("", status.Errored),
 			// compact fires SessionStart in the middle of an active turn
 			"SessionStart": report("startup|resume|clear", status.Idle),
 			"SessionEnd":   {{Hooks: []hookCommand{{Type: "command", Command: sessionEndCommand()}}}},

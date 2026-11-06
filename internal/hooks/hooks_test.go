@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -116,8 +118,8 @@ func TestWriteSettingsWritesValidHookJSON(t *testing.T) {
 		t.Fatalf("SessionStart matcher = %q, want startup|resume|clear", got)
 	}
 	stopFailure := parsed.Hooks["StopFailure"][0]
-	if stopFailure.Matcher != limitStopFailures {
-		t.Fatalf("StopFailure matcher = %q, want %q", stopFailure.Matcher, limitStopFailures)
+	if stopFailure.Matcher != "" {
+		t.Fatalf("StopFailure matcher = %q, want every error type", stopFailure.Matcher)
 	}
 	if command := hookScript(t, stopFailure.Hooks[0].Command); !strings.Contains(command, stateWrite(status.Errored)) {
 		t.Fatalf("StopFailure command = %q, want a plain %s write", command, status.Errored)
@@ -733,6 +735,61 @@ func TestClaimedRequestReportsWhatWasClaimed(t *testing.T) {
 			}
 			if err := manager.ReleaseName("x"); err != nil {
 				t.Fatalf("ReleaseName: %v", err)
+			}
+		})
+	}
+}
+
+// Claude Code ends a failed turn with StopFailure instead of Stop, and the
+// prompt already wrote working. Every error type, a new one included, has
+// to leave errored behind or the session stays working.
+func TestStopFailureWritesErroredForEveryErrorType(t *testing.T) {
+	manager := NewManager(t.TempDir())
+	path, err := manager.WriteSettings("fail1234", "0", "")
+	if err != nil {
+		t.Fatalf("WriteSettings: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read settings: %v", err)
+	}
+	var parsed settingsFile
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatalf("settings is not valid JSON: %v", err)
+	}
+	for _, errorType := range []string{"authentication_failed", "billing_error", "rate_limit", "server_error", "max_output_tokens", "some_future_error"} {
+		t.Run(errorType, func(t *testing.T) {
+			var commands []string
+			for _, matcher := range parsed.Hooks["StopFailure"] {
+				// Claude Code reads an empty or "*" matcher as every value and anything else as a regex
+				if matcher.Matcher != "" && matcher.Matcher != "*" && !regexp.MustCompile("^(?:"+matcher.Matcher+")$").MatchString(errorType) {
+					continue
+				}
+				for _, hook := range matcher.Hooks {
+					commands = append(commands, hook.Command)
+				}
+			}
+			if len(commands) != 1 {
+				t.Fatalf("StopFailure %s runs %d hooks, want 1", errorType, len(commands))
+			}
+			if !strings.Contains(hookScript(t, commands[0]), stateWrite(status.Errored)) {
+				t.Fatalf("StopFailure %s command = %q, want an %s write", errorType, commands[0], status.Errored)
+			}
+			if runtime.GOOS == "windows" {
+				return
+			}
+			statusFile := manager.StatusFile("fail1234")
+			if err := os.WriteFile(statusFile, []byte(status.Working), 0o644); err != nil {
+				t.Fatalf("seed working: %v", err)
+			}
+			cmd := exec.Command("sh", "-c", commands[0])
+			cmd.Env = append(os.Environ(), EnvStatusFile+"="+statusFile)
+			cmd.Stdin = strings.NewReader(`{"hook_event_name":"StopFailure","error":"` + errorType + `"}`)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("run StopFailure hook: %v: %s", err, out)
+			}
+			if got, ok := manager.Read("fail1234"); !ok || got != status.Errored {
+				t.Fatalf("status after StopFailure %s = %q, %v, want %s", errorType, got, ok, status.Errored)
 			}
 		})
 	}

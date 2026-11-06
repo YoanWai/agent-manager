@@ -291,6 +291,26 @@ func TestDefaultRulesRealPanes(t *testing.T) {
 		{"claude old limit, later turn-end with no other content", "claude",
 			"  ⎿  You've hit your weekly limit · resets 1am (Asia/Jerusalem)\n" +
 				"✻ Churned for 2h 0m 54s\n✻ Worked for 5s\n────\n❯ \n────", Finished},
+		// 2026-11-06 real captures (Claude Code 2.1.319, signed out): the
+		// turn fails at once with the reply above its summary, and the
+		// footer notice stays on screen while a prompt is still starting.
+		{"claude signed-out reply (real capture)", "claude",
+			"❯ Say hello.\n  ⎿ \u00a0Not logged in · Please run /login\n\n✻ Crunched for 0s · done 10:36 PM\n\n" +
+				"────\n❯ \n────\n  ⏵⏵ auto mode on (shift+tab to cycle)                    Not logged in · Run /login", Errored},
+		{"claude signed-out footer above the composer in a narrow pane (real capture)", "claude",
+			"  ⎿  Not logged in · Please run /login\n\n✻ Sautéed for 0s · done 9:42 PM\n\n" +
+				"● full  $0la1s $Review  Audit  Board[-]e\n            Not logged in · Run /login\n" +
+				"────────────────────────────────────────\n❯ \n────────────────────────────────────────\n  ⏵⏵ auto mode on (shift+tab to cycle)", Errored},
+		{"claude signed-out footer while the prompt starts (real capture)", "claude",
+			"❯ Say hello.\n\n✻ Actioning… (running UserPromptSubmit hook · 0s)\n\n" +
+				"────\n❯ \n────\n  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt\n                    Not logged in · Run /login", Working},
+		{"claude old signed-out reply, newer finished turn", "claude",
+			"  ⎿  Not logged in · Please run /login\n✻ Crunched for 0s\n❯ Say hello.\n⏺ Hello.\n✻ Worked for 2s\n────\n❯ \n────", Finished},
+		{"claude old signed-out reply, newer turn under a status row", "claude",
+			"  ⎿  Not logged in · Please run /login\n✻ Crunched for 0s\n❯ Say hello.\n⏺ Hello.\n✻ Worked for 2s\n" +
+				"● full  $0.00  last $0.00  0s                         Review  Audit  Board  Details [-]\n────\n❯ \n────", Idle},
+		{"claude message quoting the signed-out reply", "claude",
+			"⏺ Claude answered Not logged in · Please run /login\n✻ Worked for 2s\n────\n❯ \n────", Finished},
 		{"claude streaming without spinner (real capture)", "claude",
 			"  183\n  184\n────\n❯ \n────\n  ▎ ● Fable 5 ✦ medium", Idle},
 		{"claude fresh start, typed unsubmitted", "claude",
