@@ -21,7 +21,7 @@ const (
 	usageSpawn         = "spawn [--name <name>] [--prompt <text>] [--saved <name>] [--tool <cli>] [--model <model>] [--effort <level>] [--profile <name>] [--env <name>] [--group <path>] [--directory <path>] [--worktree] [--resume <id>] [--json]"
 	usageSend          = `send <session-id> ["<message>"] [--saved <name>] [--from <name>] [--json]`
 	usageType          = `type <session-id> "<prompt>" [--json]`
-	usageRead          = "read <session-id> [--styled] [--json]"
+	usageRead          = "read <session-id> [--tail N] [--styled] [--json]"
 	usageWait          = "wait <session-id> [--until <state>] [--timeout <duration>] [--json]"
 	usageMessageStatus = "message-status <message-id> [--json]"
 	usageKill          = "kill <session-id> [--json]"
@@ -246,10 +246,14 @@ func runType(out io.Writer, sessions sessionCommands, args []string, sessionID s
 
 func runRead(out io.Writer, sessions sessionCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageRead)
+	tail := tailFlag(set)
 	styled := styledFlag(set)
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 1, 1)
 	if err != nil {
+		return err
+	}
+	if err := plainTail(*tail, *styled); err != nil {
 		return err
 	}
 	read := sessions.Read
@@ -258,6 +262,9 @@ func runRead(out io.Writer, sessions sessionCommands, args []string, sessionID s
 	}
 	screen, err := read(sessionID, operands[0])
 	if err != nil {
+		return err
+	}
+	if screen.Output, err = sessioncmd.Tail(screen.Session.Tool, screen.Output, *tail); err != nil {
 		return err
 	}
 	return emit(out, *asJSON, screen, sessioncmd.FormatSessionScreen(screen))

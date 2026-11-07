@@ -3,7 +3,9 @@ package status
 import (
 	"github.com/charmbracelet/x/ansi"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode"
 )
 
 // ActivityRegion returns the pane content above the tool's input box
@@ -335,4 +337,64 @@ func (tr toolRules) isStructural(line string) bool {
 		return true
 	}
 	return tr.matchesWorkingRule(line)
+}
+
+// Tail is the pane's last n content rows, one per line: the rows LastMessage
+// reads, from the activity region, without blanks, chrome blocks or the
+// tool's own frame. An open dialog is what the agent waits on, so its rows
+// below the cutoff, the question and its options, stay; a modal dialog
+// always trips a waiting rule. A pane with no
+// cutoff, a dialog drawn before the first composer or a shell, is read whole.
+func (e *Engine) Tail(tool, pane string, n int) string {
+	tr := e.tools[tool]
+	region, ok := tr.activityRegion(pane)
+	if !ok {
+		return lastRows(tr.tailRows(strings.Split(pane, "\n"), false), n)
+	}
+	lines := strings.Split(region, "\n")
+	if !slices.ContainsFunc(lines, tr.isContent) {
+		lines = tr.paneAboveComposer(pane)
+	}
+	rows := tr.tailRows(lines, true)
+	if state, _ := tr.matchRules(tr.matchScope(pane)); state == Waiting {
+		dialog := strings.Split(pane[len(region):], "\n")
+		// The cutoff row is the dialog's selected option, drawn with the
+		// prompt marker by claude and codex, or the prompt echo the dialog
+		// opened under.
+		if tr.userEcho != nil {
+			if echoed, ok := tr.echoText(dialog[0]); ok && !numberedOption.MatchString(echoed) {
+				dialog = dialog[1:]
+			}
+		}
+		rows = append(rows, tr.tailRows(dialog, false)...)
+	}
+	return lastRows(rows, n)
+}
+
+func (tr toolRules) tailRows(lines []string, blocks bool) []string {
+	var inBlock []bool
+	if blocks {
+		inBlock = tr.chromeBlockRows(lines)
+	}
+	rows := make([]string, 0, len(lines))
+	for i, raw := range lines {
+		line := strings.TrimRight(raw, " \t")
+		if strings.TrimFunc(line, boxOrSpace) == "" || (blocks && inBlock[i]) || tr.isStructural(line) {
+			continue
+		}
+		rows = append(rows, line)
+	}
+	return rows
+}
+
+func lastRows(rows []string, n int) string {
+	return strings.Join(rows[max(len(rows)-n, 0):], "\n")
+}
+
+var numberedOption = regexp.MustCompile(`^\d+\.\s`)
+
+// boxOrSpace is a blank or a box-drawing cell, the whole of a frame row
+// some tools draw without a chrome_line for it.
+func boxOrSpace(r rune) bool {
+	return unicode.IsSpace(r) || (r >= '\u2500' && r <= '\u257f')
 }

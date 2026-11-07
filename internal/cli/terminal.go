@@ -12,7 +12,7 @@ const (
 	usageTerminalList   = "terminal list [--json]"
 	usageTerminalCreate = "terminal create [--name <name>] [--group <path>] [--directory <path>] [--nest=false] [--json]"
 	usageTerminalSend   = `terminal send <terminal-id> --command "<text>" | --keys <key,key> [--json]`
-	usageTerminalRead   = "terminal read <terminal-id> [--styled] [--json]"
+	usageTerminalRead   = "terminal read <terminal-id> [--tail N] [--styled] [--json]"
 	usageTerminalClose  = "terminal close <terminal-id>"
 )
 
@@ -108,10 +108,14 @@ func runTerminalSend(out io.Writer, terminals terminalCommands, args []string, s
 
 func runTerminalRead(out io.Writer, terminals terminalCommands, args []string, sessionID string) error {
 	set := newFlagSet(usageTerminalRead)
+	tail := tailFlag(set)
 	styled := styledFlag(set)
 	asJSON := jsonFlag(set)
 	operands, err := parseCommand(out, set, args, 1, 1)
 	if err != nil {
+		return err
+	}
+	if err := plainTail(*tail, *styled); err != nil {
 		return err
 	}
 	read := terminals.Read
@@ -120,6 +124,9 @@ func runTerminalRead(out io.Writer, terminals terminalCommands, args []string, s
 	}
 	screen, err := read(sessionID, operands[0])
 	if err != nil {
+		return err
+	}
+	if screen.Output, err = sessioncmd.Tail("", screen.Output, *tail); err != nil {
 		return err
 	}
 	return emit(out, *asJSON, screen, sessioncmd.FormatTerminalScreen(screen))

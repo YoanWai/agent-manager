@@ -1551,3 +1551,23 @@ func TestCreateSessionForwardsSessionPreset(t *testing.T) {
 		t.Fatalf("omitted preset: %+v %+v", result, fake.createdOpts)
 	}
 }
+
+// tail cuts the screen read_session and read_terminal return to its newest
+// content rows; the session's CLI decides which rows are its frame.
+func TestReadTail(t *testing.T) {
+	sessions := &fakeSessionCommands{screen: sessioncmd.SessionScreen{
+		Session: sessioncmd.Session{ID: "a1", Tool: "claude", Running: true},
+		Output:  "● Ran the suite.\n\n● Done.\n\n❯ \n  ? for shortcuts",
+	}}
+	terminals := &fakeTerminalCommands{screen: sessioncmd.TerminalScreen{Output: "$ go test ./...\nok\n$"}}
+	session := connectServer(t, newServer(t.TempDir(), "abc123", "test", true, terminals, sessions, &fakeReporter{}))
+	if text, isError := callText(t, session, "read_session", map[string]any{"session_id": "a1", "tail": 1}); isError || text != "● Done." {
+		t.Fatalf("read_session tail = %q, isError=%v", text, isError)
+	}
+	if text, isError := callText(t, session, "read_terminal", map[string]any{"terminal_id": "t1", "tail": 2}); isError || text != "ok\n$" {
+		t.Fatalf("read_terminal tail = %q, isError=%v", text, isError)
+	}
+	if _, isError := callText(t, session, "read_session", map[string]any{"session_id": "a1", "tail": -1}); !isError {
+		t.Fatal("a negative tail was not refused")
+	}
+}

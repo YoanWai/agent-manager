@@ -491,3 +491,30 @@ func TestARemoteMoveNeedsACallerInsideAgentManager(t *testing.T) {
 		t.Fatalf("remote calls = %q", *calls)
 	}
 }
+
+type paneSessions struct {
+	*fakeSessions
+	pane string
+}
+
+func (p paneSessions) Read(sessionID, targetID string) (sessioncmd.SessionScreen, error) {
+	return sessioncmd.SessionScreen{Session: p.session, Output: p.pane}, nil
+}
+
+// --tail prints the newest content rows of the screen, without the CLI's
+// composer and footer, and refuses what it cannot cut.
+func TestReadTail(t *testing.T) {
+	sessions := paneSessions{&fakeSessions{session: sampleSession()}, "● Ran the suite.\n\n● Done.\n\n❯ \n  ? for shortcuts"}
+	var out bytes.Buffer
+	if err := runRead(&out, sessions, []string{"--tail", "1", "beef1234"}, "cafe0001"); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "● Done." {
+		t.Fatalf("read --tail 1 = %q", got)
+	}
+	for _, args := range [][]string{{"--tail", "1", "--styled", "beef1234"}, {"--tail", "-1", "beef1234"}} {
+		if err := runRead(&bytes.Buffer{}, sessions, args, "cafe0001"); err == nil {
+			t.Errorf("read %v did not fail", args)
+		}
+	}
+}
