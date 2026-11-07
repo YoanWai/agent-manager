@@ -229,10 +229,10 @@ func (d *Driver) RefreshChrome(id string) error {
 // left side, replacing the hidden window list.
 func (d *Driver) SetLabel(id, label string) error {
 	name := sessionName(id)
-	if _, err := d.run("set-option", "-t", name, "status-left-length", "80"); err != nil {
-		return err
-	}
-	_, err := d.run("set-option", "-t", name, "status-left", " "+sanitizeFormat(label)+" ")
+	_, err := d.run(commandList(
+		[]string{"set-option", "-t", name, "status-left-length", "80"},
+		[]string{"set-option", "-t", name, "status-left", " " + sanitizeFormat(label) + " "},
+	)...)
 	return err
 }
 

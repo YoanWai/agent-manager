@@ -4,6 +4,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/testenv"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -68,6 +69,28 @@ func TestOnlyARefreshLooksForAPinnedPrefix(t *testing.T) {
 	}
 }
 
+func TestSetLabelUsesOneTmuxInvocation(t *testing.T) {
+	testenv.SkipPOSIXShell(t)
+	dir := t.TempDir()
+	log := filepath.Join(dir, "calls")
+	stub := filepath.Join(dir, "tmux")
+	script := "#!/bin/sh\nprintf 'call\\n' >> " + ShellQuote(log) + "\n"
+	if err := os.WriteFile(stub, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	driver := &Driver{bin: stub, socket: testSocket}
+	if err := driver.SetLabel("label", "group · session"); err != nil {
+		t.Fatal(err)
+	}
+	calls, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(calls), "call\n"); got != 1 {
+		t.Fatalf("SetLabel spawned %d tmux processes, want 1", got)
+	}
+}
+
 func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	driver := requireTmux(t)
 	id := "lbl" + strings.ReplaceAll(time.Now().Format("150405.000000"), ".", "")
@@ -77,20 +100,35 @@ func TestSetLabelNeutralizesFormatStrings(t *testing.T) {
 	t.Cleanup(func() { driver.Kill(id) })
 
 	marker := "/tmp/am-injection-" + id
-	if err := driver.SetLabel(id, "evil #(touch "+marker+") name"); err != nil {
+	label := "evil #(touch " + marker + ") ; café\n"
+	if err := driver.SetLabel(id, label); err != nil {
 		t.Fatalf("SetLabel: %v", err)
+	}
+	if got := sessionOption(t, "am_"+id, "status-left-length"); got != "80" {
+		t.Fatalf("status-left-length = %q, want 80", got)
 	}
 	rendered, err := tmuxCmd("display-message", "-p", "-t", "am_"+id, "#{T:status-left}").CombinedOutput()
 	if err != nil {
 		t.Fatalf("display-message: %v", err)
 	}
-	if !strings.Contains(string(rendered), "#(touch") {
-		t.Fatalf("format string should render literally, got %q", rendered)
+	if got, want := strings.TrimSpace(string(rendered)), strings.TrimSpace(label); got != want {
+		t.Fatalf("label should render literally without control characters, got %q, want %q", got, want)
 	}
 	time.Sleep(200 * time.Millisecond)
 	if _, err := os.Stat(marker); err == nil {
 		os.Remove(marker)
 		t.Fatal("injection executed: marker file was created")
+	}
+}
+
+func TestSetLabelReportsMissingSession(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("psmux reports a missing session as a warning at exit 0")
+	}
+	driver := requireTmux(t)
+	bindingServer(t, driver)
+	if err := driver.SetLabel("no_such_label_session", "label"); err == nil {
+		t.Fatal("SetLabel should report a missing session")
 	}
 }
 
