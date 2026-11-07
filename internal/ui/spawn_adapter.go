@@ -2,6 +2,7 @@ package ui
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -354,14 +355,9 @@ func (m *Model) capturedAbsolutePath(raw, fallback string) string {
 // dispatchSpawn takes the prompt's images out of the composer and queues the
 // spawn on the shared effect lane; completion routes the images.
 func (m *Model) dispatchSpawn(request uilaunch.Request) {
-	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
-		if job == nil {
-			continue
-		}
-		if pending, ok := job.Request.(uilaunch.Request); ok && pending.Kind == request.Kind && pending.ComposerGen == request.ComposerGen {
-			m.reportErr("this spawn is already in progress")
-			return
-		}
+	if request.Kind != uilaunch.Quick && m.spawnRepeated(request) {
+		m.reportErr("this spawn is already in progress")
+		return
 	}
 	request.ID = newID()
 	switch request.Kind {
@@ -374,10 +370,25 @@ func (m *Model) dispatchSpawn(request uilaunch.Request) {
 		prompt.Attachments = nil
 	case uilaunch.Quick:
 		q := m.quick()
-		request.Draft = q.Input.Value()
-		q.Attachments = nil
+		request.Submission = q.Submission()
+		request.Images = slices.Clone(q.Attachments)
+		m.enqueueEffect(request, 0, false)
+		m.acceptQuick(request.Submission)
+		return
 	}
 	m.enqueueEffect(request, 0, false)
+}
+
+func (m *Model) spawnRepeated(request uilaunch.Request) bool {
+	for _, job := range append([]*uieffects.Job{m.effects.Main.Active}, m.effects.Main.Pending...) {
+		if job == nil {
+			continue
+		}
+		if pending, ok := job.Request.(uilaunch.Request); ok && pending.Kind == request.Kind && pending.ComposerGen == request.ComposerGen {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) materializeGroupsLocal(paths []string) {
@@ -529,7 +540,7 @@ func (m *Model) commitSpawn(request uilaunch.Request, sess store.Session) {
 		}
 	case uilaunch.Quick:
 		if q, ok := m.quickFor(request.ComposerGen); ok {
-			m.clearAccepted(request.ComposerGen, request.Draft, q.CloseAfterSend)
+			m.settleAccepted(request.ComposerGen, request.Submission.ID, q.CloseAfterSend)
 		}
 	case uilaunch.Import:
 		reveal = m.base == baseList && !m.focused() && !m.cardOpen()
@@ -552,7 +563,7 @@ func (m *Model) spawnTakesOver(request uilaunch.Request) bool {
 	switch {
 	case request.Kind == uilaunch.Form && m.formHolds(request.ComposerGen, request.Draft):
 		return true
-	case request.Kind == uilaunch.Quick && m.quickHolds(request.ComposerGen, request.Draft):
+	case request.Kind == uilaunch.Quick && m.quickUntouched(request.ComposerGen, request.Submission.ID):
 		return true
 	}
 	return m.listClear()
@@ -569,7 +580,8 @@ func (m *Model) returnSpawnImages(request uilaunch.Request) {
 			return
 		}
 	case uilaunch.Quick:
-		if q, ok := m.quickFor(request.ComposerGen); ok {
+		if m.restoreRefused(request.ComposerGen, request.Submission) {
+			q := m.quick()
 			q.Attachments = append(request.Images, q.Attachments...)
 			return
 		}

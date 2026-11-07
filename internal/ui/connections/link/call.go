@@ -5,6 +5,7 @@ import (
 
 	"github.com/YoanWai/agent-manager/internal/remote"
 	"github.com/YoanWai/agent-manager/internal/sessioncmd"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -33,14 +34,17 @@ type Call struct {
 	// GroupDir is the directory a new group on the host defaults to; Name
 	// carries its path.
 	GroupDir string
-	// Draft and ComposerGen let a send or spawn from the quick bar, or a
-	// spawn from the New Session form, clear what asked for it.
-	Draft          string
+	// ComposerGen and Submission let a send or spawn from the quick bar, or
+	// a spawn from the New Session form, settle what asked for it.
 	ComposerGen    int
+	Submission     spawn.Submission
 	CloseAfterSend bool
 	FromForm       bool
 	Dead           bool
 }
+
+// FromQuick is whether the call is a send or spawn the quick bar accepted.
+func (c Call) FromQuick() bool { return c.Op == Type || c.Op == Spawn && !c.FromForm }
 
 // Result is what a call returned: the session or terminal it made or
 // changed.
@@ -76,10 +80,13 @@ func Run(ctx context.Context, client *remote.Client, openers remote.Openers, cal
 
 func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cmd {
 	if err != nil {
-		// As on this machine, a prompt that may sit in the pane leaves the
-		// bar, so the next enter cannot type it a second time.
-		if call.Op == Type && remote.MayHaveReached(err) {
-			root.ClearAccepted(call.ComposerGen, call.Draft, call.CloseAfterSend)
+		// As on this machine, a prompt that may sit in the pane stays off
+		// the bar, so the next enter cannot type it a second time.
+		switch {
+		case call.Op == Type && remote.MayHaveReached(err):
+			root.SettleAccepted(call.ComposerGen, call.Submission.ID, call.CloseAfterSend)
+		case call.FromQuick():
+			root.RestoreRefused(call.ComposerGen, call.Submission)
 		}
 		root.ReportErr(err.Error())
 		return s.PollHost(call.Host)
@@ -87,13 +94,13 @@ func (s *State) ApplyCall(root Root, call Call, result Result, err error) tea.Cm
 	on := " on " + call.Host
 	switch call.Op {
 	case Type:
-		root.ClearAccepted(call.ComposerGen, call.Draft, call.CloseAfterSend)
+		root.SettleAccepted(call.ComposerGen, call.Submission.ID, call.CloseAfterSend)
 		root.ReportDone("sent to " + call.Name + on)
 	case Spawn:
 		if call.FromForm {
 			root.CloseAsker(call.ComposerGen, FormAsker)
 		} else {
-			root.ClearAccepted(call.ComposerGen, call.Draft, call.CloseAfterSend)
+			root.SettleAccepted(call.ComposerGen, call.Submission.ID, call.CloseAfterSend)
 		}
 		root.ReportDone("started " + result.Session.Name + on)
 	case NewTerminal:

@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	uiterminal "github.com/YoanWai/agent-manager/internal/ui/terminal"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -42,9 +43,12 @@ type Root interface {
 	// CloseAsker closes the form or card a completed call came from, when
 	// it is still the one that asked.
 	CloseAsker(gen int, asker Asker)
-	// ClearAccepted clears the quick bar a send came from, when it still
-	// holds that draft.
-	ClearAccepted(composerGen int, draft string, closeAfterSend bool)
+	// SettleAccepted closes the quick bar a delivered send came from when
+	// it asks to and nothing reached it since.
+	SettleAccepted(composerGen int, submitted uint64, closeAfterSend bool)
+	// RestoreRefused gives a refused prompt back to the quick bar it came
+	// from, unless that bar has moved on to a newer one.
+	RestoreRefused(composerGen int, submission spawn.Submission)
 	ReportErr(text string)
 	ReportDone(text string)
 }

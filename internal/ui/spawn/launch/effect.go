@@ -19,6 +19,7 @@ func (r Request) EffectCopy() uieffects.Request {
 		r.Plan = &plan
 	}
 	r.Images = slices.Clone(r.Images)
+	r.Submission.Saved = slices.Clone(r.Submission.Saved)
 	return r
 }
 

@@ -512,9 +512,10 @@ func TestQuickBarSavedPromptsTakeEnterOnARemoteTarget(t *testing.T) {
 	}
 }
 
-// A second enter while the first call is on its way is refused with the
-// words the local lanes use, rather than reaching the host twice.
-func TestRemoteSendAndSpawnRefuseASecondEnterInFlight(t *testing.T) {
+// A second enter while the first call is on its way never reaches the host
+// twice: the quick bar was emptied when the first was accepted, and the
+// form refuses with the words the local lane uses.
+func TestRemoteSecondEnterInFlightNeverReachesTheHostTwice(t *testing.T) {
 	cases := []struct {
 		name   string
 		target uirail.Selection
@@ -525,11 +526,11 @@ func TestRemoteSendAndSpawnRefuseASecondEnterInFlight(t *testing.T) {
 		{"quick bar answer", boxSession("s1"), func(m *Model) tea.Cmd {
 			_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 			return cmd
-		}, "type", "this prompt is already being sent"},
+		}, "type", ""},
 		{"quick bar spawn", boxGroup, func(m *Model) tea.Cmd {
 			_, cmd := m.handleQuickKey(tea.KeyMsg{Type: tea.KeyEnter})
 			return cmd
-		}, "spawn", "this spawn is already in progress"},
+		}, "spawn", ""},
 		{"New Session form", boxGroup, func(m *Model) tea.Cmd {
 			_, cmd := m.submitForm()
 			return cmd

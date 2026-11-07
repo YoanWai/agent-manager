@@ -13,6 +13,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/store"
 	uiconnections "github.com/YoanWai/agent-manager/internal/ui/connections"
 	uirail "github.com/YoanWai/agent-manager/internal/ui/rail"
+	"github.com/YoanWai/agent-manager/internal/ui/spawn"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -94,7 +95,9 @@ func (r *recorder) AnswerSave(gen uint64, failed bool) { r.answered = append(r.a
 
 func (r *recorder) CloseAsker(gen int, asker Asker) { r.closed = append(r.closed, asker) }
 
-func (r *recorder) ClearAccepted(composerGen int, draft string, closeAfterSend bool) { r.cleared++ }
+func (r *recorder) SettleAccepted(int, uint64, bool) { r.cleared++ }
+
+func (r *recorder) RestoreRefused(int, spawn.Submission) {}
 
 func (r *recorder) ReportErr(text string) { r.errs = append(r.errs, text) }
 

@@ -67,8 +67,12 @@ func (r linkRoot) CloseAsker(gen int, asker uilink.Asker) {
 	}
 }
 
-func (r linkRoot) ClearAccepted(composerGen int, draft string, closeAfterSend bool) {
-	r.clearAccepted(composerGen, draft, closeAfterSend)
+func (r linkRoot) SettleAccepted(composerGen int, submitted uint64, closeAfterSend bool) {
+	r.settleAccepted(composerGen, submitted, closeAfterSend)
+}
+
+func (r linkRoot) RestoreRefused(composerGen int, submission spawn.Submission) {
+	r.restoreRefused(composerGen, submission)
 }
 
 // connectionsRoot is the root as the connection card reads it: the theme's

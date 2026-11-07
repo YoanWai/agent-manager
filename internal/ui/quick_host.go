@@ -98,16 +98,12 @@ func (h quickBarHost) Send(text string) tea.Cmd {
 	}
 	entry, _ := h.m.selectedRow()
 	q := h.m.quick()
-	if !h.m.dispatchQuickSend(uiquicksend.SendRequest{
+	h.m.dispatchQuickSend(uiquicksend.SendRequest{
 		Session:        entry.sess,
 		ComposerGen:    q.Gen,
-		Draft:          q.Input.Value(),
 		Text:           text,
 		CloseAfterSend: q.CloseAfterSend,
-		Images:         q.Attachments,
-	}) {
-		return nil
-	}
+	})
 	h.m.clearErr()
 	return h.m.nextEffectCmd()
 }
