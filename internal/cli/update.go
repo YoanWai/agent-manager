@@ -80,7 +80,7 @@ func runUpdate(version string) func(out io.Writer, args []string, configDir stri
 				fmt.Sprintf("updated with %s", manager.String()))
 		}
 
-		if !update.VersionWithin(version, "0.0.0", "") {
+		if !update.IsRelease(version) {
 			// A dev build carries no release tag, so there is nothing to
 			// compare against or download.
 			return errors.New("update: this build is not a release; reinstall to upgrade")

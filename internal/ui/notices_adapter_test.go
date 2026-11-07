@@ -596,14 +596,19 @@ func TestNoticesEscCloses(t *testing.T) {
 }
 
 func TestDevBuildNeverGreets(t *testing.T) {
-	st := noticeStore(t)
-	m := noticeModel(st, "dev")
-	m.openStartupGreeting()
-	if !m.listClear() {
-		t.Fatal("a dev build must not open a startup greeting")
-	}
-	if seen, _ := st.Setting(uirelease.LastSeenSetting); seen != "" {
-		t.Fatalf("a dev build must not advance the stored version, got %q", seen)
+	for _, version := range []string{"dev", "v0.2.0-10-g1656b508-dirty"} {
+		st := noticeStore(t)
+		if err := st.SetSetting(uirelease.LastSeenSetting, "v0.1.0"); err != nil {
+			t.Fatal(err)
+		}
+		m := noticeModel(st, version)
+		m.openStartupGreeting()
+		if !m.listClear() {
+			t.Fatalf("%s build must not open a startup greeting", version)
+		}
+		if seen, _ := st.Setting(uirelease.LastSeenSetting); seen != "v0.1.0" {
+			t.Fatalf("%s build must not advance the stored version, got %q", version, seen)
+		}
 	}
 }
 

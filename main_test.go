@@ -445,6 +445,7 @@ func TestResolveVersion(t *testing.T) {
 	}{
 		{"ldflags win", "0.11.0", "v0.11.0", true, "0.11.0"},
 		{"ldflags win over missing info", "0.11.0", "", false, "0.11.0"},
+		{"git describe stamp", "v0.11.0-3-g1656b508-dirty", "v0.11.1-0.20260730153639-1656b508abcd+dirty", true, "v0.11.0-3-g1656b508-dirty"},
 		{"go install at a tag", devVersion, "v0.11.0", true, "0.11.0"},
 		{"pseudo-version", devVersion, "v0.10.6-0.20260730153639-3b5b8a9a5649", true, devVersion},
 		{"go run", devVersion, "(devel)", true, devVersion},

@@ -41,6 +41,25 @@ func TestParseVersion(t *testing.T) {
 	}
 }
 
+func TestIsRelease(t *testing.T) {
+	cases := map[string]bool{
+		"0.47.1":                     true,
+		"v0.47.1":                    true,
+		"dev":                        false,
+		"v0.47.1-10-g1656b508":       false,
+		"v0.47.1-10-g1656b508-dirty": false,
+		"v0.47.1-0-g1656b508":        false,
+		"1656b508":                   false,
+		"v0.47.2-0.20261106234132-2bf7711b3b5d+dirty": false,
+		"": false,
+	}
+	for in, want := range cases {
+		if got := IsRelease(in); got != want {
+			t.Errorf("IsRelease(%q) = %v, want %v", in, got, want)
+		}
+	}
+}
+
 func TestVersionComparison(t *testing.T) {
 	if !Newer("v0.9.0", "v0.8.2") {
 		t.Fatal("newer patch should compare greater")
@@ -184,8 +203,15 @@ func TestFetchCarriesThePublishDate(t *testing.T) {
 }
 
 func TestCheckDevBuildSkips(t *testing.T) {
-	if result, err := Check(context.Background(), t.TempDir(), "dev"); err != nil || len(result.Releases) != 0 {
-		t.Fatalf("dev build should skip: %+v, %v", result, err)
+	for _, version := range []string{"dev", "v0.0.1-10-g1656b508-dirty"} {
+		dir := t.TempDir()
+		seedCache(t, dir, cache{CheckedAt: time.Now(), Releases: []Release{{Version: "v9.0.0"}}})
+		if result, err := Check(context.Background(), dir, version); err != nil || len(result.Releases) != 0 {
+			t.Fatalf("%s build should skip: %+v, %v", version, result, err)
+		}
+		if result := Cached(dir, version); result.Latest != "" {
+			t.Fatalf("%s build was offered %s", version, result.Latest)
+		}
 	}
 }
 

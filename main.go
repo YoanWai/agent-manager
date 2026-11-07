@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -52,16 +51,10 @@ func resolveVersion(embedded string, info *debug.BuildInfo, ok bool) string {
 	if !ok || info == nil {
 		return devVersion
 	}
-	moduleVersion := strings.TrimPrefix(info.Main.Version, "v")
-	if strings.ContainsAny(moduleVersion, "-+") || strings.Count(moduleVersion, ".") != 2 {
+	if !update.IsRelease(info.Main.Version) {
 		return devVersion
 	}
-	for _, field := range strings.Split(moduleVersion, ".") {
-		if _, err := strconv.Atoi(field); err != nil {
-			return devVersion
-		}
-	}
-	return moduleVersion
+	return strings.TrimPrefix(info.Main.Version, "v")
 }
 
 func main() {
