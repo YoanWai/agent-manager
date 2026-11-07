@@ -71,6 +71,8 @@ go run .
 
 The manager runs its sessions on a dedicated tmux socket (`-L`), so a development build stays clear of the tmux server your own shell is attached to.
 
+`make build` writes `./agent-manager` and `make install` puts it in your Go bin directory. Both stamp the commit from `git describe`, such as `v0.47.1-10-g1656b508-dirty`, which the header, Settings, `--version` and bug reports show. A build without the stamp, such as `go run .` or a plain `go build`, reports `dev`. Neither kind is offered updates or the what's-new notice. Without `make`, pass the stamp yourself: `go build -ldflags "-X main.version=$(git describe --tags --always --dirty --long)" .`
+
 ## Checks
 
 CI runs these on every pull request. The other jobs in `.github/workflows/ci.yml` are gitleaks, govulncheck, shellcheck on `install.sh`, a run of `install.sh` on Linux and macOS and of `install.ps1` on Windows against the latest release, the test suite on Windows and on macOS (all but one echo-latency test), the real-terminal e2e scenarios, the Windows ssh client against a WSL host, and a goreleaser snapshot build of every release target. Run these locally first:

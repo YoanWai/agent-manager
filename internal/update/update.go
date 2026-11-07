@@ -212,7 +212,7 @@ func Refresh(ctx context.Context, configDir, current string) (Result, error) {
 // It is used during startup so post-update summaries can paint immediately.
 func Cached(configDir, current string) Result {
 	currentParts, ok := parseVersion(current)
-	if !ok {
+	if !ok || !IsRelease(current) {
 		return Result{}
 	}
 	cached, _ := loadCatalog(configDir)
@@ -259,7 +259,7 @@ func legacyCatalog(path string) cache {
 
 func check(ctx context.Context, configDir, current string, force bool) (Result, error) {
 	currentParts, ok := parseVersion(current)
-	if !ok {
+	if !ok || !IsRelease(current) {
 		return Result{}, nil
 	}
 
@@ -706,6 +706,14 @@ func parseVersion(v string) ([3]int, bool) {
 		parts[i] = n
 	}
 	return parts, true
+}
+
+// IsRelease reports whether v names a published release, such as "0.47.1".
+// A dev build and a git describe stamp such as "v0.47.1-10-g1656b508-dirty"
+// do not, so they never take an update or a what's-new greeting.
+func IsRelease(v string) bool {
+	_, ok := parseVersion(v)
+	return ok && !strings.ContainsAny(v, "-+")
 }
 
 // VersionWithin reports whether version falls inside the inclusive

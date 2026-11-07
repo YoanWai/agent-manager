@@ -102,9 +102,11 @@ func TestUpdateRefusesNonReleaseBuilds(t *testing.T) {
 		return update.Result{}, nil
 	}
 	t.Cleanup(func() { updateRefresh = oldRefresh })
-	err := runUpdate("dev")(&bytes.Buffer{}, nil, t.TempDir())
-	if err == nil || !strings.Contains(err.Error(), "not a release") {
-		t.Fatalf("dev build update returned %v", err)
+	for _, version := range []string{"dev", "v0.31.0-10-g1656b508-dirty"} {
+		err := runUpdate(version)(&bytes.Buffer{}, nil, t.TempDir())
+		if err == nil || !strings.Contains(err.Error(), "not a release") {
+			t.Fatalf("%s build update returned %v", version, err)
+		}
 	}
 	if refreshed {
 		t.Fatal("refresh ran for a dev build")
