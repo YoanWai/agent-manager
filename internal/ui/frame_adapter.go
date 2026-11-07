@@ -102,18 +102,28 @@ func (m *Model) viewHeaderRows() []string {
 		return nil
 	}
 	header := uiframe.Header{
-		Left:   m.viewBanner()[0],
-		Scope:  m.headerScope(),
-		Agents: m.headerAgents(),
-		Rollup: []string{m.viewStatusCounts(false), m.viewStatusCounts(true)},
-		Sep:    uitheme.SubtleStyle().Render("   "),
-		Width:  m.layout.width,
-		Gutter: uiframe.RailGutter,
+		Left:    m.viewBanner()[0],
+		Version: uitheme.SubtleStyle().Render(" " + displayVersion(m.release.Version)),
+		Scope:   m.headerScope(),
+		Agents:  m.headerAgents(),
+		Rollup:  []string{m.viewStatusCounts(false), m.viewStatusCounts(true)},
+		Sep:     uitheme.SubtleStyle().Render("   "),
+		Width:   m.layout.width,
+		Gutter:  uiframe.RailGutter,
 	}
 	if tag := m.updateTag(); tag != "" {
-		header.Left += uitheme.SubtleStyle().Render("  ") + tag
+		header.Tag = uitheme.SubtleStyle().Render("  ") + tag
 	}
 	return []string{header.Row()}
+}
+
+// displayVersion tags a release build's bare version the way release tags
+// read; a dev build stays "dev".
+func displayVersion(version string) string {
+	if version == "dev" {
+		return version
+	}
+	return "v" + version
 }
 
 func (m *Model) updateTag() string {
