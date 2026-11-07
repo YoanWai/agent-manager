@@ -757,7 +757,7 @@ func TestStopFailureWritesErroredForEveryErrorType(t *testing.T) {
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		t.Fatalf("settings is not valid JSON: %v", err)
 	}
-	for _, errorType := range []string{"authentication_failed", "billing_error", "rate_limit", "server_error", "max_output_tokens", "some_future_error"} {
+	for _, errorType := range []string{"authentication_failed", "billing_error", "rate_limit", "server_error", "max_output_tokens", "unknown", "some_future_error"} {
 		t.Run(errorType, func(t *testing.T) {
 			var commands []string
 			for _, matcher := range parsed.Hooks["StopFailure"] {

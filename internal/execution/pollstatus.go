@@ -141,6 +141,9 @@ func turnInFlight(current string) bool {
 // when they finish, so the file would otherwise stay pinned at working
 // forever. The pane only reports finished/waiting/errored once the newest
 // turn is quiet, so this never fires while the agent is still streaming.
+// An errored hook yields only to waiting or working: a failed turn draws
+// a summary under its error, so a finished pane would erase the failure,
+// and the next prompt's UserPromptSubmit or Stop replaces it anyway.
 func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) string {
 	paneStatus, matched := p.engine.Match(sess.Tool, text)
 	switch hookStatus {
@@ -159,10 +162,7 @@ func (p *Runner) applyHookStatus(sess store.Session, text, hookStatus string) st
 			return paneStatus
 		}
 	case status.Errored:
-		if matched && (paneStatus == status.Waiting || paneStatus == status.Finished || paneStatus == status.Working) {
-			if paneStatus == status.Finished && sess.Acked {
-				return status.Idle
-			}
+		if matched && (paneStatus == status.Waiting || paneStatus == status.Working) {
 			return paneStatus
 		}
 	}

@@ -518,13 +518,8 @@ func TestHookErroredReconcilesToPaneVerdict(t *testing.T) {
 		"⏺ Security agent done. 2 left.\n✻ Waiting for 2 background agents to finish\n❯ \n", true); got != status.Working {
 		t.Fatalf("working pane should override hook errored, got %q", got)
 	}
-	if got := deriveStatus(t, m, sess, "here is the result\n\n✻ Baked for 5s\n\n❯ \n", true); got != status.Finished {
-		t.Fatalf("finished pane should override hook errored, got %q", got)
-	}
-
-	sess.Acked = true
-	if got := deriveStatus(t, m, sess, "here is the result\n\n✻ Baked for 5s\n\n❯ \n", true); got != status.Idle {
-		t.Fatalf("acked finished pane should idle over hook errored, got %q", got)
+	if got := deriveStatus(t, m, sess, "here is the result\n\n✻ Baked for 5s\n\n❯ \n", true); got != status.Errored {
+		t.Fatalf("finished pane should keep hook errored, got %q", got)
 	}
 }
 
