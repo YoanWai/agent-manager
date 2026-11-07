@@ -9,6 +9,7 @@ import (
 	"github.com/YoanWai/agent-manager/internal/catalog"
 	"github.com/YoanWai/agent-manager/internal/config"
 	"github.com/YoanWai/agent-manager/internal/git"
+	"github.com/YoanWai/agent-manager/internal/status"
 	"github.com/YoanWai/agent-manager/internal/store"
 	"github.com/YoanWai/agent-manager/internal/tmux"
 	"github.com/charmbracelet/x/ansi"
@@ -42,6 +43,27 @@ func screenOutput(pane string, styled bool) string {
 		pane = ansi.Strip(pane)
 	}
 	return strings.TrimRight(pane, "\r\n")
+}
+
+// Tail is a plain screen cut to its last n content rows, without the frame
+// tool draws around them: its composer, footer and spinners. A terminal
+// passes no tool, since a shell draws no frame. Zero keeps the screen whole.
+func Tail(tool, output string, n int) (string, error) {
+	if n < 0 {
+		return "", fmt.Errorf("tail is a row count, got %d", n)
+	}
+	if n == 0 {
+		return output, nil
+	}
+	cfg, err := config.Default()
+	if err != nil {
+		return "", err
+	}
+	engine, err := status.NewEngine(cfg)
+	if err != nil {
+		return "", err
+	}
+	return engine.Tail(tool, output, n), nil
 }
 
 type Sessions struct {

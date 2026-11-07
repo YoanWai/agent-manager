@@ -605,3 +605,17 @@ func TestARemoteTerminalWhoseOpenerIsNotRecordedIsClosed(t *testing.T) {
 		t.Fatalf("calls = %q, want the terminal created and closed", words)
 	}
 }
+
+// A host reads its whole screen, which every release answers, and the tail
+// is cut here by the session's CLI rules.
+func TestRemoteReadTail(t *testing.T) {
+	f := newRemoteFixture(t, "cafe", func(_ string, words []string) ([]byte, []byte, error) {
+		return mustJSON(t, sessioncmd.SessionScreen{Session: sessioncmd.Session{ID: "r1", Tool: "claude", Running: true}, Output: "● Ran.\n\n● Done.\n\n❯ \n  ? for shortcuts"}), nil, nil
+	})
+	if text, isError := callText(t, f.session, "read_session", map[string]any{"session_id": "gpu::r1", "tail": 1}); isError || text != "● Done." {
+		t.Fatalf("read_session tail = %q, isError=%v", text, isError)
+	}
+	if calls := f.hosts.recorded(); len(calls) != 1 || !reflect.DeepEqual(calls[0].words, []string{"read", "--json", "--", "r1"}) {
+		t.Fatalf("remote calls = %+v", calls)
+	}
+}

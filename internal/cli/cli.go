@@ -204,6 +204,20 @@ func styledFlag(set *flag.FlagSet) *bool {
 	return set.Bool("styled", false, "keep the screen's color escape sequences")
 }
 
+// tailFlag cuts a screen to its newest rows, which is what an agent
+// checking on another usually needs.
+func tailFlag(set *flag.FlagSet) *int {
+	return set.Int("tail", 0, "print only the last N content rows, without the CLI's composer, footer and spinners")
+}
+
+// plainTail refuses --tail with --styled: the tail is read off plain text.
+func plainTail(tail int, styled bool) error {
+	if tail != 0 && styled {
+		return errors.New("--tail prints plain text and does not combine with --styled")
+	}
+	return nil
+}
+
 func usageError(usage string) error {
 	return fmt.Errorf("usage: agent-manager %s", usage)
 }
